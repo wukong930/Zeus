@@ -1,5 +1,7 @@
 # Zeus
 
+> **Trades are won before they begin.**
+>
 > 商品期货研究与决策智能平台 · 下一代演进于 [Causa](https://github.com/wukong930/Causa)
 
 [![Frontend Prototype](https://img.shields.io/badge/Status-Frontend_Prototype-F97316)](#)
@@ -85,4 +87,4 @@ npm run dev
 
 ## License
 
-私人项目 · All rights reserved · OracleX
+私人项目 · All rights reserved · Nikoo

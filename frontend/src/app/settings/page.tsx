@@ -73,6 +73,9 @@ export default function SettingsPage() {
 
       <Card variant="flat" className="border-l-[3px] border-l-brand-emerald">
         <div className="text-h3 mb-1">关于 Zeus</div>
+        <p className="italic text-brand-emerald-bright text-sm mb-3">
+          Trades are won before they begin.
+        </p>
         <p className="text-sm text-text-secondary">
           v0.1.0 — Prototype Demo. 这个版本是纯前端原型，所有数据为模拟。后端 Python 服务（事件总线、信号检测、校准循环、对抗引擎、Alert Agent）将在 Phase 1 开始构建。
         </p>

@@ -50,7 +50,7 @@ function StatusBar() {
         </kbd>
         <span>命令面板</span>
         <span>•</span>
-        <span className="text-brand-emerald-bright">OracleX</span>
+        <span className="text-brand-emerald-bright">Nikoo</span>
       </div>
     </div>
   );

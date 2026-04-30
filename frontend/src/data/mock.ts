@@ -425,7 +425,7 @@ export const HEARTBEAT_STATE = {
 
 export const PERSONAL_GREETING = {
   greeting: "晚上好",
-  username: "OracleX",
+  username: "Nikoo",
   hoursSinceLastVisit: 14,
   alertsSinceLastVisit: 12,
   alertsRelevantToPosition: 3,

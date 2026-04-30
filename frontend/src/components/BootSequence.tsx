@@ -87,6 +87,14 @@ export function BootSequence({ children }: { children: React.ReactNode }) {
                 FUTURES INTELLIGENCE PLATFORM
               </div>
               <motion.div
+                className="mt-6 text-sm italic text-brand-emerald-bright tracking-wide"
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.9, duration: 0.6 }}
+              >
+                Trades are won before they begin
+              </motion.div>
+              <motion.div
                 className="mt-8 w-48 h-px bg-border-subtle relative overflow-hidden"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
