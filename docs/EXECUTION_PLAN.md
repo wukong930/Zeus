@@ -1,6 +1,18 @@
 # Zeus 执行计划
 
-> 版本: 1.2 | 日期: 2026-04-30 | 总工期: ~18 周
+> 版本: 1.3 | 日期: 2026-05-01 | 总工期: ~19 周
+
+## 变更说明（v1.3 — 回测正确性 + 向量检索方向调整）
+
+基于对回测层和 Weaviate 层的二次审查，本版本主要调整：
+
+- **新增 Phase 8.5 回测正确性收紧**（1 周）：PIT 校准权重回放 + Deflated Sharpe & FDR 多重比较保护 + 滑点分档模型 + Live vs Backtest 背离监控
+- **向量检索方案变更**：默认使用 PostgreSQL + pgvector（而非 Weaviate）。Weaviate 标记为 P3 评估升级，仅当向量数 > 100w 或需要多租户/模块化时启用
+- **Phase 4.5 新闻管线**：增加 pgvector 集成（向量检索基础设施在此阶段就位）
+- **Phase 9 LLM 反思 Agent**：增加向量检索 quality_status 质量门
+- **数据模型新增 6 张表**：`strategy_runs` / `slippage_models` / `live_divergence_metrics` / `commodity_history` / `vector_chunks` / `vector_eval_set`
+
+总工期：18 周 → 19 周。
 
 ## 变更说明（v1.2 — 自我学习层）
 
@@ -40,6 +52,7 @@
 | P7a | 成本模型（黑色系） | 2 周 | 中 | JM→J→RB 高炉链路 + 信号集成 |
 | P7b | 成本模型（橡胶） | 1.5 周 | 中 | NR→RU 全链路 + 信号集成 |
 | P8 | 场景推演 | 1 周 | 低 | 异步场景模拟 |
+| P8.5 | 回测正确性收紧 | 1 周 | 中 | PIT 校准权重 + Deflated Sharpe + 滑点分档 + 背离监控 |
 | P9 | Shadow Mode + 阈值校准 + LLM 反思 Agent | 2 周 | 中 | A/B 框架 + 阈值二级校准 + 月度假设生成 |
 
 ## Phase 0: 项目初始化（2-3 天）
@@ -366,8 +379,21 @@ Causa 的 `event_driven` 评估器实际上是纯技术面（gap + volume），*
   - [ ] `services/news/collectors/gdelt.py` — GDELT 扩展使用（Causa 已接入）
   - [ ] `services/news/collectors/exchange_announcements.py` — 交易所公告 API
   - [ ] 后续可扩展：上海钢联、卓创资讯（公开部分）
+- [ ] **向量检索基础设施（pgvector）**
+  - [ ] PostgreSQL 启用 `pgvector` 扩展（`CREATE EXTENSION vector`）
+  - [ ] `models/vector_chunks.py` — 向量主表（id, chunk_type, content_text, embedding vector(1024), embedding_model, metadata, quality_status, created_at）
+  - [ ] HNSW 索引：m=16 / ef_construction=64 / ef_search=40
+  - [ ] Alembic 迁移
+  - [ ] `services/vector_search/embedder.py` — Embedding 服务封装
+    - 主选 Voyage-3，备选 BGE-M3（开源本地）
+    - 维度 1024
+    - `embedding_model` 字段记录版本，支持双版本并存
+  - [ ] `services/vector_search/hybrid_search.py` — 混合检索
+    - `final_score = α × cosine + β × bm25 + γ × time_decay`（默认 α=0.6, β=0.3, γ=0.1）
+    - 元数据预过滤（chunk_type / sector / date_range）
+    - time_decay half_life 按事件类型差异化（政策 180d / 季节性 365d / 突发 30d / 假设 ∞）
 - [ ] **去重与质量控制**
-  - [ ] `services/news/dedup.py` — 标题哈希 + 语义相似度去重
+  - [ ] `services/news/dedup.py` — 标题哈希 + 语义相似度（pgvector 检索近 24h）去重
   - [ ] 同事件多源交叉验证：≥ 2 个独立源覆盖才进入评估
 - [ ] **LLM 结构化抽取**
   - [ ] `services/news/extractor.py` — 调 LLM 抽取结构化事件
@@ -675,6 +701,85 @@ Causa 的 `event_driven` 评估器实际上是纯技术面（gap + volume），*
 
 ---
 
+## Phase 8.5: 回测正确性收紧（1 周）
+
+### 目标
+回测在金融领域出名的"易出伪精度"——本 Phase 在回测框架里硬编码 4 项防御机制，避免所有 Sharpe 都是镜花水月。详见 ARCHITECTURE.md §6.21。
+
+### 任务清单
+
+- [ ] **必修 1：PIT 校准权重回放**
+  - [ ] `signal_calibration` 表加 `effective_from` / `effective_to` 字段
+  - [ ] Alembic 迁移
+  - [ ] 重写校准更新逻辑：插入新行（不覆盖），形成权重时间序列
+  - [ ] `services/backtest/calibration_replay.py`：按时点切片读取历史权重
+  - [ ] 回测元数据强制记录 `calibration_strategy` 字段（pit / frozen / current）
+  - [ ] 默认 `pit`；`current` 的回测结果必须明确标注"不可作为决策依据"
+
+- [ ] **必修 2：多重比较保护（Deflated Sharpe + FDR）**
+  - [ ] `models/strategy_runs.py` — 策略试验注册表
+  - [ ] Alembic 迁移
+  - [ ] `services/backtest/multiple_testing.py`
+    - 实现 Deflated Sharpe Ratio（Bailey & Lopez de Prado 2014）
+    - 实现 Bonferroni / Benjamini-Hochberg FDR 校正
+    - 单策略输出强制同时给 raw Sharpe 和 deflated Sharpe
+  - [ ] 策略上线门槛：deflated Sharpe > 1.0 且 deflated p-value < 0.05
+  - [ ] **raw Sharpe 不再作为单一上线门槛**
+
+- [ ] **必修 3：滑点分档模型**
+  - [ ] `models/slippage_models.py` — 分档滑点配置表
+  - [ ] Alembic 迁移
+  - [ ] `services/backtest/slippage.py`
+    - 函数式滑点：`slippage_bps = base × vol_mult × liquidity_mult × tod_mult`
+    - 按合约层级：main 1.0 / second 2.5 / third 8.0
+    - 按波动率：低 0.7 / 中 1.0 / 高 1.8（基于 ATR 百分位）
+    - 按订单大小：< 1% ADV 1.0 / 1-5% 1.4 / 5%+ 2.5
+    - 按时段：主交易 1.0 / 开盘 15min 1.5 / 收盘 15min 1.4 / 夜盘 1.2
+  - [ ] 临近交割 < 15 天：滑点 × 3，新建议自动转移到次月合约
+  - [ ] 涨跌停板：默认无法成交（除非板上挂单）
+  - [ ] 基准滑点数据：复用 Phase 7a 期间采集的成交量/深度数据
+
+- [ ] **必修 4：Live vs Backtest 背离监控**
+  - [ ] `models/live_divergence_metrics.py` — 监控指标表
+  - [ ] Alembic 迁移
+  - [ ] `services/backtest/live_divergence.py`
+    - **Tracking error**：实盘成交"回放"重建理论曲线，对比真实曲线
+    - **Sharpe 偏离检验**：实盘 Sharpe 是否落在回测 95% 置信区间外
+    - **算法漂移检测**：每月用今天的算法重跑历史回测，差异 > 5% 触发警告
+  - [ ] 偏离触发时写入 `change_review_queue`（接 Phase 3 治理基础设施）
+  - [ ] 与 Phase 3 信号级 `decay_detector` 区分：本 Phase 是策略级
+
+- [ ] **应修：Walk-forward 参数硬性规范**
+  - [ ] 默认 3 年训练 / 3 月测试 / 1 月步长，rolling window
+  - [ ] 写入 `services/backtest/walk_forward.py` 作为常量
+  - [ ] 所有策略回测必须使用此默认参数，覆盖需写入策略元数据
+
+- [ ] **应修：Regime profile 分解**
+  - [ ] 每个回测输出按 regime 切片：Sharpe / 胜率 / 最大回撤 / 样本量
+  - [ ] 前端：策略详情页加 regime profile 表
+
+- [ ] **应修：路径相关指标**
+  - [ ] Underwater duration（峰值到回归峰值的天数分布）
+  - [ ] Pain ratio（累积 drawdown / 平均回报）
+  - [ ] Recovery factor（总回报 / 最大回撤）
+  - [ ] CVaR(95%) 实际值
+  - [ ] MAE / MFE 分布（与 Phase 6 推荐归因用同一指标体系）
+
+- [ ] **应修：Survivorship bias 处理**
+  - [ ] `models/commodity_history.py` — 品种宇宙历史快照表
+  - [ ] Alembic 迁移
+  - [ ] 种子数据：从 Causa 数据 + 公开退市记录补全
+  - [ ] 回测必须基于 PIT 品种宇宙
+
+- [ ] **验证**
+  - [ ] PIT 校准回放正确性：用人工构造的"已知未来"权重验证不会泄露
+  - [ ] Deflated Sharpe 拒绝过拟合策略：构造 100 个随机策略，验证多数被拒
+  - [ ] 滑点模型在主力 vs 次主力上有显著差异
+  - [ ] 注入实盘虚假数据，背离监控正确触发
+  - [ ] Walk-forward 结果可重现
+
+---
+
 ## Phase 9: Shadow Mode + 阈值校准 + LLM 反思 Agent（2 周）
 
 ### 目标
@@ -750,6 +855,13 @@ Causa 的 `event_driven` 评估器实际上是纯技术面（gap + volume），*
   - [ ] 任何 status != applied 的假设不影响主链路
   - [ ] 单元测试：尝试用 status=proposed 的假设修改 calibration 表应失败
   - [ ] 单元测试：LLM 直接修改任何主链路参数应失败
+- [ ] **向量检索质量门 + 评测框架**
+  - [ ] `vector_chunks` 表 `quality_status` 字段三档生效：unverified（× 0.5）/ human_reviewed（× 1.0）/ validated（× 1.2）
+  - [ ] LLM 反思 Agent 的输出默认 `unverified`，走完 `change_review_queue` 才升级
+  - [ ] `models/vector_eval_set.py` — 检索质量评测集
+  - [ ] 手工标注 50 条 query → relevant_chunk_ids 对作为种子
+  - [ ] `services/vector_search/eval.py` — 月度跑 NDCG@10 / Recall@10
+  - [ ] Embedding 模型/参数变更走 Shadow Mode 对比
 - [ ] **验证**
   - [ ] 同一信号事件被生产和 shadow 同时处理
   - [ ] 30 天后能产出有效对比报告
@@ -757,21 +869,23 @@ Causa 的 `event_driven` 评估器实际上是纯技术面（gap + volume），*
   - [ ] 反思 Agent 月度调度正常，输出符合 Pydantic 结构
   - [ ] 强制反证机制生效（无反证的假设被拒绝）
   - [ ] 治理守卫拦截绕过审核的修改尝试
+  - [ ] LLM 写入向量库时 quality_status 默认 unverified
+  - [ ] 检索时不同 quality_status 的加权差异生效
 
 ---
 
 ## 依赖关系
 
 ```
-P0 ──→ P1 ──→ P2 ──→ P3 ──→ P4 ──→ P4.5 ──→ P5
-                │       │                        │
-                │       └─[governance]──────────┐│
-                │                                ↓↓
-                └──→ P6 [推荐归因]─────────────→ │
-                │                                │
-                └──→ P7a ──→ P7b ─────────────→ │
-                                                 │
-                                                 └──→ P8 ──→ P9 [反思 Agent]
+P0 ──→ P1 ──→ P2 ──→ P3 ──→ P4 ──→ P4.5 [pgvector] ──→ P5
+                │       │                                  │
+                │       └─[governance]────────────────────┐│
+                │                                          ↓↓
+                └──→ P6 [推荐归因]───────────────────────→ │
+                │                                          │
+                └──→ P7a [滑点深度数据] ──→ P7b ─────────→ │
+                                                           │
+                                                           └─→ P8 ──→ P8.5 [回测正确性] ──→ P9 [反思 + 向量质量门]
 ```
 
 - P0 → P1：后端骨架是迁移的前提
@@ -780,12 +894,15 @@ P0 ──→ P1 ──→ P2 ──→ P3 ──→ P4 ──→ P4.5 ──→ 
 - **P3 → 全局**：治理守卫（governance）在 P3 建立后，所有后续阶段的自动学习模块都依赖它
 - P3 → P4：校准数据 + Drift 监控为对抗引擎提供数据源（P4 冷启动期 warmup 模式）
 - P4 → P4.5：对抗引擎接入后才有清洁的事件流接 news_event 评估器
-- P4.5 → P5：news_event 评估器输出后 Alert Agent 才能处理事件类信号；P5 用户反馈学习依赖 Alert Agent
+- P4.5 → P5：news_event 评估器 + pgvector 检索基础设施就绪后 Alert Agent 才能处理事件类信号
 - P5 → P6：用户反馈采集就绪后，推荐归因可以关联反馈数据
 - P6 推荐归因 → P9：反思 Agent 需要推荐 P&L / MAE / MFE 数据
 - P6 和 P7a/P7b 可与 P3-P5 并行开发（仅依赖 P2 的事件总线）
+- P7a 顺带采集成交量/深度数据 → P8.5 滑点模型标定输入
 - P8 依赖 P5（Alert Agent 可触发推演）和 P7b（成本模型提供推演参数）
-- P9 依赖 P3 (治理) + P5 (反馈) + P6 (归因) + P7a/b（成本信号）—— 所有数据源就绪后才能做反思
+- **P8 → P8.5**：场景推演就绪后才进入回测正确性收紧（PIT 校准依赖 P3 校准基础设施）
+- **P8.5 → P9**：回测正确性是 LLM 反思 Agent 评估策略级假设的前提（避免基于不可信回测做假设）
+- P9 依赖 P3 (治理) + P5 (反馈) + P6 (归因) + P7a/b（成本信号）+ P8.5（可信回测）—— 所有数据源就绪后才能做反思
 
 ## 里程碑
 
@@ -794,10 +911,11 @@ P0 ──→ P1 ──→ P2 ──→ P3 ──→ P4 ──→ P4.5 ──→ 
 | M1: 功能对等 | P1 完成（~3 周） | Zeus 后端完全替代 Causa TypeScript 后端，PIT + 合约元数据就绪 |
 | M2: 架构升级 | P2 完成（~4 周） | 事件驱动 + DB 驱动监控列表 |
 | M3: 自校准基础 | P3 完成（~6 周） | 校准 + Drift 监控 + 治理守卫就绪 |
-| M4: 智能升级 | P5 完成（~10 周） | 校准 + 对抗 + 新闻 + 混合决策 + 人机交互 + LLM 成本 + 用户反馈 |
+| M4: 智能升级 | P5 完成（~10 周） | 校准 + 对抗 + 新闻 + 混合决策 + 人机交互 + LLM 成本 + 用户反馈 + pgvector |
 | M5: 推荐归因 | P6 完成（~11.5 周） | 推荐级 P&L / MAE / MFE 追踪，Goal B 数据基础就绪 |
 | M6: 产业智能 | P7b 完成（~15 周） | 成本模型完整接入信号系统 |
-| M7: 自我学习闭环 | P9 完成（~18 周） | Shadow Mode + 阈值校准 + LLM 反思 Agent，自我学习闭环全部就绪 |
+| M6.5: 回测可信 | P8.5 完成（~17 周） | PIT 校准 + Deflated Sharpe + 滑点分档 + Live 背离监控，所有 backtest 输出可作决策依据 |
+| M7: 自我学习闭环 | P9 完成（~19 周） | Shadow Mode + 阈值校准 + LLM 反思 Agent + 向量质量门，自我学习闭环全部就绪 |
 
 ## 每阶段验证清单
 
