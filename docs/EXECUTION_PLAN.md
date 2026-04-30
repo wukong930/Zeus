@@ -1,0 +1,810 @@
+# Zeus 执行计划
+
+> 版本: 1.2 | 日期: 2026-04-30 | 总工期: ~18 周
+
+## 变更说明（v1.2 — 自我学习层）
+
+在 v1.1 基础上加入 Goal B（按系统信号交易）必需的"自我学习"基础设施。**核心治理守则**：自动学习的输出永远不直接修改主链路决策，必须经过"假设 → 人工审阅 → Shadow Mode 验证 → 人工批准 → 上生产"。
+
+- **Phase 3 加 Concept Drift 监控**（+0.5 周）：监测市场是否还像系统校准时的市场
+- **Phase 5 加用户反馈学习**（+0.5 周）：采集每个信号你的判断，季度协同分析
+- **Phase 6 加推荐级归因**（+0.5 周）：信号校准 → 推荐校准（Goal B 真正的命脉）
+- **Phase 9 加 LLM 反思 Agent**（+1 周）：LLM 月度生成假设，强制反证，人工评审
+- **新增 governance 模块**：所有自动学习产生的规则变更经 `change_review_queue` 守卫
+
+总工期：15.5 周 → 18 周。
+
+## 变更说明（v1.1）
+
+基于 Causa 仓库实地评估和深度设计审查，本版本相比 v1.0 主要调整：
+
+- **Phase 1 扩容**：合并 PIT 数据架构 + 合约换月模块（Causa 完全没实现，重构 ETL 时一次到位更省事）
+- **Phase 3 校准循环**：明确**冷启动**策略（不复用 Causa 历史数据），新增 Regime 检测 + 真贝叶斯更新（Beta 先验）
+- **新增 Phase 4.5**：新闻事件管线（Causa 的 `event_driven` 是纯技术面，没有真正的事件源）
+- **Phase 5 加 LLM 成本控制**：缓存 / 预算 / 调用日志 / 降级（Causa 当前 < 5 次/天且无缓存，Zeus 可能爆 10-50 倍）
+- **Phase 7 拆分 7a + 7b**：成本数据管线被严重低估，付费数据源在该阶段评估再采购
+- **新增 Phase 9**：Shadow Mode + 置信度阈值校准（避免 Zeus 也变成"硬编码"）
+
+## 总览
+
+| 阶段 | 名称 | 工期 | 风险 | 核心交付物 |
+|------|------|------|------|-----------|
+| P0 | 项目初始化 | 2-3 天 | 低 | 可运行的项目骨架 |
+| P1 | 后端核心迁移 + PIT + 合约换月 | 2.5 周 | 中 | Python 后端 + PIT 数据 + 合约元数据 |
+| P2 | 事件总线 + 监控列表 | 1 周 | 低 | 事件驱动架构 |
+| P3 | 校准循环（冷启动）+ Drift 监控 | 2 周 | 中 | 影子追踪 + Regime 检测 + Beta 先验 + Drift 告警 |
+| P4 | 对抗引擎 | 1 周 | 中 | 统计对抗验证（warmup 模式） |
+| P4.5 | 新闻事件管线 | 1.5 周 | 高 | 结构化新闻 + `news_event` 评估器 |
+| P5 | Alert Agent + 人机交互 + LLM 成本 + 用户反馈 | 2 周 | 高 | 混合决策 + 仲裁 + 缓存/预算 + 反馈采集 |
+| P6 | 持仓驱动 + 推荐级归因 | 1.5 周 | 中 | 持仓感知 + 推荐 P&L / MAE / MFE 归因 |
+| P7a | 成本模型（黑色系） | 2 周 | 中 | JM→J→RB 高炉链路 + 信号集成 |
+| P7b | 成本模型（橡胶） | 1.5 周 | 中 | NR→RU 全链路 + 信号集成 |
+| P8 | 场景推演 | 1 周 | 低 | 异步场景模拟 |
+| P9 | Shadow Mode + 阈值校准 + LLM 反思 Agent | 2 周 | 中 | A/B 框架 + 阈值二级校准 + 月度假设生成 |
+
+## Phase 0: 项目初始化（2-3 天）
+
+### 目标
+搭建 Zeus monorepo 骨架，前后端均可启动。
+
+### 任务清单
+
+- [ ] 初始化 Git 仓库，创建 monorepo 结构 (`frontend/` + `backend/`)
+- [ ] **后端骨架**
+  - [ ] 创建 `backend/pyproject.toml`，安装核心依赖：
+    - fastapi, uvicorn, sqlalchemy[asyncio], asyncpg, alembic
+    - redis[hiredis], pydantic-settings, httpx
+    - pandas, numpy, scipy, statsmodels
+    - vectorbt, dowhy, akshare, tushare
+  - [ ] 创建 `backend/app/main.py`（FastAPI 入口 + CORS + lifespan）
+  - [ ] 创建 `backend/app/core/config.py`（pydantic-settings 配置）
+  - [ ] 创建 `backend/app/core/database.py`（SQLAlchemy async engine + session）
+  - [ ] 创建 `backend/app/core/redis.py`（Redis 连接池）
+  - [ ] 创建 `backend/app/api/health.py`（健康检查端点）
+  - [ ] 初始化 Alembic（`alembic init`）
+  - [ ] 创建 `backend/Dockerfile`（Python 3.11-slim, non-root user）
+- [ ] **前端骨架**
+  - [ ] 从 Causa 复制前端代码到 `frontend/`
+  - [ ] 修改 `next.config.ts`：API 代理指向 Python 后端
+  - [ ] 验证前端可用 mock 数据正常渲染
+- [ ] **基础设施**
+  - [ ] 创建 `docker-compose.yml`：Postgres + Redis + Weaviate + Backend + Frontend
+  - [ ] 创建 `.env.example`
+  - [ ] 创建 `CLAUDE.md`（项目约定）
+- [ ] **验证**
+  - [ ] `docker compose up` 全部服务健康
+  - [ ] `GET /api/health` 返回 200
+  - [ ] 前端首页可访问
+
+### 产出文件
+```
+zeus/
+├── backend/
+│   ├── app/main.py
+│   ├── app/core/{config,database,redis}.py
+│   ├── app/api/health.py
+│   ├── alembic/
+│   ├── pyproject.toml
+│   └── Dockerfile
+├── frontend/ (from Causa)
+├── docker-compose.yml
+├── .env.example
+└── CLAUDE.md
+```
+
+---
+
+## Phase 1: 后端核心迁移 + PIT 数据 + 合约换月（2.5 周）
+
+### 目标
+将 Causa 的全部业务逻辑从 TypeScript 迁移到 Python FastAPI，**同时**重构数据层引入 PIT 架构和合约元数据——这两件事在 ETL 重写时一次到位，比之后改省事。
+
+### 第 1 周：数据层 + 核心 API（含 PIT 改造）
+
+- [ ] **SQLAlchemy 模型**（移植 Causa 的 18 张表 + PIT/合约改造）
+  - [ ] `models/market_data.py` — OHLCV + settle + OI + **vintage_at + contract_id**
+  - [ ] `models/contract_metadata.py` — **合约元数据表（新）**：symbol, contract_month, expiry_date, is_main, main_until, volume, open_interest
+  - [ ] `models/alert.py` — 预警（含 spread_info, trigger_chain）
+  - [ ] `models/position.py` — 持仓（含 legs）
+  - [ ] `models/recommendation.py` — 交易建议
+  - [ ] `models/strategy.py` — 策略池
+  - [ ] `models/research.py` — 研究报告
+  - [ ] `models/signal.py` — 信号追踪
+  - [ ] `models/sector.py` — 板块评估
+  - [ ] `models/graph.py` — 品种关系图
+  - [ ] `models/industry_data.py` — 产业数据 + **vintage_at**
+  - [ ] `models/llm_config.py` — LLM 配置（加密存储）
+  - [ ] 运行 `alembic revision --autogenerate` 生成迁移
+  - [ ] 运行 `alembic upgrade head` 创建表
+- [ ] **PIT 数据架构**（Causa 用覆盖更新，Zeus 重写为 append-only）
+  - [ ] ETL 写入策略改造：所有数据行附 `vintage_at`，修订型数据每次拉取生成新 vintage 行
+  - [ ] 创建数据库视图 `market_data_latest`、`industry_data_latest`（默认查询使用）
+  - [ ] 实现 PIT 查询函数：`get_market_data_pit(symbol, as_of)`, `get_industry_data_pit(symbol, as_of)`
+  - [ ] 所有下游模块约定：实时决策用 `_latest`，回测/校准用 PIT 函数
+- [ ] **合约元数据初始化**
+  - [ ] 主力合约切换规则：成交量 + 持仓量综合排名第一，连续 3 天领先则切换
+  - [ ] `services/contracts/main_contract_detector.py`：每日识别主力合约
+  - [ ] `services/contracts/continuous.py`：拼接 `continuous_main_adjusted`（带跳空调整）和 `continuous_main_raw`
+- [ ] **核心 API 路由**
+  - [ ] `api/market_data.py` — 行情数据 CRUD + 查询（默认 latest 视图，可选 as_of 参数）
+  - [ ] `api/contracts.py` — 合约元数据查询 + 主力合约切换记录（新）
+  - [ ] `api/alerts.py` — 预警列表/详情/SSE 流
+  - [ ] `api/positions.py` — 持仓 CRUD
+  - [ ] `api/recommendations.py` — 建议列表/详情
+  - [ ] `api/strategies.py` — 策略 CRUD
+
+### 第 2 周：信号检测 + 调度器 + LLM
+
+- [ ] **信号检测**（移植 Causa 的 6 个 evaluator，注意 `event_driven` 在 Phase 4.5 才会拆分）
+  - [ ] `services/signals/evaluators/spread_anomaly.py`
+  - [ ] `services/signals/evaluators/basis_shift.py`
+  - [ ] `services/signals/evaluators/momentum.py`
+  - [ ] `services/signals/evaluators/regime_shift.py`
+  - [ ] `services/signals/evaluators/inventory_shock.py`
+  - [ ] `services/signals/evaluators/event_driven.py`（保留 Causa 原逻辑，Phase 4.5 重命名为 `price_gap` 并新增 `news_event`）
+  - [ ] `services/signals/detector.py`（编排器，asyncio.gather 并行）
+  - [ ] 信号检测在换月窗口期（前后 5 天）自动降级 `spread_anomaly` / `basis_shift`
+- [ ] **评分引擎**（移植 scoring.ts，权重暂硬编码，Phase 3 接入校准）
+  - [ ] `services/scoring/priority.py`
+  - [ ] `services/scoring/portfolio_fit.py`
+  - [ ] `services/scoring/margin_efficiency.py`
+  - [ ] `services/scoring/engine.py`（组合评分）
+- [ ] **调度器**（替代 node-cron）
+  - [ ] `scheduler/manager.py`（APScheduler 封装 + 健康追踪）
+  - [ ] `scheduler/jobs.py`（8 个定时任务定义 + 主力合约日检任务）
+  - [ ] `api/scheduler.py`（调度器管理 API）
+- [ ] **LLM 集成**（移植多供应商抽象）
+  - [ ] `services/llm/registry.py`（供应商工厂）
+  - [ ] `services/llm/openai.py`
+  - [ ] `services/llm/anthropic.py`
+  - [ ] `services/llm/deepseek.py`
+- [ ] **风控**（移植 risk 模块）
+  - [ ] `services/risk/var.py`
+  - [ ] `services/risk/stress.py`
+  - [ ] `services/risk/correlation.py`
+
+### 第 3 周（半周收尾）：前端对接 + 验证
+
+- [ ] **前端对接**
+  - [ ] 更新 `frontend/` 的 API proxy 指向 Python 后端
+  - [ ] 验证所有页面数据正常加载
+  - [ ] 行情数据展示加上"vintage" 标签（让用户看到数据是哪个版本的）
+- [ ] **性能基线**
+  - [ ] 信号检测全流程（6 评估器并行）耗时基线测试
+  - [ ] PIT 查询性能测试（带 `as_of` 参数 vs 默认 latest）
+
+### 验证
+- [ ] `pytest` 全部通过
+- [ ] 前端所有已实现页面数据正常
+- [ ] 调度器可启动/停止/手动触发任务
+- [ ] LLM 调用正常（至少一个供应商）
+- [ ] **PIT 查询验证**：插入修订数据后，`get_market_data_pit(as_of=昨天)` 返回原始版本，`market_data_latest` 返回修订版本
+- [ ] **合约换月验证**：`contract_metadata` 表有数据，主力合约判断正确
+
+---
+
+## Phase 2: 事件总线 + DB 驱动监控列表（1 周）
+
+### 目标
+将线性管道重构为事件驱动架构。
+
+### 任务清单
+
+- [ ] **事件总线**
+  - [ ] `core/events.py` — Redis Pub/Sub 封装
+    - ZeusEvent dataclass（id, channel, timestamp, source, payload, correlation_id）
+    - `publish(channel, payload)` — 发布事件
+    - `subscribe(channel, handler)` — 订阅事件（async handler）
+    - 死信队列：handler 异常时写入 `event_log` 表
+  - [ ] `models/event_log.py` — 事件审计表
+  - [ ] Alembic 迁移：创建 `event_log` 表
+- [ ] **DB 驱动监控列表**
+  - [ ] `models/watchlist.py` — 监控列表表
+  - [ ] Alembic 迁移：创建 `watchlist` 表
+  - [ ] 种子数据：从 Causa 硬编码的 145 对迁移
+  - [ ] `services/signals/watchlist.py` — 从 DB 读取监控列表
+- [ ] **管道重构**
+  - [ ] 调度器触发 ETL → 发布 `market.update`
+  - [ ] 信号检测订阅 `market.update` → 发布 `signal.detected`
+  - [ ] 评分引擎订阅 `signal.detected` → 发布 `signal.scored`
+  - [ ] 预警创建订阅 `signal.scored` → 发布 `alert.created`
+- [ ] **验证**
+  - [ ] 手动触发 ETL，检查 `event_log` 表中的事件流
+  - [ ] 预警生成行为与 Phase 1 一致（功能不变，架构变了）
+
+---
+
+## Phase 3: 校准循环 — 冷启动 + Concept Drift 监控（2 周）
+
+### 目标
+实现信号权重的自动校准机制 + 市场漂移监测。**冷启动策略**——不复用 Causa 历史数据（auto-evaluate 规则不一致、outcome-tracker 存在 bug、缺 forward_return 字段），从零开始积累。**Drift 监控**只告警，不自动调整。
+
+### 任务清单
+
+- [ ] **数据模型**
+  - [ ] `models/calibration.py` — signal_calibration 表（含 alpha_prior, beta_prior 字段）
+  - [ ] `models/regime_state.py` — 每日板块 regime 表
+  - [ ] Alembic 迁移
+  - [ ] **`signal_track` 表新增字段**：
+    - `calibration_weight_at_emission` — 触发时使用的权重
+    - `signal_combination_hash` — 组合哈希
+    - `forward_return_1d / 5d / 20d` — 多窗口前向收益（取代 Causa 单一的 outcome）
+    - `regime_at_emission` — 触发时的 regime
+- [ ] **Regime 检测**
+  - [ ] `services/calibration/regime_detector.py`
+    - ADX + ATR 百分位规则法（确定性主方法）
+    - 分类：trend_up_low_vol / trend_down_low_vol / range_high_vol / range_low_vol
+    - 每日 ETL 后按板块计算 regime 并写入 `regime_state` 表
+  - [ ] HMM baseline（hmmlearn）作为对比，不进主链路
+- [ ] **影子追踪器**（避免幸存者偏差，Zeus 核心机制）
+  - [ ] `services/calibration/shadow_tracker.py`
+    - 每个信号触发瞬间启动影子追踪，不依赖用户行为
+    - 调度器每日扫描达到评估窗口的 pending 信号
+    - 调用对应评估器的 `evaluate_outcome` 方法标记 outcome
+  - [ ] **每个评估器实现 `evaluate_outcome(signal, market_data, horizon)` 方法**：
+    - `spread_anomaly`：Z-score 在窗口内回归到 ±0.5 内 → hit
+    - `basis_shift`：基差变动方向被价格证实 → hit
+    - `momentum`：前向收益与信号方向一致 → hit
+    - `regime_shift`：后续波动率/趋势特征匹配预测 → hit
+    - `inventory_shock`：现货价格在窗口内出现预测方向变动 → hit
+    - `event_driven`（Phase 4.5 拆为 `price_gap` / `news_event`）：跳空延续 vs 回补 / 标的方向变动
+- [ ] **校准模块**
+  - [ ] `services/calibration/tracker.py`
+    - 信号触发时记录：信号类型、板块、regime、当前权重、组合哈希
+  - [ ] `services/calibration/hit_rate.py`
+    - 按 (signal_type, category, regime) 计算 90 天滚动精确率/召回率
+    - **使用影子追踪结果，不使用持仓平仓**（用户实际持仓只作为补充质量数据）
+  - [ ] `services/calibration/weight_adjuster.py`
+    - **真贝叶斯更新（Beta 先验）**：
+      ```
+      posterior_mean = (α₀ + hits) / (α₀ + β₀ + total)
+      effective_weight = base_weight × (posterior_mean / 0.5)
+      ```
+    - 默认 α₀ = β₀ = 4（弱先验）
+    - 权重范围约束：[0.1, 2.0]
+    - 冷启动期权重 ≈ base_weight（先验主导）
+  - [ ] `services/calibration/decay_detector.py`
+    - CUSUM 或 Bayesian online change point detection
+    - 触发衰减后权重 × 0.5，标记 `decay_detected = true`
+    - 前端展示衰减警告
+- [ ] **集成**
+  - [ ] 评分引擎从 `signal_calibration` 表读取权重（替代硬编码）
+  - [ ] 调度器加每日校准任务（凌晨执行）
+  - [ ] 调度器加每日 regime 检测任务（ETL 后执行）
+- [ ] **冷启动监控**
+  - [ ] 前端"校准仪表盘"页面：展示各 (signal_type, regime) 的样本量、当前权重、置信带
+  - [ ] 样本量 < 10 时显示"先验主导"提示
+  - [ ] 样本量积累到 100+ 之前不要过度信任权重调整
+- [ ] **Concept Drift 监控（新增 6.19）**
+  - [ ] `models/drift_metrics.py` — Drift 指标表
+  - [ ] Alembic 迁移
+  - [ ] `services/learning/drift_monitor.py`
+    - **特征分布漂移**（PSI / KL divergence）：波动率、价差、基差、成交量、持仓量。当前 30 天 vs 历史 90 天，PSI > 0.25 告警
+    - **相关性结构漂移**：板块内品种相关性矩阵 Frobenius 距离突变检测
+    - **信号命中率突变**：滚动 30 天 vs 90 天基线，z-score > 2 告警
+    - **Regime 频繁切换检测**：月切换次数 > 3 告警
+  - [ ] 调度任务：每日 ETL 后计算 Drift 指标并写入 `drift_metrics` 表
+  - [ ] 前端：Dashboard 顶部 "Drift Alert" 指示器（红/黄/绿三档）
+  - [ ] 通知：漂移告警时推送到飞书（建议本周谨慎按系统信号交易）
+  - [ ] **关键约束**：Drift 监控**只告警**，不自动调整任何权重或阈值
+- [ ] **治理基础设施（governance）**
+  - [ ] `models/change_review_queue.py` — 变更审核队列表
+  - [ ] `services/governance/review_queue.py` — 守卫装饰器
+    - 任何修改 `signal_calibration` / `commodity_config` / 阈值参数的写入必须通过此守卫
+    - 守卫检查调用方是否有 `human_approved=True` 标记
+    - 失败则写入审核队列等人工批准
+  - [ ] 单元测试：直接尝试改 calibration 表会被拒绝
+- [ ] **验证**
+  - [ ] 模拟数据测试：构造 200 个已知 outcome 的信号，验证 Bayesian 更新公式正确
+  - [ ] 验证影子追踪器在每日调度中正确标记 outcome
+  - [ ] 验证 regime 检测对历史几个明确市场状态的判断正确
+  - [ ] 验证 Drift 监控：注入分布偏移数据，PSI 应触发告警
+  - [ ] 验证治理守卫：尝试绕过审核直接改 calibration 应失败
+
+---
+
+## Phase 4: 对抗引擎（1 周）
+
+### 目标
+在信号进入评分前增加统计对抗验证。冷启动期采用 **warmup mode**（informational only，不阻塞信号）。
+
+### 任务清单
+
+- [ ] **数据模型**
+  - [ ] `models/adversarial.py` — adversarial_results 表
+  - [ ] `models/null_distribution_cache.py` — 零分布预计算缓存表
+  - [ ] Alembic 迁移
+- [ ] **对抗模块**
+  - [ ] `services/adversarial/null_hypothesis.py`
+    - 改为**预计算策略**：每日 ETL 后按 (signal_type, category) 预计算零分布统计量
+    - 实时检测 O(1) 查表对比，避免每个信号都跑 1000 次 Bootstrap
+    - 预计算结果存 `null_distribution_cache`
+    - 输出：p-value，p < 0.05 为通过
+  - [ ] `services/adversarial/historical_combo.py`
+    - **模糊哈希**：基于排序后的 (signal_type_set, category, regime)，新增评估器时旧哈希可匹配子集
+    - Jaccard 相似度 ≥ 0.7 视为匹配
+    - 查询 `signal_calibration` 中相似组合的历史命中率
+    - 命中率 < 0.3 且样本 > 20 为失败
+  - [ ] `services/adversarial/structural_counter.py`
+    - 遍历传导图寻找反向路径
+    - 检查季节性反转因素
+    - 检查替代品压力
+    - 输出：反驳论据列表 + 数量
+- [ ] **冷启动 warmup 模式**
+  - [ ] 历史组合检验添加 `mode` 字段：`informational` / `enforcing`
+  - [ ] 系统上线前 90 天默认 `informational`：执行检查并记录，**不阻塞信号、不施加置信度惩罚**
+  - [ ] 调度任务每日检查切换条件：所有 signal_combination_hash 累积样本 ≥ 20 后切到 `enforcing`
+  - [ ] 切换可手动覆盖（运营后台开关）
+  - [ ] 零假设检验 + 结构性反驳从第一天就 `enforcing`（不依赖历史）
+- [ ] **集成**
+  - [ ] 在事件流中插入：`signal.detected` → 对抗引擎 → 通过后才进入评分
+  - [ ] 三项全失败 → 抑制信号（warmup 模式下例外：历史组合检验失败仅记录）
+  - [ ] 部分失败 → 置信度 × 0.7
+  - [ ] `alerts` 表新增 `adversarial_passed` 字段
+- [ ] **验证**
+  - [ ] 构造已知噪声信号，验证零假设检验能拦截
+  - [ ] 构造历史低命中率组合，验证历史检验能降级（enforcing 模式）
+  - [ ] 验证 warmup 模式下不阻塞信号
+  - [ ] 检查 `adversarial_results` 表记录完整
+
+---
+
+## Phase 4.5: 新闻事件管线（1.5 周）
+
+### 目标
+Causa 的 `event_driven` 评估器实际上是纯技术面（gap + volume），**没有真正的事件源**。Zeus 把"事件"还给真正的新闻事件，让 `news_event` 评估器有数据可用。
+
+### 任务清单
+
+- [ ] **数据模型**
+  - [ ] `models/news_events.py` — 结构化新闻事件表
+    - 字段：source, raw_url, published_at, event_type, affected_symbols, direction, severity, time_horizon, llm_confidence
+  - [ ] Alembic 迁移
+- [ ] **新闻采集**
+  - [ ] `services/news/collectors/cailianshe.py` — 财联社快讯（电报源）
+  - [ ] `services/news/collectors/sina_futures.py` — 新浪财经期货频道
+  - [ ] `services/news/collectors/gdelt.py` — GDELT 扩展使用（Causa 已接入）
+  - [ ] `services/news/collectors/exchange_announcements.py` — 交易所公告 API
+  - [ ] 后续可扩展：上海钢联、卓创资讯（公开部分）
+- [ ] **去重与质量控制**
+  - [ ] `services/news/dedup.py` — 标题哈希 + 语义相似度去重
+  - [ ] 同事件多源交叉验证：≥ 2 个独立源覆盖才进入评估
+- [ ] **LLM 结构化抽取**
+  - [ ] `services/news/extractor.py` — 调 LLM 抽取结构化事件
+  - [ ] Pydantic 模型强制输出结构：
+    - `event_type`：政策 / 供给 / 需求 / 库存 / 地缘 / 天气 / 突发事件
+    - `affected_symbols`：受影响品种（含传导图衍生的次级品种）
+    - `direction`：bullish / bearish / mixed / unclear
+    - `severity`：1-5 级
+    - `time_horizon`：immediate / short / medium / long
+- [ ] **拆分原 event_driven 评估器**
+  - [ ] 重命名 `services/signals/evaluators/event_driven.py` → `price_gap.py`（保留 Causa 原逻辑）
+  - [ ] 新建 `services/signals/evaluators/news_event.py`：订阅 `news.event` 事件，结合品种传导图生成信号
+- [ ] **事件总线接入**
+  - [ ] 新闻入库后发布 `news.event` 事件
+  - [ ] `news_event` 评估器订阅，触发信号检测
+- [ ] **质量门槛**
+  - [ ] 严重度 ≥ 3 才生成预警，< 3 仅记录
+  - [ ] 单源未交叉验证的高严重度事件强制人工确认
+- [ ] **前端**
+  - [ ] 新闻事件流页面：展示已抽取的结构化事件
+  - [ ] 预警详情面板增加"触发新闻"链接（如果由 news_event 触发）
+- [ ] **验证**
+  - [ ] 手动注入若干已知重大事件（OPEC 减产、产区天气、政策变动），验证 LLM 抽取准确率
+  - [ ] 验证去重正常（同事件多源不会重复触发）
+  - [ ] 验证 `news_event` 评估器正确生成信号
+
+---
+
+## Phase 5: Alert Agent + 人机交互 + LLM 成本控制 + 用户反馈学习（2 周）
+
+### 目标
+实现混合决策路由和人工仲裁机制。**同时建立 LLM 成本控制基础设施**——Phase 4.5 + 5 + 8 的 LLM 调用如不控制可能爆增 10-50 倍。**新增用户反馈采集**——这是单用户系统能拿到的最高质量学习数据。
+
+### 任务清单
+
+- [ ] **Alert Agent 模块**
+  - [ ] `services/alert_agent/router.py`
+    - 判断走确定性路径还是 LLM 路径
+    - LLM 触发条件：信号方向矛盾、置信度 40-65%、无历史先例、跨 3+ 板块
+  - [ ] `services/alert_agent/classifier.py`
+    - 规则分级：L0 全景 / L1 板块 / L2 品种 / L3 交易建议
+  - [ ] `services/alert_agent/llm_arbiter.py`
+    - 矛盾信号仲裁：结构化 JSON 输出（Pydantic 模型）
+    - 新模式分析：历史类比检索
+    - 输出无效时回退确定性路径
+  - [ ] `services/alert_agent/narrative.py`
+    - 高/危急预警的叙事生成
+    - 30 字以内的 one-liner 摘要
+  - [ ] `services/alert_agent/dedup.py` — **预警去重与限流（新）**
+    - `alert_dedup_cache` 表：(symbol, direction, evaluator, last_emitted_at, last_severity)
+    - 同 (品种, 方向, 评估器) 12 小时内只发一次（除非严重度升级）
+    - 同信号组合 24 小时内只发一次
+    - 每日预警上限（默认 50），超限保留 top-K 高分
+- [ ] **置信度分层**
+  - [ ] `alerts` 表新增：`confidence_tier`, `human_action_required`, `human_action_deadline`, `dedup_suppressed`
+  - [ ] 路由逻辑：>85% auto / 60-85% notify / <60% confirm / 冲突 arbitrate
+  - [ ] **置信度阈值标记为"可校准"**：阈值存配置表而非硬编码常量，Phase 9 接入校准
+- [ ] **LLM 成本控制基础设施（新）**
+  - [ ] `models/llm_cache.py`、`models/llm_usage_log.py`、`models/llm_budgets.py`
+  - [ ] Alembic 迁移
+  - [ ] `services/llm/cache.py` — 结果缓存
+    - 缓存键：`hash(provider + model + system + user_message)`
+    - TTL：24 小时（可按场景配置）
+    - 缓存命中/未命中指标暴露到监控
+  - [ ] `services/llm/cost_tracker.py` — 调用日志 + 预算追踪
+    - 每次调用记录：模块、模型、输入/输出 token、估算成本（USD）、是否缓存命中
+    - 月度成本归因报表 API
+  - [ ] `services/llm/budget_guard.py` — 预算上限
+    - 按模块预算（alert_agent / news / scenario / research）
+    - 超 80% 预算告警
+    - 超 100% 自动降级到确定性路径
+  - [ ] **Anthropic prompt caching 启用**：系统提示和工具定义使用 cache_control
+  - [ ] LLM 调用统一通过 `llm/registry.py` 入口，所有调用经过 cache + cost_tracker + budget_guard 三层
+  - [ ] 失败/超时（>30s）/ 输出无效 JSON → 自动回退确定性路径
+- [ ] **人工仲裁**
+  - [ ] `models/human_decision.py` — human_decisions 表
+  - [ ] `api/arbitration.py` — 仲裁 API（审批/拒绝/修改）
+  - [ ] 前端：仲裁界面（展示矛盾信号 + 对抗结果 + 操作按钮）
+- [ ] **用户反馈学习（新增 6.18）**
+  - [ ] `models/user_feedback.py` — 用户反馈表
+  - [ ] Alembic 迁移
+  - [ ] `services/learning/user_feedback.py`
+    - 每个信号/推荐发出时附简短反馈表单
+    - 字段：agree（agree / disagree / uncertain）、disagreement_reason（自由文本）、will_trade（will_trade / will_not_trade / partial）
+    - 反馈数据**本身不影响信号触发或权重**，只用作学习数据
+  - [ ] 前端：预警面板加反馈采集组件（不强制，但持续提醒）
+  - [ ] 季度协同分析报表（生成到 `learning/feedback_report.py`）：
+    - 用户和系统判断不一致时谁对得多（按信号类型切片）
+    - 用户判断更准的场景 / 系统判断更准的场景
+    - 输出建议：哪些类型信号"信你"、哪些"信系统"
+  - [ ] 集成到 Alert Agent：当系统识别"此类信号你历史判断更准"，预警附软性提示
+  - [ ] **关键约束**：用户反馈**不直接修改信号权重**，只产出 `change_review_queue` 建议
+- [ ] **验证**
+  - [ ] 构造矛盾信号，验证 LLM 路径触发
+  - [ ] 验证 confirm 级别预警暂停等待人工
+  - [ ] 验证人工决策记录写入 `human_decisions` 表
+  - [ ] 验证缓存命中：相同信号组合二次触发应命中缓存
+  - [ ] 验证预算超限自动降级
+  - [ ] 验证去重：同品种同方向连续触发只发一次预警
+  - [ ] 验证用户反馈采集 + 反馈不修改信号权重
+
+---
+
+## Phase 6: 持仓驱动行为 + 推荐级归因（1.5 周）
+
+### 目标
+持仓数据改变系统的监控和建议行为。**同时建立推荐级归因系统**——Goal B（按信号交易）的命脉。Zeus 当前是信号级校准，但用户做的是按推荐交易，推荐才是真正要追踪的对象。
+
+### 任务清单
+
+- [ ] **持仓录入**
+  - [ ] `positions` 表新增：`manual_entry`, `avg_entry_price`, `monitoring_priority`, `propagation_nodes`
+  - [ ] `api/positions.py` 扩展：最小录入（5 字段）、快捷操作（平仓/加仓/减半）
+  - [ ] 交易建议采纳时自动预填持仓
+- [ ] **监控升级**
+  - [ ] `services/positions/threshold_modifier.py`
+    - 持仓品种阈值 × 0.8
+    - 订阅 `position.changed` 事件，维护内存阈值缓存
+  - [ ] `services/positions/propagation_activator.py`
+    - 查询传导图，激活关联品种
+    - 在 `watchlist` 表中添加 `position_linked=true` 的条目
+    - 持仓平仓时移除关联条目
+- [ ] **风控联动**
+  - [ ] `services/positions/risk_recalc.py`
+    - `position.changed` 时重算 VaR、相关性、集中度
+    - 超限时降级新建议
+  - [ ] 新建议与持仓方向冲突 → 标记警告
+  - [ ] 持仓品种出现反向信号 → 优先推送
+- [ ] **数据腐烂防护**
+  - [ ] 定时检查：持仓 N 天未更新 → 推送提醒
+  - [ ] 长期不更新 → 降级为无持仓模式
+- [ ] **推荐级归因（新增 6.17）**
+  - [ ] `recommendations` 表新增字段：
+    - `entry_price`, `stop_loss`, `take_profit`（推荐时定的）
+    - `actual_entry`, `actual_exit`, `actual_exit_reason`（实际执行）
+    - `pnl_realized` — 按手数 × 合约乘数计算
+    - `mae`（最大不利偏移）, `mfe`（最大有利偏移）
+    - `holding_period_days`
+  - [ ] Alembic 迁移
+  - [ ] `services/learning/recommendation_attribution.py`
+    - 持仓变动时自动更新对应推荐的执行字段
+    - 持仓平仓时计算最终 P&L
+    - 持仓持续期间每日更新 MAE / MFE
+  - [ ] 月度归因报表（`learning/attribution_report.py`）：
+    - 信号组合 × 胜率 × 期望收益 × 样本量
+    - Regime × 胜率
+    - 板块 × 胜率
+    - 季节（月份）× 胜率
+    - 持仓时长 × 胜率
+    - 入场时段 × 胜率
+  - [ ] 风控参数评估报表：
+    - Stop loss：基于 MAE 分布判断止损是太紧还是太松
+    - Take profit：基于 MFE 分布判断止盈是否过早
+    - 持仓时长：哪个区间胜率最高
+  - [ ] 前端：归因报表页面
+  - [ ] **关键约束**：归因系统**只产生报表**，不自动调整任何止损止盈或推荐参数
+- [ ] **验证**
+  - [ ] 录入橡胶持仓，验证 RU 阈值降低 + 关联品种进入监控
+  - [ ] 验证持仓冲突检测
+  - [ ] 验证数据腐烂提醒
+  - [ ] 验证推荐归因：模拟一个完整交易周期（开仓 → 持仓 → 平仓），验证 MAE/MFE/PnL 计算正确
+  - [ ] 验证月度报表生成正确
+
+---
+
+## Phase 7a: 成本模型 — 黑色系（2 周）
+
+### 目标
+构建成本模型框架 + 黑色系产业链（JM→J→RB）成本智能。**优先黑色系**因为产业链关系明确、公开数据相对充分。
+
+
+#### 数据来源策略（暂未购买付费源）
+
+进入此 Phase 时先评估降级方案的信号质量：
+- 公开源：交易所原料价格、统计局月度数据、企业财报、行业协会公开报告
+- LLM 辅助提取（接入 Phase 4.5 新闻管线）：从行业新闻抽取成本数据点
+- 手动维护：低频参数（人工水电、税率）放运营后台手动配置
+- 数据质量较粗，盈亏平衡价误差可能在 ±5%——前端必须明示数据来源和不确定度
+- **本 Phase 末尾评估**：若降级方案信号质量不足，再决定是否采购卓创/SMM/Mysteel
+
+#### 第 1 周：框架 + 黑色系成本配置
+
+- [ ] **数据模型**
+  - [ ] `models/commodity_config.py` — 品种配置表
+  - [ ] `models/cost_snapshot.py` — 成本快照表（含 P25/P50/P75/P90 分位数字段）
+  - [ ] Alembic 迁移
+- [ ] **成本模型框架**
+  - [ ] `services/cost_models/framework.py`
+    - `CostFormula` 基类：定义输入参数、计算逻辑、输出格式
+    - 支持链式计算（上游输出作为下游输入）
+    - **支持成本曲线分位数计算**：基于产能分布数据输出 P25/P50/P75/P90，不只是平均值
+  - [ ] `services/cost_models/cost_chain.py`
+    - 产业链计算：JM → J → RB 逐级计算
+    - 每一步：原料成本 + 加工费 + 损耗 + 运输 + 税费 = 单位成本
+  - [ ] `services/cost_models/snapshots.py`
+    - 每日快照调度任务
+    - 高频变量（原料价格）实时更新，低频变量（人工）季度更新
+  - [ ] `services/cost_models/news_extractor.py` — LLM 辅助从新闻抽取成本数据点
+- [ ] **黑色系成本配置**
+  - [ ] `services/cost_models/configs/coking_coal.py` — 焦煤成本
+  - [ ] `services/cost_models/configs/coke.py` — 焦炭成本（配煤比、炼焦、副产品）
+  - [ ] `services/cost_models/configs/iron_ore.py` — 铁矿石到岸成本（普氏/麦克 + 运费）
+  - [ ] `services/cost_models/configs/rebar.py` — 螺纹钢（高炉利润模型）
+  - [ ] `services/cost_models/configs/hot_coil.py` — 热卷（热轧加工费差异）
+- [ ] **板块模型**
+  - [ ] `services/sectors/ferrous.py` — 高炉利润 = RB - 1.6×I - 0.5×J - 加工费
+
+#### 第 2 周：信号集成 + 前端 + 数据源评估
+
+- [ ] **信号集成**
+  - [ ] 成本模型输出接入信号检测：
+    - 利润率 < -5% 持续 2 周 → `capacity_contraction` 信号
+    - 利润率由负转正 → `restart_expectation` 信号
+    - 价格跌破 P50 分位 → `median_pressure` 信号
+    - 价格跌破 P75/P90 分位 → `marginal_capacity_squeeze` 信号
+  - [ ] 新信号类型注册到评估器框架
+- [ ] **API**
+  - [ ] `api/cost_models.py`
+    - GET /cost-models/{symbol} — 当前成本分解 + 分位数
+    - GET /cost-models/{symbol}/history — 历史成本快照
+    - POST /cost-models/{symbol}/simulate — 动态调价计算
+    - GET /cost-models/{symbol}/chain — 产业链全景
+- [ ] **前端（黑色系）**
+  - [ ] 成本分解瀑布图组件
+  - [ ] 利润率趋势图组件 + 当前位置标注
+  - [ ] 盈亏平衡线（P75/P90）标注在价格图上
+  - [ ] 动态调价计算器（滑块/输入框，实时重算）
+  - [ ] 数据来源透明度：每个成本组件标注数据源 + 更新时间 + 不确定度
+- [ ] **数据质量评估**（本 Phase 关键产出）
+  - [ ] 对比成本模型计算的盈亏平衡价 vs 行业公开数据
+  - [ ] 评估信号触发的真实性（验证已知历史时点的成本压力是否被正确识别）
+  - [ ] 输出报告：决定是否采购付费数据源（卓创/SMM/Mysteel），以及优先采购哪个
+
+#### 验证
+- [ ] `cost_snapshots` 表每日有新记录，含完整分位数
+- [ ] 高炉利润模型与行业公开计算结果偏差 < 5%
+- [ ] 成本信号在历史关键时点（如 2021 年限产、2024 年产能调整）能正确触发
+- [ ] 前端成本页面数据正确展示
+
+---
+
+## Phase 7b: 成本模型 — 橡胶（1.5 周）
+
+### 目标
+基于 Phase 7a 的框架扩展橡胶（NR→RU）成本链。框架已就绪，主要工作是数据采集和品种特化。
+
+### 任务清单
+
+- [ ] **橡胶成本配置**
+  - [ ] `services/cost_models/configs/natural_rubber.py` — 天然胶（产区价格 + 运费 + 关税）
+  - [ ] `services/cost_models/configs/rubber_processed.py` — RU 加工成本
+    - 分级：乳胶 / 烟片 / 标胶
+    - 加工费 + 损耗率 + 仓储 + 税费
+  - [ ] 上下游链路：NR（产区现货）→ 进口加工 → RU（沪胶交割品）
+- [ ] **数据采集**
+  - [ ] 产区现货价格采集（青岛保税区、海南天胶、云南天胶）
+  - [ ] 泰国、印尼、马来西亚出口价（公开数据 + LLM 提取）
+  - [ ] 进口运费（Drewry、CCFI 公开指数）
+- [ ] **品种特化**
+  - [ ] 橡胶产能分布（东南亚为主）→ 成本分位数计算
+  - [ ] 季节性因素：开割/停割期对成本的影响
+- [ ] **前端**
+  - [ ] 橡胶成本页面（同黑色系结构）
+  - [ ] 增加产区季节性提示
+- [ ] **信号集成**
+  - [ ] 橡胶利润率信号
+  - [ ] 产区供给信号（与 Phase 4.5 新闻事件管线联动：产区天气、出口政策）
+- [ ] **验证**
+  - [ ] 橡胶盈亏平衡价合理性验证
+  - [ ] 历史几次明显的产区供给冲击（如 2019 年泰国干旱、2020 年疫情期间割胶停滞）能在系统中体现
+
+---
+
+## Phase 8: 场景推演（1 周）
+
+### 目标
+构建独立的异步场景模拟模块。
+
+### 任务清单
+
+- [ ] **推演引擎**
+  - [ ] `services/scenarios/monte_carlo.py`
+    - 基于传导图的价格路径模拟
+    - 参数：模拟次数、时间跨度、波动率假设
+  - [ ] `services/scenarios/what_if.py`
+    - 用户定义假设条件（如：铁矿石价格 +10%）
+    - 沿传导图计算下游影响
+  - [ ] `services/scenarios/simulator.py`
+    - 编排器：接收推演请求 → 执行模拟 → 生成报告
+    - 异步执行（不阻塞主链路）
+- [ ] **触发机制**
+  - [ ] 手动触发：`api/scenarios.py` POST 端点
+  - [ ] 条件触发：Alert Agent 在 `arbitrate` 级别时可请求推演
+  - [ ] 订阅 `scenario.requested` 事件
+- [ ] **报告生成**
+  - [ ] LLM 将数值结果翻译为可读的情景描述
+  - [ ] 输出：概率分布、关键路径、风险点、建议行动
+- [ ] **前端**
+  - [ ] 场景配置界面（选择品种、设定假设）
+  - [ ] 推演结果展示（概率分布图、传导路径图）
+  - [ ] 迭代式推演（调整假设 → 重新推演）
+- [ ] **验证**
+  - [ ] 手动触发橡胶场景推演，验证结果合理
+  - [ ] 验证异步执行不阻塞主预警流程
+
+---
+
+## Phase 9: Shadow Mode + 阈值校准 + LLM 反思 Agent（2 周）
+
+### 目标
+建立 A/B 框架（用于后续核心逻辑变更的安全验证）+ 完成置信度阈值的二级校准 + 上线 LLM 反思 Agent（月度生成假设，强制反证，人工评审）。
+
+### 第 1 周：Shadow Mode + 阈值校准
+
+- [ ] **Shadow Mode 基础设施**
+  - [ ] `models/shadow_runs.py` — Shadow 配置追踪表
+  - [ ] `models/shadow_signals.py` — Shadow 影子信号表
+  - [ ] Alembic 迁移
+  - [ ] `services/shadow/runner.py`
+    - 新逻辑订阅相同事件，跑出"假信号"写入 `shadow_signals` 表
+    - **不发预警**，只记录
+    - 支持配置：算法版本、参数 diff
+  - [ ] `services/shadow/comparator.py`
+    - 每日生成对比报告：信号数量差异、命中率差异（30 天滑窗）、关键样本案例
+    - 生产路径触发但 shadow 没触发，反之亦然
+  - [ ] `api/shadow.py` — Shadow 配置管理 + 报告查询
+- [ ] **置信度阈值二级校准**
+  - [ ] `services/calibration/threshold_calibrator.py`
+    - 每月统计 `预测置信度 vs 实际命中率` 的 reliability diagram
+    - 用 isotonic regression 或 Platt scaling 学习单调映射
+    - 输出建议的新阈值（85% / 60%）
+  - [ ] **不自动调整**：阈值变更走 `change_review_queue`，人工评审 + 确认后才生效
+  - [ ] 前端：校准曲线可视化页面
+- [ ] **首批 Shadow 应用场景**
+  - [ ] 校准公式参数变更（α₀ / β₀ 不同先验值的对比）
+  - [ ] 对抗引擎历史组合检验阈值（Jaccard 相似度 0.6 vs 0.7 vs 0.8）
+  - [ ] news_event 评估器的严重度门槛（≥3 vs ≥2）
+
+### 第 2 周：LLM 反思 Agent（新增 6.20）
+
+- [ ] **数据模型**
+  - [ ] `models/learning_hypotheses.py` — 假设追踪表
+    - 字段：hypothesis, supporting_evidence(jsonb), proposed_change, confidence, sample_size, counterevidence(jsonb), status, created_at
+    - status：proposed / reviewed / shadow_testing / validated / applied / rejected
+  - [ ] Alembic 迁移
+- [ ] **反思 Agent 实现**
+  - [ ] `services/learning/reflection_agent.py`
+    - 每月调度一次（**不是每日**，避免拟合短期噪声）
+    - 输入数据脱敏：不传交易金额，只传相对收益和命中标记
+  - [ ] 输入聚合：
+    - 上月所有信号 + 触发上下文（regime、行情、新闻）
+    - 上月所有推荐 + 实际结果（来自 Phase 6 归因）
+    - 用户反馈数据（来自 Phase 5 用户反馈）
+    - Concept Drift 状态（来自 Phase 3 drift_monitor）
+  - [ ] LLM Prompt：
+    - 任务：识别表现异常的信号、寻找未编码关联、假设当前 regime 下不适用的评估器
+    - **强制反证**：每个假设必须列出至少 2 个反证或替代解释
+  - [ ] 输出 Pydantic 模型强制：
+    ```python
+    class LearningHypothesis(BaseModel):
+        hypothesis: str
+        supporting_evidence: list[str]
+        proposed_change: str | None
+        confidence: float
+        counterevidence_considered: list[str]
+        sample_size: int
+    ```
+  - [ ] 输出过滤：含"立即"、"自动"、"无需审核"等词的假设直接拒绝
+  - [ ] 样本量门槛：`sample_size < 30` 标 `weak_evidence`
+  - [ ] 月度成本上限：单次反思调用 token 上限（避免烧钱）
+- [ ] **假设生命周期工作流**
+  - [ ] LLM 输出 → status=`proposed`，写入 `learning_hypotheses`
+  - [ ] 同时写入 `change_review_queue`（接 Phase 3 治理基础设施）
+  - [ ] 前端"假设报告"页面：列出本月所有假设 + 反证 + 状态
+  - [ ] 人工评审：approve / reject / refine
+  - [ ] approve 后转 status=`shadow_testing`，自动配置 Shadow Mode 跑 30 天
+  - [ ] Shadow 验证通过 + 性能优于现状 → status=`validated`
+  - [ ] **最终人工批准** → status=`applied`，进入生产
+- [ ] **关键约束验证**
+  - [ ] 任何 status != applied 的假设不影响主链路
+  - [ ] 单元测试：尝试用 status=proposed 的假设修改 calibration 表应失败
+  - [ ] 单元测试：LLM 直接修改任何主链路参数应失败
+- [ ] **验证**
+  - [ ] 同一信号事件被生产和 shadow 同时处理
+  - [ ] 30 天后能产出有效对比报告
+  - [ ] 置信度阈值校准在 reliability diagram 上明显改善
+  - [ ] 反思 Agent 月度调度正常，输出符合 Pydantic 结构
+  - [ ] 强制反证机制生效（无反证的假设被拒绝）
+  - [ ] 治理守卫拦截绕过审核的修改尝试
+
+---
+
+## 依赖关系
+
+```
+P0 ──→ P1 ──→ P2 ──→ P3 ──→ P4 ──→ P4.5 ──→ P5
+                │       │                        │
+                │       └─[governance]──────────┐│
+                │                                ↓↓
+                └──→ P6 [推荐归因]─────────────→ │
+                │                                │
+                └──→ P7a ──→ P7b ─────────────→ │
+                                                 │
+                                                 └──→ P8 ──→ P9 [反思 Agent]
+```
+
+- P0 → P1：后端骨架是迁移的前提
+- P1 → P2：核心 API + PIT 数据 + 合约元数据就绪后才能重构为事件驱动
+- P2 → P3：事件总线就绪后校准循环才能订阅信号事件
+- **P3 → 全局**：治理守卫（governance）在 P3 建立后，所有后续阶段的自动学习模块都依赖它
+- P3 → P4：校准数据 + Drift 监控为对抗引擎提供数据源（P4 冷启动期 warmup 模式）
+- P4 → P4.5：对抗引擎接入后才有清洁的事件流接 news_event 评估器
+- P4.5 → P5：news_event 评估器输出后 Alert Agent 才能处理事件类信号；P5 用户反馈学习依赖 Alert Agent
+- P5 → P6：用户反馈采集就绪后，推荐归因可以关联反馈数据
+- P6 推荐归因 → P9：反思 Agent 需要推荐 P&L / MAE / MFE 数据
+- P6 和 P7a/P7b 可与 P3-P5 并行开发（仅依赖 P2 的事件总线）
+- P8 依赖 P5（Alert Agent 可触发推演）和 P7b（成本模型提供推演参数）
+- P9 依赖 P3 (治理) + P5 (反馈) + P6 (归因) + P7a/b（成本信号）—— 所有数据源就绪后才能做反思
+
+## 里程碑
+
+| 里程碑 | 时间点 | 标志 |
+|--------|--------|------|
+| M1: 功能对等 | P1 完成（~3 周） | Zeus 后端完全替代 Causa TypeScript 后端，PIT + 合约元数据就绪 |
+| M2: 架构升级 | P2 完成（~4 周） | 事件驱动 + DB 驱动监控列表 |
+| M3: 自校准基础 | P3 完成（~6 周） | 校准 + Drift 监控 + 治理守卫就绪 |
+| M4: 智能升级 | P5 完成（~10 周） | 校准 + 对抗 + 新闻 + 混合决策 + 人机交互 + LLM 成本 + 用户反馈 |
+| M5: 推荐归因 | P6 完成（~11.5 周） | 推荐级 P&L / MAE / MFE 追踪，Goal B 数据基础就绪 |
+| M6: 产业智能 | P7b 完成（~15 周） | 成本模型完整接入信号系统 |
+| M7: 自我学习闭环 | P9 完成（~18 周） | Shadow Mode + 阈值校准 + LLM 反思 Agent，自我学习闭环全部就绪 |
+
+## 每阶段验证清单
+
+每个阶段完成后必须通过：
+
+1. `pytest` — 全部测试通过
+2. `docker compose up` — 所有服务健康（health 端点返回 200）
+3. 前端加载正常，数据从 Python 后端获取
+4. 新增功能的手动验证（具体项见各阶段）
+5. 无回归：之前阶段的功能仍然正常
