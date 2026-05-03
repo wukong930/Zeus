@@ -171,6 +171,71 @@ export interface CostQualityReport {
   limitations: string[];
 }
 
+export interface ScenarioSimulationRequest {
+  target_symbol: string;
+  shocks: Record<string, number>;
+  base_price?: number | null;
+  days: number;
+  simulations: number;
+  volatility_pct?: number | null;
+  drift_pct?: number;
+  seed?: number;
+  max_depth?: number;
+}
+
+export interface ScenarioPropagationPath {
+  root_symbol: string;
+  source_symbol: string;
+  target_symbol: string;
+  relationship: string;
+  elasticity: number;
+  input_shock: number;
+  impact: number;
+  depth: number;
+  lag_days: number;
+}
+
+export interface ScenarioImpact {
+  symbol: string;
+  direct_shock: number;
+  propagated_shock: number;
+  total_shock: number;
+  dominant_driver: string | null;
+  paths: ScenarioPropagationPath[];
+}
+
+export interface ScenarioReport {
+  scenario_id: string;
+  generated_at: string;
+  status: string;
+  target_symbol: string;
+  base_price: number;
+  what_if: {
+    shocks: Record<string, number>;
+    impacts: ScenarioImpact[];
+    key_paths: ScenarioPropagationPath[];
+    max_depth: number;
+  };
+  monte_carlo: {
+    target_symbol: string;
+    base_price: number;
+    days: number;
+    simulations: number;
+    volatility_pct: number;
+    drift_pct: number;
+    applied_shock: number;
+    terminal_distribution: Record<"p5" | "p25" | "p50" | "p75" | "p95", number>;
+    expected_terminal_price: number;
+    expected_return: number;
+    downside_probability: number;
+    sample_paths: number[][];
+    seed: number;
+  };
+  narrative: string;
+  risk_points: string[];
+  suggested_actions: string[];
+}
+
 export interface NewsEvent {
   id: string;
   source: string;
@@ -336,6 +401,16 @@ export async function fetchCostQualityReport(
   sector: "ferrous" | "rubber" = "ferrous"
 ): Promise<CostQualityReport> {
   return fetchJson<CostQualityReport>(`/api/cost-models/quality/${sector}`);
+}
+
+export async function runScenarioSimulation(
+  payload: ScenarioSimulationRequest
+): Promise<ScenarioReport> {
+  return fetchJson<ScenarioReport>("/api/scenarios/simulate", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(payload),
+  });
 }
 
 export async function submitAlertFeedback(

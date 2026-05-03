@@ -20,6 +20,7 @@ from app.services.alert_agent.router import route_alert
 from app.services.calibration.tracker import get_calibration_weight, track_signal_emission
 from app.services.scoring.engine import CombinedScore, apply_calibration_weight, score_recommendation
 from app.services.scoring.portfolio_fit import PositionGroup, RecommendationLeg
+from app.services.scenarios import ScenarioRequest, run_scenario_simulation
 from app.services.signals.detector import SignalDetector
 from app.services.signals.types import (
     CostSnapshotPoint,
@@ -458,6 +459,49 @@ async def handle_signal_scored(
             "related_assets": alert.related_assets,
         },
         source="alert-agent",
+        correlation_id=event.correlation_id,
+        session=session,
+    )
+
+
+async def handle_scenario_requested(
+    event: ZeusEvent,
+    session: AsyncSession | None = None,
+    *,
+    publisher: EventPublisher = publish,
+) -> ZeusEvent | None:
+    request_payload = event.payload.get("request", event.payload)
+    if not isinstance(request_payload, dict):
+        return None
+
+    report = run_scenario_simulation(
+        ScenarioRequest(
+            target_symbol=str(request_payload["target_symbol"]),
+            shocks={
+                str(symbol): float(shock)
+                for symbol, shock in dict(request_payload.get("shocks") or {}).items()
+            },
+            base_price=(
+                float(request_payload["base_price"])
+                if request_payload.get("base_price") is not None
+                else None
+            ),
+            days=int(request_payload.get("days", 20)),
+            simulations=int(request_payload.get("simulations", 1000)),
+            volatility_pct=(
+                float(request_payload["volatility_pct"])
+                if request_payload.get("volatility_pct") is not None
+                else None
+            ),
+            drift_pct=float(request_payload.get("drift_pct", 0.0)),
+            seed=int(request_payload.get("seed", 7)),
+            max_depth=int(request_payload.get("max_depth", 3)),
+        )
+    )
+    return await publisher(
+        "scenario.completed",
+        {"report": report.to_dict()},
+        source="scenario-simulator",
         correlation_id=event.correlation_id,
         session=session,
     )

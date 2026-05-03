@@ -7,6 +7,7 @@ from app.core.events import EventHandler, relay_pending_events, replay_unhandled
 from app.services.pipeline.handlers import (
     handle_market_update,
     handle_news_event,
+    handle_scenario_requested,
     handle_signal_detected,
     handle_signal_scored,
 )
@@ -21,6 +22,7 @@ PIPELINE_SUBSCRIPTIONS: tuple[tuple[str, EventHandler], ...] = (
     ("signal.detected", handle_signal_detected),
     ("signal.scored", handle_signal_scored),
     ("position.changed", handle_position_changed),
+    ("scenario.requested", handle_scenario_requested),
 )
 
 

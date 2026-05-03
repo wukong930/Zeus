@@ -684,30 +684,30 @@ Causa 的 `event_driven` 评估器实际上是纯技术面（gap + volume），*
 
 ### 任务清单
 
-- [ ] **推演引擎**
-  - [ ] `services/scenarios/monte_carlo.py`
+- [x] **推演引擎**
+  - [x] `services/scenarios/monte_carlo.py`
     - 基于传导图的价格路径模拟
     - 参数：模拟次数、时间跨度、波动率假设
-  - [ ] `services/scenarios/what_if.py`
+  - [x] `services/scenarios/what_if.py`
     - 用户定义假设条件（如：铁矿石价格 +10%）
     - 沿传导图计算下游影响
-  - [ ] `services/scenarios/simulator.py`
+  - [x] `services/scenarios/simulator.py`
     - 编排器：接收推演请求 → 执行模拟 → 生成报告
     - 异步执行（不阻塞主链路）
 - [ ] **触发机制**
-  - [ ] 手动触发：`api/scenarios.py` POST 端点
+  - [x] 手动触发：`api/scenarios.py` POST 端点
   - [ ] 条件触发：Alert Agent 在 `arbitrate` 级别时可请求推演
-  - [ ] 订阅 `scenario.requested` 事件
+  - [x] 订阅 `scenario.requested` 事件
 - [ ] **报告生成**
-  - [ ] LLM 将数值结果翻译为可读的情景描述
-  - [ ] 输出：概率分布、关键路径、风险点、建议行动
-- [ ] **前端**
-  - [ ] 场景配置界面（选择品种、设定假设）
-  - [ ] 推演结果展示（概率分布图、传导路径图）
-  - [ ] 迭代式推演（调整假设 → 重新推演）
-- [ ] **验证**
-  - [ ] 手动触发橡胶场景推演，验证结果合理
-  - [ ] 验证异步执行不阻塞主预警流程
+  - [ ] LLM 将数值结果翻译为可读的情景描述（当前为本地确定性叙事生成，待接 LLM Provider）
+  - [x] 输出：概率分布、关键路径、风险点、建议行动
+- [x] **前端**
+  - [x] 场景配置界面（选择品种、设定假设）
+  - [x] 推演结果展示（概率分布图、传导路径图）
+  - [x] 迭代式推演（调整假设 → 重新推演）
+- [x] **验证**
+  - [x] 手动触发橡胶场景推演，验证结果合理
+  - [x] 验证异步执行不阻塞主预警流程
 
 ---
 
