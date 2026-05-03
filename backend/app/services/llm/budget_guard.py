@@ -4,6 +4,7 @@ from datetime import date, datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.database import rollback_if_possible
 from app.models.llm_cache import LLMBudget
 
 
@@ -40,6 +41,7 @@ async def check_llm_budget(
             )
         ).first()
     except Exception:
+        await rollback_if_possible(session)
         return BudgetDecision(True, False, module, 0.0, None, "budget_lookup_failed")
     if row is None:
         return BudgetDecision(True, False, module, 0.0, None, "no_budget")
@@ -87,6 +89,7 @@ async def add_budget_spend(
             )
         ).first()
     except Exception:
+        await rollback_if_possible(session)
         return
     if row is None:
         return

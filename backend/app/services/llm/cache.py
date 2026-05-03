@@ -6,6 +6,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.database import rollback_if_possible
 from app.models.llm_cache import LLMCache
 from app.services.llm.types import LLMCompletionResult, LLMUsage
 
@@ -46,6 +47,7 @@ async def get_cached_completion(
             )
         ).first()
     except Exception:
+        await rollback_if_possible(session)
         return None
     if row is None:
         return None

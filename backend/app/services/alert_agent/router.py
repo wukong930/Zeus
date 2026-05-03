@@ -5,6 +5,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.database import rollback_if_possible
 from app.models.calibration import SignalCalibration
 from app.services.alert_agent.classifier import classify_alert
 from app.services.alert_agent.config import ConfidenceThresholds, load_confidence_thresholds
@@ -173,6 +174,7 @@ async def lacks_history(
             )
         ).first()
     except Exception:
+        await rollback_if_possible(session)
         return False
     return row is None
 

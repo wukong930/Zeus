@@ -6,6 +6,7 @@ import httpx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.database import rollback_if_possible
 from app.core.config import Settings, get_settings
 from app.models.llm_config import LLMConfig as LLMConfigModel
 from app.services.llm.anthropic import AnthropicProvider
@@ -94,6 +95,7 @@ async def get_active_llm_config(
             )
         ).first()
     except Exception:
+        await rollback_if_possible(session)
         return None
 
     if row is None:

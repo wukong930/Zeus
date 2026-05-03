@@ -5,6 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.position import Position
+from app.services.positions.threshold_modifier import update_position_threshold_cache
 
 STALE_WARNING_DAYS = 7
 STALE_DEGRADE_DAYS = 14
@@ -52,9 +53,12 @@ async def check_position_freshness(
                 row.stale_since = effective_at
         if age >= timedelta(days=degrade_days):
             degraded_count += 1
-            row.data_mode = "stale_no_position"
+            if row.data_mode != "stale_no_position":
+                row.data_mode = "stale_no_position"
+                update_position_threshold_cache(row)
         elif row.data_mode == "stale_no_position":
             row.data_mode = "position_aware"
+            update_position_threshold_cache(row)
 
     await session.flush()
     return FreshnessResult(

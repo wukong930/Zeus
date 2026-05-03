@@ -33,8 +33,16 @@ class FakeSession:
     def add(self, row: object) -> None:
         self.rows.append(row)
 
+    async def scalars(self, _):
+        return FakeScalars()
+
     async def flush(self) -> None:
         self.flush_count += 1
+
+
+class FakeScalars:
+    def first(self):
+        return None
 
 
 def _market_update_event() -> ZeusEvent:

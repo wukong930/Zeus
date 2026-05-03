@@ -39,3 +39,9 @@ async def ping_database() -> bool:
         return True
     except Exception:
         return False
+
+
+async def rollback_if_possible(session: AsyncSession | None) -> None:
+    rollback = getattr(session, "rollback", None)
+    if rollback is not None:
+        await rollback()

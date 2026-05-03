@@ -2,10 +2,33 @@ from datetime import datetime, timezone
 
 from app.services.news.dedup import news_dedup_hash, normalize_title
 from app.models.news_events import NewsEvent
-from app.services.news.event_publisher import event_row_is_evaluable, jsonable_news_payload
+from app.services.news.event_publisher import event_row_is_evaluable, jsonable_news_payload, upsert_news_event
 from app.services.news.extractor import extract_news_event_sync
 from app.services.news.quality import is_evaluable_news_event, requires_manual_confirmation
 from app.services.news.types import RawNewsItem
+
+
+class FakeScalars:
+    def __init__(self, row=None) -> None:
+        self._row = row
+
+    def first(self):
+        return self._row
+
+
+class FakeSession:
+    def __init__(self) -> None:
+        self.rows: list[object] = []
+        self.flush_count = 0
+
+    async def scalars(self, _):
+        return FakeScalars()
+
+    def add(self, row: object) -> None:
+        self.rows.append(row)
+
+    async def flush(self) -> None:
+        self.flush_count += 1
 
 
 def test_news_extractor_maps_commodity_event_fields() -> None:
@@ -97,3 +120,29 @@ def test_news_event_publish_gate_detects_evaluable_transition() -> None:
     row.requires_manual_confirmation = False
 
     assert event_row_is_evaluable(row)
+
+
+async def test_new_manual_confirmation_event_is_not_published() -> None:
+    session = FakeSession()
+
+    row, created, should_publish = await upsert_news_event(  # type: ignore[arg-type]
+        session,
+        {
+            "source": "exchange_announcements",
+            "title": "交易所提示铁矿石合约交易风险",
+            "summary": "单源事件等待确认。",
+            "published_at": datetime(2026, 5, 3, tzinfo=timezone.utc),
+            "event_type": "policy",
+            "affected_symbols": ["I"],
+            "direction": "mixed",
+            "severity": 4,
+            "time_horizon": "immediate",
+            "llm_confidence": 0.68,
+            "source_count": 1,
+            "verification_status": "single_source",
+        },
+    )
+
+    assert created is True
+    assert row.requires_manual_confirmation is True
+    assert should_publish is False

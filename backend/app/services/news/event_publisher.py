@@ -74,7 +74,7 @@ async def upsert_news_event(
     row = NewsEvent(**data)
     session.add(row)
     await session.flush()
-    return row, True, True
+    return row, True, event_row_is_evaluable(row)
 
 
 def normalize_news_payload(payload: StructuredNewsEvent | BaseModel | dict[str, Any]) -> dict[str, Any]:

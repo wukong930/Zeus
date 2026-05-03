@@ -13,6 +13,7 @@ from app.services.positions.propagation_activator import infer_category_from_sym
 from app.services.positions.threshold_modifier import (
     get_position_aware_thresholds,
     get_position_threshold_multiplier,
+    refresh_position_threshold_cache,
     update_position_threshold_cache,
 )
 from app.services.scoring.portfolio_fit import PositionGroup, RecommendationLeg
@@ -99,6 +100,18 @@ def test_position_threshold_cache_lowers_held_symbol_thresholds() -> None:
     update_position_threshold_cache(_position(id=position.id, status="closed"))
 
 
+async def test_refresh_position_threshold_cache_hydrates_existing_open_positions() -> None:
+    position = _position()
+    session = FakeSession(rows=[position])
+
+    await refresh_position_threshold_cache(session)  # type: ignore[arg-type]
+
+    assert get_position_threshold_multiplier(("RU",)) == 0.8
+
+    await refresh_position_threshold_cache(FakeSession(rows=[]))  # type: ignore[arg-type]
+    assert get_position_threshold_multiplier(("RU",)) == 1.0
+
+
 def test_position_conflict_warning_marks_reverse_signal() -> None:
     warnings = position_conflict_warnings(
         [RecommendationLeg(asset="RU", direction="short")],
@@ -138,12 +151,14 @@ async def test_position_freshness_marks_stale_and_degrades_old_positions() -> No
     as_of = datetime(2026, 5, 20, tzinfo=timezone.utc)
     position = _position(last_updated_at=as_of - timedelta(days=16))
     session = FakeSession(rows=[position])
+    update_position_threshold_cache(position)
 
     result = await check_position_freshness(session, as_of=as_of)  # type: ignore[arg-type]
 
     assert result.stale == 1
     assert result.degraded == 1
     assert position.data_mode == "stale_no_position"
+    assert get_position_threshold_multiplier(("RU",)) == 1.0
 
 
 def test_phase6_symbol_category_fallback_covers_rubber() -> None:

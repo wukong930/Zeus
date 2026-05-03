@@ -28,7 +28,7 @@ from app.services.pipeline.runtime import get_event_pipeline
 async def lifespan(_: FastAPI):
     scheduler = get_scheduler()
     event_pipeline = get_event_pipeline()
-    event_pipeline.start()
+    await event_pipeline.start()
     scheduler.start()
     yield
     scheduler.shutdown()

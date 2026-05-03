@@ -3,7 +3,7 @@ import logging
 from collections.abc import Callable
 
 from app.core.database import AsyncSessionLocal
-from app.core.events import EventHandler, subscribe
+from app.core.events import EventHandler, relay_pending_events, replay_unhandled_events, subscribe
 from app.services.pipeline.handlers import (
     handle_market_update,
     handle_news_event,
@@ -11,6 +11,7 @@ from app.services.pipeline.handlers import (
     handle_signal_scored,
 )
 from app.services.positions.events import handle_position_changed
+from app.services.positions.threshold_modifier import refresh_position_threshold_cache
 
 logger = logging.getLogger(__name__)
 
@@ -34,11 +35,22 @@ class EventPipelineRuntime:
         self._stop_event: asyncio.Event | None = None
         self._tasks: list[asyncio.Task] = []
 
-    def start(self) -> None:
+    async def start(self) -> None:
         if self._tasks:
             return
 
+        async with AsyncSessionLocal() as session:
+            await refresh_position_threshold_cache(session)
+
         self._stop_event = asyncio.Event()
+        self._tasks.append(
+            asyncio.create_task(
+                relay_pending_events(
+                    session_factory=AsyncSessionLocal,
+                    stop_event=self._stop_event,
+                )
+            )
+        )
         for channel, handler in self._subscriptions:
             self._tasks.append(
                 asyncio.create_task(
@@ -50,7 +62,14 @@ class EventPipelineRuntime:
                     )
                 )
             )
-        logger.info("Started %s event pipeline subscriptions", len(self._tasks))
+        async with AsyncSessionLocal() as session:
+            replayed = await replay_unhandled_events(
+                session,
+                channels=tuple(channel for channel, _ in self._subscriptions),
+            )
+        if replayed:
+            logger.info("Replayed %s unhandled published event(s)", replayed)
+        logger.info("Started %s event pipeline tasks", len(self._tasks))
 
     async def stop(self) -> None:
         if not self._tasks:

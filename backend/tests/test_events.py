@@ -3,7 +3,7 @@ from uuid import UUID
 import pytest
 
 from app.api.alerts import format_sse_event
-from app.core.events import ZeusEvent, dispatch_event, publish
+from app.core.events import ZeusEvent, dispatch_event, publish, publish_pending_events
 
 
 class FakeRedis:
@@ -23,8 +23,19 @@ class FakeSession:
     def add(self, row: object) -> None:
         self.rows.append(row)
 
+    async def scalars(self, _):
+        return FakeScalars([row for row in self.rows if getattr(row, "status", None) == "pending"])
+
     async def flush(self) -> None:
         self.flush_count += 1
+
+
+class FakeScalars:
+    def __init__(self, rows: list[object]) -> None:
+        self._rows = rows
+
+    def all(self) -> list[object]:
+        return self._rows
 
 
 def test_zeus_event_round_trips_json() -> None:
@@ -57,7 +68,7 @@ def test_format_sse_event_uses_alert_channel_and_json_payload() -> None:
     assert payload.endswith("\n\n")
 
 
-async def test_publish_sends_to_redis_and_records_audit() -> None:
+async def test_publish_with_session_records_pending_outbox_event() -> None:
     redis = FakeRedis()
     session = FakeSession()
 
@@ -69,11 +80,32 @@ async def test_publish_sends_to_redis_and_records_audit() -> None:
         redis_client=redis,  # type: ignore[arg-type]
     )
 
+    assert redis.messages == []
+    assert session.rows[0].status == "pending"
+    assert session.rows[0].event_id == event.id
+    assert session.flush_count == 1
+
+
+async def test_publish_pending_events_emits_and_marks_published() -> None:
+    redis = FakeRedis()
+    session = FakeSession()
+
+    event = await publish(
+        "market.update",
+        {"job_id": "ingest"},
+        source="scheduler",
+        session=session,  # type: ignore[arg-type]
+    )
+
+    published = await publish_pending_events(
+        session,  # type: ignore[arg-type]
+        redis_client=redis,  # type: ignore[arg-type]
+    )
+
+    assert published == 1
     assert redis.messages[0][0] == "market.update"
     assert ZeusEvent.from_json(redis.messages[0][1]).id == event.id
     assert session.rows[0].status == "published"
-    assert session.rows[0].event_id == event.id
-    assert session.flush_count == 1
 
 
 async def test_dispatch_event_records_handled_status() -> None:

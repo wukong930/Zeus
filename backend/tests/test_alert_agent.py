@@ -3,9 +3,20 @@ from datetime import datetime, timezone
 from app.models.alert import Alert
 from app.models.alert_agent import AlertDedupCache
 from app.services.alert_agent.classifier import classify_alert
-from app.services.alert_agent.dedup import signal_direction
+from app.services.alert_agent.dedup import check_alert_dedup, signal_direction
 from app.services.alert_agent.human_decision import apply_decision_to_alert
-from app.services.alert_agent.router import route_alert
+from app.services.alert_agent.router import lacks_history, route_alert
+
+
+class FailingSession:
+    def __init__(self) -> None:
+        self.rollback_count = 0
+
+    async def scalars(self, _):
+        raise RuntimeError("db failed")
+
+    async def rollback(self) -> None:
+        self.rollback_count += 1
 
 
 def test_classifier_marks_spread_signal_as_l3() -> None:
@@ -59,6 +70,33 @@ async def test_router_requires_confirmation_for_low_confidence() -> None:
     assert decision.confidence_tier == "confirm"
     assert decision.route == "confirm"
     assert decision.human_action_required is True
+
+
+async def test_lacks_history_rolls_back_after_lookup_failure() -> None:
+    session = FailingSession()
+
+    result = await lacks_history(
+        session,  # type: ignore[arg-type]
+        signal={"signal_type": "momentum"},
+        context={"category": "ferrous", "regime": "normal"},
+    )
+
+    assert result is False
+    assert session.rollback_count == 1
+
+
+async def test_dedup_rolls_back_after_lookup_failure() -> None:
+    session = FailingSession()
+
+    decision = await check_alert_dedup(
+        session,  # type: ignore[arg-type]
+        signal={"signal_type": "momentum", "title": "RB bullish"},
+        context={},
+        score={"combined": 80},
+    )
+
+    assert decision.suppressed is False
+    assert session.rollback_count == 1
 
 
 def test_signal_direction_extracts_bullish_and_bearish_text() -> None:

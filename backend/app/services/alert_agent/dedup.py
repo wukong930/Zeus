@@ -5,6 +5,7 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.database import rollback_if_possible
 from app.models.alert import Alert
 from app.models.alert_agent import AlertDedupCache
 from app.services.signals.outcomes import direction_from_signal
@@ -58,6 +59,7 @@ async def check_alert_dedup(
             )
         ).first()
     except Exception:
+        await rollback_if_possible(session)
         return AlertDedupDecision(False, symbol=symbol, direction=direction, evaluator=evaluator)
 
     if same_key is not None:
@@ -133,7 +135,8 @@ async def record_alert_emitted(
             )
         ).first()
     except Exception:
-        return
+        await rollback_if_possible(session)
+        raise
 
     if row is None:
         row = AlertDedupCache(
@@ -174,6 +177,7 @@ async def daily_limit_reached(
             )
         )
     except Exception:
+        await rollback_if_possible(session)
         return False
     return int(count or 0) >= daily_limit
 

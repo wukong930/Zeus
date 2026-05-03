@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.database import rollback_if_possible
 from app.models.alert_agent import AlertAgentConfig
 
 
@@ -24,6 +25,7 @@ async def load_confidence_thresholds(session: AsyncSession | None) -> Confidence
             )
         ).first()
     except Exception:
+        await rollback_if_possible(session)
         return ConfidenceThresholds()
     if row is None:
         return ConfidenceThresholds()

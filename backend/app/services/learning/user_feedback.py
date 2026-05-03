@@ -6,6 +6,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.database import rollback_if_possible
 from app.models.alert import Alert
 from app.models.user_feedback import UserFeedback
 
@@ -82,6 +83,7 @@ async def feedback_hint_for_signal(
     try:
         summary = await feedback_summary_by_signal_type(session, signal_type=signal_type)
     except Exception:
+        await rollback_if_possible(session)
         return None
     total = summary.agree_count + summary.disagree_count + summary.uncertain_count
     if total < minimum_feedback or summary.disagree_count <= summary.agree_count:
