@@ -122,6 +122,24 @@ body {
   rx: 2;
 }
 
+.causal-web-flow .causal-minimap {
+  display: none;
+}
+
+@media (min-width: 1280px) {
+  .causal-web-flow .causal-minimap {
+    display: block;
+  }
+}
+
+.causal-stage-backdrop {
+  z-index: 0;
+}
+
+.causal-stage-band {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+
 .causal-node-hex {
   clip-path: polygon(25% 6%, 75% 6%, 100% 50%, 75% 94%, 25% 94%, 0 50%);
 }
@@ -129,6 +147,25 @@ body {
 @keyframes causal-flow-dash {
   to {
     stroke-dashoffset: -26;
+  }
+}
+
+.causal-node-scan {
+  animation: causal-node-scan 2.4s ease-in-out infinite;
+}
+
+@keyframes causal-node-scan {
+  0% {
+    transform: translateY(0);
+    opacity: 0.25;
+  }
+  50% {
+    transform: translateY(56px);
+    opacity: 0.8;
+  }
+  100% {
+    transform: translateY(0);
+    opacity: 0.25;
   }
 }
 

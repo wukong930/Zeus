@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { HEARTBEAT_STATE, REGIME_LABEL } from "@/data/mock";
 import { cn } from "@/lib/utils";
 
@@ -12,6 +13,17 @@ const dot = (status: "healthy" | "warning" | "alert") =>
 
 export function HeartbeatBar() {
   const s = HEARTBEAT_STATE;
+  const [clock, setClock] = useState("--:--:--");
+
+  useEffect(() => {
+    const updateClock = () => {
+      setClock(new Date().toLocaleTimeString("en-GB", { timeZone: "Asia/Shanghai" }));
+    };
+    updateClock();
+    const timer = window.setInterval(updateClock, 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+
   return (
     <div className="h-8 w-full bg-bg-base border-b border-border-subtle flex items-center gap-5 px-5 text-caption text-text-muted overflow-x-auto">
       <Item dotClass={dot("healthy")} label="Data" value={`${s.dataAge} ago`} />
@@ -28,7 +40,7 @@ export function HeartbeatBar() {
       />
       <Item dotClass={dot("healthy")} label="Regime" value={REGIME_LABEL[s.regime] ?? s.regime} />
       <div className="ml-auto text-text-muted">
-        <span className="font-mono tabular-nums">{new Date().toLocaleTimeString("en-GB")}</span>
+        <span className="font-mono tabular-nums">{clock}</span>
       </div>
     </div>
   );
