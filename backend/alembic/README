@@ -1,0 +1,6 @@
+Alembic migration environment for Zeus.
+
+Create migrations from the backend directory:
+
+  alembic revision --autogenerate -m "describe change"
+  alembic upgrade head

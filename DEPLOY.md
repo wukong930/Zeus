@@ -46,13 +46,14 @@ vercel git connect
 
 之后 `git push` 会自动触发 Vercel 部署。
 
-## 环境变量（暂无需要）
+## 环境变量
 
-当前是纯前端原型，所有数据来自 `src/data/mock.ts`，**无需任何环境变量**。
+当前前端仍可使用 `src/data/mock.ts` 独立运行。Phase 0 已加入 Python 后端骨架，如需联调 API 代理可配置：
 
-未来 Phase 1 引入 Python 后端后才需要：
 - `NEXT_PUBLIC_API_URL` — Python FastAPI 地址
-- `NEXT_PUBLIC_WS_URL` — SSE/WebSocket 端点
+- `BACKEND_INTERNAL_URL` — Next.js rewrite 在服务端访问后端的地址
+
+本地 Docker Compose 默认会把 `/api/*` 从 Next.js 代理到 `http://backend:8000/api/*`。
 
 ## 验证部署
 

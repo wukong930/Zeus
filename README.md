@@ -20,9 +20,9 @@ Zeus 是 Causa 的下一代演进，目标：从"硬编码线性管道"升级为
 
 **✅ 设计完成**：4 份核心文档总计约 4500 行，定义了从架构到产品到执行到视觉的全套规范。
 
-**🚧 前端原型完成**：全部 12 个页面 + 9 个领域组件 + 完整设计系统的可交互演示（纯前端，mock 数据）。
+**🚧 前端原型完成**：全部 12 个页面 + 9 个领域组件 + 完整设计系统的可交互演示（当前仍使用 mock 数据）。
 
-**⏳ 后端待开发**：Python FastAPI 后端将分 12 个 Phase（约 18 周）实施。
+**🚧 Phase 0 后端骨架完成**：FastAPI 入口、健康检查、配置管理、SQLAlchemy async engine、Redis 连接、Alembic 骨架、Docker Compose 已就位。
 
 ## 快速开始
 
@@ -31,6 +31,15 @@ cd frontend
 npm install
 npm run dev
 # 访问 http://localhost:3000
+```
+
+完整本地栈：
+
+```bash
+cp .env.example .env
+docker compose up --build
+# Frontend: http://localhost:3000
+# Backend health: http://localhost:8000/api/health
 ```
 
 ## 设计文档
@@ -80,9 +89,10 @@ npm run dev
 - Framer Motion + Lucide Icons
 - cmdk + Recharts + ReactFlow
 
-**后端**（设计阶段）：
+**后端**（Phase 0 骨架已实现）：
 - Python FastAPI + SQLAlchemy + Alembic
-- PostgreSQL 16 + Redis Pub/Sub + Weaviate
+- PostgreSQL 16 + pgvector + Redis Pub/Sub
+- Weaviate 保留为可选 profile，默认向量检索方向为 pgvector
 - APScheduler + multi-LLM (Anthropic/OpenAI/DeepSeek)
 
 ## License

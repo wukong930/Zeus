@@ -62,31 +62,31 @@
 
 ### 任务清单
 
-- [ ] 初始化 Git 仓库，创建 monorepo 结构 (`frontend/` + `backend/`)
-- [ ] **后端骨架**
-  - [ ] 创建 `backend/pyproject.toml`，安装核心依赖：
+- [x] 初始化 Git 仓库，创建 monorepo 结构 (`frontend/` + `backend/`)
+- [x] **后端骨架**
+  - [x] 创建 `backend/pyproject.toml`，安装核心依赖：
     - fastapi, uvicorn, sqlalchemy[asyncio], asyncpg, alembic
     - redis[hiredis], pydantic-settings, httpx
     - pandas, numpy, scipy, statsmodels
     - vectorbt, dowhy, akshare, tushare
-  - [ ] 创建 `backend/app/main.py`（FastAPI 入口 + CORS + lifespan）
-  - [ ] 创建 `backend/app/core/config.py`（pydantic-settings 配置）
-  - [ ] 创建 `backend/app/core/database.py`（SQLAlchemy async engine + session）
-  - [ ] 创建 `backend/app/core/redis.py`（Redis 连接池）
-  - [ ] 创建 `backend/app/api/health.py`（健康检查端点）
-  - [ ] 初始化 Alembic（`alembic init`）
-  - [ ] 创建 `backend/Dockerfile`（Python 3.11-slim, non-root user）
-- [ ] **前端骨架**
-  - [ ] 从 Causa 复制前端代码到 `frontend/`
-  - [ ] 修改 `next.config.ts`：API 代理指向 Python 后端
-  - [ ] 验证前端可用 mock 数据正常渲染
-- [ ] **基础设施**
-  - [ ] 创建 `docker-compose.yml`：Postgres + Redis + Weaviate + Backend + Frontend
-  - [ ] 创建 `.env.example`
-  - [ ] 创建 `CLAUDE.md`（项目约定）
+  - [x] 创建 `backend/app/main.py`（FastAPI 入口 + CORS + lifespan）
+  - [x] 创建 `backend/app/core/config.py`（pydantic-settings 配置）
+  - [x] 创建 `backend/app/core/database.py`（SQLAlchemy async engine + session）
+  - [x] 创建 `backend/app/core/redis.py`（Redis 连接池）
+  - [x] 创建 `backend/app/api/health.py`（健康检查端点）
+  - [x] 初始化 Alembic（`alembic init`）
+  - [x] 创建 `backend/Dockerfile`（Python 3.11-slim, non-root user）
+- [x] **前端骨架**
+  - [x] 从 Causa 复制前端代码到 `frontend/`
+  - [x] 修改 `next.config.ts`：API 代理指向 Python 后端
+  - [x] 验证前端可用 mock 数据正常渲染
+- [x] **基础设施**
+  - [x] 创建 `docker-compose.yml`：Postgres + Redis + Backend + Frontend（Weaviate 保留为可选 profile；默认 pgvector）
+  - [x] 创建 `.env.example`
+  - [x] 创建 `CLAUDE.md`（项目约定）
 - [ ] **验证**
   - [ ] `docker compose up` 全部服务健康
-  - [ ] `GET /api/health` 返回 200
+  - [x] `GET /api/health` 返回 200
   - [ ] 前端首页可访问
 
 ### 产出文件

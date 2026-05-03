@@ -12,11 +12,24 @@
 .env*
 !.env.example
 
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.venv/
+venv/
+*.egg-info/
+
 # Vercel
 .vercel
 
 # Node (in case anything leaks to root)
 node_modules/
+
+# Docker volumes / local build output
+dist/
+build/
 
 # Claude Code internal
 .claude/
