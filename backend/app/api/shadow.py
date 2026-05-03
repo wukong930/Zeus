@@ -14,6 +14,10 @@ from app.services.calibration.threshold_calibrator import (
     enqueue_threshold_review,
     generate_threshold_calibration_report,
 )
+from app.services.shadow.applications import (
+    create_initial_shadow_applications,
+    initial_shadow_application_specs,
+)
 from app.services.shadow.comparator import compare_shadow_run
 from app.services.shadow.runner import create_shadow_run, stop_shadow_run
 
@@ -26,6 +30,26 @@ class ShadowRunCreate(BaseModel):
     config_diff: dict[str, Any] = Field(default_factory=dict)
     created_by: str | None = None
     notes: str | None = None
+
+
+@router.get("/applications/initial")
+async def list_initial_shadow_applications() -> list[dict[str, Any]]:
+    return [spec.to_dict() for spec in initial_shadow_application_specs()]
+
+
+@router.post("/applications/initial", status_code=status.HTTP_201_CREATED)
+async def create_initial_shadow_applications_endpoint(
+    created_by: str | None = None,
+    days: int = Query(default=30, ge=1, le=120),
+    session: AsyncSession = Depends(get_db),
+) -> list[dict[str, Any]]:
+    rows = await create_initial_shadow_applications(
+        session,
+        created_by=created_by,
+        days=days,
+    )
+    await session.commit()
+    return [shadow_run_to_dict(row) for row in rows]
 
 
 @router.get("/runs")

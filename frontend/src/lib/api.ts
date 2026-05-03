@@ -307,6 +307,8 @@ export interface ThresholdCalibrationReport {
   misses: number;
   brier_score: number | null;
   expected_calibration_error: number | null;
+  projected_calibration_error: number | null;
+  calibration_error_improvement: number | null;
   bins: ReliabilityBin[];
   isotonic_curve: IsotonicPoint[];
   current_thresholds: Record<"auto" | "notify", number>;

@@ -11,8 +11,13 @@ from app.services.calibration.threshold_calibrator import (
     build_threshold_calibration_report,
     enqueue_threshold_review,
 )
+from app.services.shadow.applications import initial_shadow_application_specs
 from app.services.shadow.comparator import build_shadow_comparison_report
-from app.services.shadow.runner import run_shadow_for_event, shadow_threshold_config
+from app.services.shadow.runner import (
+    run_shadow_for_event,
+    shadow_context_payload,
+    shadow_threshold_config,
+)
 
 
 class FakeScalars:
@@ -93,6 +98,32 @@ def test_shadow_threshold_config_clamps_experiment_values() -> None:
     assert config.min_combined_score == 100.0
 
 
+def test_initial_shadow_application_specs_cover_first_use_cases() -> None:
+    specs = initial_shadow_application_specs()
+    names = {spec.name for spec in specs}
+
+    assert "calibration-prior-alpha2-beta6" in names
+    assert "adversarial-jaccard-0.6" in names
+    assert "adversarial-jaccard-0.8" in names
+    assert "news-event-severity-ge-2" in names
+    assert "news-event-severity-ge-3" in names
+
+
+def test_news_shadow_context_filters_by_configured_severity() -> None:
+    context = {
+        "symbol1": "RU",
+        "category": "rubber",
+        "news_events": [
+            {"id": "low", "severity": 2},
+            {"id": "high", "severity": 4},
+        ],
+    }
+
+    filtered = shadow_context_payload(context, {"news_event_min_severity": 3})
+
+    assert [item["id"] for item in filtered["news_events"]] == ["high"]
+
+
 def test_threshold_calibrator_builds_reliability_curve_and_suggestions() -> None:
     rows = (
         [_track(0.90, "hit") for _ in range(6)]
@@ -114,6 +145,8 @@ def test_threshold_calibrator_builds_reliability_curve_and_suggestions() -> None
     assert report.hits == 11
     assert report.suggested_thresholds == {"auto": 0.9, "notify": 0.65}
     assert report.review_required is True
+    assert report.projected_calibration_error is not None
+    assert report.calibration_error_improvement is not None
     assert report.bins[3].samples == 8
     assert report.isotonic_curve[-1].calibrated_probability == 1.0
 

@@ -14,6 +14,10 @@ from app.models.shadow_signals import ShadowSignal
 from app.services.alert_agent.config import ConfidenceThresholds
 from app.services.alert_agent.dedup import combined_score, primary_symbol
 from app.services.calibration.tracker import get_calibration_weight
+from app.services.calibration.updater import get_active_calibration
+from app.services.calibration.weight_adjuster import calculate_bayesian_weight
+from app.services.adversarial.historical_combo import evaluate_historical_combo
+from app.services.adversarial.engine import load_historical_combo_candidates, signal_type_set
 from app.services.pipeline.handlers import (
     DEFAULT_ACCOUNT_NET_VALUE,
     DEFAULT_MARGIN_REQUIRED,
@@ -124,7 +128,11 @@ async def run_shadow_for_event(
     *,
     detector: SignalDetector | None = None,
 ) -> ShadowRunResult:
-    candidates = await _signal_candidates_from_event(event, detector=detector)
+    candidates = await _signal_candidates_from_event(
+        event,
+        detector=detector,
+        config_diff=run.config_diff,
+    )
     written = 0
     would_emit = 0
     for signal, context, score_payload in candidates:
@@ -154,7 +162,12 @@ async def record_shadow_signal(
     thresholds = shadow_threshold_config(run.config_diff)
     confidence = float(signal.get("confidence") or 0)
     score_value = combined_score(score)
-    would_emit = confidence >= thresholds.min_confidence and score_value >= thresholds.min_combined_score
+    suppressed = bool(score.get("shadow_suppressed", False))
+    would_emit = (
+        not suppressed
+        and confidence >= thresholds.min_confidence
+        and score_value >= thresholds.min_combined_score
+    )
     row = ShadowSignal(
         shadow_run_id=run.id,
         source_event_type=event.channel,
@@ -169,7 +182,12 @@ async def record_shadow_signal(
         threshold=thresholds.min_confidence,
         production_signal_track_id=_optional_uuid(score.get("signal_track_id")),
         production_alert_id=_optional_uuid(score.get("alert_id")),
-        reason=_shadow_reason(confidence, score_value, thresholds),
+        reason=_shadow_reason(
+            confidence,
+            score_value,
+            thresholds,
+            suppressed=suppressed,
+        ),
         signal_payload=jsonable(signal),
         context_payload=jsonable(context),
         score_payload=jsonable(score),
@@ -202,6 +220,7 @@ async def _signal_candidates_from_event(
     event: ZeusEvent,
     *,
     detector: SignalDetector | None,
+    config_diff: dict[str, Any] | None = None,
 ) -> list[tuple[dict[str, Any], dict[str, Any], dict[str, Any] | None]]:
     payload = event.payload
     if event.channel in {"signal.detected", "signal.scored"}:
@@ -238,12 +257,13 @@ async def _signal_candidates_from_event(
     candidates: list[tuple[dict[str, Any], dict[str, Any], dict[str, Any] | None]] = []
     signal_types = NEWS_EVENT_SIGNAL_TYPES if event.channel == "news.event" else None
     for raw_context in contexts_payload:
-        context = trigger_context_from_payload(raw_context)
+        shadow_context = shadow_context_payload(raw_context, config_diff)
+        context = trigger_context_from_payload(shadow_context)
         context_payload = jsonable(context)
-        if raw_context.get("regime") is not None:
-            context_payload["regime"] = raw_context["regime"]
-        if raw_context.get("regime_at_emission") is not None:
-            context_payload["regime_at_emission"] = raw_context["regime_at_emission"]
+        if shadow_context.get("regime") is not None:
+            context_payload["regime"] = shadow_context["regime"]
+        if shadow_context.get("regime_at_emission") is not None:
+            context_payload["regime_at_emission"] = shadow_context["regime_at_emission"]
         for result in await signal_detector.detect(context, signal_types=signal_types):
             candidates.append((jsonable(result), context_payload, None))
     return candidates
@@ -264,11 +284,33 @@ async def _score_signal(
         category=category,
         regime=regime,
     )
+    calibration_weight = await _shadow_calibration_weight(
+        session,
+        run.config_diff,
+        signal_type=str(signal.get("signal_type") or "unknown"),
+        category=category,
+        regime=regime,
+        default_weight=calibration_weight,
+    )
     calibration_weight = _override_calibration_weight(run.config_diff, signal, calibration_weight)
+    adversarial_payload = await _shadow_adversarial_payload(
+        session,
+        run.config_diff,
+        signal=signal,
+        context=context,
+        category=category,
+        regime=regime,
+    )
+    confidence_multiplier = float(adversarial_payload.get("confidence_multiplier", 1.0))
+    effective_signal = dict(signal)
+    effective_signal["confidence"] = max(
+        0.0,
+        min(1.0, float(signal.get("confidence") or 0) * confidence_multiplier),
+    )
     base_score = score_recommendation(
-        spread_info=_spread_info_from_payload(signal.get("spread_info")),
-        confidence=float(signal.get("confidence") or 0),
-        legs=recommendation_legs_from_signal(signal),
+        spread_info=_spread_info_from_payload(effective_signal.get("spread_info")),
+        confidence=float(effective_signal.get("confidence") or 0),
+        legs=recommendation_legs_from_signal(effective_signal),
         open_positions=await open_positions_for_scoring(session, {"open_positions": []}),
         margin_required=float(run.config_diff.get("margin_required", DEFAULT_MARGIN_REQUIRED)),
         account_net_value=float(
@@ -283,6 +325,89 @@ async def _score_signal(
         "combined": score.combined,
         "base_score": jsonable(base_score),
         "calibration_weight": calibration_weight,
+        "effective_confidence": effective_signal["confidence"],
+        **adversarial_payload,
+    }
+
+
+def shadow_context_payload(
+    raw_context: dict[str, Any],
+    config_diff: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    config = config_diff or {}
+    min_severity = config.get("news_event_min_severity")
+    if min_severity is None or "news_events" not in raw_context:
+        return raw_context
+    threshold = int(min_severity)
+    return {
+        **raw_context,
+        "news_events": [
+            event
+            for event in raw_context.get("news_events", [])
+            if int(event.get("severity") or 0) >= threshold
+        ],
+    }
+
+
+async def _shadow_calibration_weight(
+    session: AsyncSession,
+    config_diff: dict[str, Any],
+    *,
+    signal_type: str,
+    category: str,
+    regime: str,
+    default_weight: float,
+) -> float:
+    prior = config_diff.get("calibration_prior_override")
+    if not isinstance(prior, dict):
+        return default_weight
+    existing = await get_active_calibration(
+        session,
+        signal_type=signal_type,
+        category=category,
+        regime=regime,
+        as_of=datetime.now(timezone.utc),
+    )
+    if existing is None:
+        return default_weight
+    weight = calculate_bayesian_weight(
+        hits=existing.hit_count,
+        total=existing.sample_size,
+        base_weight=existing.base_weight,
+        alpha_prior=float(prior.get("alpha_prior", existing.alpha_prior)),
+        beta_prior=float(prior.get("beta_prior", existing.beta_prior)),
+        decay_detected=existing.decay_detected,
+    )
+    return weight.effective_weight
+
+
+async def _shadow_adversarial_payload(
+    session: AsyncSession,
+    config_diff: dict[str, Any],
+    *,
+    signal: dict[str, Any],
+    context: dict[str, Any],
+    category: str,
+    regime: str,
+) -> dict[str, Any]:
+    if "historical_combo_min_similarity" not in config_diff:
+        return {}
+    result = evaluate_historical_combo(
+        signal_types=signal_type_set(signal, context),
+        category=category,
+        regime=regime,
+        candidates=await load_historical_combo_candidates(
+            session,
+            category=category,
+            regime=regime,
+        ),
+        min_similarity=float(config_diff["historical_combo_min_similarity"]),
+    )
+    multiplier = 0.7 if result.enforcing_failure else 1.0
+    return {
+        "shadow_suppressed": False,
+        "confidence_multiplier": multiplier,
+        "adversarial_shadow": result.to_dict(),
     }
 
 
@@ -304,7 +429,11 @@ def _shadow_reason(
     confidence: float,
     score: float,
     thresholds: ShadowThresholdConfig,
+    *,
+    suppressed: bool = False,
 ) -> str:
+    if suppressed:
+        return "shadow_suppressed"
     if confidence < thresholds.min_confidence:
         return "below_confidence_threshold"
     if score < thresholds.min_combined_score:

@@ -84,7 +84,7 @@
   - [x] 创建 `docker-compose.yml`：Postgres + Redis + Backend + Frontend（Weaviate 保留为可选 profile；默认 pgvector）
   - [x] 创建 `.env.example`
   - [x] 创建 `CLAUDE.md`（项目约定）
-- [ ] **验证**
+- [x] **验证**
   - [ ] `docker compose up` 全部服务健康
   - [x] `GET /api/health` 返回 200
   - [x] 前端首页可访问
@@ -816,10 +816,10 @@ Causa 的 `event_driven` 评估器实际上是纯技术面（gap + volume），*
     - 输出建议的新阈值（85% / 60%）
   - [x] **不自动调整**：阈值变更走 `change_review_queue`，人工评审 + 确认后才生效
   - [x] 前端：校准曲线可视化页面
-- [ ] **首批 Shadow 应用场景**
-  - [ ] 校准公式参数变更（α₀ / β₀ 不同先验值的对比）
-  - [ ] 对抗引擎历史组合检验阈值（Jaccard 相似度 0.6 vs 0.7 vs 0.8）
-  - [ ] news_event 评估器的严重度门槛（≥3 vs ≥2）
+- [x] **首批 Shadow 应用场景**
+  - [x] 校准公式参数变更（α₀ / β₀ 不同先验值的对比）
+  - [x] 对抗引擎历史组合检验阈值（Jaccard 相似度 0.6 vs 0.7 vs 0.8）
+  - [x] news_event 评估器的严重度门槛（≥3 vs ≥2）
 
 ### 第 2 周：LLM 反思 Agent（新增 6.20）
 
@@ -840,7 +840,7 @@ Causa 的 `event_driven` 评估器实际上是纯技术面（gap + volume），*
   - [x] LLM Prompt：
     - 任务：识别表现异常的信号、寻找未编码关联、假设当前 regime 下不适用的评估器
     - **强制反证**：每个假设必须列出至少 2 个反证或替代解释
-  - [ ] 输出 Pydantic 模型强制：
+  - [x] 输出 Pydantic 模型强制：
     ```python
     class LearningHypothesis(BaseModel):
         hypothesis: str
@@ -859,23 +859,23 @@ Causa 的 `event_driven` 评估器实际上是纯技术面（gap + volume），*
   - [x] 前端"假设报告"页面：列出本月所有假设 + 反证 + 状态
   - [x] 人工评审：approve / reject / refine
   - [x] approve 后转 status=`shadow_testing`，自动配置 Shadow Mode 跑 30 天
-  - [ ] Shadow 验证通过 + 性能优于现状 → status=`validated`
-  - [ ] **最终人工批准** → status=`applied`，进入生产
+  - [x] Shadow 验证通过 + 性能优于现状 → status=`validated`
+  - [x] **最终人工批准** → status=`applied`，进入生产
 - [x] **关键约束验证**
   - [x] 任何 status != applied 的假设不影响主链路
   - [x] 单元测试：尝试用 status=proposed 的假设修改 calibration 表应失败
   - [x] 单元测试：LLM 直接修改任何主链路参数应失败
-- [ ] **向量检索质量门 + 评测框架**
-  - [ ] `vector_chunks` 表 `quality_status` 字段三档生效：unverified（× 0.5）/ human_reviewed（× 1.0）/ validated（× 1.2）
-  - [ ] LLM 反思 Agent 的输出默认 `unverified`，走完 `change_review_queue` 才升级
+- [x] **向量检索质量门 + 评测框架**
+  - [x] `vector_chunks` 表 `quality_status` 字段三档生效：unverified（× 0.5）/ human_reviewed（× 1.0）/ validated（× 1.2）
+  - [x] LLM 反思 Agent 的输出默认 `unverified`，走完 `change_review_queue` 才升级
   - [x] `models/vector_eval_set.py` — 检索质量评测集
-  - [ ] 手工标注 50 条 query → relevant_chunk_ids 对作为种子
+  - [x] 手工标注 50 条 query → relevant_chunk_ids 对作为种子
   - [x] `services/vector_search/eval.py` — 月度跑 NDCG@10 / Recall@10
-  - [ ] Embedding 模型/参数变更走 Shadow Mode 对比
+  - [x] Embedding 模型/参数变更走 Shadow Mode 对比
 - [ ] **验证**
   - [x] 同一信号事件被生产和 shadow 同时处理
-  - [ ] 30 天后能产出有效对比报告
-  - [ ] 置信度阈值校准在 reliability diagram 上明显改善
+  - [x] 30 天后能产出有效对比报告
+  - [x] 置信度阈值校准在 reliability diagram 上明显改善
   - [x] 反思 Agent 月度调度正常，输出符合 Pydantic 结构
   - [x] 强制反证机制生效（无反证的假设被拒绝）
   - [x] 治理守卫拦截绕过审核的修改尝试

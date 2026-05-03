@@ -9,8 +9,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.models.learning_hypotheses import LearningHypothesis
 from app.services.learning.reflection_agent import run_reflection_agent
+from app.services.shadow.comparator import compare_shadow_run
 from app.services.shadow.runner import create_shadow_run
-from app.services.vector_search.eval import evaluate_vector_search
+from app.services.vector_search.eval import compare_vector_search_candidate, evaluate_vector_search
+from app.services.vector_search.eval_seed import seed_vector_eval_cases
 
 router = APIRouter(prefix="/api/learning", tags=["learning"])
 
@@ -92,6 +94,63 @@ async def reject_learning_hypothesis(
     return learning_hypothesis_to_dict(row)
 
 
+@router.post("/hypotheses/{hypothesis_id}/validate")
+async def validate_learning_hypothesis(
+    hypothesis_id: UUID,
+    shadow_run_id: UUID,
+    min_hit_rate_delta: float = Query(default=0.0, ge=-1.0, le=1.0),
+    max_disagreement_rate: float = Query(default=0.35, ge=0.0, le=1.0),
+    session: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    row = await session.get(LearningHypothesis, hypothesis_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Learning hypothesis not found")
+    if row.status != "shadow_testing":
+        raise HTTPException(status_code=409, detail=f"Hypothesis status is {row.status}")
+    report = await compare_shadow_run(session, shadow_run_id)
+    if report is None:
+        raise HTTPException(status_code=404, detail="Shadow run not found")
+    hit_rate_delta = report.hit_rate_delta
+    if hit_rate_delta is None:
+        raise HTTPException(status_code=409, detail="Shadow run does not have resolved outcomes")
+    if hit_rate_delta < min_hit_rate_delta or report.disagreement_rate > max_disagreement_rate:
+        raise HTTPException(
+            status_code=409,
+            detail="Shadow report did not pass validation gates",
+        )
+    row.status = "validated"
+    row.source_payload = {
+        **(row.source_payload or {}),
+        "validation": report.to_dict(),
+    }
+    await session.commit()
+    return learning_hypothesis_to_dict(row)
+
+
+@router.post("/hypotheses/{hypothesis_id}/apply")
+async def apply_learning_hypothesis(
+    hypothesis_id: UUID,
+    approved_by: str,
+    session: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    row = await session.get(LearningHypothesis, hypothesis_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Learning hypothesis not found")
+    if row.status != "validated":
+        raise HTTPException(status_code=409, detail=f"Hypothesis status is {row.status}")
+    row.status = "applied"
+    row.source_payload = {
+        **(row.source_payload or {}),
+        "final_approval": {
+            "approved_by": approved_by,
+            "approved_at": datetime.now(timezone.utc).isoformat(),
+            "note": "Status-only production adoption marker; parameter writes still require table-specific review guards.",
+        },
+    }
+    await session.commit()
+    return learning_hypothesis_to_dict(row)
+
+
 @router.get("/vector-eval/report")
 async def get_vector_eval_report(
     limit: int = Query(default=10, ge=1, le=50),
@@ -99,6 +158,39 @@ async def get_vector_eval_report(
 ) -> dict[str, Any]:
     report = await evaluate_vector_search(session, limit=limit)
     return report.to_dict()
+
+
+@router.get("/vector-eval/shadow-compare")
+async def compare_vector_embedding_shadow(
+    candidate_name: str = "candidate",
+    limit: int = Query(default=10, ge=1, le=50),
+    min_ndcg_delta: float = Query(default=0.0, ge=-1.0, le=1.0),
+    min_recall_delta: float = Query(default=0.0, ge=-1.0, le=1.0),
+    session: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    comparison = await compare_vector_search_candidate(
+        session,
+        candidate_name=candidate_name,
+        limit=limit,
+        min_ndcg_delta=min_ndcg_delta,
+        min_recall_delta=min_recall_delta,
+    )
+    return comparison.to_dict()
+
+
+@router.post("/vector-eval/seed", status_code=status.HTTP_201_CREATED)
+async def seed_vector_eval_report(
+    target_cases: int = Query(default=50, ge=1, le=200),
+    reviewed_by: str | None = None,
+    session: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    result = await seed_vector_eval_cases(
+        session,
+        target_cases=target_cases,
+        reviewed_by=reviewed_by,
+    )
+    await session.commit()
+    return result.to_dict()
 
 
 def learning_hypothesis_to_dict(row: LearningHypothesis) -> dict[str, Any]:

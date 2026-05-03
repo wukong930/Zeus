@@ -270,7 +270,8 @@ function CalibrationTab() {
           <div>
             <CardTitle>Reliability Diagram</CardTitle>
             <CardSubtitle>
-              ECE {formatNullablePercent(report?.expected_calibration_error)} · Brier {formatNullableNumber(report?.brier_score)}
+              ECE {formatNullablePercent(report?.expected_calibration_error)} → {formatNullablePercent(report?.projected_calibration_error)}
+              {" "}· Δ {formatNullablePercent(report?.calibration_error_improvement)}
             </CardSubtitle>
           </div>
           {report?.review_required ? <Badge variant="orange">review required</Badge> : <Badge variant="emerald">stable</Badge>}

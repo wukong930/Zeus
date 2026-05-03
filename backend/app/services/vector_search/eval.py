@@ -40,6 +40,26 @@ class VectorEvalReport:
         }
 
 
+@dataclass(frozen=True)
+class VectorShadowComparison:
+    candidate_name: str
+    baseline: VectorEvalReport
+    candidate: VectorEvalReport
+    ndcg_delta: float
+    recall_delta: float
+    passed_gate: bool
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "candidate_name": self.candidate_name,
+            "baseline": self.baseline.to_dict(),
+            "candidate": self.candidate.to_dict(),
+            "ndcg_delta": self.ndcg_delta,
+            "recall_delta": self.recall_delta,
+            "passed_gate": self.passed_gate,
+        }
+
+
 async def evaluate_vector_search(
     session: AsyncSession,
     *,
@@ -62,6 +82,38 @@ async def evaluate_vector_search(
         )
         results.append(evaluate_single_case(case, retrieved, limit=limit))
     return summarize_vector_eval(results)
+
+
+async def compare_vector_search_candidate(
+    session: AsyncSession,
+    *,
+    candidate_name: str,
+    limit: int = 10,
+    baseline_searcher=hybrid_search,
+    candidate_searcher=hybrid_search,
+    min_ndcg_delta: float = 0.0,
+    min_recall_delta: float = 0.0,
+) -> VectorShadowComparison:
+    baseline = await evaluate_vector_search(
+        session,
+        limit=limit,
+        searcher=baseline_searcher,
+    )
+    candidate = await evaluate_vector_search(
+        session,
+        limit=limit,
+        searcher=candidate_searcher,
+    )
+    ndcg_delta = round(candidate.mean_ndcg_at_10 - baseline.mean_ndcg_at_10, 6)
+    recall_delta = round(candidate.mean_recall_at_10 - baseline.mean_recall_at_10, 6)
+    return VectorShadowComparison(
+        candidate_name=candidate_name,
+        baseline=baseline,
+        candidate=candidate,
+        ndcg_delta=ndcg_delta,
+        recall_delta=recall_delta,
+        passed_gate=ndcg_delta >= min_ndcg_delta and recall_delta >= min_recall_delta,
+    )
 
 
 def evaluate_single_case(

@@ -45,6 +45,8 @@ class ThresholdCalibrationReport:
     misses: int
     brier_score: float | None
     expected_calibration_error: float | None
+    projected_calibration_error: float | None
+    calibration_error_improvement: float | None
     bins: list[ReliabilityBin]
     isotonic_curve: list[IsotonicPoint]
     current_thresholds: dict[str, float]
@@ -131,6 +133,9 @@ def build_threshold_calibration_report(
     }
     if suggested["notify"] > suggested["auto"]:
         suggested["notify"] = suggested["auto"]
+    curve = isotonic_curve(pairs)
+    expected_error = _expected_calibration_error(pairs, bins=bins)
+    projected_error = projected_calibration_error(pairs, curve, bins=bins)
     return ThresholdCalibrationReport(
         signal_type=signal_type,
         category=category,
@@ -138,9 +143,15 @@ def build_threshold_calibration_report(
         hits=hits,
         misses=misses,
         brier_score=_brier_score(pairs),
-        expected_calibration_error=_expected_calibration_error(pairs, bins=bins),
+        expected_calibration_error=expected_error,
+        projected_calibration_error=projected_error,
+        calibration_error_improvement=(
+            round(expected_error - projected_error, 6)
+            if expected_error is not None and projected_error is not None
+            else None
+        ),
         bins=reliability_bins(pairs, bins=bins),
-        isotonic_curve=isotonic_curve(pairs),
+        isotonic_curve=curve,
         current_thresholds=current_payload,
         suggested_thresholds={key: round(value, 4) for key, value in suggested.items()},
         review_required=_meaningfully_changed(current_payload, suggested),
@@ -245,6 +256,31 @@ def isotonic_curve(pairs: list[tuple[float, int]]) -> list[IsotonicPoint]:
         )
         for block in blocks
     ]
+
+
+def projected_calibration_error(
+    pairs: list[tuple[float, int]],
+    curve: list[IsotonicPoint],
+    *,
+    bins: int = 10,
+) -> float | None:
+    if not pairs or not curve:
+        return None
+    calibrated_pairs = [
+        (isotonic_predict(confidence, curve), label)
+        for confidence, label in pairs
+    ]
+    return _expected_calibration_error(calibrated_pairs, bins=bins)
+
+
+def isotonic_predict(confidence: float, curve: list[IsotonicPoint]) -> float:
+    if not curve:
+        return confidence
+    sorted_curve = sorted(curve, key=lambda item: item.confidence)
+    for point in sorted_curve:
+        if confidence <= point.confidence:
+            return point.calibrated_probability
+    return sorted_curve[-1].calibrated_probability
 
 
 def _threshold_for_target(

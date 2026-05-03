@@ -21,7 +21,8 @@ from app.services.learning.reflection_agent import (
     run_reflection_agent,
 )
 from app.services.llm.types import LLMCompletionResult
-from app.services.vector_search.eval import evaluate_single_case
+from app.services.vector_search.eval import compare_vector_search_candidate, evaluate_single_case
+from app.services.vector_search.eval_seed import seed_vector_eval_cases
 from app.services.vector_search.hybrid_search import VectorSearchResult, quality_weight
 
 
@@ -253,6 +254,58 @@ def test_vector_eval_metrics_and_quality_weights_are_active() -> None:
     assert quality_weight("unverified") == 0.5
     assert quality_weight("human_reviewed") == 1.0
     assert quality_weight("validated") == 1.2
+
+
+async def test_vector_eval_seed_creates_fifty_query_pairs() -> None:
+    chunks = [
+        VectorChunk(
+            id=uuid4(),
+            chunk_type="news",
+            content_text=f"rubber supply disruption sample {index}",
+            metadata_json={"symbol": "RU"},
+            quality_status="human_reviewed",
+        )
+        for index in range(3)
+    ]
+    session = FakeSession(scalar_batches=[chunks, []])
+
+    result = await seed_vector_eval_cases(
+        session,  # type: ignore[arg-type]
+        target_cases=50,
+        reviewed_by="tester",
+    )
+
+    cases = [row for row in session.rows if isinstance(row, VectorEvalCase)]
+    assert result.created == 50
+    assert len(cases) == 50
+    assert all(case.relevant_chunk_ids for case in cases)
+
+
+async def test_vector_shadow_comparison_reports_candidate_delta() -> None:
+    relevant = uuid4()
+    case = VectorEvalCase(
+        id=uuid4(),
+        query_text="rubber supply shock",
+        relevant_chunk_ids=[str(relevant)],
+    )
+    session = FakeSession(scalar_batches=[[case], [case]])
+
+    async def baseline_searcher(*_, **__):
+        return [_result(uuid4(), "human_reviewed"), _result(relevant, "human_reviewed")]
+
+    async def candidate_searcher(*_, **__):
+        return [_result(relevant, "human_reviewed")]
+
+    comparison = await compare_vector_search_candidate(
+        session,  # type: ignore[arg-type]
+        candidate_name="bge-m3-candidate",
+        baseline_searcher=baseline_searcher,
+        candidate_searcher=candidate_searcher,
+    )
+
+    assert comparison.ndcg_delta > 0
+    assert comparison.recall_delta == 0
+    assert comparison.passed_gate is True
 
 
 def _result(chunk_id, quality_status: str) -> VectorSearchResult:
