@@ -13,6 +13,11 @@ from app.services.cost_models.quality import (
     compare_public_benchmarks,
     evaluate_historical_signal_cases,
 )
+from app.services.cost_models.rubber_sources import (
+    public_rubber_inputs,
+    public_rubber_source_points,
+    rubber_seasonal_factor,
+)
 from app.services.cost_models.snapshots import build_cost_signal_context, write_cost_snapshot
 from app.services.sectors.ferrous import calculate_blast_furnace_margin
 
@@ -74,6 +79,29 @@ def test_simulation_overrides_flow_through_downstream_formula() -> None:
 
     assert result.unit_cost < 3196.9
     assert result.breakevens["p75"] > result.breakevens["p50"]
+
+
+def test_rubber_chain_calculates_ru_from_natural_rubber() -> None:
+    chain = calculate_cost_chain(
+        symbols=("NR", "RU"),
+        inputs_by_symbol={"NR": {"seasonal_factor_pct": 0.02}},
+        current_prices={"RU": 15500},
+    )
+
+    assert chain.sector == "rubber"
+    assert chain.symbols == ["NR", "RU"]
+    assert chain.results["NR"].unit_cost == 13260
+    assert chain.results["RU"].unit_cost == 15327.8
+    assert chain.results["RU"].profit_margin == 0.01111
+
+
+def test_rubber_public_sources_cover_phase7b_inputs() -> None:
+    inputs = public_rubber_inputs()
+    source_keys = {point.key for point in public_rubber_source_points()}
+
+    assert {"thai_field_latex_cny", "qingdao_bonded_spot_premium", "ocean_freight"} <= source_keys
+    assert inputs["hainan_yunnan_collection_cost"] == 420
+    assert rubber_seasonal_factor(1) > rubber_seasonal_factor(8)
 
 
 def test_blast_furnace_margin_uses_phase7a_formula() -> None:
@@ -206,6 +234,28 @@ def test_simulation_api_returns_cost_breakdown() -> None:
     assert payload["total_unit_cost"] < 3196.9
     assert payload["breakevens"]["p90"] > payload["breakevens"]["p50"]
     assert payload["profit_margin"] > 0
+
+
+def test_rubber_simulation_api_returns_cost_breakdown() -> None:
+    client = TestClient(create_app())
+
+    response = client.post(
+        "/api/cost-models/RU/simulate",
+        json={
+            "inputs_by_symbol": {
+                "NR": {"seasonal_factor_pct": 0.02, "thai_field_latex_cny": 11000},
+                "RU": {"ru_processing_fee": 900},
+            },
+            "current_prices": {"RU": 15400},
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["symbol"] == "RU"
+    assert payload["sector"] == "rubber"
+    assert payload["total_unit_cost"] < 15327.8
+    assert payload["breakevens"]["p90"] > payload["breakevens"]["p50"]
 
 
 def test_quality_api_returns_report(monkeypatch) -> None:

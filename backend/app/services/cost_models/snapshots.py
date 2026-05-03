@@ -7,16 +7,20 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.commodity_config import CommodityConfig
 from app.models.cost_snapshot import CostSnapshot
 from app.models.market_data import MarketData
-from app.services.cost_models.configs import FERROUS_FORMULAS
+from app.services.cost_models.configs import ALL_COST_FORMULAS
 from app.services.cost_models.cost_chain import (
     FERROUS_CHAIN_ORDER,
-    FERROUS_UPSTREAM,
+    RUBBER_CHAIN_ORDER,
+    UPSTREAM_BY_SYMBOL,
     calculate_cost_chain,
     calculate_symbol_cost,
+    chain_order_for_symbol,
 )
 from app.services.cost_models.framework import CostModelResult
 
 FERROUS_SYMBOLS = FERROUS_CHAIN_ORDER
+RUBBER_SYMBOLS = RUBBER_CHAIN_ORDER
+ALL_COST_SYMBOLS = FERROUS_SYMBOLS + RUBBER_SYMBOLS
 
 
 async def latest_market_price(session: AsyncSession, symbol: str) -> float | None:
@@ -38,25 +42,30 @@ async def current_prices_for_symbols(
     return {symbol: await latest_market_price(session, symbol) for symbol in symbols}
 
 
-async def ensure_commodity_configs(session: AsyncSession) -> int:
+async def ensure_commodity_configs(
+    session: AsyncSession,
+    *,
+    symbols: tuple[str, ...] = ALL_COST_SYMBOLS,
+) -> int:
     existing = set(
         (
             await session.scalars(
-                select(CommodityConfig.symbol).where(CommodityConfig.symbol.in_(FERROUS_SYMBOLS))
+                select(CommodityConfig.symbol).where(CommodityConfig.symbol.in_(symbols))
             )
         ).all()
     )
     created = 0
-    for symbol, formula in FERROUS_FORMULAS.items():
+    for symbol in symbols:
         if symbol in existing:
             continue
+        formula = ALL_COST_FORMULAS[symbol]
         session.add(
             CommodityConfig(
                 symbol=symbol,
                 name=formula.name,
                 sector=formula.sector,
                 cost_formula={"name": formula.__class__.__name__, "version": formula.version},
-                cost_chain=FERROUS_UPSTREAM.get(symbol, []),
+                cost_chain=UPSTREAM_BY_SYMBOL.get(symbol, []),
                 parameters={"public_fallback": True},
                 data_sources=[
                     {
@@ -83,7 +92,7 @@ async def calculate_cost_snapshot(
 ) -> CostModelResult:
     normalized = symbol.upper()
     if current_prices is None:
-        current_prices = await current_prices_for_symbols(session, FERROUS_SYMBOLS)
+        current_prices = await current_prices_for_symbols(session, chain_order_for_symbol(normalized))
     return calculate_symbol_cost(
         normalized,
         inputs_by_symbol=inputs_by_symbol,
@@ -129,16 +138,49 @@ async def snapshot_ferrous_costs(
     current_prices: dict[str, float | None] | None = None,
     snapshot_date: date | None = None,
 ) -> list[CostSnapshot]:
-    await ensure_commodity_configs(session)
-    if current_prices is None:
-        current_prices = await current_prices_for_symbols(session, FERROUS_SYMBOLS)
-    chain = calculate_cost_chain(
+    return await snapshot_costs(
+        session,
         symbols=FERROUS_SYMBOLS,
+        inputs_by_symbol=inputs_by_symbol,
+        current_prices=current_prices,
+        snapshot_date=snapshot_date,
+    )
+
+
+async def snapshot_rubber_costs(
+    session: AsyncSession,
+    *,
+    inputs_by_symbol: dict[str, dict[str, Any]] | None = None,
+    current_prices: dict[str, float | None] | None = None,
+    snapshot_date: date | None = None,
+) -> list[CostSnapshot]:
+    return await snapshot_costs(
+        session,
+        symbols=RUBBER_SYMBOLS,
+        inputs_by_symbol=inputs_by_symbol,
+        current_prices=current_prices,
+        snapshot_date=snapshot_date,
+    )
+
+
+async def snapshot_costs(
+    session: AsyncSession,
+    *,
+    symbols: tuple[str, ...],
+    inputs_by_symbol: dict[str, dict[str, Any]] | None = None,
+    current_prices: dict[str, float | None] | None = None,
+    snapshot_date: date | None = None,
+) -> list[CostSnapshot]:
+    await ensure_commodity_configs(session, symbols=symbols)
+    if current_prices is None:
+        current_prices = await current_prices_for_symbols(session, symbols)
+    chain = calculate_cost_chain(
+        symbols=symbols,
         inputs_by_symbol=inputs_by_symbol,
         current_prices=current_prices,
     )
     rows: list[CostSnapshot] = []
-    for symbol in FERROUS_SYMBOLS:
+    for symbol in symbols:
         rows.append(
             await write_cost_snapshot(
                 session,

@@ -59,3 +59,8 @@ def test_scheduler_rejects_bad_cron() -> None:
 def test_cost_snapshots_job_is_registered() -> None:
     assert any(definition.id == "cost-snapshots" for definition in DEFAULT_JOB_DEFINITIONS)
     assert DEFAULT_JOB_HANDLERS["cost-snapshots"].__name__ == "cost_snapshots_job"
+
+
+def test_rubber_cost_snapshots_job_is_registered() -> None:
+    assert any(definition.id == "rubber-cost-snapshots" for definition in DEFAULT_JOB_DEFINITIONS)
+    assert DEFAULT_JOB_HANDLERS["rubber-cost-snapshots"].__name__ == "rubber_cost_snapshots_job"

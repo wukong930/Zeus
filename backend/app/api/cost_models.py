@@ -11,13 +11,13 @@ from app.schemas.common import (
     CostSimulationRequest,
     CostSnapshotRead,
 )
-from app.services.cost_models.cost_chain import FERROUS_CHAIN_ORDER, calculate_cost_chain
+from app.services.cost_models.cost_chain import calculate_cost_chain, chain_order_for_symbol
 from app.services.cost_models.quality import run_ferrous_quality_report
 from app.services.cost_models.snapshots import (
-    FERROUS_SYMBOLS,
     calculate_cost_snapshot,
     current_prices_for_symbols,
     snapshot_ferrous_costs,
+    snapshot_rubber_costs,
 )
 
 router = APIRouter(prefix="/api/cost-models", tags=["cost-models"])
@@ -65,13 +65,14 @@ async def simulate_cost_model(symbol: str, payload: CostSimulationRequest) -> di
         for key, value in payload.inputs_by_symbol.items()
     }
     try:
+        chain_order = chain_order_for_symbol(normalized)
         chain = calculate_cost_chain(
-            symbols=FERROUS_CHAIN_ORDER,
+            symbols=chain_order,
             inputs_by_symbol=inputs_by_symbol,
             current_prices=current_prices,
         )
         result = chain.results[normalized]
-    except KeyError as exc:
+    except (KeyError, ValueError) as exc:
         raise HTTPException(status_code=404, detail=f"Unsupported cost model symbol: {symbol}") from exc
     return cost_model_payload(result.to_snapshot_payload())
 
@@ -79,10 +80,12 @@ async def simulate_cost_model(symbol: str, payload: CostSimulationRequest) -> di
 @router.get("/{symbol}/chain", response_model=CostChainRead)
 async def get_cost_chain(symbol: str, session: AsyncSession = Depends(get_db)) -> dict:
     normalized = symbol.upper()
-    if normalized not in FERROUS_SYMBOLS:
-        raise HTTPException(status_code=404, detail=f"Unsupported cost model symbol: {symbol}")
-    current_prices = await current_prices_for_symbols(session, FERROUS_SYMBOLS)
-    chain = calculate_cost_chain(symbols=FERROUS_CHAIN_ORDER, current_prices=current_prices)
+    try:
+        chain_order = chain_order_for_symbol(normalized)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=f"Unsupported cost model symbol: {symbol}") from exc
+    current_prices = await current_prices_for_symbols(session, chain_order)
+    chain = calculate_cost_chain(symbols=chain_order, current_prices=current_prices)
     return {
         "sector": chain.sector,
         "symbols": chain.symbols,
@@ -96,6 +99,15 @@ async def get_cost_chain(symbol: str, session: AsyncSession = Depends(get_db)) -
 @router.post("/snapshots/ferrous", response_model=list[CostSnapshotRead], status_code=status.HTTP_201_CREATED)
 async def create_ferrous_cost_snapshots(session: AsyncSession = Depends(get_db)) -> list[CostSnapshot]:
     rows = await snapshot_ferrous_costs(session)
+    await session.commit()
+    for row in rows:
+        await session.refresh(row)
+    return rows
+
+
+@router.post("/snapshots/rubber", response_model=list[CostSnapshotRead], status_code=status.HTTP_201_CREATED)
+async def create_rubber_cost_snapshots(session: AsyncSession = Depends(get_db)) -> list[CostSnapshot]:
+    rows = await snapshot_rubber_costs(session)
     await session.commit()
     for row in rows:
         await session.refresh(row)

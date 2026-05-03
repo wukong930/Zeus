@@ -1,16 +1,25 @@
 from dataclasses import dataclass
 from typing import Any
 
-from app.services.cost_models.configs import FERROUS_FORMULAS
+from app.services.cost_models.configs import ALL_COST_FORMULAS
 from app.services.cost_models.framework import CostFormula, CostModelResult
 
 FERROUS_CHAIN_ORDER = ("JM", "J", "I", "RB", "HC")
+RUBBER_CHAIN_ORDER = ("NR", "RU")
 FERROUS_UPSTREAM = {
     "JM": [],
     "J": ["JM"],
     "I": [],
     "RB": ["I", "J"],
     "HC": ["I", "J", "RB"],
+}
+RUBBER_UPSTREAM = {
+    "NR": [],
+    "RU": ["NR"],
+}
+UPSTREAM_BY_SYMBOL = {
+    **FERROUS_UPSTREAM,
+    **RUBBER_UPSTREAM,
 }
 
 
@@ -33,10 +42,23 @@ class CostChainResult:
 
 def get_cost_formula(symbol: str) -> CostFormula:
     normalized = symbol.upper()
-    formula = FERROUS_FORMULAS.get(normalized)
+    formula = ALL_COST_FORMULAS.get(normalized)
     if formula is None:
         raise ValueError(f"Unsupported cost model symbol: {symbol}")
     return formula
+
+
+def chain_order_for_symbol(symbol: str) -> tuple[str, ...]:
+    normalized = symbol.upper()
+    if normalized in FERROUS_CHAIN_ORDER:
+        if normalized == "J":
+            return ("JM", "J")
+        if normalized in {"RB", "HC"}:
+            return FERROUS_CHAIN_ORDER
+        return (normalized,)
+    if normalized in RUBBER_CHAIN_ORDER:
+        return RUBBER_CHAIN_ORDER
+    raise ValueError(f"Unsupported cost model symbol: {symbol}")
 
 
 def calculate_cost_chain(
@@ -59,7 +81,8 @@ def calculate_cost_chain(
         )
         results[normalized] = result
 
-    return CostChainResult(sector="ferrous", symbols=list(symbols), results=results)
+    sector = get_cost_formula(symbols[-1]).sector if symbols else "unknown"
+    return CostChainResult(sector=sector, symbols=list(symbols), results=results)
 
 
 def calculate_symbol_cost(
@@ -69,9 +92,9 @@ def calculate_symbol_cost(
     current_prices: dict[str, float | None] | None = None,
 ) -> CostModelResult:
     normalized = symbol.upper()
-    if normalized in {"RB", "HC"}:
+    if normalized in {"RB", "HC", "RU"}:
         return calculate_cost_chain(
-            symbols=FERROUS_CHAIN_ORDER,
+            symbols=chain_order_for_symbol(normalized),
             inputs_by_symbol=inputs_by_symbol,
             current_prices=current_prices,
         ).results[normalized]
