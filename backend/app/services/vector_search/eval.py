@@ -1,6 +1,6 @@
 from dataclasses import asdict, dataclass
 from math import log2
-from typing import Any
+from typing import Any, Protocol
 from uuid import UUID
 
 from sqlalchemy import select
@@ -8,6 +8,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.vector_eval_set import VectorEvalCase
 from app.services.vector_search.hybrid_search import VectorSearchResult, hybrid_search
+
+
+class VectorSearcher(Protocol):
+    async def __call__(
+        self,
+        session: AsyncSession,
+        *,
+        query_text: str,
+        limit: int = 10,
+    ) -> list[VectorSearchResult]: ...
 
 
 @dataclass(frozen=True)
@@ -48,10 +58,12 @@ class VectorShadowComparison:
     ndcg_delta: float
     recall_delta: float
     passed_gate: bool
+    candidate_config: dict[str, Any]
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "candidate_name": self.candidate_name,
+            "candidate_config": self.candidate_config,
             "baseline": self.baseline.to_dict(),
             "candidate": self.candidate.to_dict(),
             "ndcg_delta": self.ndcg_delta,
@@ -89,11 +101,15 @@ async def compare_vector_search_candidate(
     *,
     candidate_name: str,
     limit: int = 10,
-    baseline_searcher=hybrid_search,
-    candidate_searcher=hybrid_search,
+    baseline_searcher: VectorSearcher = hybrid_search,
+    candidate_searcher: VectorSearcher | None = None,
+    candidate_config: dict[str, Any] | None = None,
     min_ndcg_delta: float = 0.0,
     min_recall_delta: float = 0.0,
+    require_metric_delta: bool = True,
 ) -> VectorShadowComparison:
+    if candidate_searcher is None:
+        raise ValueError("candidate_searcher is required for vector shadow comparison")
     baseline = await evaluate_vector_search(
         session,
         limit=limit,
@@ -106,13 +122,19 @@ async def compare_vector_search_candidate(
     )
     ndcg_delta = round(candidate.mean_ndcg_at_10 - baseline.mean_ndcg_at_10, 6)
     recall_delta = round(candidate.mean_recall_at_10 - baseline.mean_recall_at_10, 6)
+    has_metric_delta = ndcg_delta != 0 or recall_delta != 0
     return VectorShadowComparison(
         candidate_name=candidate_name,
         baseline=baseline,
         candidate=candidate,
         ndcg_delta=ndcg_delta,
         recall_delta=recall_delta,
-        passed_gate=ndcg_delta >= min_ndcg_delta and recall_delta >= min_recall_delta,
+        passed_gate=(
+            ndcg_delta >= min_ndcg_delta
+            and recall_delta >= min_recall_delta
+            and (has_metric_delta or not require_metric_delta)
+        ),
+        candidate_config=candidate_config or {},
     )
 
 

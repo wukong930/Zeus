@@ -311,7 +311,10 @@ async def _score_signal(
         spread_info=_spread_info_from_payload(effective_signal.get("spread_info")),
         confidence=float(effective_signal.get("confidence") or 0),
         legs=recommendation_legs_from_signal(effective_signal),
-        open_positions=await open_positions_for_scoring(session, {"open_positions": []}),
+        open_positions=await open_positions_for_scoring(
+            session,
+            _shadow_open_positions_payload(run.config_diff),
+        ),
         margin_required=float(run.config_diff.get("margin_required", DEFAULT_MARGIN_REQUIRED)),
         account_net_value=float(
             run.config_diff.get("account_net_value", DEFAULT_ACCOUNT_NET_VALUE)
@@ -328,6 +331,12 @@ async def _score_signal(
         "effective_confidence": effective_signal["confidence"],
         **adversarial_payload,
     }
+
+
+def _shadow_open_positions_payload(config_diff: dict[str, Any]) -> dict[str, Any]:
+    if "open_positions" in config_diff:
+        return {"open_positions": config_diff["open_positions"]}
+    return {}
 
 
 def shadow_context_payload(

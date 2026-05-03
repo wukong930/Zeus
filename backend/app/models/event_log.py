@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import DateTime, Index, String, Text, func
+from sqlalchemy import DateTime, Index, String, Text, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -15,6 +15,12 @@ class EventLog(Base):
         Index("ix_event_log_status", "status"),
         Index("ix_event_log_correlation_id", "correlation_id"),
         Index("ix_event_log_created_at", "created_at"),
+        UniqueConstraint(
+            "event_id",
+            "channel",
+            "status",
+            name="uq_event_log_event_channel_status",
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)

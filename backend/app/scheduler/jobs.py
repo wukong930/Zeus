@@ -43,16 +43,16 @@ class JobDefinition:
 
 DEFAULT_JOB_DEFINITIONS: tuple[JobDefinition, ...] = (
     JobDefinition("ingest", "行情数据", "5 10,11,14,15 * * 1-5"),
-    JobDefinition("context", "上下文刷新", "0 */4 * * *"),
-    JobDefinition("alerts", "预警触发", "0 * * * *"),
-    JobDefinition("evolution", "假设演化", "0 8 * * *"),
-    JobDefinition("risk", "风险计算", "30 8 * * *"),
-    JobDefinition("auto-eval", "信号评判", "0 9 * * *"),
+    JobDefinition("context", "上下文刷新", "0 */4 * * *", enabled=False),
+    JobDefinition("alerts", "预警触发", "0 * * * *", enabled=False),
+    JobDefinition("evolution", "假设演化", "0 8 * * *", enabled=False),
+    JobDefinition("risk", "风险计算", "30 8 * * *", enabled=False),
+    JobDefinition("auto-eval", "信号评判", "0 9 * * *", enabled=False),
     JobDefinition("track-outcomes", "绩效追踪", "30 16 * * 1-5"),
     JobDefinition("calibration", "校准更新", "0 2 * * *"),
     JobDefinition("regime-detect", "Regime 检测", "20 16 * * 1-5"),
     JobDefinition("drift-monitor", "漂移监控", "40 16 * * 1-5"),
-    JobDefinition("cleanup", "数据清理", "0 3 * * *"),
+    JobDefinition("cleanup", "数据清理", "0 3 * * *", enabled=False),
     JobDefinition("main-contract", "主力合约日检", "10 16 * * 1-5"),
     JobDefinition("adversarial-cache", "对抗零分布", "25 16 * * 1-5"),
     JobDefinition("news-ingest", "新闻事件采集", "*/30 * * * *"),
@@ -62,13 +62,6 @@ DEFAULT_JOB_DEFINITIONS: tuple[JobDefinition, ...] = (
     JobDefinition("rubber-cost-snapshots", "橡胶成本快照", "50 16 * * 1-5"),
     JobDefinition("learning-reflection", "月度反思 Agent", "0 6 1 * *"),
 )
-
-
-async def placeholder_job() -> dict[str, Any]:
-    return {
-        "status": "noop",
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-    }
 
 
 async def ingest_job() -> dict[str, Any]:
@@ -392,18 +385,17 @@ async def learning_reflection_job() -> dict[str, Any]:
 
 
 DEFAULT_JOB_HANDLERS: dict[str, JobHandler] = {
-    definition.id: placeholder_job for definition in DEFAULT_JOB_DEFINITIONS
+    "ingest": ingest_job,
+    "track-outcomes": track_outcomes_job,
+    "calibration": calibration_job,
+    "regime-detect": regime_detection_job,
+    "drift-monitor": drift_monitor_job,
+    "main-contract": main_contract_job,
+    "adversarial-cache": adversarial_cache_job,
+    "news-ingest": news_ingest_job,
+    "position-freshness": position_freshness_job,
+    "recommendation-attribution": recommendation_attribution_job,
+    "cost-snapshots": cost_snapshots_job,
+    "rubber-cost-snapshots": rubber_cost_snapshots_job,
+    "learning-reflection": learning_reflection_job,
 }
-DEFAULT_JOB_HANDLERS["ingest"] = ingest_job
-DEFAULT_JOB_HANDLERS["track-outcomes"] = track_outcomes_job
-DEFAULT_JOB_HANDLERS["calibration"] = calibration_job
-DEFAULT_JOB_HANDLERS["regime-detect"] = regime_detection_job
-DEFAULT_JOB_HANDLERS["drift-monitor"] = drift_monitor_job
-DEFAULT_JOB_HANDLERS["main-contract"] = main_contract_job
-DEFAULT_JOB_HANDLERS["adversarial-cache"] = adversarial_cache_job
-DEFAULT_JOB_HANDLERS["news-ingest"] = news_ingest_job
-DEFAULT_JOB_HANDLERS["position-freshness"] = position_freshness_job
-DEFAULT_JOB_HANDLERS["recommendation-attribution"] = recommendation_attribution_job
-DEFAULT_JOB_HANDLERS["cost-snapshots"] = cost_snapshots_job
-DEFAULT_JOB_HANDLERS["rubber-cost-snapshots"] = rubber_cost_snapshots_job
-DEFAULT_JOB_HANDLERS["learning-reflection"] = learning_reflection_job

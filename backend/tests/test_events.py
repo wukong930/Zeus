@@ -3,7 +3,14 @@ from uuid import UUID
 import pytest
 
 from app.api.alerts import format_sse_event
-from app.core.events import ZeusEvent, dispatch_event, publish, publish_pending_events
+from app.core.events import (
+    TERMINAL_EVENT_STATUSES,
+    ZeusEvent,
+    dispatch_event,
+    publish,
+    publish_pending_events,
+)
+from app.models.event_log import EventLog
 
 
 class FakeRedis:
@@ -23,7 +30,16 @@ class FakeSession:
     def add(self, row: object) -> None:
         self.rows.append(row)
 
-    async def scalars(self, _):
+    async def scalars(self, statement):
+        statement_text = str(statement)
+        if "event_log.status IN" in statement_text:
+            return FakeScalars(
+                [
+                    row
+                    for row in self.rows
+                    if getattr(row, "status", None) in TERMINAL_EVENT_STATUSES
+                ]
+            )
         return FakeScalars([row for row in self.rows if getattr(row, "status", None) == "pending"])
 
     async def flush(self) -> None:
@@ -36,6 +52,9 @@ class FakeScalars:
 
     def all(self) -> list[object]:
         return self._rows
+
+    def first(self):
+        return self._rows[0] if self._rows else None
 
 
 def test_zeus_event_round_trips_json() -> None:
@@ -116,10 +135,36 @@ async def test_dispatch_event_records_handled_status() -> None:
     async def handler(received: ZeusEvent) -> None:
         handled.append(received.id)
 
-    await dispatch_event(event, handler, session=session)  # type: ignore[arg-type]
+    result = await dispatch_event(event, handler, session=session)  # type: ignore[arg-type]
 
+    assert result is True
     assert handled == [event.id]
     assert session.rows[0].status == "handled"
+
+
+async def test_dispatch_event_skips_terminal_event_before_handler_side_effect() -> None:
+    session = FakeSession()
+    event = ZeusEvent(channel="signal.detected", payload={"signal_type": "momentum"})
+    session.rows.append(
+        EventLog(
+            event_id=event.id,
+            channel=event.channel,
+            source=event.source,
+            correlation_id=event.correlation_id or str(event.id),
+            payload=event.payload,
+            status="handled",
+        )
+    )
+    handled: list[UUID] = []
+
+    async def handler(received: ZeusEvent) -> None:
+        handled.append(received.id)
+
+    result = await dispatch_event(event, handler, session=session)  # type: ignore[arg-type]
+
+    assert result is False
+    assert handled == []
+    assert len(session.rows) == 1
 
 
 async def test_dispatch_event_records_dead_letter_on_handler_error() -> None:

@@ -21,8 +21,9 @@ class ScheduledJobState:
     last_error: str | None = None
     consecutive_failures: int = 0
 
-    @property
-    def status(self) -> str:
+    def status(self, *, handler_registered: bool = True) -> str:
+        if not handler_registered:
+            return "unconfigured"
         if not self.enabled:
             return "disabled"
         if self.consecutive_failures >= 3:
@@ -31,9 +32,9 @@ class ScheduledJobState:
             return "warning"
         return "ok"
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self, *, handler_registered: bool = True) -> dict[str, Any]:
         data = asdict(self)
-        data["status"] = self.status
+        data["status"] = self.status(handler_registered=handler_registered)
         if self.last_run is not None:
             data["last_run"] = self.last_run.isoformat()
         return data
@@ -76,7 +77,10 @@ class SchedulerManager:
         self._started = False
 
     def list_jobs(self) -> list[dict[str, Any]]:
-        return [job.to_dict() for job in self._jobs.values()]
+        return [
+            job.to_dict(handler_registered=job.id in self._handlers)
+            for job in self._jobs.values()
+        ]
 
     def health_summary(self) -> dict[str, Any]:
         jobs = list(self._jobs.values())
@@ -84,14 +88,15 @@ class SchedulerManager:
         last_activity = max(last_runs).isoformat() if last_runs else None
         return {
             "total_jobs": len(jobs),
-            "enabled_jobs": sum(1 for job in jobs if job.enabled),
+            "enabled_jobs": sum(1 for job in jobs if job.enabled and job.id in self._handlers),
             "degraded_jobs": [job.id for job in jobs if job.consecutive_failures >= 3],
+            "unconfigured_jobs": [job.id for job in jobs if job.id not in self._handlers],
             "last_activity": last_activity,
             "jobs": [
                 {
                     "id": job.id,
                     "name": job.name,
-                    "status": job.status,
+                    "status": job.status(handler_registered=job.id in self._handlers),
                     "last_run": job.last_run.isoformat() if job.last_run else None,
                     "last_error": job.last_error if job.consecutive_failures > 0 else None,
                 }
@@ -102,6 +107,11 @@ class SchedulerManager:
     def start_job(self, job_id: str) -> bool:
         state = self._jobs.get(job_id)
         if state is None:
+            return False
+        if job_id not in self._handlers:
+            state.enabled = False
+            state.last_result = "error"
+            state.last_error = f"No handler registered for job {job_id}"
             return False
 
         trigger = CronTrigger.from_crontab(state.cron, timezone="Asia/Shanghai")

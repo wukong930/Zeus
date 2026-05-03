@@ -271,6 +271,23 @@ async def test_record_live_divergence_queues_review_for_red_metric() -> None:
     assert session.flush_count == 1
 
 
+async def test_record_live_divergence_queues_review_for_yellow_metric() -> None:
+    session = FakeSession()
+    result = tracking_error_divergence([0.0], [0.004], threshold=0.05)
+
+    row = await record_live_divergence(
+        session,  # type: ignore[arg-type]
+        strategy_hash="strategy-yellow",
+        result=result,
+    )
+
+    assert result.severity == "yellow"
+    assert isinstance(row, LiveDivergenceMetric)
+    assert isinstance(session.rows[1], ChangeReviewQueue)
+    assert session.rows[1].target_key == "strategy-yellow"
+    assert session.flush_count == 1
+
+
 def test_walk_forward_defaults_generate_reproducible_windows() -> None:
     windows = generate_walk_forward_windows(
         start=date(2020, 1, 1),

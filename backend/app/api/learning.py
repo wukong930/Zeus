@@ -14,6 +14,7 @@ from app.services.shadow.comparator import compare_shadow_run
 from app.services.shadow.runner import create_shadow_run
 from app.services.vector_search.eval import compare_vector_search_candidate, evaluate_vector_search
 from app.services.vector_search.eval_seed import seed_vector_eval_cases
+from app.services.vector_search.hybrid_search import hybrid_search
 
 router = APIRouter(prefix="/api/learning", tags=["learning"])
 
@@ -175,14 +176,44 @@ async def compare_vector_embedding_shadow(
     limit: int = Query(default=10, ge=1, le=50),
     min_ndcg_delta: float = Query(default=0.0, ge=-1.0, le=1.0),
     min_recall_delta: float = Query(default=0.0, ge=-1.0, le=1.0),
+    candidate_alpha: float | None = Query(default=None, ge=0.0, le=1.0),
+    candidate_beta: float | None = Query(default=None, ge=0.0, le=1.0),
+    candidate_gamma: float | None = Query(default=None, ge=0.0, le=1.0),
+    candidate_half_life_days: float | None = Query(default=None, ge=1.0, le=365.0),
+    candidate_ef_search: int | None = Query(default=None, ge=1, le=1000),
+    require_metric_delta: bool = Query(default=True),
     session: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
+    candidate_config = vector_shadow_candidate_config(
+        alpha=candidate_alpha,
+        beta=candidate_beta,
+        gamma=candidate_gamma,
+        half_life_days=candidate_half_life_days,
+        ef_search=candidate_ef_search,
+    )
+
+    async def candidate_searcher(
+        search_session: AsyncSession,
+        *,
+        query_text: str,
+        limit: int = 10,
+    ):
+        return await hybrid_search(
+            search_session,
+            query_text=query_text,
+            limit=limit,
+            **candidate_config,
+        )
+
     comparison = await compare_vector_search_candidate(
         session,
         candidate_name=candidate_name,
         limit=limit,
+        candidate_searcher=candidate_searcher,
+        candidate_config=candidate_config,
         min_ndcg_delta=min_ndcg_delta,
         min_recall_delta=min_recall_delta,
+        require_metric_delta=require_metric_delta,
     )
     return comparison.to_dict()
 
@@ -223,3 +254,42 @@ def learning_hypothesis_to_dict(row: LearningHypothesis) -> dict[str, Any]:
 def shadow_run_belongs_to_hypothesis(row: ShadowRun, hypothesis_id: UUID) -> bool:
     config = row.config_diff or {}
     return str(config.get("source_hypothesis_id") or "") == str(hypothesis_id)
+
+
+def vector_shadow_candidate_config(
+    *,
+    alpha: float | None = None,
+    beta: float | None = None,
+    gamma: float | None = None,
+    half_life_days: float | None = None,
+    ef_search: int | None = None,
+) -> dict[str, Any]:
+    baseline = {
+        "alpha": 0.6,
+        "beta": 0.3,
+        "gamma": 0.1,
+        "half_life_days": 30.0,
+        "ef_search": 40,
+    }
+    candidate = {
+        key: value
+        for key, value in {
+            "alpha": alpha,
+            "beta": beta,
+            "gamma": gamma,
+            "half_life_days": half_life_days,
+            "ef_search": ef_search,
+        }.items()
+        if value is not None
+    }
+    if not candidate:
+        raise HTTPException(
+            status_code=400,
+            detail="At least one candidate_* search parameter is required",
+        )
+    if all(candidate[key] == baseline[key] for key in candidate):
+        raise HTTPException(
+            status_code=400,
+            detail="Candidate search parameters must differ from the production baseline",
+        )
+    return candidate

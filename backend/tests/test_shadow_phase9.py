@@ -6,6 +6,7 @@ from app.models.change_review_queue import ChangeReviewQueue
 from app.models.shadow_runs import ShadowRun
 from app.models.shadow_signals import ShadowSignal
 from app.models.signal import SignalTrack
+from app.services.shadow import runner as shadow_runner
 from app.services.alert_agent.config import ConfidenceThresholds
 from app.services.calibration.threshold_calibrator import (
     build_threshold_calibration_report,
@@ -124,6 +125,55 @@ async def test_shadow_would_emit_uses_effective_confidence() -> None:
     assert row.confidence == 0.63
     assert row.would_emit is False
     assert row.reason == "below_confidence_threshold"
+
+
+async def test_shadow_score_loads_live_positions_by_default(monkeypatch) -> None:
+    captured_payloads: list[dict] = []
+
+    async def fake_open_positions(_session, payload):
+        captured_payloads.append(payload)
+        return []
+
+    monkeypatch.setattr(shadow_runner, "open_positions_for_scoring", fake_open_positions)
+
+    await shadow_runner._score_signal(
+        FakeSession(),  # type: ignore[arg-type]
+        _run({}),
+        signal={
+            "signal_type": "momentum",
+            "category": "ferrous",
+            "confidence": 0.74,
+            "related_assets": ["RB"],
+        },
+        context={"category": "ferrous", "regime": "range_low_vol"},
+    )
+
+    assert captured_payloads == [{}]
+
+
+async def test_shadow_score_allows_explicit_position_override(monkeypatch) -> None:
+    captured_payloads: list[dict] = []
+    configured_positions = [{"legs": [{"asset": "RB", "direction": "long", "lots": 1}]}]
+
+    async def fake_open_positions(_session, payload):
+        captured_payloads.append(payload)
+        return []
+
+    monkeypatch.setattr(shadow_runner, "open_positions_for_scoring", fake_open_positions)
+
+    await shadow_runner._score_signal(
+        FakeSession(),  # type: ignore[arg-type]
+        _run({"open_positions": configured_positions}),
+        signal={
+            "signal_type": "momentum",
+            "category": "ferrous",
+            "confidence": 0.74,
+            "related_assets": ["RB"],
+        },
+        context={"category": "ferrous", "regime": "range_low_vol"},
+    )
+
+    assert captured_payloads == [{"open_positions": configured_positions}]
 
 
 def test_initial_shadow_application_specs_cover_first_use_cases() -> None:

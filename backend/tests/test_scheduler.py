@@ -64,3 +64,23 @@ def test_cost_snapshots_job_is_registered() -> None:
 def test_rubber_cost_snapshots_job_is_registered() -> None:
     assert any(definition.id == "rubber-cost-snapshots" for definition in DEFAULT_JOB_DEFINITIONS)
     assert DEFAULT_JOB_HANDLERS["rubber-cost-snapshots"].__name__ == "rubber_cost_snapshots_job"
+
+
+def test_default_jobs_are_registered_or_explicitly_unconfigured() -> None:
+    for definition in DEFAULT_JOB_DEFINITIONS:
+        assert definition.id in DEFAULT_JOB_HANDLERS or definition.enabled is False
+
+
+def test_scheduler_reports_missing_handlers_as_unconfigured() -> None:
+    manager = SchedulerManager(
+        definitions=(JobDefinition("planned", "Planned", "* * * * *", enabled=False),),
+        handlers={},
+    )
+
+    jobs = manager.list_jobs()
+    health = manager.health_summary()
+
+    assert jobs[0]["status"] == "unconfigured"
+    assert health["enabled_jobs"] == 0
+    assert health["unconfigured_jobs"] == ["planned"]
+    assert manager.start_job("planned") is False

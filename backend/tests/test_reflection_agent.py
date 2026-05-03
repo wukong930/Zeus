@@ -5,7 +5,7 @@ from uuid import uuid4
 import pytest
 from fastapi import HTTPException
 
-from app.api.learning import validate_learning_hypothesis
+from app.api.learning import validate_learning_hypothesis, vector_shadow_candidate_config
 from app.models.change_review_queue import ChangeReviewQueue
 from app.models.drift_metrics import DriftMetric
 from app.models.learning_hypotheses import LearningHypothesis
@@ -348,11 +348,58 @@ async def test_vector_shadow_comparison_reports_candidate_delta() -> None:
         candidate_name="bge-m3-candidate",
         baseline_searcher=baseline_searcher,
         candidate_searcher=candidate_searcher,
+        candidate_config={"alpha": 0.75},
     )
 
     assert comparison.ndcg_delta > 0
     assert comparison.recall_delta == 0
     assert comparison.passed_gate is True
+    assert comparison.candidate_config == {"alpha": 0.75}
+
+
+async def test_vector_shadow_comparison_requires_candidate_searcher() -> None:
+    with pytest.raises(ValueError, match="candidate_searcher is required"):
+        await compare_vector_search_candidate(
+            FakeSession(),  # type: ignore[arg-type]
+            candidate_name="missing-candidate",
+        )
+
+
+async def test_vector_shadow_comparison_requires_observed_metric_delta_by_default() -> None:
+    relevant = uuid4()
+    case = VectorEvalCase(
+        id=uuid4(),
+        query_text="rubber supply shock",
+        relevant_chunk_ids=[str(relevant)],
+    )
+    session = FakeSession(scalar_batches=[[case], [case]])
+
+    async def same_searcher(*_, **__):
+        return [_result(relevant, "human_reviewed")]
+
+    comparison = await compare_vector_search_candidate(
+        session,  # type: ignore[arg-type]
+        candidate_name="same-ranking",
+        baseline_searcher=same_searcher,
+        candidate_searcher=same_searcher,
+        candidate_config={"beta": 0.4},
+    )
+
+    assert comparison.ndcg_delta == 0
+    assert comparison.recall_delta == 0
+    assert comparison.passed_gate is False
+
+
+def test_vector_shadow_candidate_config_requires_real_delta() -> None:
+    with pytest.raises(HTTPException) as missing:
+        vector_shadow_candidate_config()
+
+    with pytest.raises(HTTPException) as unchanged:
+        vector_shadow_candidate_config(alpha=0.6)
+
+    assert missing.value.status_code == 400
+    assert unchanged.value.status_code == 400
+    assert vector_shadow_candidate_config(alpha=0.7) == {"alpha": 0.7}
 
 
 def _result(chunk_id, quality_status: str) -> VectorSearchResult:

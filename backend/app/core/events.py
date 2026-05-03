@@ -23,6 +23,7 @@ EventHandler = Callable[..., Awaitable[None] | None]
 STREAM_MAXLEN = 10_000
 STREAM_IDLE_MS = 60_000
 PENDING_RELAY_INTERVAL_SECONDS = 0.5
+TERMINAL_EVENT_STATUSES = {"handled", "dead_letter"}
 
 
 @dataclass(frozen=True)
@@ -267,7 +268,11 @@ async def dispatch_event(
     handler: EventHandler,
     *,
     session: AsyncSession | None = None,
-) -> None:
+) -> bool:
+    if session is not None and await event_has_terminal_status(session, event):
+        logger.info("Skipping already finalized event %s on %s", event.id, event.channel)
+        return False
+
     try:
         result = _call_handler(handler, event, session)
         if inspect.isawaitable(result):
@@ -282,6 +287,22 @@ async def dispatch_event(
 
     if session is not None:
         await record_event(session, event, status="handled")
+    return True
+
+
+async def event_has_terminal_status(session: AsyncSession, event: ZeusEvent) -> bool:
+    row = (
+        await session.scalars(
+            select(EventLog.id)
+            .where(
+                EventLog.event_id == event.id,
+                EventLog.channel == event.channel,
+                EventLog.status.in_(TERMINAL_EVENT_STATUSES),
+            )
+            .limit(1)
+        )
+    ).first()
+    return row is not None
 
 
 def _call_handler(

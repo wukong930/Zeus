@@ -148,7 +148,7 @@ async def record_live_divergence(
         computed_at=effective_at,
     )
     session.add(row)
-    if result.severity == "red":
+    if result.triggered:
         session.add(
             ChangeReviewQueue(
                 source="backtest_live_divergence",
