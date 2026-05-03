@@ -1,8 +1,10 @@
 from statistics import mean
+from typing import Any
 
 from app.services.signals.helpers import build_trigger_step, hurst_exponent, log_returns, std_dev
+from app.services.signals.outcomes import volatility_expansion_outcome
 from app.services.signals.thresholds import get_thresholds
-from app.services.signals.types import TriggerContext, TriggerResult
+from app.services.signals.types import MarketBar, OutcomeEvaluation, TriggerContext, TriggerResult
 
 
 class RegimeShiftEvaluator:
@@ -89,3 +91,11 @@ class RegimeShiftEvaluator:
                 f"Hurst {global_hurst:.2f}->{recent_hurst:.2f}."
             ),
         )
+
+    def evaluate_outcome(
+        self,
+        signal: dict[str, Any],
+        market_data: list[MarketBar],
+        horizon_days: int,
+    ) -> OutcomeEvaluation:
+        return volatility_expansion_outcome(market_data=market_data, horizon_days=horizon_days)

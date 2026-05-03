@@ -232,3 +232,51 @@ async def test_event_driven_triggers_on_gap_and_volume_spike() -> None:
 
     assert result is not None
     assert result.signal_type == "event_driven"
+
+
+def test_all_evaluators_expose_outcome_evaluation() -> None:
+    start = datetime(2026, 5, 1, tzinfo=timezone.utc)
+    market_data = [
+        MarketBar(
+            timestamp=start + timedelta(days=idx),
+            open=100 + idx,
+            high=101 + idx,
+            low=99 + idx,
+            close=100 + idx,
+            volume=100,
+        )
+        for idx in range(25)
+    ]
+    signal = {
+        "title": "RB bullish momentum signal",
+        "summary": "RB generated a bullish signal.",
+        "risk_items": ["Bullish moving-average crossover."],
+        "related_assets": ["RB"],
+        "spread_info": {
+            "leg1": "RB",
+            "leg2": "HC",
+            "current_spread": 106,
+            "historical_mean": 100,
+            "sigma1_upper": 102,
+            "sigma1_lower": 98,
+            "z_score": 3,
+            "half_life": 10,
+            "adf_p_value": 0.03,
+        },
+    }
+
+    evaluators = [
+        SpreadAnomalyEvaluator(),
+        BasisShiftEvaluator(),
+        MomentumEvaluator(),
+        RegimeShiftEvaluator(),
+        InventoryShockEvaluator(),
+        EventDrivenEvaluator(),
+    ]
+
+    outcomes = [
+        evaluator.evaluate_outcome(signal, market_data, horizon_days=20).outcome
+        for evaluator in evaluators
+    ]
+
+    assert outcomes == ["hit", "hit", "hit", "miss", "miss", "hit"]

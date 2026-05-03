@@ -1,7 +1,9 @@
 import math
+from typing import Any
 
 from app.services.signals.helpers import build_trigger_step, moving_average, volume_change
-from app.services.signals.types import TriggerContext, TriggerResult
+from app.services.signals.outcomes import directional_outcome
+from app.services.signals.types import MarketBar, OutcomeEvaluation, TriggerContext, TriggerResult
 
 
 class MomentumEvaluator:
@@ -102,4 +104,16 @@ class MomentumEvaluator:
                 f"{context.symbol1} generated a {direction} MA5/MA20 crossover; "
                 f"volume changed {volume_delta:.1f}%."
             ),
+        )
+
+    def evaluate_outcome(
+        self,
+        signal: dict[str, Any],
+        market_data: list[MarketBar],
+        horizon_days: int,
+    ) -> OutcomeEvaluation:
+        return directional_outcome(
+            signal=signal,
+            market_data=market_data,
+            horizon_days=horizon_days,
         )

@@ -1,7 +1,9 @@
 from statistics import mean
+from typing import Any
 
 from app.services.signals.helpers import build_trigger_step
-from app.services.signals.types import TriggerContext, TriggerResult
+from app.services.signals.outcomes import directional_outcome
+from app.services.signals.types import MarketBar, OutcomeEvaluation, TriggerContext, TriggerResult
 
 
 class EventDrivenEvaluator:
@@ -77,4 +79,16 @@ class EventDrivenEvaluator:
                 f"{context.symbol1} moved {gap_pct:.2f}% with volume spike "
                 f"{volume_spike_pct:.1f}%; event-driven proxy triggered."
             ),
+        )
+
+    def evaluate_outcome(
+        self,
+        signal: dict[str, Any],
+        market_data: list[MarketBar],
+        horizon_days: int,
+    ) -> OutcomeEvaluation:
+        return directional_outcome(
+            signal=signal,
+            market_data=market_data,
+            horizon_days=horizon_days,
         )

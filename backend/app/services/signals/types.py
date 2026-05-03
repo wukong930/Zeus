@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Protocol
+from typing import Any, Protocol
 
 
 Severity = str
@@ -84,8 +84,26 @@ class TriggerResult:
     spread_info: SpreadInfo | None = None
 
 
+@dataclass(frozen=True)
+class OutcomeEvaluation:
+    outcome: str
+    reason: str
+    horizon_days: int
+    forward_return_1d: float | None = None
+    forward_return_5d: float | None = None
+    forward_return_20d: float | None = None
+
+
 class TriggerEvaluator(Protocol):
     signal_type: str
 
     async def evaluate(self, context: TriggerContext) -> TriggerResult | None:
+        ...
+
+    def evaluate_outcome(
+        self,
+        signal: dict[str, Any],
+        market_data: list[MarketBar],
+        horizon_days: int,
+    ) -> OutcomeEvaluation:
         ...

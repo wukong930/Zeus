@@ -1,7 +1,9 @@
 from statistics import mean
+from typing import Any
 
 from app.services.signals.helpers import build_trigger_step, log_returns, std_dev
-from app.services.signals.types import TriggerContext, TriggerResult
+from app.services.signals.outcomes import range_expansion_outcome
+from app.services.signals.types import MarketBar, OutcomeEvaluation, TriggerContext, TriggerResult
 
 
 class InventoryShockEvaluator:
@@ -103,3 +105,11 @@ class InventoryShockEvaluator:
                 f"volatility {vol_ratio:.2f}x."
             ),
         )
+
+    def evaluate_outcome(
+        self,
+        signal: dict[str, Any],
+        market_data: list[MarketBar],
+        horizon_days: int,
+    ) -> OutcomeEvaluation:
+        return range_expansion_outcome(market_data=market_data, horizon_days=horizon_days)

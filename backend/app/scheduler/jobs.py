@@ -5,6 +5,7 @@ from typing import Any
 
 from app.core.database import AsyncSessionLocal
 from app.core.events import publish
+from app.services.calibration.shadow_tracker import evaluate_pending_signals
 from app.services.signals.watchlist import get_enabled_watchlist
 
 
@@ -90,6 +91,20 @@ async def calibration_job() -> dict[str, Any]:
     return await publish_job_event("calibration", "calibration.run_requested")
 
 
+async def track_outcomes_job() -> dict[str, Any]:
+    async with AsyncSessionLocal() as session:
+        result = await evaluate_pending_signals(session)
+        await session.commit()
+    return {
+        "status": "completed",
+        "scanned": result.scanned,
+        "resolved": result.resolved,
+        "pending": result.pending,
+        "skipped": result.skipped,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+
 async def regime_detection_job() -> dict[str, Any]:
     return await publish_job_event("regime-detect", "regime.detect_requested")
 
@@ -102,6 +117,7 @@ DEFAULT_JOB_HANDLERS: dict[str, JobHandler] = {
     definition.id: placeholder_job for definition in DEFAULT_JOB_DEFINITIONS
 }
 DEFAULT_JOB_HANDLERS["ingest"] = ingest_job
+DEFAULT_JOB_HANDLERS["track-outcomes"] = track_outcomes_job
 DEFAULT_JOB_HANDLERS["calibration"] = calibration_job
 DEFAULT_JOB_HANDLERS["regime-detect"] = regime_detection_job
 DEFAULT_JOB_HANDLERS["drift-monitor"] = drift_monitor_job

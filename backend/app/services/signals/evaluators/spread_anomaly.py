@@ -1,5 +1,8 @@
 from app.services.signals.helpers import build_trigger_step, severity_from_z_score
-from app.services.signals.types import SpreadInfo, TriggerContext, TriggerResult
+from typing import Any
+
+from app.services.signals.outcomes import outcome_result, pending_result, sorted_bars
+from app.services.signals.types import MarketBar, OutcomeEvaluation, SpreadInfo, TriggerContext, TriggerResult
 
 
 class SpreadAnomalyEvaluator:
@@ -83,4 +86,31 @@ class SpreadAnomalyEvaluator:
                 f"{context.symbol1}/{context.symbol2} spread z-score reached "
                 f"{stats.current_z_score:.2f}; half-life is {stats.half_life:.1f} days."
             ),
+        )
+
+    def evaluate_outcome(
+        self,
+        signal: dict[str, Any],
+        market_data: list[MarketBar],
+        horizon_days: int,
+    ) -> OutcomeEvaluation:
+        spread_info = signal.get("spread_info")
+        if not isinstance(spread_info, dict):
+            return pending_result("Missing spread_info.", horizon_days, market_data)
+
+        mean = float(spread_info["historical_mean"])
+        sigma = abs(float(spread_info["sigma1_upper"]) - mean)
+        if sigma <= 0:
+            return pending_result("Spread sigma is zero.", horizon_days, market_data)
+
+        ordered = sorted_bars(market_data, horizon_days)
+        if not ordered:
+            return pending_result("Not enough forward market data.", horizon_days, ordered)
+
+        hit = any(abs((bar.close - mean) / sigma) <= 0.5 for bar in ordered)
+        return outcome_result(
+            outcome="hit" if hit else "miss",
+            reason="Spread z-score reverted inside +/-0.5." if hit else "Spread did not revert.",
+            horizon_days=horizon_days,
+            market_data=ordered,
         )

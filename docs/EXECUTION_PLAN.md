@@ -244,7 +244,7 @@ zeus/
   - [x] **`signal_track` 表新增字段**：
     - [x] `calibration_weight_at_emission` — 触发时使用的权重
     - [x] `signal_combination_hash` — 组合哈希
-    - `forward_return_1d / 5d / 20d` — 多窗口前向收益（取代 Causa 单一的 outcome）
+    - [x] `forward_return_1d / 5d / 20d` — 多窗口前向收益（取代 Causa 单一的 outcome）
     - [x] `regime_at_emission` — 触发时的 regime
 - [ ] **Regime 检测**
   - [x] `services/calibration/regime_detector.py`
@@ -252,18 +252,18 @@ zeus/
     - [x] 分类：trend_up_low_vol / trend_down_low_vol / range_high_vol / range_low_vol
     - 每日 ETL 后按板块计算 regime 并写入 `regime_state` 表
   - [ ] HMM baseline（hmmlearn）作为对比，不进主链路
-- [ ] **影子追踪器**（避免幸存者偏差，Zeus 核心机制）
-  - [ ] `services/calibration/shadow_tracker.py`
-    - 每个信号触发瞬间启动影子追踪，不依赖用户行为
-    - 调度器每日扫描达到评估窗口的 pending 信号
-    - 调用对应评估器的 `evaluate_outcome` 方法标记 outcome
-  - [ ] **每个评估器实现 `evaluate_outcome(signal, market_data, horizon)` 方法**：
-    - `spread_anomaly`：Z-score 在窗口内回归到 ±0.5 内 → hit
-    - `basis_shift`：基差变动方向被价格证实 → hit
-    - `momentum`：前向收益与信号方向一致 → hit
-    - `regime_shift`：后续波动率/趋势特征匹配预测 → hit
-    - `inventory_shock`：现货价格在窗口内出现预测方向变动 → hit
-    - `event_driven`（Phase 4.5 拆为 `price_gap` / `news_event`）：跳空延续 vs 回补 / 标的方向变动
+- [x] **影子追踪器**（避免幸存者偏差，Zeus 核心机制）
+  - [x] `services/calibration/shadow_tracker.py`
+    - [x] 每个信号触发瞬间启动影子追踪，不依赖用户行为
+    - [x] 调度器每日扫描达到评估窗口的 pending 信号
+    - [x] 调用对应评估器的 `evaluate_outcome` 方法标记 outcome
+  - [x] **每个评估器实现 `evaluate_outcome(signal, market_data, horizon)` 方法**：
+    - [x] `spread_anomaly`：Z-score 在窗口内回归到 ±0.5 内 → hit
+    - [x] `basis_shift`：基差变动方向被价格证实 → hit
+    - [x] `momentum`：前向收益与信号方向一致 → hit
+    - [x] `regime_shift`：后续波动率/趋势特征匹配预测 → hit
+    - [x] `inventory_shock`：现货价格在窗口内出现预测方向变动 → hit
+    - [x] `event_driven`（Phase 4.5 拆为 `price_gap` / `news_event`）：跳空延续 vs 回补 / 标的方向变动
 - [ ] **校准模块**
   - [x] `services/calibration/tracker.py`
     - [x] 信号触发时记录：信号类型、板块、regime、当前权重、组合哈希
@@ -312,7 +312,7 @@ zeus/
   - [ ] 单元测试：直接尝试改 calibration 表会被拒绝
 - [ ] **验证**
   - [x] 模拟数据测试：构造 200 个已知 outcome 的信号，验证 Bayesian 更新公式正确
-  - [ ] 验证影子追踪器在每日调度中正确标记 outcome
+  - [x] 验证影子追踪器在每日调度中正确标记 outcome
   - [x] 验证 regime 检测对明确市场状态的判断正确
   - [x] 验证 Drift 监控：注入分布偏移数据，PSI 应触发告警
   - [ ] 验证治理守卫：尝试绕过审核直接改 calibration 应失败
