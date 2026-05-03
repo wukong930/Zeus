@@ -332,8 +332,10 @@ export async function simulateCostModel(
   });
 }
 
-export async function fetchCostQualityReport(): Promise<CostQualityReport> {
-  return fetchJson<CostQualityReport>("/api/cost-models/quality/ferrous");
+export async function fetchCostQualityReport(
+  sector: "ferrous" | "rubber" = "ferrous"
+): Promise<CostQualityReport> {
+  return fetchJson<CostQualityReport>(`/api/cost-models/quality/${sector}`);
 }
 
 export async function submitAlertFeedback(

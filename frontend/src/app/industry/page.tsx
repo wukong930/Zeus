@@ -41,7 +41,7 @@ const SECTOR_CONFIG: Record<
     defaultSymbol: string;
     symbols: readonly string[];
     chainLabel: string;
-    quality: "ferrous" | "bootstrap";
+    quality: "ferrous" | "rubber";
   }
 > = {
   ferrous: {
@@ -58,7 +58,7 @@ const SECTOR_CONFIG: Record<
     defaultSymbol: "RU",
     symbols: RUBBER_SYMBOL_ORDER,
     chainLabel: "NR → RU",
-    quality: "bootstrap",
+    quality: "rubber",
   },
 };
 
@@ -194,9 +194,7 @@ export default function IndustryLensPage() {
               }
             })
           ),
-          config.quality === "ferrous"
-            ? fetchCostQualityReport().catch(() => MOCK_QUALITY)
-            : Promise.resolve(MOCK_QUALITY),
+          fetchCostQualityReport(config.quality).catch(() => MOCK_QUALITY),
         ]);
 
         if (!ignore) {
@@ -410,11 +408,8 @@ export default function IndustryLensPage() {
         </Card>
       </div>
 
-      {config.quality === "ferrous" ? (
-        <QualityReportPanel report={qualityReport} />
-      ) : (
-        <RubberValidationPanel model={displayModel} />
-      )}
+      <QualityReportPanel report={qualityReport} />
+      {sector === "rubber" ? <RubberValidationPanel model={displayModel} /> : null}
     </div>
   );
 }

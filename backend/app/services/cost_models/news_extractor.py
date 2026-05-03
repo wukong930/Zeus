@@ -32,12 +32,18 @@ _SYMBOL_KEYWORDS = {
     "I": ("iron ore", "i230", "铁矿"),
     "RB": ("rebar", "螺纹"),
     "HC": ("hot coil", "热卷"),
+    "NR": ("natural rubber", "latex", "cup lump", "天然橡胶", "20号胶", "胶水"),
+    "RU": ("rubber", "shfe rubber", "天然橡胶", "沪胶", "橡胶"),
 }
 
 _COMPONENT_KEYWORDS = {
     "freight": ("freight", "shipping", "运费"),
+    "ocean_freight": ("drewry", "ccfi", "ocean freight", "import freight", "海运费", "进口运费"),
     "processing_fee": ("processing", "conversion", "加工费"),
     "spot_price": ("spot", "现货", "均价"),
+    "thai_field_latex_cny": ("thailand", "thai", "latex", "cup lump", "泰国", "胶水"),
+    "qingdao_bonded_spot_premium": ("qingdao", "bonded", "保税区", "青岛"),
+    "hainan_yunnan_collection_cost": ("hainan", "yunnan", "collection", "海南", "云南", "收胶"),
     "tax_fee": ("tax", "tariff", "关税"),
 }
 

@@ -5,7 +5,7 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.cost_snapshot import CostSnapshot
-from app.services.cost_models.cost_chain import FERROUS_CHAIN_ORDER
+from app.services.cost_models.cost_chain import FERROUS_CHAIN_ORDER, RUBBER_CHAIN_ORDER
 from app.services.cost_models.snapshots import calculate_cost_snapshot, latest_cost_snapshot
 from app.services.signals.evaluators.cost_model import (
     CapacityContractionEvaluator,
@@ -13,7 +13,8 @@ from app.services.signals.evaluators.cost_model import (
     MedianPressureEvaluator,
     RestartExpectationEvaluator,
 )
-from app.services.signals.types import CostSnapshotPoint, TriggerContext
+from app.services.signals.evaluators.rubber_supply import RubberSupplyShockEvaluator
+from app.services.signals.types import CostSnapshotPoint, NewsEventPoint, TriggerContext
 
 ACCEPTABLE_BENCHMARK_ERROR_PCT = 5.0
 MIN_SIGNAL_CASE_HIT_RATE = 0.75
@@ -158,17 +159,88 @@ PUBLIC_FERROUS_BENCHMARKS: tuple[PublicBenchmark, ...] = (
     ),
 )
 
+PUBLIC_RUBBER_BENCHMARKS: tuple[PublicBenchmark, ...] = (
+    PublicBenchmark(
+        symbol="NR",
+        metric="breakeven_p50",
+        public_value=12800.0,
+        source="phase7b_public_rubber_reference_pack",
+        observed_at=datetime(2026, 5, 3, tzinfo=timezone.utc),
+        note="Natural-rubber public origin basket estimate from SEA and domestic origin references.",
+    ),
+    PublicBenchmark(
+        symbol="NR",
+        metric="breakeven_p90",
+        public_value=15650.0,
+        source="phase7b_public_rubber_reference_pack",
+        observed_at=datetime(2026, 5, 3, tzinfo=timezone.utc),
+        note="High-cost origin estimate including seasonal/tapping stress premium.",
+    ),
+    PublicBenchmark(
+        symbol="RU",
+        metric="breakeven_p50",
+        public_value=14950.0,
+        source="phase7b_public_rubber_reference_pack",
+        observed_at=datetime(2026, 5, 3, tzinfo=timezone.utc),
+        note="SHFE RU midpoint breakeven from NR input, processing, grade, warehouse and delivery fees.",
+    ),
+    PublicBenchmark(
+        symbol="RU",
+        metric="breakeven_p75",
+        public_value=16100.0,
+        source="phase7b_public_rubber_reference_pack",
+        observed_at=datetime(2026, 5, 3, tzinfo=timezone.utc),
+        note="RU high-cost producer estimate for marginal cost-pressure monitoring.",
+    ),
+    PublicBenchmark(
+        symbol="RU",
+        metric="breakeven_p90",
+        public_value=17500.0,
+        source="phase7b_public_rubber_reference_pack",
+        observed_at=datetime(2026, 5, 3, tzinfo=timezone.utc),
+        note="RU marginal capacity estimate used for supply squeeze validation.",
+    ),
+)
+
 
 async def run_ferrous_quality_report(session: AsyncSession) -> CostQualityReport:
-    snapshots = await latest_or_calculated_snapshots(session)
+    snapshots = await latest_or_calculated_snapshots(session, FERROUS_CHAIN_ORDER)
     comparisons = compare_public_benchmarks(snapshots, PUBLIC_FERROUS_BENCHMARKS)
     signal_cases = await evaluate_historical_signal_cases()
-    return build_quality_report(comparisons=comparisons, signal_cases=signal_cases)
+    return build_quality_report(
+        sector="ferrous",
+        comparisons=comparisons,
+        signal_cases=signal_cases,
+        limitations=[
+            "Reference pack is a public-source bootstrap, not a licensed Mysteel/SMM/Zhuochuang feed.",
+            "Low-frequency inputs still use manual/public fallbacks and should be reviewed quarterly.",
+            "Historical signal cases validate trigger logic, not full forward PnL without deeper archived data.",
+        ],
+    )
 
 
-async def latest_or_calculated_snapshots(session: AsyncSession) -> dict[str, CostSnapshot]:
+async def run_rubber_quality_report(session: AsyncSession) -> CostQualityReport:
+    snapshots = await latest_or_calculated_snapshots(session, RUBBER_CHAIN_ORDER)
+    comparisons = compare_public_benchmarks(snapshots, PUBLIC_RUBBER_BENCHMARKS)
+    signal_cases = await evaluate_historical_rubber_signal_cases()
+    return build_quality_report(
+        sector="rubber",
+        comparisons=comparisons,
+        signal_cases=signal_cases,
+        limitations=[
+            "Rubber reference pack validates public breakeven reasonableness, not licensed Zhuochuang/SMM prices.",
+            "Production source specs are ready for Qingdao, Hainan/Yunnan, SEA export, and freight feeds.",
+            "Origin-weather signal cases validate event recognition; deeper archived PnL is still a Phase 8/learning task.",
+        ],
+    )
+
+
+async def latest_or_calculated_snapshots(
+    session: AsyncSession,
+    symbols: tuple[str, ...] = FERROUS_CHAIN_ORDER,
+) -> dict[str, CostSnapshot]:
     snapshots: dict[str, CostSnapshot] = {}
-    for symbol in FERROUS_CHAIN_ORDER:
+    for symbol in symbols:
         row = await latest_cost_snapshot(session, symbol)
         if row is not None:
             snapshots[symbol] = row
@@ -246,6 +318,54 @@ async def evaluate_historical_signal_cases() -> list[SignalCaseResult]:
     ]
 
 
+async def evaluate_historical_rubber_signal_cases() -> list[SignalCaseResult]:
+    return [
+        await evaluate_signal_case(
+            case_id="rubber-ru-marginal-squeeze",
+            title="RU price below rubber cost curve",
+            snapshots=[
+                synthetic_cost_snapshot(
+                    0,
+                    symbol="RU",
+                    price=14000,
+                    unit_cost=15327.8,
+                    p25=14867.966,
+                    p50=14867.966,
+                    p75=16094.19,
+                    p90=17473.692,
+                    margin=-0.094843,
+                )
+            ],
+            expected_signals=["median_pressure", "marginal_capacity_squeeze"],
+            note="RU below P50/P75 should surface rubber margin pressure.",
+            symbol="RU",
+            category="rubber",
+        ),
+        await evaluate_news_signal_case(
+            case_id="rubber-2019-thai-drought",
+            title="2019 Thai drought rubber supply stress",
+            event=synthetic_rubber_news_event(
+                "rubber-2019-thai-drought",
+                "Thailand drought cuts natural rubber tapping",
+                "Dry weather in Thai rubber producing regions lowers field latex flow.",
+            ),
+            expected_signals=["rubber_supply_shock"],
+            note="Thai drought maps to NR/RU supply stress through origin tapping disruption.",
+        ),
+        await evaluate_news_signal_case(
+            case_id="rubber-2020-covid-tapping",
+            title="2020 tapping disruption during Covid restrictions",
+            event=synthetic_rubber_news_event(
+                "rubber-2020-covid-tapping",
+                "Malaysia rubber tapping disruption during Covid restrictions",
+                "Movement restrictions disrupt rubber tapping and export logistics.",
+            ),
+            expected_signals=["rubber_supply_shock"],
+            note="Covid-era tapping/logistics restrictions should be visible as rubber supply shock.",
+        ),
+    ]
+
+
 async def evaluate_signal_case(
     *,
     case_id: str,
@@ -253,10 +373,12 @@ async def evaluate_signal_case(
     snapshots: list[CostSnapshotPoint],
     expected_signals: list[str],
     note: str,
+    symbol: str = "RB",
+    category: str = "ferrous",
 ) -> SignalCaseResult:
     context = TriggerContext(
-        symbol1="RB",
-        category="ferrous",
+        symbol1=symbol,
+        category=category,
         timestamp=snapshots[-1].timestamp if snapshots else datetime.now(timezone.utc),
         cost_snapshots=snapshots,
     )
@@ -281,31 +403,90 @@ async def evaluate_signal_case(
     )
 
 
+async def evaluate_news_signal_case(
+    *,
+    case_id: str,
+    title: str,
+    event: NewsEventPoint,
+    expected_signals: list[str],
+    note: str,
+) -> SignalCaseResult:
+    context = TriggerContext(
+        symbol1="RU",
+        category="rubber",
+        timestamp=event.published_at,
+        news_events=[event],
+    )
+    evaluators = (RubberSupplyShockEvaluator(),)
+    triggered = [
+        result.signal_type
+        for result in [await evaluator.evaluate(context) for evaluator in evaluators]
+        if result is not None
+    ]
+    return SignalCaseResult(
+        case_id=case_id,
+        title=title,
+        expected_signals=expected_signals,
+        triggered_signals=triggered,
+        passed=set(expected_signals).issubset(triggered),
+        note=note,
+    )
+
+
 def synthetic_cost_snapshot(
     idx: int,
     *,
     price: float,
     unit_cost: float,
     margin: float | None = None,
+    symbol: str = "RB",
+    p25: float = 90.0,
+    p50: float = 100.0,
+    p75: float = 110.0,
+    p90: float = 120.0,
 ) -> CostSnapshotPoint:
     observed_at = datetime(2026, 1, 1, tzinfo=timezone.utc) + timedelta(days=idx)
     return CostSnapshotPoint(
-        symbol="RB",
+        symbol=symbol,
         timestamp=observed_at,
         current_price=price,
         total_unit_cost=unit_cost,
-        breakeven_p25=90.0,
-        breakeven_p50=100.0,
-        breakeven_p75=110.0,
-        breakeven_p90=120.0,
+        breakeven_p25=p25,
+        breakeven_p50=p50,
+        breakeven_p75=p75,
+        breakeven_p90=p90,
         profit_margin=margin,
+    )
+
+
+def synthetic_rubber_news_event(
+    event_id: str,
+    title: str,
+    summary: str,
+) -> NewsEventPoint:
+    return NewsEventPoint(
+        id=event_id,
+        source="phase7b_historical_validation",
+        title=title,
+        summary=summary,
+        published_at=datetime(2026, 5, 3, tzinfo=timezone.utc),
+        event_type="supply",
+        affected_symbols=["NR", "RU"],
+        direction="bullish",
+        severity=4,
+        time_horizon="short",
+        confidence=0.8,
+        source_count=2,
+        verification_status="cross_verified",
     )
 
 
 def build_quality_report(
     *,
+    sector: str = "ferrous",
     comparisons: list[BenchmarkComparison],
     signal_cases: list[SignalCaseResult],
+    limitations: list[str] | None = None,
 ) -> CostQualityReport:
     errors = [item.error_pct for item in comparisons]
     benchmark_passes = [item.within_tolerance for item in comparisons]
@@ -320,7 +501,7 @@ def build_quality_report(
         signal_case_hit_rate=signal_hit_rate,
     )
     return CostQualityReport(
-        sector="ferrous",
+        sector=sector,
         generated_at=datetime.now(timezone.utc),
         benchmark_error_avg_pct=avg_error,
         benchmark_error_max_pct=max_error,
@@ -331,11 +512,7 @@ def build_quality_report(
         preferred_vendor=vendor,
         benchmark_comparisons=comparisons,
         signal_cases=signal_cases,
-        limitations=[
-            "Reference pack is a public-source bootstrap, not a licensed Mysteel/SMM/Zhuochuang feed.",
-            "Low-frequency inputs still use manual/public fallbacks and should be reviewed quarterly.",
-            "Historical signal cases validate trigger logic, not full forward PnL without deeper archived data.",
-        ],
+        limitations=limitations or [],
     )
 
 

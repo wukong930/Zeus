@@ -9,11 +9,15 @@ from app.services.cost_models.cost_chain import calculate_cost_chain, calculate_
 from app.services.cost_models.framework import cost_curve_percentiles
 from app.services.cost_models.news_extractor import extract_cost_data_points
 from app.services.cost_models.quality import (
+    PUBLIC_RUBBER_BENCHMARKS,
     build_quality_report,
     compare_public_benchmarks,
     evaluate_historical_signal_cases,
+    evaluate_historical_rubber_signal_cases,
 )
 from app.services.cost_models.rubber_sources import (
+    production_rubber_fallback_inputs,
+    production_rubber_source_specs,
     public_rubber_inputs,
     public_rubber_source_points,
     rubber_seasonal_factor,
@@ -104,6 +108,21 @@ def test_rubber_public_sources_cover_phase7b_inputs() -> None:
     assert {"thai_field_latex_cny", "qingdao_bonded_spot_premium", "ocean_freight"} <= source_keys
     assert inputs["hainan_yunnan_collection_cost"] == 420
     assert rubber_seasonal_factor(1) > rubber_seasonal_factor(8)
+
+
+def test_rubber_production_source_specs_cover_phase7b_targets() -> None:
+    specs = production_rubber_source_specs()
+    components = {spec.component for spec in specs}
+    fallback_inputs = production_rubber_fallback_inputs()
+
+    assert {
+        "qingdao_bonded_spot_premium",
+        "hainan_yunnan_collection_cost",
+        "thai_field_latex_cny",
+        "ocean_freight",
+    } <= components
+    assert all(spec.quality == "production_candidate" for spec in specs)
+    assert fallback_inputs["thai_field_latex_cny"] == 11200
 
 
 def test_blast_furnace_margin_uses_phase7a_formula() -> None:
@@ -240,6 +259,30 @@ async def test_quality_report_recommends_deferring_paid_feed_when_checks_pass() 
     assert report.preferred_vendor is None
 
 
+async def test_rubber_quality_report_validates_public_breakevens() -> None:
+    chain = calculate_cost_chain(symbols=("NR", "RU"))
+    snapshots = {
+        symbol: CostSnapshot(
+            snapshot_date=date(2026, 5, 3),
+            **result.to_snapshot_payload(),
+        )
+        for symbol, result in chain.results.items()
+    }
+    comparisons = compare_public_benchmarks(snapshots, PUBLIC_RUBBER_BENCHMARKS)
+    signal_cases = await evaluate_historical_rubber_signal_cases()
+
+    report = build_quality_report(
+        sector="rubber",
+        comparisons=comparisons,
+        signal_cases=signal_cases,
+    )
+
+    assert report.sector == "rubber"
+    assert report.benchmark_error_avg_pct < 2
+    assert report.signal_case_hit_rate == 1.0
+    assert report.paid_data_recommendation == "defer_paid_purchase_monitor_weekly"
+
+
 def test_news_extractor_finds_cost_data_points() -> None:
     points = extract_cost_data_points(
         title="Iron ore freight rises",
@@ -251,6 +294,25 @@ def test_news_extractor_finds_cost_data_points() -> None:
     assert points[0].symbol == "I"
     assert points[0].component == "freight"
     assert points[0].value == 62
+
+
+def test_news_extractor_finds_rubber_cost_data_points() -> None:
+    points = extract_cost_data_points(
+        title="Qingdao bonded natural rubber spot premium rises",
+        content=(
+            "Qingdao bonded rubber spot premium reached 320 yuan per tonne; "
+            "Thailand latex quote 11200 yuan."
+        ),
+        source="public-rubber-feed",
+        published_at=datetime(2026, 5, 3, tzinfo=timezone.utc),
+    )
+
+    components = {point.component for point in points}
+    symbols = {point.symbol for point in points}
+
+    assert {"RU", "NR"} <= symbols
+    assert "qingdao_bonded_spot_premium" in components
+    assert "thai_field_latex_cny" in components
 
 
 def test_simulation_api_returns_cost_breakdown() -> None:
@@ -327,4 +389,38 @@ def test_quality_api_returns_report(monkeypatch) -> None:
     payload = response.json()
     assert payload["sector"] == "ferrous"
     assert payload["benchmark_pass_rate"] >= 0.8
+    assert payload["signal_case_hit_rate"] == 1.0
+
+
+def test_rubber_quality_api_returns_report(monkeypatch) -> None:
+    chain = calculate_cost_chain(symbols=("NR", "RU"))
+    snapshots = {
+        symbol: CostSnapshot(
+            snapshot_date=date(2026, 5, 3),
+            **result.to_snapshot_payload(),
+        )
+        for symbol, result in chain.results.items()
+    }
+
+    async def fake_report(_session):
+        return build_quality_report(
+            sector="rubber",
+            comparisons=compare_public_benchmarks(snapshots, PUBLIC_RUBBER_BENCHMARKS),
+            signal_cases=await evaluate_historical_rubber_signal_cases(),
+        )
+
+    async def fake_db():
+        yield object()
+
+    monkeypatch.setattr("app.api.cost_models.run_rubber_quality_report", fake_report)
+    app = create_app()
+    app.dependency_overrides[get_db] = fake_db
+    client = TestClient(app)
+
+    response = client.get("/api/cost-models/quality/rubber")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["sector"] == "rubber"
+    assert payload["benchmark_pass_rate"] == 1.0
     assert payload["signal_case_hit_rate"] == 1.0

@@ -12,7 +12,7 @@ from app.schemas.common import (
     CostSnapshotRead,
 )
 from app.services.cost_models.cost_chain import calculate_cost_chain, chain_order_for_symbol
-from app.services.cost_models.quality import run_ferrous_quality_report
+from app.services.cost_models.quality import run_ferrous_quality_report, run_rubber_quality_report
 from app.services.cost_models.snapshots import (
     calculate_cost_snapshot,
     current_prices_for_symbols,
@@ -26,6 +26,12 @@ router = APIRouter(prefix="/api/cost-models", tags=["cost-models"])
 @router.get("/quality/ferrous", response_model=CostQualityReportRead)
 async def get_ferrous_cost_quality_report(session: AsyncSession = Depends(get_db)) -> dict:
     report = await run_ferrous_quality_report(session)
+    return report.to_dict()
+
+
+@router.get("/quality/rubber", response_model=CostQualityReportRead)
+async def get_rubber_cost_quality_report(session: AsyncSession = Depends(get_db)) -> dict:
+    report = await run_rubber_quality_report(session)
     return report.to_dict()
 
 
