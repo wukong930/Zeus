@@ -1,29 +1,56 @@
 "use client";
 
-import { useState } from "react";
-import { ALERTS, type Severity } from "@/data/mock";
+import { useEffect, useMemo, useState } from "react";
+import { ALERTS, type Alert, type Severity } from "@/data/mock";
 import { AlertCard } from "@/components/AlertCard";
 import { Badge } from "@/components/Badge";
 import { Card } from "@/components/Card";
+import { fetchAlertsFromApi } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { Search } from "lucide-react";
-
-const SEVERITIES: { value: Severity; label: string; count: number }[] = [
-  { value: "critical", label: "Critical", count: ALERTS.filter((a) => a.severity === "critical").length },
-  { value: "high", label: "High", count: ALERTS.filter((a) => a.severity === "high").length },
-  { value: "medium", label: "Medium", count: ALERTS.filter((a) => a.severity === "medium").length },
-  { value: "low", label: "Low", count: ALERTS.filter((a) => a.severity === "low").length },
-];
 
 const SECTORS = ["ferrous", "rubber", "energy", "metals", "agri", "precious"];
 
 export default function AlertsPage() {
+  const [alerts, setAlerts] = useState<Alert[]>([]);
+  const [source, setSource] = useState<"loading" | "api" | "mock">("loading");
   const [enabledSeverities, setEnabledSeverities] = useState<Set<Severity>>(
     new Set(["critical", "high", "medium", "low"])
   );
   const [enabledSectors, setEnabledSectors] = useState<Set<string>>(new Set(SECTORS));
 
-  const filtered = ALERTS.filter(
+  useEffect(() => {
+    let ignore = false;
+    fetchAlertsFromApi()
+      .then((rows) => {
+        if (!ignore) {
+          setAlerts(rows);
+          setSource("api");
+        }
+      })
+      .catch(() => {
+        if (!ignore) {
+          setAlerts(ALERTS);
+          setSource("mock");
+        }
+      });
+
+    return () => {
+      ignore = true;
+    };
+  }, []);
+
+  const severities = useMemo(
+    () =>
+      (["critical", "high", "medium", "low"] as Severity[]).map((value) => ({
+        value,
+        label: value[0].toUpperCase() + value.slice(1),
+        count: alerts.filter((alert) => alert.severity === value).length,
+      })),
+    [alerts]
+  );
+
+  const filtered = alerts.filter(
     (a) => enabledSeverities.has(a.severity) && enabledSectors.has(a.sector)
   );
 
@@ -33,9 +60,14 @@ export default function AlertsPage() {
       <aside className="w-72 border-r border-border-subtle p-5 space-y-6 overflow-y-auto">
         <div>
           <h1 className="text-h1 text-text-primary">Alerts</h1>
-          <p className="text-caption text-text-muted mt-1">
-            {filtered.length} / {ALERTS.length}
-          </p>
+          <div className="flex items-center gap-2 mt-1">
+            <p className="text-caption text-text-muted">
+              {filtered.length} / {alerts.length}
+            </p>
+            <Badge variant={source === "mock" ? "orange" : "emerald"}>
+              {source === "loading" ? "SYNC" : source.toUpperCase()}
+            </Badge>
+          </div>
         </div>
 
         <div className="relative">
@@ -49,7 +81,7 @@ export default function AlertsPage() {
         <div>
           <div className="text-caption text-text-muted uppercase tracking-wider mb-2">严重度</div>
           <div className="space-y-1">
-            {SEVERITIES.map((s) => (
+            {severities.map((s) => (
               <FilterChip
                 key={s.value}
                 checked={enabledSeverities.has(s.value)}
@@ -82,7 +114,7 @@ export default function AlertsPage() {
                   setEnabledSectors(next);
                 }}
                 label={sec}
-                count={ALERTS.filter((a) => a.sector === sec).length}
+                count={alerts.filter((a) => a.sector === sec).length}
               />
             ))}
           </div>
@@ -93,7 +125,7 @@ export default function AlertsPage() {
       <div className="flex-1 overflow-y-auto p-6 space-y-3">
         {filtered.length === 0 ? (
           <Card variant="flat" className="py-10 text-center text-text-muted">
-            没有匹配的预警
+            {source === "loading" ? "预警加载中" : "没有匹配的预警"}
           </Card>
         ) : (
           filtered.map((alert, i) => (

@@ -1,17 +1,55 @@
 "use client";
 
+import { useEffect, useMemo, useState } from "react";
 import { Card, CardHeader, CardTitle, CardSubtitle } from "@/components/Card";
 import { Badge } from "@/components/Badge";
 import { Button } from "@/components/Button";
+import { VintageBadge } from "@/components/VintageBadge";
 import { POSITIONS } from "@/data/mock";
-import { Plus, TrendingUp, TrendingDown, AlertTriangle } from "lucide-react";
+import { fetchPortfolioSnapshot, type PortfolioSnapshot, type PortfolioPosition } from "@/lib/api";
+import { Plus, TrendingUp, TrendingDown, AlertTriangle, RefreshCw } from "lucide-react";
 import { cn, formatPercent } from "@/lib/utils";
 
 export default function PortfolioPage() {
-  const totalPnL = POSITIONS.reduce((sum, p) => sum + p.pnl, 0);
-  const totalMargin = 21000;
+  const [snapshot, setSnapshot] = useState<PortfolioSnapshot | null>(null);
+  const [positions, setPositions] = useState<PortfolioPosition[]>([]);
+  const [source, setSource] = useState<"loading" | "api" | "mock">("loading");
+
+  useEffect(() => {
+    let ignore = false;
+    fetchPortfolioSnapshot()
+      .then((data) => {
+        if (!ignore) {
+          setSnapshot(data);
+          setPositions(data.positions);
+          setSource("api");
+        }
+      })
+      .catch(() => {
+        if (!ignore) {
+          setSnapshot(null);
+          setPositions(mockPositions());
+          setSource("mock");
+        }
+      });
+
+    return () => {
+      ignore = true;
+    };
+  }, []);
+
+  const totalPnL = useMemo(() => positions.reduce((sum, p) => sum + p.pnl, 0), [positions]);
+  const totalMargin = useMemo(() => positions.reduce((sum, p) => sum + p.marginUsed, 0), [positions]);
   const totalEquity = 100000;
   const usage = (totalMargin / totalEquity) * 100;
+  const worstStress = useMemo(
+    () =>
+      snapshot?.stressResults.reduce(
+        (worst, result) => Math.min(worst, result.portfolio_pnl),
+        0
+      ) ?? 0,
+    [snapshot]
+  );
 
   return (
     <div className="px-8 py-6 space-y-6 animate-fade-in">
@@ -22,10 +60,15 @@ export default function PortfolioPage() {
             可视化展示持仓在传导图中的位置 + 组合风险
           </p>
         </div>
-        <Button variant="action">
-          <Plus className="w-4 h-4" />
-          添加持仓
-        </Button>
+        <div className="flex items-center gap-2">
+          <Badge variant={source === "mock" ? "orange" : "emerald"}>
+            {source === "loading" ? "SYNC" : source.toUpperCase()}
+          </Badge>
+          <Button variant="action">
+            <Plus className="w-4 h-4" />
+            添加持仓
+          </Button>
+        </div>
       </div>
 
       {/* Risk dashboard */}
@@ -36,9 +79,19 @@ export default function PortfolioPage() {
           subtext="当日浮动"
           colorClass={totalPnL >= 0 ? "text-data-up" : "text-data-down"}
         />
-        <RiskCard label="VaR 95%" value="¥-5,200" subtext="1 日 95% 置信" colorClass="text-text-primary" />
+        <RiskCard
+          label="VaR 95%"
+          value={`¥${formatCurrency(snapshot?.varResult?.var95 ?? 0)}`}
+          subtext={`${snapshot?.varResult?.horizon ?? 1} 日 95% 置信`}
+          colorClass="text-text-primary"
+        />
         <RiskCard label="保证金占用" value={`${usage.toFixed(1)}%`} subtext={`¥${totalMargin.toLocaleString()} / ¥${totalEquity.toLocaleString()}`} colorClass="text-brand-emerald-bright" />
-        <RiskCard label="板块集中度" value="68%" subtext="黑色 + 橡胶" colorClass="text-severity-high-fg" />
+        <RiskCard
+          label="压力损失"
+          value={`¥${formatCurrency(worstStress)}`}
+          subtext={`${snapshot?.stressResults.length ?? 0} 个场景`}
+          colorClass={worstStress < 0 ? "text-severity-high-fg" : "text-text-primary"}
+        />
       </div>
 
       {/* Position list */}
@@ -46,7 +99,7 @@ export default function PortfolioPage() {
         <CardHeader>
           <div>
             <CardTitle>持仓列表</CardTitle>
-            <CardSubtitle>{POSITIONS.length} 笔持仓 · 包含传导图激活范围</CardSubtitle>
+            <CardSubtitle>{positions.length} 笔持仓 · 包含传导图激活范围</CardSubtitle>
           </div>
         </CardHeader>
         <div className="overflow-x-auto">
@@ -60,12 +113,13 @@ export default function PortfolioPage() {
                 <th className="text-right py-2 px-3 font-medium">现价</th>
                 <th className="text-right py-2 px-3 font-medium">浮动盈亏</th>
                 <th className="text-right py-2 px-3 font-medium">收益率</th>
+                <th className="text-left py-2 px-3 font-medium">数据版本</th>
                 <th className="text-left py-2 px-3 font-medium">开仓日期</th>
                 <th className="text-right py-2 px-3 font-medium">操作</th>
               </tr>
             </thead>
             <tbody>
-              {POSITIONS.map((pos) => {
+              {positions.map((pos) => {
                 const isUp = pos.pnlPercent >= 0;
                 return (
                   <tr key={pos.id} className="border-b border-border-subtle hover:bg-bg-surface-raised">
@@ -92,6 +146,9 @@ export default function PortfolioPage() {
                         {formatPercent(pos.pnlPercent)}
                       </span>
                     </td>
+                    <td className="py-3 px-3">
+                      <VintageBadge vintageAt={pos.vintageAt} />
+                    </td>
                     <td className="py-3 px-3 text-text-muted">{pos.openDate}</td>
                     <td className="py-3 px-3 text-right space-x-1">
                       <Button variant="ghost" size="sm">减半</Button>
@@ -100,6 +157,20 @@ export default function PortfolioPage() {
                   </tr>
                 );
               })}
+              {positions.length === 0 && (
+                <tr>
+                  <td colSpan={10} className="py-10 text-center text-text-muted">
+                    {source === "loading" ? (
+                      <span className="inline-flex items-center gap-2">
+                        <RefreshCw className="w-4 h-4 animate-spin" />
+                        持仓加载中
+                      </span>
+                    ) : (
+                      "当前没有开放持仓"
+                    )}
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
@@ -114,24 +185,20 @@ export default function PortfolioPage() {
           </div>
         </CardHeader>
         <div className="grid grid-cols-2 gap-5">
-          <PropagationGroup
-            anchor="RB2510 (持仓)"
-            sector="ferrous"
-            related={[
-              { symbol: "I", name: "铁矿石", reason: "上游原料", lag: "0-3d" },
-              { symbol: "J", name: "焦炭", reason: "上游原料", lag: "0-3d" },
-              { symbol: "JM", name: "焦煤", reason: "二级原料", lag: "3-7d" },
-              { symbol: "HC", name: "热卷", reason: "替代品", lag: "0-1d" },
-            ]}
-          />
-          <PropagationGroup
-            anchor="NR2509 (持仓)"
-            sector="rubber"
-            related={[
-              { symbol: "RU", name: "天然橡胶", reason: "替代品", lag: "0-2d" },
-              { symbol: "BR", name: "顺丁橡胶", reason: "下游替代", lag: "5-15d" },
-            ]}
-          />
+          {positions.length > 0 ? (
+            positions.slice(0, 2).map((position) => (
+              <PropagationGroup
+                key={position.id}
+                anchor={`${position.symbol} (持仓)`}
+                sector={position.sector}
+                related={relatedForSector(position.sector)}
+              />
+            ))
+          ) : (
+            <div className="col-span-2 text-sm text-text-muted py-4">
+              暂无开放持仓，传导图保持待机。
+            </div>
+          )}
         </div>
       </Card>
 
@@ -142,13 +209,50 @@ export default function PortfolioPage() {
           <div>
             <div className="text-h3 text-text-primary">板块集中度提示</div>
             <p className="text-sm text-text-secondary mt-1">
-              当前黑色 + 橡胶持仓占组合 68%。新建议如属于这两个板块时会自动降级。
+              当前保证金占用 {usage.toFixed(1)}%。高相关或高占用持仓会在建议生成时降级。
             </p>
           </div>
         </div>
       </Card>
     </div>
   );
+}
+
+function mockPositions(): PortfolioPosition[] {
+  return POSITIONS.map((position) => ({
+    ...position,
+    marginUsed: position.lots * position.currentPrice * 0.1,
+    status: "open",
+  }));
+}
+
+function formatCurrency(value: number) {
+  return value.toLocaleString("zh-CN", {
+    maximumFractionDigits: 0,
+  });
+}
+
+function relatedForSector(sector: string) {
+  if (sector === "rubber") {
+    return [
+      { symbol: "RU", name: "天然橡胶", reason: "替代品", lag: "0-2d" },
+      { symbol: "BR", name: "顺丁橡胶", reason: "下游替代", lag: "5-15d" },
+    ];
+  }
+
+  if (sector === "energy") {
+    return [
+      { symbol: "SC", name: "原油", reason: "链路锚点", lag: "0-1d" },
+      { symbol: "TA", name: "PTA", reason: "下游化工", lag: "1-5d" },
+    ];
+  }
+
+  return [
+    { symbol: "I", name: "铁矿石", reason: "上游原料", lag: "0-3d" },
+    { symbol: "J", name: "焦炭", reason: "上游原料", lag: "0-3d" },
+    { symbol: "JM", name: "焦煤", reason: "二级原料", lag: "3-7d" },
+    { symbol: "HC", name: "热卷", reason: "替代品", lag: "0-1d" },
+  ];
 }
 
 function RiskCard({

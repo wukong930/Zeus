@@ -1,0 +1,271 @@
+import type { Alert, Position, Sector, Severity } from "@/data/mock";
+
+const SEVERITIES = new Set<Severity>(["critical", "high", "medium", "low"]);
+
+export interface PortfolioPosition extends Position {
+  marginUsed: number;
+  status: string;
+  dataTimestamp?: string;
+  vintageAt?: string;
+}
+
+export interface RiskVarResult {
+  var95: number;
+  var99: number;
+  cvar95: number;
+  cvar99: number;
+  horizon: number;
+  method: string;
+  calculated_at: string;
+}
+
+export interface StressTestResult {
+  scenario: string;
+  description: string;
+  portfolio_pnl: number;
+  position_impacts: { position_id: string; strategy_name: string; pnl: number }[];
+}
+
+export interface CorrelationMatrix {
+  symbols: string[];
+  matrix: number[][];
+  window: number;
+  calculated_at: string;
+}
+
+export interface PortfolioSnapshot {
+  positions: PortfolioPosition[];
+  varResult: RiskVarResult | null;
+  stressResults: StressTestResult[];
+  correlation: CorrelationMatrix | null;
+}
+
+interface BackendAlert {
+  id: string;
+  title: string;
+  summary: string;
+  severity: string;
+  category: string;
+  type: string;
+  triggered_at: string;
+  confidence: number;
+  related_assets: string[];
+  trigger_chain: { label?: string; description?: string }[];
+  risk_items: string[];
+  manual_check_items: string[];
+}
+
+interface BackendPosition {
+  id: string;
+  strategy_name?: string | null;
+  legs: BackendLeg[];
+  opened_at: string;
+  unrealized_pnl: number;
+  total_margin_used: number;
+  status: string;
+}
+
+interface BackendLeg {
+  asset?: string;
+  symbol?: string;
+  direction?: string;
+  size?: number;
+  quantity?: number;
+  lots?: number;
+  unit?: string;
+  entryPrice?: number;
+  entry_price?: number;
+  avgEntry?: number;
+  currentPrice?: number;
+  current_price?: number;
+  price?: number;
+}
+
+interface BackendMarketData {
+  symbol: string;
+  timestamp: string;
+  close: number;
+  vintage_at?: string;
+  ingested_at?: string;
+}
+
+interface ApiEnvelope<T> {
+  success: boolean;
+  data: T;
+}
+
+export async function fetchAlertsFromApi(): Promise<Alert[]> {
+  const alerts = await fetchJson<BackendAlert[]>("/api/alerts?limit=100");
+  return alerts.map(mapAlert);
+}
+
+export async function fetchPortfolioSnapshot(): Promise<PortfolioSnapshot> {
+  const [positions, varEnvelope, stressEnvelope] = await Promise.all([
+    fetchJson<BackendPosition[]>("/api/positions?status_filter=open&limit=500"),
+    fetchJson<ApiEnvelope<RiskVarResult>>("/api/risk/var"),
+    fetchJson<ApiEnvelope<StressTestResult[]>>("/api/risk/stress"),
+  ]);
+
+  const symbols = uniqueSymbols(positions);
+  const latestRows = await fetchLatestMarketRows(symbols);
+  const mappedPositions = positions.map((position) => mapPosition(position, latestRows));
+
+  const correlation =
+    symbols.length > 0
+      ? await fetchJson<ApiEnvelope<CorrelationMatrix>>(
+          `/api/risk/correlation?symbols=${encodeURIComponent(symbols.join(","))}&window=60`
+        ).then((response) => response.data)
+      : null;
+
+  return {
+    positions: mappedPositions,
+    varResult: varEnvelope.data,
+    stressResults: stressEnvelope.data,
+    correlation,
+  };
+}
+
+async function fetchJson<T>(path: string): Promise<T> {
+  const response = await fetch(path, { cache: "no-store" });
+  if (!response.ok) {
+    throw new Error(`${path} failed with ${response.status}`);
+  }
+  return response.json() as Promise<T>;
+}
+
+async function fetchLatestMarketRows(symbols: string[]): Promise<Map<string, BackendMarketData>> {
+  const entries = await Promise.all(
+    symbols.map(async (symbol) => {
+      try {
+        const row = await fetchJson<BackendMarketData>(
+          `/api/market-data/symbols/${encodeURIComponent(symbol)}/latest`
+        );
+        return [symbol, row] as const;
+      } catch {
+        return [symbol, null] as const;
+      }
+    })
+  );
+
+  return new Map(entries.filter((entry): entry is readonly [string, BackendMarketData] => entry[1] !== null));
+}
+
+function mapAlert(alert: BackendAlert): Alert {
+  const symbol = alert.related_assets[0] ?? "N/A";
+  return {
+    id: alert.id,
+    symbol,
+    symbolName: symbol,
+    evaluator: alert.type,
+    severity: toSeverity(alert.severity),
+    confidence: alert.confidence,
+    sampleSize: alert.trigger_chain.length,
+    triggeredAt: alert.triggered_at,
+    title: alert.title,
+    narrative: alert.summary,
+    signalChain: alert.trigger_chain.map((step) => step.description || step.label || "trigger"),
+    counterEvidence: alert.risk_items,
+    sector: categoryToSector(alert.category),
+    regime: alert.category,
+    adversarialPassed: alert.manual_check_items.length > 0,
+  };
+}
+
+function mapPosition(
+  position: BackendPosition,
+  latestRows: Map<string, BackendMarketData>
+): PortfolioPosition {
+  const firstLeg = position.legs[0] ?? {};
+  const symbol = String(firstLeg.asset || firstLeg.symbol || position.strategy_name || position.id);
+  const latest = latestRows.get(symbol);
+  const lots = sum(position.legs.map((leg) => numeric(leg.size, leg.quantity, leg.lots)));
+  const avgEntry = weightedAverage(position.legs, "entry");
+  const currentPrice = latest?.close ?? weightedAverage(position.legs, "current");
+  const notional = Math.abs(avgEntry * Math.max(lots, 1));
+  const pnlPercent = notional > 0 ? (position.unrealized_pnl / notional) * 100 : 0;
+
+  return {
+    id: position.id,
+    symbol,
+    symbolName: position.strategy_name || symbol,
+    direction: firstLeg.direction === "short" ? "short" : "long",
+    lots,
+    avgEntry,
+    currentPrice,
+    pnl: position.unrealized_pnl,
+    pnlPercent,
+    openDate: position.opened_at.slice(0, 10),
+    sector: guessSector(symbol),
+    marginUsed: position.total_margin_used,
+    status: position.status,
+    dataTimestamp: latest?.timestamp,
+    vintageAt: latest?.vintage_at || latest?.ingested_at,
+  };
+}
+
+function uniqueSymbols(positions: BackendPosition[]): string[] {
+  return Array.from(
+    new Set(
+      positions.flatMap((position) =>
+        position.legs
+          .map((leg) => String(leg.asset || leg.symbol || "").trim())
+          .filter((symbol) => symbol.length > 0)
+      )
+    )
+  ).sort();
+}
+
+function weightedAverage(legs: BackendLeg[], mode: "entry" | "current"): number {
+  let numerator = 0;
+  let denominator = 0;
+  for (const leg of legs) {
+    const size = numeric(leg.size, leg.quantity, leg.lots);
+    const price =
+      mode === "entry"
+        ? numeric(leg.entryPrice, leg.entry_price, leg.avgEntry)
+        : numeric(leg.currentPrice, leg.current_price, leg.price);
+    if (size > 0 && price > 0) {
+      numerator += price * size;
+      denominator += size;
+    }
+  }
+  return denominator > 0 ? numerator / denominator : 0;
+}
+
+function toSeverity(value: string): Severity {
+  return SEVERITIES.has(value as Severity) ? (value as Severity) : "low";
+}
+
+function categoryToSector(category: string): Sector {
+  if (category === "agriculture") return "agri";
+  if (category === "nonferrous") return "metals";
+  if (category === "energy") return "energy";
+  if (category === "ferrous") return "ferrous";
+  if (category === "rubber") return "rubber";
+  return "precious";
+}
+
+function guessSector(symbol: string): Sector {
+  const prefix = symbol.replace(/\d+/g, "").toUpperCase();
+  if (["RB", "HC", "I", "J", "JM", "SF", "SM"].includes(prefix)) return "ferrous";
+  if (["RU", "NR", "BR"].includes(prefix)) return "rubber";
+  if (["SC", "FU", "TA", "EG", "MA", "PP"].includes(prefix)) return "energy";
+  if (["CU", "AL", "ZN", "NI", "SN", "PB"].includes(prefix)) return "metals";
+  if (["M", "Y", "P", "C", "A"].includes(prefix)) return "agri";
+  return "precious";
+}
+
+function numeric(...values: unknown[]): number {
+  for (const value of values) {
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+    if (typeof value === "string" && value.trim() !== "") {
+      const parsed = Number(value);
+      if (Number.isFinite(parsed)) return parsed;
+    }
+  }
+  return 0;
+}
+
+function sum(values: number[]): number {
+  return values.reduce((total, value) => total + value, 0);
+}
