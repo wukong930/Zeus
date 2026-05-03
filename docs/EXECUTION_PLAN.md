@@ -219,14 +219,14 @@ zeus/
   - [x] Alembic 迁移：创建 `watchlist` 表
   - [x] 种子数据：从 Causa 当前硬编码清单迁移（脚本核对为 102 条；文档早期写的 145 条待产品侧补充）
   - [x] `services/signals/watchlist.py` — 从 DB 读取监控列表
-- [ ] **管道重构**
+- [x] **管道重构**
   - [x] 调度器触发 ingest job → 发布 `market.update`
-  - [ ] 信号检测订阅 `market.update` → 发布 `signal.detected`
-  - [ ] 评分引擎订阅 `signal.detected` → 发布 `signal.scored`
-  - [ ] 预警创建订阅 `signal.scored` → 发布 `alert.created`
-- [ ] **验证**
+  - [x] 信号检测订阅 `market.update` → 发布 `signal.detected`
+  - [x] 评分引擎订阅 `signal.detected` → 发布 `signal.scored`
+  - [x] 预警创建订阅 `signal.scored` → 发布 `alert.created`
+- [x] **验证**
   - [x] 手动触发 ingest job，检查 `event_log` 表中的 `market.update` 事件
-  - [ ] 预警生成行为与 Phase 1 一致（功能不变，架构变了）
+  - [x] 预警生成行为与 Phase 1 一致（Docker smoke：合成 `market.update` 生成 2 条 `alert.created`，对应 `spread_anomaly` / `basis_shift`）
 
 ---
 

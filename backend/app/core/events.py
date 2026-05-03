@@ -16,7 +16,7 @@ from app.models.event_log import EventLog
 
 logger = logging.getLogger(__name__)
 
-EventHandler = Callable[["ZeusEvent"], Awaitable[None] | None]
+EventHandler = Callable[..., Awaitable[None] | None]
 
 
 @dataclass(frozen=True)
@@ -129,7 +129,7 @@ async def dispatch_event(
     session: AsyncSession | None = None,
 ) -> None:
     try:
-        result = handler(event)
+        result = _call_handler(handler, event, session)
         if inspect.isawaitable(result):
             await result
     except Exception as exc:
@@ -139,6 +139,32 @@ async def dispatch_event(
 
     if session is not None:
         await record_event(session, event, status="handled")
+
+
+def _call_handler(
+    handler: EventHandler,
+    event: ZeusEvent,
+    session: AsyncSession | None,
+) -> Awaitable[None] | None:
+    if session is None:
+        return handler(event)
+
+    signature = inspect.signature(handler)
+    parameters = signature.parameters
+    if any(param.kind is inspect.Parameter.VAR_POSITIONAL for param in parameters.values()):
+        return handler(event, session)
+    if "session" in parameters:
+        return handler(event, session=session)
+
+    positional = [
+        param
+        for param in parameters.values()
+        if param.kind
+        in (inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD)
+    ]
+    if len(positional) >= 2:
+        return handler(event, session)
+    return handler(event)
 
 
 async def subscribe(
@@ -161,12 +187,20 @@ async def subscribe(
                 continue
             event = ZeusEvent.from_json(message["data"])
             if session_factory is None:
-                await dispatch_event(event, handler)
+                try:
+                    await dispatch_event(event, handler)
+                except Exception:
+                    logger.exception("Event handler failed for channel %s", channel)
                 continue
 
             async with session_factory() as session:
-                await dispatch_event(event, handler, session=session)
-                await session.commit()
+                try:
+                    await dispatch_event(event, handler, session=session)
+                except Exception:
+                    await session.commit()
+                    logger.exception("Event handler failed for channel %s", channel)
+                else:
+                    await session.commit()
     finally:
         await pubsub.unsubscribe(channel)
         await pubsub.aclose()

@@ -16,14 +16,18 @@ from app.api.strategies import router as strategies_router
 from app.core.config import get_settings
 from app.core.redis import close_redis
 from app.scheduler.manager import get_scheduler
+from app.services.pipeline.runtime import get_event_pipeline
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     scheduler = get_scheduler()
+    event_pipeline = get_event_pipeline()
+    event_pipeline.start()
     scheduler.start()
     yield
     scheduler.shutdown()
+    await event_pipeline.stop()
     await close_redis()
 
 

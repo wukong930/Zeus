@@ -5,6 +5,7 @@ from typing import Any
 
 from app.core.database import AsyncSessionLocal
 from app.core.events import publish
+from app.services.signals.watchlist import get_enabled_watchlist
 
 
 JobHandler = Callable[[], Awaitable[dict[str, Any]]]
@@ -40,12 +41,14 @@ async def placeholder_job() -> dict[str, Any]:
 
 async def ingest_job() -> dict[str, Any]:
     async with AsyncSessionLocal() as session:
+        watchlist = await get_enabled_watchlist(session)
         event = await publish(
             "market.update",
             {
                 "job_id": "ingest",
                 "triggered_at": datetime.now(timezone.utc).isoformat(),
                 "status": "ready",
+                "watchlist_count": len(watchlist),
             },
             source="scheduler",
             session=session,
