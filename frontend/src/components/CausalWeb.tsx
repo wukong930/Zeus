@@ -289,7 +289,7 @@ function CausalWebCanvas({ variant = "full", className }: CausalWebProps) {
   const isFull = variant === "full";
 
   const viewNodeIds = useMemo(() => viewVisibleNodeIds(view), [view]);
-  const focusId = selectedNode ?? hoveredNode;
+  const focusId = isFull ? selectedNode ?? hoveredNode : null;
   const activeFocusId = focusId && viewNodeIds.has(focusId) ? focusId : null;
   const highlightedNodeIds = useMemo(() => causalChainIds(activeFocusId), [activeFocusId]);
   const highlightedEdgeIds = useMemo(() => {
@@ -421,7 +421,13 @@ function CausalWebCanvas({ variant = "full", className }: CausalWebProps) {
   );
 
   return (
-    <div className={cn("causal-web-flow flex h-full w-full flex-col overflow-hidden bg-bg-base", className)}>
+    <div
+      className={cn(
+        "causal-web-flow flex h-full w-full flex-col overflow-hidden bg-bg-base",
+        !isFull && "pointer-events-none",
+        className
+      )}
+    >
       {isFull && (
         <div className="shrink-0 overflow-x-auto border-b border-border-subtle bg-bg-surface/80 px-4 py-3">
           <div className="flex min-w-max items-center gap-4">
@@ -449,10 +455,14 @@ function CausalWebCanvas({ variant = "full", className }: CausalWebProps) {
           nodeTypes={FLOW_NODE_TYPES}
           edgeTypes={FLOW_EDGE_TYPES}
           onInit={onInit}
-          onNodeMouseEnter={(_, node) => {
-            if (viewNodeIds.has(node.id)) setHoveredNode(node.id);
-          }}
-          onNodeMouseLeave={() => setHoveredNode(null)}
+          onNodeMouseEnter={
+            isFull
+              ? (_, node) => {
+                  if (viewNodeIds.has(node.id)) setHoveredNode(node.id);
+                }
+              : undefined
+          }
+          onNodeMouseLeave={isFull ? () => setHoveredNode(null) : undefined}
           onNodeClick={(_, node) => {
             if (isFull && viewNodeIds.has(node.id)) {
               setSelectedNode((current) => (current === node.id ? null : node.id));
@@ -470,6 +480,7 @@ function CausalWebCanvas({ variant = "full", className }: CausalWebProps) {
           nodesConnectable={false}
           edgesFocusable={isFull}
           elementsSelectable={isFull}
+          nodesFocusable={isFull}
           panOnDrag={isFull}
           zoomOnScroll={isFull}
           zoomOnPinch={isFull}
