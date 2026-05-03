@@ -268,22 +268,22 @@ zeus/
   - [x] `services/calibration/tracker.py`
     - [x] 信号触发时记录：信号类型、板块、regime、当前权重、组合哈希
   - [x] `services/calibration/hit_rate.py`
-    - 按 (signal_type, category, regime) 计算 90 天滚动精确率/召回率
-    - **使用影子追踪结果，不使用持仓平仓**（用户实际持仓只作为补充质量数据）
+    - [x] 按 (signal_type, category, regime) 计算 90 天滚动精确率/召回率
+    - [x] **使用影子追踪结果，不使用持仓平仓**（用户实际持仓只作为补充质量数据）
   - [x] `services/calibration/weight_adjuster.py`
     - [x] **真贝叶斯更新（Beta 先验）**：
       ```
       posterior_mean = (α₀ + hits) / (α₀ + β₀ + total)
       effective_weight = base_weight × (posterior_mean / 0.5)
       ```
-    - 默认 α₀ = β₀ = 4（弱先验）
-    - 权重范围约束：[0.1, 2.0]
-    - 冷启动期权重 ≈ base_weight（先验主导）
-  - [ ] `services/calibration/decay_detector.py`
-    - CUSUM 或 Bayesian online change point detection
-    - 触发衰减后权重 × 0.5，标记 `decay_detected = true`
+    - [x] 默认 α₀ = β₀ = 4（弱先验）
+    - [x] 权重范围约束：[0.1, 2.0]
+    - [x] 冷启动期权重 ≈ base_weight（先验主导）
+  - [x] `services/calibration/decay_detector.py`
+    - [x] CUSUM 或 Bayesian online change point detection
+    - [x] 触发衰减后权重 × 0.5，标记 `decay_detected = true`
     - 前端展示衰减警告
-- [ ] **集成**
+- [x] **集成**
   - [x] 评分引擎从 `signal_calibration` 表读取权重（替代硬编码）
   - [x] 调度器加每日校准任务（凌晨执行）
   - [x] 调度器加每日 regime 检测任务（ETL 后执行）
@@ -303,19 +303,19 @@ zeus/
   - [ ] 前端：Dashboard 顶部 "Drift Alert" 指示器（红/黄/绿三档）
   - [ ] 通知：漂移告警时推送到飞书（建议本周谨慎按系统信号交易）
   - [ ] **关键约束**：Drift 监控**只告警**，不自动调整任何权重或阈值
-- [ ] **治理基础设施（governance）**
-  - [ ] `models/change_review_queue.py` — 变更审核队列表
-  - [ ] `services/governance/review_queue.py` — 守卫装饰器
-    - 任何修改 `signal_calibration` / `commodity_config` / 阈值参数的写入必须通过此守卫
-    - 守卫检查调用方是否有 `human_approved=True` 标记
-    - 失败则写入审核队列等人工批准
-  - [ ] 单元测试：直接尝试改 calibration 表会被拒绝
-- [ ] **验证**
+- [x] **治理基础设施（governance）**
+  - [x] `models/change_review_queue.py` — 变更审核队列表
+  - [x] `services/governance/review_queue.py` — 守卫装饰器
+    - [x] 任何修改 `signal_calibration` / `commodity_config` / 阈值参数的写入必须通过此守卫
+    - [x] 守卫检查调用方是否有 `human_approved=True` 标记
+    - [x] 失败则写入审核队列等人工批准
+  - [x] 单元测试：直接尝试改 calibration 表会被拒绝
+- [x] **验证**
   - [x] 模拟数据测试：构造 200 个已知 outcome 的信号，验证 Bayesian 更新公式正确
   - [x] 验证影子追踪器在每日调度中正确标记 outcome
   - [x] 验证 regime 检测对明确市场状态的判断正确
   - [x] 验证 Drift 监控：注入分布偏移数据，PSI 应触发告警
-  - [ ] 验证治理守卫：尝试绕过审核直接改 calibration 应失败
+  - [x] 验证治理守卫：尝试绕过审核直接改 calibration 应失败
 
 ---
 

@@ -6,6 +6,7 @@ from typing import Any
 from app.core.database import AsyncSessionLocal
 from app.core.events import publish
 from app.services.calibration.shadow_tracker import evaluate_pending_signals
+from app.services.calibration.updater import generate_calibration_reviews
 from app.services.signals.watchlist import get_enabled_watchlist
 
 
@@ -88,7 +89,30 @@ async def publish_job_event(job_id: str, channel: str) -> dict[str, Any]:
 
 
 async def calibration_job() -> dict[str, Any]:
-    return await publish_job_event("calibration", "calibration.run_requested")
+    async with AsyncSessionLocal() as session:
+        result = await generate_calibration_reviews(session)
+        event = await publish(
+            "calibration.review_queued",
+            {
+                "job_id": "calibration",
+                "groups": result.groups,
+                "queued": result.queued,
+                "skipped": result.skipped,
+                "triggered_at": datetime.now(timezone.utc).isoformat(),
+            },
+            source="scheduler",
+            session=session,
+        )
+        await session.commit()
+    return {
+        "status": "completed",
+        "event_id": str(event.id),
+        "channel": event.channel,
+        "groups": result.groups,
+        "queued": result.queued,
+        "skipped": result.skipped,
+        "timestamp": event.timestamp.isoformat(),
+    }
 
 
 async def track_outcomes_job() -> dict[str, Any]:

@@ -1,5 +1,6 @@
 from app.models.alert import Alert
 from app.models.calibration import SignalCalibration
+from app.models.change_review_queue import ChangeReviewQueue
 from app.models.contract_metadata import ContractMetadata
 from app.models.drift_metrics import DriftMetric
 from app.models.event_log import EventLog
@@ -18,6 +19,7 @@ from app.models.watchlist import Watchlist
 
 __all__ = [
     "Alert",
+    "ChangeReviewQueue",
     "CommodityNode",
     "ContractMetadata",
     "DriftMetric",
