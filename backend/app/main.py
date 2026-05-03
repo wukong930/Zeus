@@ -7,6 +7,7 @@ from app.api.alerts import router as alerts_router
 from app.api.arbitration import router as arbitration_router
 from app.api.attribution import router as attribution_router
 from app.api.contracts import router as contracts_router
+from app.api.cost_models import router as cost_models_router
 from app.api.feedback import router as feedback_router
 from app.api.health import router as health_router
 from app.api.industry_data import router as industry_data_router
@@ -63,6 +64,7 @@ def create_app() -> FastAPI:
     app.include_router(feedback_router)
     app.include_router(llm_usage_router)
     app.include_router(contracts_router)
+    app.include_router(cost_models_router)
     app.include_router(alerts_router)
     app.include_router(positions_router)
     app.include_router(recommendations_router)

@@ -1,4 +1,4 @@
-from app.scheduler.jobs import JobDefinition
+from app.scheduler.jobs import DEFAULT_JOB_DEFINITIONS, DEFAULT_JOB_HANDLERS, JobDefinition
 from app.scheduler.manager import SchedulerManager
 
 
@@ -54,3 +54,8 @@ def test_scheduler_rejects_bad_cron() -> None:
     )
 
     assert manager.update_cron("test", "not cron") is False
+
+
+def test_cost_snapshots_job_is_registered() -> None:
+    assert any(definition.id == "cost-snapshots" for definition in DEFAULT_JOB_DEFINITIONS)
+    assert DEFAULT_JOB_HANDLERS["cost-snapshots"].__name__ == "cost_snapshots_job"

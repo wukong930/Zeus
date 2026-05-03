@@ -580,30 +580,30 @@ Causa 的 `event_driven` 评估器实际上是纯技术面（gap + volume），*
 
 #### 第 1 周：框架 + 黑色系成本配置
 
-- [ ] **数据模型**
-  - [ ] `models/commodity_config.py` — 品种配置表
-  - [ ] `models/cost_snapshot.py` — 成本快照表（含 P25/P50/P75/P90 分位数字段）
-  - [ ] Alembic 迁移
-- [ ] **成本模型框架**
-  - [ ] `services/cost_models/framework.py`
+- [x] **数据模型**
+  - [x] `models/commodity_config.py` — 品种配置表
+  - [x] `models/cost_snapshot.py` — 成本快照表（含 P25/P50/P75/P90 分位数字段）
+  - [x] Alembic 迁移
+- [x] **成本模型框架**
+  - [x] `services/cost_models/framework.py`
     - `CostFormula` 基类：定义输入参数、计算逻辑、输出格式
     - 支持链式计算（上游输出作为下游输入）
     - **支持成本曲线分位数计算**：基于产能分布数据输出 P25/P50/P75/P90，不只是平均值
-  - [ ] `services/cost_models/cost_chain.py`
+  - [x] `services/cost_models/cost_chain.py`
     - 产业链计算：JM → J → RB 逐级计算
     - 每一步：原料成本 + 加工费 + 损耗 + 运输 + 税费 = 单位成本
-  - [ ] `services/cost_models/snapshots.py`
+  - [x] `services/cost_models/snapshots.py`
     - 每日快照调度任务
     - 高频变量（原料价格）实时更新，低频变量（人工）季度更新
-  - [ ] `services/cost_models/news_extractor.py` — LLM 辅助从新闻抽取成本数据点
-- [ ] **黑色系成本配置**
-  - [ ] `services/cost_models/configs/coking_coal.py` — 焦煤成本
-  - [ ] `services/cost_models/configs/coke.py` — 焦炭成本（配煤比、炼焦、副产品）
-  - [ ] `services/cost_models/configs/iron_ore.py` — 铁矿石到岸成本（普氏/麦克 + 运费）
-  - [ ] `services/cost_models/configs/rebar.py` — 螺纹钢（高炉利润模型）
-  - [ ] `services/cost_models/configs/hot_coil.py` — 热卷（热轧加工费差异）
-- [ ] **板块模型**
-  - [ ] `services/sectors/ferrous.py` — 高炉利润 = RB - 1.6×I - 0.5×J - 加工费
+  - [x] `services/cost_models/news_extractor.py` — LLM 辅助从新闻抽取成本数据点
+- [x] **黑色系成本配置**
+  - [x] `services/cost_models/configs/coking_coal.py` — 焦煤成本
+  - [x] `services/cost_models/configs/coke.py` — 焦炭成本（配煤比、炼焦、副产品）
+  - [x] `services/cost_models/configs/iron_ore.py` — 铁矿石到岸成本（普氏/麦克 + 运费）
+  - [x] `services/cost_models/configs/rebar.py` — 螺纹钢（高炉利润模型）
+  - [x] `services/cost_models/configs/hot_coil.py` — 热卷（热轧加工费差异）
+- [x] **板块模型**
+  - [x] `services/sectors/ferrous.py` — 高炉利润 = RB - 1.6×I - 0.5×J - 加工费
 
 #### 第 2 周：信号集成 + 前端 + 数据源评估
 
@@ -614,8 +614,8 @@ Causa 的 `event_driven` 评估器实际上是纯技术面（gap + volume），*
     - 价格跌破 P50 分位 → `median_pressure` 信号
     - 价格跌破 P75/P90 分位 → `marginal_capacity_squeeze` 信号
   - [ ] 新信号类型注册到评估器框架
-- [ ] **API**
-  - [ ] `api/cost_models.py`
+- [x] **API**
+  - [x] `api/cost_models.py`
     - GET /cost-models/{symbol} — 当前成本分解 + 分位数
     - GET /cost-models/{symbol}/history — 历史成本快照
     - POST /cost-models/{symbol}/simulate — 动态调价计算
@@ -632,7 +632,7 @@ Causa 的 `event_driven` 评估器实际上是纯技术面（gap + volume），*
   - [ ] 输出报告：决定是否采购付费数据源（卓创/SMM/Mysteel），以及优先采购哪个
 
 #### 验证
-- [ ] `cost_snapshots` 表每日有新记录，含完整分位数
+- [x] `cost_snapshots` 表每日有新记录，含完整分位数
 - [ ] 高炉利润模型与行业公开计算结果偏差 < 5%
 - [ ] 成本信号在历史关键时点（如 2021 年限产、2024 年产能调整）能正确触发
 - [ ] 前端成本页面数据正确展示

@@ -180,6 +180,53 @@ class LLMUsageSummaryRead(BaseModel):
     output_tokens: int
 
 
+class CostSnapshotRead(ORMModel):
+    id: UUID
+    symbol: str
+    name: str
+    sector: str
+    snapshot_date: date
+    current_price: float | None = None
+    total_unit_cost: float
+    breakeven_p25: float
+    breakeven_p50: float
+    breakeven_p75: float
+    breakeven_p90: float
+    profit_margin: float | None = None
+    cost_breakdown: list[dict[str, Any]] = Field(default_factory=list)
+    inputs: dict[str, Any] = Field(default_factory=dict)
+    data_sources: list[dict[str, Any]] = Field(default_factory=list)
+    uncertainty_pct: float
+    formula_version: str
+    created_at: datetime
+
+
+class CostModelRead(BaseModel):
+    symbol: str
+    name: str
+    sector: str
+    current_price: float | None = None
+    total_unit_cost: float
+    breakevens: dict[str, float]
+    profit_margin: float | None = None
+    cost_breakdown: list[dict[str, Any]]
+    inputs: dict[str, Any]
+    data_sources: list[dict[str, Any]]
+    uncertainty_pct: float
+    formula_version: str
+
+
+class CostSimulationRequest(BaseModel):
+    inputs_by_symbol: dict[str, dict[str, float]] = Field(default_factory=dict)
+    current_prices: dict[str, float | None] = Field(default_factory=dict)
+
+
+class CostChainRead(BaseModel):
+    sector: str
+    symbols: list[str]
+    results: dict[str, CostModelRead]
+
+
 class StrategyCreate(BaseModel):
     name: str
     description: str

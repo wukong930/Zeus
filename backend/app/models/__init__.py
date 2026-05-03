@@ -3,7 +3,9 @@ from app.models.alert_agent import AlertAgentConfig, AlertDedupCache, HumanDecis
 from app.models.adversarial import AdversarialResult
 from app.models.calibration import SignalCalibration
 from app.models.change_review_queue import ChangeReviewQueue
+from app.models.commodity_config import CommodityConfig
 from app.models.contract_metadata import ContractMetadata
+from app.models.cost_snapshot import CostSnapshot
 from app.models.drift_metrics import DriftMetric
 from app.models.event_log import EventLog
 from app.models.graph import CommodityNode, RelationshipEdge
@@ -31,7 +33,9 @@ __all__ = [
     "AdversarialResult",
     "ChangeReviewQueue",
     "CommodityNode",
+    "CommodityConfig",
     "ContractMetadata",
+    "CostSnapshot",
     "DriftMetric",
     "EventLog",
     "IndustryData",

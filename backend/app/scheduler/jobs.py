@@ -10,6 +10,7 @@ from app.services.calibration.regime_batch import detect_and_record_all_regimes
 from app.services.calibration.shadow_tracker import evaluate_pending_signals
 from app.services.calibration.updater import generate_calibration_reviews
 from app.services.contracts.main_contract_batch import detect_and_apply_main_contracts
+from app.services.cost_models.snapshots import snapshot_ferrous_costs
 from app.services.learning.drift_monitor import run_drift_monitor
 from app.services.learning.recommendation_attribution import update_open_recommendation_excursions
 from app.services.news.collectors import (
@@ -50,6 +51,7 @@ DEFAULT_JOB_DEFINITIONS: tuple[JobDefinition, ...] = (
     JobDefinition("news-ingest", "新闻事件采集", "*/30 * * * *"),
     JobDefinition("position-freshness", "持仓数据新鲜度", "15 9 * * 1-5"),
     JobDefinition("recommendation-attribution", "推荐归因更新", "35 16 * * 1-5"),
+    JobDefinition("cost-snapshots", "黑色系成本快照", "45 16 * * 1-5"),
 )
 
 
@@ -288,6 +290,18 @@ async def recommendation_attribution_job() -> dict[str, Any]:
     }
 
 
+async def cost_snapshots_job() -> dict[str, Any]:
+    async with AsyncSessionLocal() as session:
+        rows = await snapshot_ferrous_costs(session)
+        await session.commit()
+    return {
+        "status": "completed",
+        "symbols": [row.symbol for row in rows],
+        "snapshots": len(rows),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+
 DEFAULT_JOB_HANDLERS: dict[str, JobHandler] = {
     definition.id: placeholder_job for definition in DEFAULT_JOB_DEFINITIONS
 }
@@ -301,3 +315,4 @@ DEFAULT_JOB_HANDLERS["adversarial-cache"] = adversarial_cache_job
 DEFAULT_JOB_HANDLERS["news-ingest"] = news_ingest_job
 DEFAULT_JOB_HANDLERS["position-freshness"] = position_freshness_job
 DEFAULT_JOB_HANDLERS["recommendation-attribution"] = recommendation_attribution_job
+DEFAULT_JOB_HANDLERS["cost-snapshots"] = cost_snapshots_job
