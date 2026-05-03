@@ -5,8 +5,10 @@ from typing import Any
 
 from app.core.database import AsyncSessionLocal
 from app.core.events import publish
+from app.services.calibration.regime_batch import detect_and_record_all_regimes
 from app.services.calibration.shadow_tracker import evaluate_pending_signals
 from app.services.calibration.updater import generate_calibration_reviews
+from app.services.learning.drift_monitor import run_drift_monitor
 from app.services.signals.watchlist import get_enabled_watchlist
 
 
@@ -67,27 +69,6 @@ async def ingest_job() -> dict[str, Any]:
     }
 
 
-async def publish_job_event(job_id: str, channel: str) -> dict[str, Any]:
-    async with AsyncSessionLocal() as session:
-        event = await publish(
-            channel,
-            {
-                "job_id": job_id,
-                "triggered_at": datetime.now(timezone.utc).isoformat(),
-                "status": "requested",
-            },
-            source="scheduler",
-            session=session,
-        )
-        await session.commit()
-    return {
-        "status": "published",
-        "event_id": str(event.id),
-        "channel": event.channel,
-        "timestamp": event.timestamp.isoformat(),
-    }
-
-
 async def calibration_job() -> dict[str, Any]:
     async with AsyncSessionLocal() as session:
         result = await generate_calibration_reviews(session)
@@ -130,11 +111,60 @@ async def track_outcomes_job() -> dict[str, Any]:
 
 
 async def regime_detection_job() -> dict[str, Any]:
-    return await publish_job_event("regime-detect", "regime.detect_requested")
+    async with AsyncSessionLocal() as session:
+        result = await detect_and_record_all_regimes(session)
+        event = await publish(
+            "regime.detected",
+            {
+                "job_id": "regime-detect",
+                "categories": result.categories,
+                "recorded": result.recorded,
+                "skipped": result.skipped,
+                "as_of_date": result.as_of_date.isoformat(),
+                "details": result.details,
+                "triggered_at": datetime.now(timezone.utc).isoformat(),
+            },
+            source="scheduler",
+            session=session,
+        )
+        await session.commit()
+    return {
+        "status": "completed",
+        "event_id": str(event.id),
+        "channel": event.channel,
+        "categories": result.categories,
+        "recorded": result.recorded,
+        "skipped": result.skipped,
+        "timestamp": event.timestamp.isoformat(),
+    }
 
 
 async def drift_monitor_job() -> dict[str, Any]:
-    return await publish_job_event("drift-monitor", "drift.check_requested")
+    async with AsyncSessionLocal() as session:
+        result = await run_drift_monitor(session)
+        event = await publish(
+            "drift.metrics_recorded",
+            {
+                "job_id": "drift-monitor",
+                "categories": result.categories,
+                "recorded": result.recorded,
+                "skipped": result.skipped,
+                "details": result.details,
+                "triggered_at": datetime.now(timezone.utc).isoformat(),
+            },
+            source="scheduler",
+            session=session,
+        )
+        await session.commit()
+    return {
+        "status": "completed",
+        "event_id": str(event.id),
+        "channel": event.channel,
+        "categories": result.categories,
+        "recorded": result.recorded,
+        "skipped": result.skipped,
+        "timestamp": event.timestamp.isoformat(),
+    }
 
 
 DEFAULT_JOB_HANDLERS: dict[str, JobHandler] = {

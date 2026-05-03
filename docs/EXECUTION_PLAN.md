@@ -250,7 +250,7 @@ zeus/
   - [x] `services/calibration/regime_detector.py`
     - [x] ADX + ATR 百分位规则法（确定性主方法）
     - [x] 分类：trend_up_low_vol / trend_down_low_vol / range_high_vol / range_low_vol
-    - 每日 ETL 后按板块计算 regime 并写入 `regime_state` 表
+    - [x] 每日 ETL 后按板块计算 regime 并写入 `regime_state` 表
   - [ ] HMM baseline（hmmlearn）作为对比，不进主链路
 - [x] **影子追踪器**（避免幸存者偏差，Zeus 核心机制）
   - [x] `services/calibration/shadow_tracker.py`
@@ -296,10 +296,10 @@ zeus/
   - [x] Alembic 迁移
   - [x] `services/learning/drift_monitor.py`
     - [x] **特征分布漂移**（PSI / KL divergence）：波动率、价差、基差、成交量、持仓量。当前 30 天 vs 历史 90 天，PSI > 0.25 告警
-    - **相关性结构漂移**：板块内品种相关性矩阵 Frobenius 距离突变检测
-    - **信号命中率突变**：滚动 30 天 vs 90 天基线，z-score > 2 告警
-    - **Regime 频繁切换检测**：月切换次数 > 3 告警
-  - [x] 调度任务：每日 ETL 后触发 Drift 检查事件（指标写入服务已具备，批处理接入待补）
+    - [x] **相关性结构漂移**：板块内品种相关性矩阵 Frobenius 距离突变检测
+    - [x] **信号命中率突变**：滚动 30 天 vs 90 天基线，z-score > 2 告警
+    - [x] **Regime 频繁切换检测**：月切换次数 > 3 告警
+  - [x] 调度任务：每日 ETL 后运行 Drift 批处理并写入 `drift_metrics`
   - [ ] 前端：Dashboard 顶部 "Drift Alert" 指示器（红/黄/绿三档）
   - [ ] 通知：漂移告警时推送到飞书（建议本周谨慎按系统信号交易）
   - [ ] **关键约束**：Drift 监控**只告警**，不自动调整任何权重或阈值
