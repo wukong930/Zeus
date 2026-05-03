@@ -11,6 +11,7 @@ from app.services.signals.evaluators import (
     PriceGapEvaluator,
     RegimeShiftEvaluator,
     RestartExpectationEvaluator,
+    RubberSupplyShockEvaluator,
     SpreadAnomalyEvaluator,
 )
 from app.services.signals.types import TriggerContext, TriggerEvaluator, TriggerResult
@@ -28,6 +29,7 @@ DEFAULT_EVALUATORS: tuple[TriggerEvaluator, ...] = (
     RestartExpectationEvaluator(),
     MedianPressureEvaluator(),
     MarginalCapacitySqueezeEvaluator(),
+    RubberSupplyShockEvaluator(),
 )
 
 ROLL_WINDOW_DEGRADED_SIGNALS = {"spread_anomaly", "basis_shift"}

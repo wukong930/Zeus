@@ -21,6 +21,7 @@ from app.services.learning.recommendation_attribution import update_open_recomme
 from app.services.news.collectors import (
     CailiansheCollector,
     ExchangeAnnouncementsCollector,
+    RubberSupplyCollector,
     SinaFuturesCollector,
 )
 from app.services.news.ingest import ingest_news_items
@@ -245,10 +246,20 @@ async def news_ingest_job() -> dict[str, Any]:
         CailiansheCollector(),
         SinaFuturesCollector(),
         ExchangeAnnouncementsCollector(),
+        RubberSupplyCollector(),
     )
     raw_items = []
+    collector_errors = []
     for collector in collectors:
-        raw_items.extend(await collector.collect(limit=50))
+        try:
+            raw_items.extend(await collector.collect(limit=50))
+        except Exception as exc:  # pragma: no cover - defensive scheduler guard
+            collector_errors.append(
+                {
+                    "source": getattr(collector, "source", collector.__class__.__name__),
+                    "error": str(exc),
+                }
+            )
 
     async with AsyncSessionLocal() as session:
         result = await ingest_news_items(session, raw_items)
@@ -259,6 +270,7 @@ async def news_ingest_job() -> dict[str, Any]:
         "recorded": result.recorded,
         "duplicates": result.duplicates,
         "published": result.published,
+        "collector_errors": collector_errors,
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 

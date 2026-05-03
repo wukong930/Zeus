@@ -35,6 +35,7 @@ EventPublisher = Callable[..., Awaitable[ZeusEvent]]
 
 DEFAULT_ACCOUNT_NET_VALUE = 1_000_000.0
 DEFAULT_MARGIN_REQUIRED = 100_000.0
+NEWS_EVENT_SIGNAL_TYPES = {"news_event", "rubber_supply_shock"}
 
 
 def jsonable(value: Any) -> Any:
@@ -196,7 +197,7 @@ async def handle_news_event(
     published: list[ZeusEvent] = []
     for raw_context in contexts_payload:
         context = trigger_context_from_payload(raw_context)
-        results = await signal_detector.detect(context, signal_types={"news_event"})
+        results = await signal_detector.detect(context, signal_types=NEWS_EVENT_SIGNAL_TYPES)
         context_payload = jsonable(context)
         if raw_context.get("regime") is not None:
             context_payload["regime"] = raw_context["regime"]

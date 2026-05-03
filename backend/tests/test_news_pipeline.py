@@ -1,7 +1,8 @@
 from datetime import datetime, timezone
 
-from app.services.news.dedup import news_dedup_hash, normalize_title
 from app.models.news_events import NewsEvent
+from app.services.news.collectors.rubber_supply import RubberSupplyCollector
+from app.services.news.dedup import news_dedup_hash, normalize_title
 from app.services.news.event_publisher import event_row_is_evaluable, jsonable_news_payload, upsert_news_event
 from app.services.news.extractor import extract_news_event_sync
 from app.services.news.quality import is_evaluable_news_event, requires_manual_confirmation
@@ -31,6 +32,25 @@ class FakeSession:
         self.flush_count += 1
 
 
+class FakeGdeltCollector:
+    async def collect(self, limit: int = 50) -> list[RawNewsItem]:
+        return [
+            RawNewsItem(
+                source="gdelt",
+                title="Thailand floods disrupt natural rubber tapping",
+                content_text="Heavy rainfall in southern Thailand disrupts rubber tapping and exports.",
+                published_at=datetime(2026, 5, 3, tzinfo=timezone.utc),
+                raw_url="https://example.test/rubber",
+            ),
+            RawNewsItem(
+                source="gdelt",
+                title="Copper smelters discuss fees",
+                content_text="Copper treatment charges moved lower.",
+                published_at=datetime(2026, 5, 3, tzinfo=timezone.utc),
+            ),
+        ][:limit]
+
+
 def test_news_extractor_maps_commodity_event_fields() -> None:
     item = RawNewsItem(
         source="cailianshe",
@@ -46,6 +66,40 @@ def test_news_extractor_maps_commodity_event_fields() -> None:
     assert event.severity == 5
     assert "SC" in event.affected_symbols
     assert event.dedup_hash is not None
+
+
+async def test_rubber_supply_collector_enriches_gdelt_items() -> None:
+    rows = await RubberSupplyCollector(gdelt=FakeGdeltCollector()).collect()
+
+    assert len(rows) == 1
+    assert rows[0].source == "rubber_supply_gdelt"
+    assert rows[0].metadata["affected_symbols"] == ["NR", "RU"]
+    assert rows[0].metadata["collector_family"] == "rubber_supply"
+    assert rows[0].metadata["origin_markets"] == ["Thailand"]
+
+
+def test_news_extractor_maps_rubber_origin_weather_metadata() -> None:
+    item = RawNewsItem(
+        source="rubber_supply_gdelt",
+        title="Thailand floods disrupt natural rubber tapping",
+        content_text="Heavy rainfall in southern Thailand disrupts rubber tapping and exports.",
+        published_at=datetime(2026, 5, 3, tzinfo=timezone.utc),
+        metadata={
+            "affected_symbols": ["NR", "RU"],
+            "source_count": 2,
+            "verification_status": "cross_verified",
+            "llm_confidence": 0.78,
+        },
+    )
+
+    event = extract_news_event_sync(item)
+
+    assert event.event_type == "weather"
+    assert event.direction == "bullish"
+    assert event.severity == 4
+    assert event.source_count == 2
+    assert event.verification_status == "cross_verified"
+    assert event.affected_symbols == ["NR", "RU"]
 
 
 def test_news_title_hash_normalizes_punctuation() -> None:

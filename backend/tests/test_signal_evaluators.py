@@ -16,6 +16,7 @@ from app.services.signals.evaluators.momentum import MomentumEvaluator
 from app.services.signals.evaluators.news_event import NewsEventEvaluator
 from app.services.signals.evaluators.price_gap import PriceGapEvaluator
 from app.services.signals.evaluators.regime_shift import RegimeShiftEvaluator
+from app.services.signals.evaluators.rubber_supply import RubberSupplyShockEvaluator
 from app.services.signals.evaluators.spread_anomaly import SpreadAnomalyEvaluator
 from app.services.signals.types import (
     CostSnapshotPoint,
@@ -340,6 +341,115 @@ async def test_news_event_requires_cross_source_or_manual_confirmation() -> None
     )
 
     assert result is None
+
+
+@pytest.mark.asyncio
+async def test_rubber_supply_shock_triggers_for_origin_weather_event() -> None:
+    event = NewsEventPoint(
+        id="rubber-evt-1",
+        source="rubber_supply_gdelt",
+        title="Thailand floods disrupt natural rubber tapping",
+        summary="Heavy rainfall in southern Thailand disrupts rubber tapping and exports.",
+        published_at=datetime(2026, 5, 3, tzinfo=timezone.utc),
+        event_type="weather",
+        affected_symbols=["NR", "RU"],
+        direction="bullish",
+        severity=4,
+        time_horizon="short",
+        confidence=0.78,
+        source_count=2,
+        verification_status="cross_verified",
+    )
+
+    result = await RubberSupplyShockEvaluator().evaluate(
+        TriggerContext(
+            symbol1="RU",
+            category="rubber",
+            timestamp=datetime.now(timezone.utc),
+            news_events=[event],
+        )
+    )
+
+    assert result is not None
+    assert result.signal_type == "rubber_supply_shock"
+    assert result.severity == "high"
+    assert result.related_assets == ["NR", "RU"]
+    assert "origin supply chain" in result.summary
+
+
+@pytest.mark.asyncio
+async def test_rubber_supply_shock_requires_verification_gate() -> None:
+    event = NewsEventPoint(
+        id="rubber-evt-2",
+        source="rubber_supply_gdelt",
+        title="Thailand drought slows natural rubber tapping",
+        summary="Single source weather report.",
+        published_at=datetime(2026, 5, 3, tzinfo=timezone.utc),
+        event_type="weather",
+        affected_symbols=["RU"],
+        direction="bullish",
+        severity=4,
+        time_horizon="short",
+        confidence=0.7,
+        source_count=1,
+        verification_status="single_source",
+        requires_manual_confirmation=True,
+    )
+
+    result = await RubberSupplyShockEvaluator().evaluate(
+        TriggerContext(
+            symbol1="RU",
+            category="rubber",
+            timestamp=datetime.now(timezone.utc),
+            news_events=[event],
+        )
+    )
+
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_rubber_supply_shock_covers_historical_origin_disruptions() -> None:
+    cases = [
+        (
+            "2019-thai-drought",
+            "Thailand drought cuts natural rubber tapping",
+            "Dry weather in Thai rubber producing regions lowers field latex flow.",
+        ),
+        (
+            "2020-covid-tapping",
+            "Malaysia rubber tapping disruption during Covid restrictions",
+            "Movement restrictions disrupt rubber tapping and export logistics.",
+        ),
+    ]
+
+    for case_id, title, summary in cases:
+        event = NewsEventPoint(
+            id=case_id,
+            source="historical_validation",
+            title=title,
+            summary=summary,
+            published_at=datetime(2026, 5, 3, tzinfo=timezone.utc),
+            event_type="supply",
+            affected_symbols=["NR", "RU"],
+            direction="bullish",
+            severity=4,
+            time_horizon="short",
+            confidence=0.8,
+            source_count=2,
+            verification_status="cross_verified",
+        )
+        result = await RubberSupplyShockEvaluator().evaluate(
+            TriggerContext(
+                symbol1="RU",
+                category="rubber",
+                timestamp=datetime.now(timezone.utc),
+                news_events=[event],
+            )
+        )
+
+        assert result is not None
+        assert result.signal_type == "rubber_supply_shock"
 
 
 def cost_snapshot(

@@ -16,8 +16,8 @@ SYMBOL_KEYWORDS: dict[str, tuple[str, ...]] = {
     "I": ("铁矿", "iron ore"),
     "J": ("焦炭", "coke"),
     "JM": ("焦煤", "coking coal"),
-    "RU": ("天然橡胶", "橡胶", "rubber"),
-    "NR": ("20号胶", "nr"),
+    "RU": ("天然橡胶", "橡胶", "rubber", "latex", "胶水", "割胶"),
+    "NR": ("20号胶", "nr", "natural rubber", "cup lump"),
     "SC": ("原油", "crude", "oil", "opec"),
     "CU": ("铜", "copper"),
     "AL": ("铝", "aluminum", "aluminium"),
@@ -36,12 +36,20 @@ BULLISH_MARKERS = (
     "出口限制",
     "库存下降",
     "暴雨",
+    "洪水",
+    "干旱",
     "台风",
     "罢工",
+    "停割",
+    "割胶受阻",
     "cut",
     "outage",
     "strike",
     "export ban",
+    "flood",
+    "drought",
+    "heavy rain",
+    "tapping disruption",
 )
 BEARISH_MARKERS = (
     "增产",
@@ -50,10 +58,12 @@ BEARISH_MARKERS = (
     "库存增加",
     "需求下降",
     "进口增加",
+    "开割恢复",
     "下调",
     "surplus",
     "inventory build",
     "demand weak",
+    "tapping resumes",
 )
 
 
@@ -104,7 +114,15 @@ def extract_news_event_sync(item: RawNewsItem) -> StructuredNewsEvent:
     direction = infer_direction(text)
     severity = infer_severity(text, event_type)
     time_horizon = infer_time_horizon(text, event_type)
-    affected_symbols = infer_symbols(text)
+    metadata = dict(item.metadata or {})
+    affected_symbols = sorted(
+        set(infer_symbols(text))
+        | {
+            str(symbol).strip().upper()
+            for symbol in metadata.get("affected_symbols", [])
+            if str(symbol).strip()
+        }
+    )
     summary = summarize(item.title, item.content_text)
     event = StructuredNewsEvent(
         source=item.source,
@@ -118,11 +136,12 @@ def extract_news_event_sync(item: RawNewsItem) -> StructuredNewsEvent:
         direction=direction,
         severity=severity,
         time_horizon=time_horizon,
-        llm_confidence=0.62,
-        source_count=1,
+        llm_confidence=float(metadata.get("llm_confidence") or 0.62),
+        source_count=max(1, int(metadata.get("source_count") or 1)),
+        verification_status=metadata.get("verification_status"),
         extraction_payload={
             "extractor": "deterministic_fallback",
-            "collector_metadata": item.metadata,
+            "collector_metadata": metadata,
         },
     )
     return event.with_dedup_hash()
@@ -132,13 +151,46 @@ def infer_event_type(text: str) -> str:
     lowered = text.lower()
     if any(marker in lowered for marker in ("政策", "发改委", "交易所", "关税", "policy", "tariff")):
         return "policy"
-    if any(marker in lowered for marker in ("暴雨", "台风", "天气", "weather", "rain", "storm")):
+    if any(
+        marker in lowered
+        for marker in (
+            "暴雨",
+            "台风",
+            "天气",
+            "降雨",
+            "洪水",
+            "干旱",
+            "weather",
+            "rain",
+            "rainfall",
+            "storm",
+            "flood",
+            "drought",
+            "monsoon",
+        )
+    ):
         return "weather"
     if any(marker in lowered for marker in ("库存", "inventory", "stockpile")):
         return "inventory"
     if any(marker in lowered for marker in ("需求", "消费", "采购", "demand")):
         return "demand"
-    if any(marker in lowered for marker in ("减产", "停产", "矿山", "供应", "supply", "opec")):
+    if any(
+        marker in lowered
+        for marker in (
+            "减产",
+            "停产",
+            "矿山",
+            "供应",
+            "停割",
+            "割胶",
+            "开割",
+            "出口",
+            "supply",
+            "opec",
+            "tapping",
+            "export",
+        )
+    ):
         return "supply"
     if any(marker in lowered for marker in ("地缘", "制裁", "war", "sanction")):
         return "geopolitical"
@@ -162,6 +214,12 @@ def infer_severity(text: str, event_type: str) -> int:
     lowered = text.lower()
     if any(marker in lowered for marker in ("opec", "发改委", "交易所", "出口禁令", "sanction")):
         return 5
+    if any(marker in lowered for marker in ("rubber", "天然橡胶", "割胶")) and event_type in {
+        "weather",
+        "supply",
+        "policy",
+    }:
+        return 4
     if event_type in {"policy", "supply", "weather", "geopolitical"}:
         return 4
     if event_type in {"inventory", "demand"}:

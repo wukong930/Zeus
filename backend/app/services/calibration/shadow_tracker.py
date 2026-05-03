@@ -20,6 +20,7 @@ from app.services.signals.evaluators import (
     PriceGapEvaluator,
     RegimeShiftEvaluator,
     RestartExpectationEvaluator,
+    RubberSupplyShockEvaluator,
     SpreadAnomalyEvaluator,
 )
 from app.services.signals.types import MarketBar, OutcomeEvaluation, TriggerEvaluator
@@ -33,6 +34,7 @@ DEFAULT_OUTCOME_HORIZONS: dict[str, int] = {
     "event_driven": 5,
     "price_gap": 5,
     "news_event": 10,
+    "rubber_supply_shock": 10,
     "capacity_contraction": 20,
     "restart_expectation": 20,
     "median_pressure": 10,
@@ -48,6 +50,7 @@ DEFAULT_OUTCOME_EVALUATORS: dict[str, TriggerEvaluator] = {
     "event_driven": EventDrivenEvaluator(),
     "price_gap": PriceGapEvaluator(),
     "news_event": NewsEventEvaluator(),
+    "rubber_supply_shock": RubberSupplyShockEvaluator(),
     "capacity_contraction": CapacityContractionEvaluator(),
     "restart_expectation": RestartExpectationEvaluator(),
     "median_pressure": MedianPressureEvaluator(),

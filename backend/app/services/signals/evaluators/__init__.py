@@ -11,6 +11,7 @@ from app.services.signals.evaluators.momentum import MomentumEvaluator
 from app.services.signals.evaluators.news_event import NewsEventEvaluator
 from app.services.signals.evaluators.price_gap import PriceGapEvaluator
 from app.services.signals.evaluators.regime_shift import RegimeShiftEvaluator
+from app.services.signals.evaluators.rubber_supply import RubberSupplyShockEvaluator
 from app.services.signals.evaluators.spread_anomaly import SpreadAnomalyEvaluator
 
 __all__ = [
@@ -25,5 +26,6 @@ __all__ = [
     "PriceGapEvaluator",
     "RegimeShiftEvaluator",
     "RestartExpectationEvaluator",
+    "RubberSupplyShockEvaluator",
     "SpreadAnomalyEvaluator",
 ]
