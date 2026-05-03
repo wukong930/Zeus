@@ -18,6 +18,12 @@ class MarketBar:
 
 
 @dataclass(frozen=True)
+class IndustryPoint:
+    value: float
+    timestamp: datetime
+
+
+@dataclass(frozen=True)
 class SpreadStatistics:
     adf_p_value: float
     half_life: float
@@ -57,8 +63,10 @@ class TriggerContext:
     category: str
     timestamp: datetime
     market_data: list[MarketBar] = field(default_factory=list)
+    inventory: list[IndustryPoint] = field(default_factory=list)
     symbol2: str | None = None
     spread_stats: SpreadStatistics | None = None
+    in_roll_window: bool = False
 
 
 @dataclass(frozen=True)

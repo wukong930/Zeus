@@ -148,29 +148,29 @@ zeus/
 
 ### 第 2 周：信号检测 + 调度器 + LLM
 
-- [ ] **信号检测**（移植 Causa 的 6 个 evaluator，注意 `event_driven` 在 Phase 4.5 才会拆分）
+- [x] **信号检测**（移植 Causa 的 6 个 evaluator，注意 `event_driven` 在 Phase 4.5 才会拆分）
   - [x] `services/signals/evaluators/spread_anomaly.py`
-  - [ ] `services/signals/evaluators/basis_shift.py`
+  - [x] `services/signals/evaluators/basis_shift.py`
   - [x] `services/signals/evaluators/momentum.py`
-  - [ ] `services/signals/evaluators/regime_shift.py`
-  - [ ] `services/signals/evaluators/inventory_shock.py`
-  - [ ] `services/signals/evaluators/event_driven.py`（保留 Causa 原逻辑，Phase 4.5 重命名为 `price_gap` 并新增 `news_event`）
+  - [x] `services/signals/evaluators/regime_shift.py`
+  - [x] `services/signals/evaluators/inventory_shock.py`
+  - [x] `services/signals/evaluators/event_driven.py`（保留 Causa 原逻辑，Phase 4.5 重命名为 `price_gap` 并新增 `news_event`）
   - [x] `services/signals/detector.py`（编排器，asyncio.gather 并行）
-  - [ ] 信号检测在换月窗口期（前后 5 天）自动降级 `spread_anomaly` / `basis_shift`
-- [ ] **评分引擎**（移植 scoring.ts，权重暂硬编码，Phase 3 接入校准）
+  - [x] 信号检测在换月窗口期（前后 5 天）自动降级 `spread_anomaly` / `basis_shift`
+- [x] **评分引擎**（移植 scoring.ts，权重暂硬编码，Phase 3 接入校准）
   - [x] `services/scoring/priority.py`
   - [x] `services/scoring/portfolio_fit.py`
   - [x] `services/scoring/margin_efficiency.py`
   - [x] `services/scoring/engine.py`（组合评分）
-- [ ] **调度器**（替代 node-cron）
-  - [ ] `scheduler/manager.py`（APScheduler 封装 + 健康追踪）
-  - [ ] `scheduler/jobs.py`（8 个定时任务定义 + 主力合约日检任务）
-  - [ ] `api/scheduler.py`（调度器管理 API）
-- [ ] **LLM 集成**（移植多供应商抽象）
-  - [ ] `services/llm/registry.py`（供应商工厂）
-  - [ ] `services/llm/openai.py`
-  - [ ] `services/llm/anthropic.py`
-  - [ ] `services/llm/deepseek.py`
+- [x] **调度器**（替代 node-cron）
+  - [x] `scheduler/manager.py`（APScheduler 封装 + 健康追踪）
+  - [x] `scheduler/jobs.py`（8 个定时任务定义 + 主力合约日检任务）
+  - [x] `api/scheduler.py`（调度器管理 API）
+- [x] **LLM 集成**（移植多供应商抽象）
+  - [x] `services/llm/registry.py`（供应商工厂，DB 配置优先 + 环境变量回退）
+  - [x] `services/llm/openai.py`（Responses API + `store=false`）
+  - [x] `services/llm/anthropic.py`
+  - [x] `services/llm/deepseek.py`
 - [ ] **风控**（移植 risk 模块）
   - [ ] `services/risk/var.py`
   - [ ] `services/risk/stress.py`
@@ -189,8 +189,8 @@ zeus/
 ### 验证
 - [x] `pytest` 全部通过
 - [ ] 前端所有已实现页面数据正常
-- [ ] 调度器可启动/停止/手动触发任务
-- [ ] LLM 调用正常（至少一个供应商）
+- [x] 调度器可启动/停止/手动触发任务
+- [x] LLM 调用正常（至少一个供应商；MockTransport 覆盖 OpenAI/Anthropic/DeepSeek 请求与响应解析）
   - [x] **PIT 查询验证**：插入修订数据后，`get_market_data_pit(as_of=昨天)` 返回原始版本，`market_data_latest` 返回修订版本
 - [ ] **合约换月验证**：`contract_metadata` 表有数据，主力合约判断正确
 

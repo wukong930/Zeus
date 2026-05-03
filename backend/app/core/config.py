@@ -22,6 +22,15 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:3000"])
 
+    llm_model: str | None = None
+    llm_timeout_seconds: float = 120.0
+    openai_api_key: str | None = None
+    openai_base_url: str = "https://api.openai.com/v1"
+    anthropic_api_key: str | None = None
+    anthropic_base_url: str = "https://api.anthropic.com"
+    deepseek_api_key: str | None = None
+    deepseek_base_url: str = "https://api.deepseek.com/v1"
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

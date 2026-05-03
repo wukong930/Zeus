@@ -10,14 +10,19 @@ from app.api.industry_data import router as industry_data_router
 from app.api.market_data import router as market_data_router
 from app.api.positions import router as positions_router
 from app.api.recommendations import router as recommendations_router
+from app.api.scheduler import router as scheduler_router
 from app.api.strategies import router as strategies_router
 from app.core.config import get_settings
 from app.core.redis import close_redis
+from app.scheduler.manager import get_scheduler
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    scheduler = get_scheduler()
+    scheduler.start()
     yield
+    scheduler.shutdown()
     await close_redis()
 
 
@@ -47,6 +52,7 @@ def create_app() -> FastAPI:
     app.include_router(positions_router)
     app.include_router(recommendations_router)
     app.include_router(strategies_router)
+    app.include_router(scheduler_router)
     return app
 
 

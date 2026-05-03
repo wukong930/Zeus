@@ -3,9 +3,13 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from app.services.signals.detector import SignalDetector
+from app.services.signals.evaluators.basis_shift import BasisShiftEvaluator
+from app.services.signals.evaluators.event_driven import EventDrivenEvaluator
+from app.services.signals.evaluators.inventory_shock import InventoryShockEvaluator
 from app.services.signals.evaluators.momentum import MomentumEvaluator
+from app.services.signals.evaluators.regime_shift import RegimeShiftEvaluator
 from app.services.signals.evaluators.spread_anomaly import SpreadAnomalyEvaluator
-from app.services.signals.types import MarketBar, SpreadStatistics, TriggerContext
+from app.services.signals.types import IndustryPoint, MarketBar, SpreadStatistics, TriggerContext
 
 
 @pytest.mark.asyncio
@@ -79,4 +83,152 @@ async def test_signal_detector_runs_evaluators_in_parallel() -> None:
 
     results = await SignalDetector().detect(context)
 
-    assert [result.signal_type for result in results] == ["spread_anomaly"]
+    assert [result.signal_type for result in results] == ["spread_anomaly", "basis_shift"]
+
+
+@pytest.mark.asyncio
+async def test_signal_detector_degrades_spread_signals_in_roll_window() -> None:
+    context = TriggerContext(
+        symbol1="RB",
+        symbol2="HC",
+        category="ferrous",
+        timestamp=datetime.now(timezone.utc),
+        in_roll_window=True,
+        spread_stats=SpreadStatistics(
+            adf_p_value=0.03,
+            half_life=12,
+            spread_mean=10,
+            spread_std_dev=2,
+            current_z_score=2.8,
+        ),
+    )
+
+    results = await SignalDetector().detect(context)
+
+    assert results == []
+
+
+@pytest.mark.asyncio
+async def test_basis_shift_triggers_on_basis_deviation() -> None:
+    start = datetime(2026, 5, 1, tzinfo=timezone.utc)
+    market_data = [
+        MarketBar(
+            timestamp=start + timedelta(days=idx),
+            open=100 + idx,
+            high=101 + idx,
+            low=99 + idx,
+            close=100 + idx,
+            volume=100 + idx * 30,
+        )
+        for idx in range(5)
+    ]
+    context = TriggerContext(
+        symbol1="RB",
+        symbol2="HC",
+        category="ferrous",
+        timestamp=datetime.now(timezone.utc),
+        market_data=market_data,
+        spread_stats=SpreadStatistics(
+            adf_p_value=0.04,
+            half_life=10,
+            spread_mean=10,
+            spread_std_dev=2,
+            current_z_score=2.4,
+        ),
+    )
+
+    result = await BasisShiftEvaluator().evaluate(context)
+
+    assert result is not None
+    assert result.signal_type == "basis_shift"
+
+
+@pytest.mark.asyncio
+async def test_regime_shift_triggers_on_volatility_jump() -> None:
+    start = datetime(2026, 5, 1, tzinfo=timezone.utc)
+    closes = [100 + idx * 0.1 for idx in range(25)] + [103, 96, 108, 92, 115, 88, 121]
+    market_data = [
+        MarketBar(
+            timestamp=start + timedelta(days=idx),
+            open=close,
+            high=close + 1,
+            low=close - 1,
+            close=close,
+            volume=100,
+        )
+        for idx, close in enumerate(closes)
+    ]
+
+    result = await RegimeShiftEvaluator().evaluate(
+        TriggerContext(
+            symbol1="RB",
+            category="ferrous",
+            timestamp=datetime.now(timezone.utc),
+            market_data=market_data,
+        )
+    )
+
+    assert result is not None
+    assert result.signal_type == "regime_shift"
+
+
+@pytest.mark.asyncio
+async def test_inventory_shock_uses_inventory_and_volatility() -> None:
+    start = datetime(2026, 5, 1, tzinfo=timezone.utc)
+    market_data = [
+        MarketBar(
+            timestamp=start + timedelta(days=idx),
+            open=100,
+            high=101 + idx,
+            low=99 - idx,
+            close=100,
+            volume=100,
+        )
+        for idx in range(15)
+    ]
+    inventory = [
+        IndustryPoint(value=value, timestamp=start + timedelta(days=idx))
+        for idx, value in enumerate([100, 101, 99, 100, 98, 130, 132, 135])
+    ]
+
+    result = await InventoryShockEvaluator().evaluate(
+        TriggerContext(
+            symbol1="RB",
+            category="ferrous",
+            timestamp=datetime.now(timezone.utc),
+            market_data=market_data,
+            inventory=inventory,
+        )
+    )
+
+    assert result is not None
+    assert result.signal_type == "inventory_shock"
+
+
+@pytest.mark.asyncio
+async def test_event_driven_triggers_on_gap_and_volume_spike() -> None:
+    start = datetime(2026, 5, 1, tzinfo=timezone.utc)
+    closes = [100.0, 100.2, 99.8, 100.1, 108.0]
+    market_data = [
+        MarketBar(
+            timestamp=start + timedelta(days=idx),
+            open=close,
+            high=close + 0.3,
+            low=close - 0.3,
+            close=close,
+            volume=500 if idx == len(closes) - 1 else 100,
+        )
+        for idx, close in enumerate(closes)
+    ]
+
+    result = await EventDrivenEvaluator().evaluate(
+        TriggerContext(
+            symbol1="RB",
+            category="ferrous",
+            timestamp=datetime.now(timezone.utc),
+            market_data=market_data,
+        )
+    )
+
+    assert result is not None
+    assert result.signal_type == "event_driven"
