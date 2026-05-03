@@ -184,8 +184,10 @@ zeus/
   - [ ] 验证所有页面数据正常加载（Alerts / Portfolio 已接真实 API，其他 mock 页面待逐步替换）
   - [x] 行情数据展示加上"vintage" 标签（Portfolio 持仓行展示 latest market data vintage）
 - [ ] **性能基线**
-  - [ ] 信号检测全流程（6 评估器并行）耗时基线测试
-  - [ ] PIT 查询性能测试（带 `as_of` 参数 vs 默认 latest）
+  - [x] 信号检测全流程（6 评估器并行）耗时基线测试
+    - 2026-05-03 Docker backend：200 次迭代，mean 0.244ms，p95 0.278ms
+  - [x] PIT 查询性能测试（带 `as_of` 参数 vs 默认 latest）
+    - 2026-05-03 Docker Postgres：250 行 × 2 vintages，100 次迭代；latest mean 2.079ms，as_of mean 1.899ms
 
 ### 验证
 - [x] `pytest` 全部通过
