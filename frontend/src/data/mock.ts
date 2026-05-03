@@ -21,6 +21,11 @@ export interface Alert {
   sector: Sector;
   regime: string;
   adversarialPassed: boolean;
+  confidenceTier?: string;
+  humanActionRequired?: boolean;
+  humanActionDeadline?: string | null;
+  llmInvolved?: boolean;
+  dedupSuppressed?: boolean;
 }
 
 export interface TradePlan {

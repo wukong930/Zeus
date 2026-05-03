@@ -68,7 +68,8 @@ async def hybrid_search(
         params["query_embedding"] = vector_literal(query_embedding)
         cosine_expr = "COALESCE(1 - (embedding <=> CAST(:query_embedding AS vector)), 0)"
         ordering_hint = "embedding <=> CAST(:query_embedding AS vector),"
-        await session.execute(text("SET LOCAL hnsw.ef_search = :ef_search"), {"ef_search": ef_search})
+        safe_ef_search = max(1, min(int(ef_search), 1000))
+        await session.execute(text(f"SET LOCAL hnsw.ef_search = {safe_ef_search}"))
     else:
         cosine_expr = "0"
         ordering_hint = ""

@@ -15,6 +15,8 @@ from app.services.adversarial.engine import (
     attach_signal_track_to_adversarial_result,
     evaluate_adversarial_signal,
 )
+from app.services.alert_agent.dedup import check_alert_dedup, record_alert_emitted
+from app.services.alert_agent.router import route_alert
 from app.services.calibration.tracker import get_calibration_weight, track_signal_emission
 from app.services.scoring.engine import apply_calibration_weight, score_recommendation
 from app.services.scoring.portfolio_fit import PositionGroup, RecommendationLeg
@@ -332,28 +334,82 @@ async def handle_signal_scored(
     alert_id = uuid4()
     triggered_at = _parse_datetime(event.payload.get("context", {}).get("timestamp"))
     score = event.payload.get("score", {})
+    context = event.payload.get("context", {})
+    agent_decision = await route_alert(
+        session,
+        signal=signal,
+        context=context,
+        score=score,
+    )
+    dedup_decision = await check_alert_dedup(
+        session,
+        signal=signal,
+        context=context,
+        score=score,
+        signal_combination_hash=event.payload.get("adversarial_result", {}).get(
+            "signal_combination_hash"
+        ),
+    )
+    status = (
+        "suppressed"
+        if dedup_decision.suppressed
+        else "pending"
+        if agent_decision.human_action_required
+        else "active"
+    )
     alert = Alert(
         id=alert_id,
         title=str(signal["title"]),
-        summary=str(signal["summary"]),
+        summary=agent_decision.narrative,
         severity=str(signal["severity"]),
-        category=str(event.payload.get("context", {}).get("category") or "unknown"),
+        category=str(context.get("category") or "unknown"),
         type=str(signal["signal_type"]),
-        status="active",
+        status=status,
         triggered_at=triggered_at,
         expires_at=triggered_at + timedelta(days=1),
         confidence=float(signal.get("confidence", 0)),
         adversarial_passed=bool(event.payload.get("adversarial_result", {}).get("passed", False)),
+        llm_involved=agent_decision.llm_involved,
+        confidence_tier=agent_decision.confidence_tier,
+        human_action_required=agent_decision.human_action_required,
+        human_action_deadline=agent_decision.human_action_deadline,
+        dedup_suppressed=dedup_decision.suppressed,
         related_assets=list(signal.get("related_assets", [])),
         spread_info=signal.get("spread_info"),
         trigger_chain=list(signal.get("trigger_chain", [])),
         risk_items=list(signal.get("risk_items", [])),
         manual_check_items=list(signal.get("manual_check_items", [])),
-        one_liner=f"Priority {score.get('priority', 0)} / combined {score.get('combined', 0)}.",
+        one_liner=agent_decision.one_liner,
     )
     session.add(alert)
     await session.flush()
     await attach_alert_to_signal_track(session, event.payload.get("signal_track_id"), alert)
+    if dedup_decision.suppressed:
+        return await publisher(
+            "alert.suppressed",
+            {
+                "alert_id": str(alert.id),
+                "signal_type": alert.type,
+                "severity": alert.severity,
+                "category": alert.category,
+                "dedup_reason": dedup_decision.reason,
+                "confidence_tier": alert.confidence_tier,
+                "related_assets": alert.related_assets,
+            },
+            source="alert-agent",
+            correlation_id=event.correlation_id,
+            session=session,
+        )
+
+    await record_alert_emitted(
+        session,
+        signal=signal,
+        signal_combination_hash=event.payload.get("adversarial_result", {}).get(
+            "signal_combination_hash"
+        ),
+        emitted_at=triggered_at,
+        score=score,
+    )
 
     return await publisher(
         "alert.created",
@@ -364,9 +420,12 @@ async def handle_signal_scored(
             "category": alert.category,
             "score": score,
             "adversarial_passed": alert.adversarial_passed,
+            "confidence_tier": alert.confidence_tier,
+            "human_action_required": alert.human_action_required,
+            "llm_involved": alert.llm_involved,
             "related_assets": alert.related_assets,
         },
-        source="alert-service",
+        source="alert-agent",
         correlation_id=event.correlation_id,
         session=session,
     )

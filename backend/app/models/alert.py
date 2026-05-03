@@ -16,6 +16,9 @@ class Alert(Base):
         Index("ix_alerts_severity", "severity"),
         Index("ix_alerts_triggered_at", "triggered_at"),
         Index("ix_alerts_adversarial_passed", "adversarial_passed"),
+        Index("ix_alerts_confidence_tier", "confidence_tier"),
+        Index("ix_alerts_human_action_required", "human_action_required"),
+        Index("ix_alerts_dedup_suppressed", "dedup_suppressed"),
     )
 
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
@@ -35,6 +38,11 @@ class Alert(Base):
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     confidence: Mapped[float] = mapped_column(Float, nullable=False)
     adversarial_passed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    llm_involved: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    confidence_tier: Mapped[str] = mapped_column(String(20), default="notify", nullable=False)
+    human_action_required: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    human_action_deadline: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    dedup_suppressed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     related_assets: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
     spread_info: Mapped[dict | None] = mapped_column(JSONB)
     trigger_chain: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)

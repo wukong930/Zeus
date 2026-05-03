@@ -24,6 +24,8 @@ async def list_alerts(
     statement = select(Alert).order_by(Alert.triggered_at.desc())
     if status_filter is not None:
         statement = statement.where(Alert.status == status_filter)
+    else:
+        statement = statement.where(Alert.status != "suppressed")
     if category is not None:
         statement = statement.where(Alert.category == category)
     return list((await session.scalars(statement.limit(limit))).all())

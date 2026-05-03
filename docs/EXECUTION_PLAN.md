@@ -433,71 +433,71 @@ Causa 的 `event_driven` 评估器实际上是纯技术面（gap + volume），*
 
 ### 任务清单
 
-- [ ] **Alert Agent 模块**
-  - [ ] `services/alert_agent/router.py`
+- [x] **Alert Agent 模块**
+  - [x] `services/alert_agent/router.py`
     - 判断走确定性路径还是 LLM 路径
     - LLM 触发条件：信号方向矛盾、置信度 40-65%、无历史先例、跨 3+ 板块
-  - [ ] `services/alert_agent/classifier.py`
+  - [x] `services/alert_agent/classifier.py`
     - 规则分级：L0 全景 / L1 板块 / L2 品种 / L3 交易建议
-  - [ ] `services/alert_agent/llm_arbiter.py`
+  - [x] `services/alert_agent/llm_arbiter.py`
     - 矛盾信号仲裁：结构化 JSON 输出（Pydantic 模型）
     - 新模式分析：历史类比检索
     - 输出无效时回退确定性路径
-  - [ ] `services/alert_agent/narrative.py`
+  - [x] `services/alert_agent/narrative.py`
     - 高/危急预警的叙事生成
     - 30 字以内的 one-liner 摘要
-  - [ ] `services/alert_agent/dedup.py` — **预警去重与限流（新）**
+  - [x] `services/alert_agent/dedup.py` — **预警去重与限流（新）**
     - `alert_dedup_cache` 表：(symbol, direction, evaluator, last_emitted_at, last_severity)
     - 同 (品种, 方向, 评估器) 12 小时内只发一次（除非严重度升级）
     - 同信号组合 24 小时内只发一次
     - 每日预警上限（默认 50），超限保留 top-K 高分
-- [ ] **置信度分层**
-  - [ ] `alerts` 表新增：`confidence_tier`, `human_action_required`, `human_action_deadline`, `dedup_suppressed`
-  - [ ] 路由逻辑：>85% auto / 60-85% notify / <60% confirm / 冲突 arbitrate
-  - [ ] **置信度阈值标记为"可校准"**：阈值存配置表而非硬编码常量，Phase 9 接入校准
-- [ ] **LLM 成本控制基础设施（新）**
-  - [ ] `models/llm_cache.py`、`models/llm_usage_log.py`、`models/llm_budgets.py`
-  - [ ] Alembic 迁移
-  - [ ] `services/llm/cache.py` — 结果缓存
+- [x] **置信度分层**
+  - [x] `alerts` 表新增：`confidence_tier`, `human_action_required`, `human_action_deadline`, `dedup_suppressed`
+  - [x] 路由逻辑：>85% auto / 60-85% notify / <60% confirm / 冲突 arbitrate
+  - [x] **置信度阈值标记为"可校准"**：阈值存配置表而非硬编码常量，Phase 9 接入校准
+- [x] **LLM 成本控制基础设施（新）**
+  - [x] `models/llm_cache.py`、`models/llm_usage_log.py`、`models/llm_budgets.py`
+  - [x] Alembic 迁移
+  - [x] `services/llm/cache.py` — 结果缓存
     - 缓存键：`hash(provider + model + system + user_message)`
     - TTL：24 小时（可按场景配置）
     - 缓存命中/未命中指标暴露到监控
-  - [ ] `services/llm/cost_tracker.py` — 调用日志 + 预算追踪
+  - [x] `services/llm/cost_tracker.py` — 调用日志 + 预算追踪
     - 每次调用记录：模块、模型、输入/输出 token、估算成本（USD）、是否缓存命中
     - 月度成本归因报表 API
-  - [ ] `services/llm/budget_guard.py` — 预算上限
+  - [x] `services/llm/budget_guard.py` — 预算上限
     - 按模块预算（alert_agent / news / scenario / research）
     - 超 80% 预算告警
     - 超 100% 自动降级到确定性路径
-  - [ ] **Anthropic prompt caching 启用**：系统提示和工具定义使用 cache_control
-  - [ ] LLM 调用统一通过 `llm/registry.py` 入口，所有调用经过 cache + cost_tracker + budget_guard 三层
-  - [ ] 失败/超时（>30s）/ 输出无效 JSON → 自动回退确定性路径
-- [ ] **人工仲裁**
-  - [ ] `models/human_decision.py` — human_decisions 表
-  - [ ] `api/arbitration.py` — 仲裁 API（审批/拒绝/修改）
-  - [ ] 前端：仲裁界面（展示矛盾信号 + 对抗结果 + 操作按钮）
-- [ ] **用户反馈学习（新增 6.18）**
-  - [ ] `models/user_feedback.py` — 用户反馈表
-  - [ ] Alembic 迁移
-  - [ ] `services/learning/user_feedback.py`
+  - [x] **Anthropic prompt caching 启用**：系统提示使用 cache_control（当前未引入 Anthropic tool schema）
+  - [x] LLM 调用统一通过 `llm/registry.py` 入口，所有调用经过 cache + cost_tracker + budget_guard 三层
+  - [x] 失败/超时（>30s）/ 输出无效 JSON → 自动回退确定性路径
+- [x] **人工仲裁**
+  - [x] `models/human_decision.py` — human_decisions 表（模型落在 `models/alert_agent.py`）
+  - [x] `api/arbitration.py` — 仲裁 API（审批/拒绝/修改）
+  - [x] 前端：仲裁界面（展示矛盾信号 + 对抗结果 + 操作按钮）
+- [x] **用户反馈学习（新增 6.18）**
+  - [x] `models/user_feedback.py` — 用户反馈表
+  - [x] Alembic 迁移
+  - [x] `services/learning/user_feedback.py`
     - 每个信号/推荐发出时附简短反馈表单
     - 字段：agree（agree / disagree / uncertain）、disagreement_reason（自由文本）、will_trade（will_trade / will_not_trade / partial）
     - 反馈数据**本身不影响信号触发或权重**，只用作学习数据
-  - [ ] 前端：预警面板加反馈采集组件（不强制，但持续提醒）
-  - [ ] 季度协同分析报表（生成到 `learning/feedback_report.py`）：
+  - [x] 前端：预警面板加反馈采集组件（不强制，但持续提醒）
+  - [x] 季度协同分析报表（生成到 `learning/feedback_report.py`）：
     - 用户和系统判断不一致时谁对得多（按信号类型切片）
     - 用户判断更准的场景 / 系统判断更准的场景
     - 输出建议：哪些类型信号"信你"、哪些"信系统"
-  - [ ] 集成到 Alert Agent：当系统识别"此类信号你历史判断更准"，预警附软性提示
-  - [ ] **关键约束**：用户反馈**不直接修改信号权重**，只产出 `change_review_queue` 建议
-- [ ] **验证**
-  - [ ] 构造矛盾信号，验证 LLM 路径触发
-  - [ ] 验证 confirm 级别预警暂停等待人工
-  - [ ] 验证人工决策记录写入 `human_decisions` 表
-  - [ ] 验证缓存命中：相同信号组合二次触发应命中缓存
-  - [ ] 验证预算超限自动降级
-  - [ ] 验证去重：同品种同方向连续触发只发一次预警
-  - [ ] 验证用户反馈采集 + 反馈不修改信号权重
+  - [x] 集成到 Alert Agent：当系统识别"此类信号你历史判断更准"，预警附软性提示
+  - [x] **关键约束**：用户反馈**不直接修改信号权重**，只产出 `change_review_queue` 建议
+- [x] **验证**
+  - [x] 构造矛盾信号，验证 LLM 路径触发
+  - [x] 验证 confirm 级别预警暂停等待人工
+  - [x] 验证人工决策记录写入 `human_decisions` 表
+  - [x] 验证缓存命中：相同信号组合二次触发应命中缓存
+  - [x] 验证预算超限自动降级
+  - [x] 验证去重：同品种同方向连续触发只发一次预警
+  - [x] 验证用户反馈采集 + 反馈不修改信号权重
 
 ---
 

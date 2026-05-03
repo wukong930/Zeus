@@ -134,6 +134,9 @@ async def dispatch_event(
             await result
     except Exception as exc:
         if session is not None:
+            rollback = getattr(session, "rollback", None)
+            if rollback is not None:
+                await rollback()
             await record_event(session, event, status="dead_letter", error=str(exc))
         raise
 

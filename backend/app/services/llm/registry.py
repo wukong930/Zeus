@@ -13,11 +13,16 @@ from app.services.llm.deepseek import DeepSeekProvider
 from app.services.llm.openai import OpenAIProvider
 from app.services.llm.types import (
     DEFAULT_MODELS,
+    LLMCompletionOptions,
+    LLMCompletionResult,
     LLMConfigurationError,
     LLMProvider,
     LLMProviderConfig,
     LLMProviderName,
 )
+from app.services.llm.budget_guard import add_budget_spend, check_llm_budget
+from app.services.llm.cache import get_cached_completion, llm_cache_key, messages_to_prompt_parts, store_cached_completion
+from app.services.llm.cost_tracker import estimate_cost_usd, record_llm_usage
 
 ProviderFactory = Callable[[LLMProviderConfig, httpx.AsyncClient | None], LLMProvider]
 
@@ -145,3 +150,91 @@ def _clean_secret(value: str | None) -> str | None:
         return None
     value = value.strip()
     return value or None
+
+
+async def complete_with_llm_controls(
+    *,
+    module: str,
+    options: LLMCompletionOptions,
+    session: AsyncSession | None = None,
+    settings: Settings | None = None,
+    client: httpx.AsyncClient | None = None,
+) -> LLMCompletionResult:
+    config = await get_active_llm_config(session=session)
+    if config is None:
+        config = get_env_llm_config(settings or get_settings())
+    if config is None:
+        raise LLMConfigurationError(
+            "No LLM provider configured. Enable a DB config or set an LLM API key env var."
+        )
+
+    budget = await check_llm_budget(session, module=module)
+    if not budget.allowed:
+        await record_llm_usage(
+            session,
+            module=module,
+            provider=config.provider,
+            model=config.model,
+            status="budget_blocked",
+            error=budget.reason,
+        )
+        raise LLMConfigurationError(f"LLM budget blocked for {module}: {budget.reason}")
+
+    system, user = messages_to_prompt_parts(options.messages)
+    cache_key = llm_cache_key(
+        provider=config.provider,
+        model=config.model,
+        system=system,
+        user=user,
+    )
+    cached = await get_cached_completion(session, cache_key=cache_key)
+    if cached is not None:
+        await record_llm_usage(
+            session,
+            module=module,
+            provider=config.provider,
+            model=config.model,
+            cache_hit=True,
+            status="cache_hit",
+        )
+        return cached
+
+    provider = create_provider(config, client=client)
+    try:
+        result = await provider.complete(options)
+    except Exception as exc:
+        await record_llm_usage(
+            session,
+            module=module,
+            provider=config.provider,
+            model=config.model,
+            status="error",
+            error=str(exc),
+        )
+        raise
+
+    input_tokens = result.usage.input_tokens if result.usage and result.usage.input_tokens else 0
+    output_tokens = result.usage.output_tokens if result.usage and result.usage.output_tokens else 0
+    estimated_cost = estimate_cost_usd(result.model, input_tokens, output_tokens)
+    await store_cached_completion(
+        session,
+        cache_key=cache_key,
+        module=module,
+        provider=config.provider,
+        model=result.model,
+        system=system,
+        user=user,
+        result=result,
+    )
+    await record_llm_usage(
+        session,
+        module=module,
+        provider=config.provider,
+        model=result.model,
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        estimated_cost_usd=estimated_cost,
+        cache_hit=False,
+    )
+    await add_budget_spend(session, module=module, amount_usd=estimated_cost)
+    return result

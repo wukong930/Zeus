@@ -81,6 +81,11 @@ class AlertCreate(BaseModel):
     expires_at: datetime | None = None
     confidence: float
     adversarial_passed: bool = False
+    llm_involved: bool = False
+    confidence_tier: str = "notify"
+    human_action_required: bool = False
+    human_action_deadline: datetime | None = None
+    dedup_suppressed: bool = False
     related_assets: list[str] = Field(default_factory=list)
     spread_info: dict[str, Any] | None = None
     trigger_chain: list[dict[str, Any]] = Field(default_factory=list)
@@ -125,6 +130,54 @@ class NewsEventRead(NewsEventCreate, ORMModel):
     requires_manual_confirmation: bool
     created_at: datetime
     updated_at: datetime
+
+
+class HumanDecisionCreate(BaseModel):
+    alert_id: UUID | None = None
+    signal_track_id: UUID | None = None
+    decision: str = Field(pattern="^(approve|reject|modify)$")
+    confidence_override: float | None = Field(default=None, ge=0, le=1)
+    reasoning: str | None = None
+    decided_by: str | None = None
+    payload: dict[str, Any] = Field(default_factory=dict)
+
+
+class HumanDecisionRead(HumanDecisionCreate, ORMModel):
+    id: UUID
+    created_at: datetime
+
+
+class UserFeedbackCreate(BaseModel):
+    alert_id: UUID | None = None
+    recommendation_id: UUID | None = None
+    agree: str = Field(pattern="^(agree|disagree|uncertain)$")
+    disagreement_reason: str | None = None
+    will_trade: str = Field(pattern="^(will_trade|will_not_trade|partial)$")
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class UserFeedbackRead(ORMModel):
+    id: UUID
+    alert_id: UUID | None = None
+    recommendation_id: UUID | None = None
+    signal_type: str | None = None
+    category: str | None = None
+    agree: str
+    disagreement_reason: str | None = None
+    will_trade: str
+    metadata: dict[str, Any] = Field(default_factory=dict, validation_alias="metadata_json")
+    recorded_at: datetime
+
+
+class LLMUsageSummaryRead(BaseModel):
+    module: str
+    period_start: date
+    period_end: date
+    calls: int
+    cache_hits: int
+    estimated_cost_usd: float
+    input_tokens: int
+    output_tokens: int
 
 
 class StrategyCreate(BaseModel):

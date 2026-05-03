@@ -39,9 +39,9 @@ class AnthropicProvider:
             ],
         }
 
-        system_prompt = _system_prompt(options.messages, json_mode=options.json_mode)
-        if system_prompt:
-            body["system"] = system_prompt
+        system_blocks = _system_prompt_blocks(options.messages, json_mode=options.json_mode)
+        if system_blocks:
+            body["system"] = system_blocks
         if options.temperature is not None:
             body["temperature"] = options.temperature
 
@@ -67,11 +67,20 @@ class AnthropicProvider:
         )
 
 
-def _system_prompt(messages: Sequence[LLMMessage], *, json_mode: bool) -> str | None:
+def _system_prompt_blocks(messages: Sequence[LLMMessage], *, json_mode: bool) -> list[dict[str, Any]]:
     prompts = [message.content for message in messages if message.role == "system"]
     if json_mode:
         prompts.append("Return valid JSON only.")
-    return "\n\n".join(prompts) or None
+    content = "\n\n".join(prompts)
+    if not content:
+        return []
+    return [
+        {
+            "type": "text",
+            "text": content,
+            "cache_control": {"type": "ephemeral"},
+        }
+    ]
 
 
 def _extract_text_content(data: dict[str, Any]) -> str:

@@ -863,6 +863,7 @@ final_score = α × cosine_sim + β × bm25_score + γ × time_decay
 | `shadow_runs` | Shadow 配置追踪 | algorithm_version, config_diff(jsonb), started_at, ended_at |
 | `shadow_signals` | Shadow 影子信号 | shadow_run_id, signal_type, would_emit, score, outcome |
 | `alert_dedup_cache` | 预警去重缓存 | symbol, direction, evaluator, last_emitted_at, last_severity |
+| `alert_agent_config` | Alert Agent 可校准配置 | key, value(jsonb), updated_at |
 
 **自我学习层表**（6.17-6.20）：
 

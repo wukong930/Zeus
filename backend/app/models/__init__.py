@@ -1,4 +1,5 @@
 from app.models.alert import Alert
+from app.models.alert_agent import AlertAgentConfig, AlertDedupCache, HumanDecision
 from app.models.adversarial import AdversarialResult
 from app.models.calibration import SignalCalibration
 from app.models.change_review_queue import ChangeReviewQueue
@@ -8,6 +9,7 @@ from app.models.event_log import EventLog
 from app.models.graph import CommodityNode, RelationshipEdge
 from app.models.industry_data import IndustryData
 from app.models.llm_config import LLMConfig
+from app.models.llm_cache import LLMCache, LLMBudget, LLMUsageLog
 from app.models.market_data import MarketData
 from app.models.news_events import NewsEvent
 from app.models.null_distribution_cache import NullDistributionCache
@@ -18,11 +20,14 @@ from app.models.research import ResearchHypothesis, ResearchReport
 from app.models.sector import SectorAssessment
 from app.models.signal import SignalTrack
 from app.models.strategy import Strategy
+from app.models.user_feedback import UserFeedback
 from app.models.vector_chunks import VectorChunk
 from app.models.watchlist import Watchlist
 
 __all__ = [
     "Alert",
+    "AlertAgentConfig",
+    "AlertDedupCache",
     "AdversarialResult",
     "ChangeReviewQueue",
     "CommodityNode",
@@ -30,7 +35,11 @@ __all__ = [
     "DriftMetric",
     "EventLog",
     "IndustryData",
+    "HumanDecision",
+    "LLMBudget",
+    "LLMCache",
     "LLMConfig",
+    "LLMUsageLog",
     "MarketData",
     "NewsEvent",
     "NullDistributionCache",
@@ -44,6 +53,7 @@ __all__ = [
     "SignalCalibration",
     "SignalTrack",
     "Strategy",
+    "UserFeedback",
     "VectorChunk",
     "Watchlist",
 ]

@@ -99,7 +99,13 @@ async def test_anthropic_provider_splits_system_message() -> None:
         body = json.loads(request.content)
         assert request.url.path == "/v1/messages"
         assert request.headers["x-api-key"] == "sk-ant"
-        assert body["system"] == "System prompt\n\nReturn valid JSON only."
+        assert body["system"] == [
+            {
+                "type": "text",
+                "text": "System prompt\n\nReturn valid JSON only.",
+                "cache_control": {"type": "ephemeral"},
+            }
+        ]
         assert body["messages"] == [{"role": "user", "content": "Classify"}]
         return httpx.Response(
             200,

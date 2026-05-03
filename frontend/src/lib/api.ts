@@ -68,6 +68,11 @@ interface BackendAlert {
   triggered_at: string;
   confidence: number;
   adversarial_passed?: boolean;
+  llm_involved?: boolean;
+  confidence_tier?: string;
+  human_action_required?: boolean;
+  human_action_deadline?: string | null;
+  dedup_suppressed?: boolean;
   related_assets: string[];
   trigger_chain: { label?: string; description?: string }[];
   risk_items: string[];
@@ -167,8 +172,41 @@ export async function fetchNewsEventsFromApi(): Promise<NewsEvent[]> {
   return rows.map(mapNewsEvent);
 }
 
-async function fetchJson<T>(path: string): Promise<T> {
-  const response = await fetch(path, { cache: "no-store" });
+export async function submitAlertFeedback(
+  alertId: string,
+  agree: "agree" | "disagree" | "uncertain",
+  willTrade: "will_trade" | "will_not_trade" | "partial"
+): Promise<void> {
+  await fetchJson("/api/feedback", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      alert_id: alertId,
+      agree,
+      will_trade: willTrade,
+    }),
+  });
+}
+
+export async function submitHumanDecision(
+  alertId: string,
+  decision: "approve" | "reject" | "modify",
+  reasoning?: string
+): Promise<void> {
+  await fetchJson("/api/arbitration/decisions", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      alert_id: alertId,
+      decision,
+      reasoning,
+      decided_by: "zeus-ui",
+    }),
+  });
+}
+
+async function fetchJson<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(path, { cache: "no-store", ...init });
   if (!response.ok) {
     throw new Error(`${path} failed with ${response.status}`);
   }
@@ -230,6 +268,11 @@ function mapAlert(alert: BackendAlert): Alert {
     sector: categoryToSector(alert.category),
     regime: alert.category,
     adversarialPassed: Boolean(alert.adversarial_passed),
+    confidenceTier: alert.confidence_tier,
+    humanActionRequired: Boolean(alert.human_action_required),
+    humanActionDeadline: alert.human_action_deadline,
+    llmInvolved: Boolean(alert.llm_involved),
+    dedupSuppressed: Boolean(alert.dedup_suppressed),
   };
 }
 
