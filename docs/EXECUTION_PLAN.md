@@ -171,10 +171,11 @@ zeus/
   - [x] `services/llm/openai.py`（Responses API + `store=false`）
   - [x] `services/llm/anthropic.py`
   - [x] `services/llm/deepseek.py`
-- [ ] **风控**（移植 risk 模块）
-  - [ ] `services/risk/var.py`
-  - [ ] `services/risk/stress.py`
-  - [ ] `services/risk/correlation.py`
+- [x] **风控**（移植 risk 模块）
+  - [x] `services/risk/var.py`
+  - [x] `services/risk/stress.py`
+  - [x] `services/risk/correlation.py`
+  - [x] `api/risk.py`（VaR / 压力测试 / 相关性矩阵）
 
 ### 第 3 周（半周收尾）：前端对接 + 验证
 
