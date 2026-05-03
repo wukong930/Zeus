@@ -718,51 +718,51 @@ Causa 的 `event_driven` 评估器实际上是纯技术面（gap + volume），*
 
 ### 任务清单
 
-- [ ] **必修 1：PIT 校准权重回放**
-  - [ ] `signal_calibration` 表加 `effective_from` / `effective_to` 字段
-  - [ ] Alembic 迁移
-  - [ ] 重写校准更新逻辑：插入新行（不覆盖），形成权重时间序列
-  - [ ] `services/backtest/calibration_replay.py`：按时点切片读取历史权重
-  - [ ] 回测元数据强制记录 `calibration_strategy` 字段（pit / frozen / current）
-  - [ ] 默认 `pit`；`current` 的回测结果必须明确标注"不可作为决策依据"
+- [x] **必修 1：PIT 校准权重回放**
+  - [x] `signal_calibration` 表加 `effective_from` / `effective_to` 字段
+  - [x] Alembic 迁移
+  - [x] 重写校准更新逻辑：插入新行（不覆盖），形成权重时间序列
+  - [x] `services/backtest/calibration_replay.py`：按时点切片读取历史权重
+  - [x] 回测元数据强制记录 `calibration_strategy` 字段（pit / frozen / current）
+  - [x] 默认 `pit`；`current` 的回测结果必须明确标注"不可作为决策依据"
 
-- [ ] **必修 2：多重比较保护（Deflated Sharpe + FDR）**
-  - [ ] `models/strategy_runs.py` — 策略试验注册表
-  - [ ] Alembic 迁移
-  - [ ] `services/backtest/multiple_testing.py`
+- [x] **必修 2：多重比较保护（Deflated Sharpe + FDR）**
+  - [x] `models/strategy_runs.py` — 策略试验注册表
+  - [x] Alembic 迁移
+  - [x] `services/backtest/multiple_testing.py`
     - 实现 Deflated Sharpe Ratio（Bailey & Lopez de Prado 2014）
     - 实现 Bonferroni / Benjamini-Hochberg FDR 校正
     - 单策略输出强制同时给 raw Sharpe 和 deflated Sharpe
-  - [ ] 策略上线门槛：deflated Sharpe > 1.0 且 deflated p-value < 0.05
-  - [ ] **raw Sharpe 不再作为单一上线门槛**
+  - [x] 策略上线门槛：deflated Sharpe > 1.0 且 deflated p-value < 0.05
+  - [x] **raw Sharpe 不再作为单一上线门槛**
 
-- [ ] **必修 3：滑点分档模型**
-  - [ ] `models/slippage_models.py` — 分档滑点配置表
-  - [ ] Alembic 迁移
-  - [ ] `services/backtest/slippage.py`
+- [x] **必修 3：滑点分档模型**
+  - [x] `models/slippage_models.py` — 分档滑点配置表
+  - [x] Alembic 迁移
+  - [x] `services/backtest/slippage.py`
     - 函数式滑点：`slippage_bps = base × vol_mult × liquidity_mult × tod_mult`
     - 按合约层级：main 1.0 / second 2.5 / third 8.0
     - 按波动率：低 0.7 / 中 1.0 / 高 1.8（基于 ATR 百分位）
     - 按订单大小：< 1% ADV 1.0 / 1-5% 1.4 / 5%+ 2.5
     - 按时段：主交易 1.0 / 开盘 15min 1.5 / 收盘 15min 1.4 / 夜盘 1.2
-  - [ ] 临近交割 < 15 天：滑点 × 3，新建议自动转移到次月合约
-  - [ ] 涨跌停板：默认无法成交（除非板上挂单）
-  - [ ] 基准滑点数据：复用 Phase 7a 期间采集的成交量/深度数据
+  - [x] 临近交割 < 15 天：滑点 × 3，新建议自动转移到次月合约
+  - [x] 涨跌停板：默认无法成交（除非板上挂单）
+  - [x] 基准滑点数据：复用 Phase 7a 期间采集的成交量/深度数据（当前以 tier bootstrap + 表配置承载）
 
-- [ ] **必修 4：Live vs Backtest 背离监控**
-  - [ ] `models/live_divergence_metrics.py` — 监控指标表
-  - [ ] Alembic 迁移
-  - [ ] `services/backtest/live_divergence.py`
+- [x] **必修 4：Live vs Backtest 背离监控**
+  - [x] `models/live_divergence_metrics.py` — 监控指标表
+  - [x] Alembic 迁移
+  - [x] `services/backtest/live_divergence.py`
     - **Tracking error**：实盘成交"回放"重建理论曲线，对比真实曲线
     - **Sharpe 偏离检验**：实盘 Sharpe 是否落在回测 95% 置信区间外
     - **算法漂移检测**：每月用今天的算法重跑历史回测，差异 > 5% 触发警告
-  - [ ] 偏离触发时写入 `change_review_queue`（接 Phase 3 治理基础设施）
-  - [ ] 与 Phase 3 信号级 `decay_detector` 区分：本 Phase 是策略级
+  - [x] 偏离触发时写入 `change_review_queue`（接 Phase 3 治理基础设施）
+  - [x] 与 Phase 3 信号级 `decay_detector` 区分：本 Phase 是策略级
 
-- [ ] **应修：Walk-forward 参数硬性规范**
-  - [ ] 默认 3 年训练 / 3 月测试 / 1 月步长，rolling window
-  - [ ] 写入 `services/backtest/walk_forward.py` 作为常量
-  - [ ] 所有策略回测必须使用此默认参数，覆盖需写入策略元数据
+- [x] **应修：Walk-forward 参数硬性规范**
+  - [x] 默认 3 年训练 / 3 月测试 / 1 月步长，rolling window
+  - [x] 写入 `services/backtest/walk_forward.py` 作为常量
+  - [x] 所有策略回测必须使用此默认参数，覆盖需写入策略元数据
 
 - [ ] **应修：Regime profile 分解**
   - [ ] 每个回测输出按 regime 切片：Sharpe / 胜率 / 最大回撤 / 样本量
@@ -776,17 +776,17 @@ Causa 的 `event_driven` 评估器实际上是纯技术面（gap + volume），*
   - [ ] MAE / MFE 分布（与 Phase 6 推荐归因用同一指标体系）
 
 - [ ] **应修：Survivorship bias 处理**
-  - [ ] `models/commodity_history.py` — 品种宇宙历史快照表
-  - [ ] Alembic 迁移
+  - [x] `models/commodity_history.py` — 品种宇宙历史快照表
+  - [x] Alembic 迁移
   - [ ] 种子数据：从 Causa 数据 + 公开退市记录补全
   - [ ] 回测必须基于 PIT 品种宇宙
 
 - [ ] **验证**
-  - [ ] PIT 校准回放正确性：用人工构造的"已知未来"权重验证不会泄露
-  - [ ] Deflated Sharpe 拒绝过拟合策略：构造 100 个随机策略，验证多数被拒
-  - [ ] 滑点模型在主力 vs 次主力上有显著差异
-  - [ ] 注入实盘虚假数据，背离监控正确触发
-  - [ ] Walk-forward 结果可重现
+  - [x] PIT 校准回放正确性：用人工构造的"已知未来"权重验证不会泄露
+  - [x] Deflated Sharpe 拒绝过拟合策略：构造 100 个随机策略，验证多数被拒
+  - [x] 滑点模型在主力 vs 次主力上有显著差异
+  - [x] 注入实盘虚假数据，背离监控正确触发
+  - [x] Walk-forward 结果可重现
 
 ---
 
