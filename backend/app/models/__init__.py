@@ -14,6 +14,7 @@ from app.models.industry_data import IndustryData
 from app.models.live_divergence_metrics import LiveDivergenceMetric
 from app.models.llm_config import LLMConfig
 from app.models.llm_cache import LLMCache, LLMBudget, LLMUsageLog
+from app.models.learning_hypotheses import LearningHypothesis
 from app.models.market_data import MarketData
 from app.models.news_events import NewsEvent
 from app.models.null_distribution_cache import NullDistributionCache
@@ -30,6 +31,7 @@ from app.models.strategy import Strategy
 from app.models.strategy_runs import StrategyRun
 from app.models.user_feedback import UserFeedback
 from app.models.vector_chunks import VectorChunk
+from app.models.vector_eval_set import VectorEvalCase
 from app.models.watchlist import Watchlist
 
 __all__ = [
@@ -52,6 +54,7 @@ __all__ = [
     "LLMCache",
     "LLMConfig",
     "LLMUsageLog",
+    "LearningHypothesis",
     "MarketData",
     "NewsEvent",
     "NullDistributionCache",
@@ -71,5 +74,6 @@ __all__ = [
     "StrategyRun",
     "UserFeedback",
     "VectorChunk",
+    "VectorEvalCase",
     "Watchlist",
 ]

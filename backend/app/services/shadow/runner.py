@@ -53,6 +53,7 @@ async def create_shadow_run(
     created_by: str | None = None,
     notes: str | None = None,
     started_at: datetime | None = None,
+    ended_at: datetime | None = None,
 ) -> ShadowRun:
     row = ShadowRun(
         name=name,
@@ -60,6 +61,7 @@ async def create_shadow_run(
         config_diff=config_diff or {},
         status="active",
         started_at=started_at or datetime.now(timezone.utc),
+        ended_at=ended_at,
         created_by=created_by,
         notes=notes,
     )

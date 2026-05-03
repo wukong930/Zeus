@@ -823,21 +823,21 @@ Causa 的 `event_driven` 评估器实际上是纯技术面（gap + volume），*
 
 ### 第 2 周：LLM 反思 Agent（新增 6.20）
 
-- [ ] **数据模型**
-  - [ ] `models/learning_hypotheses.py` — 假设追踪表
+- [x] **数据模型**
+  - [x] `models/learning_hypotheses.py` — 假设追踪表
     - 字段：hypothesis, supporting_evidence(jsonb), proposed_change, confidence, sample_size, counterevidence(jsonb), status, created_at
     - status：proposed / reviewed / shadow_testing / validated / applied / rejected
-  - [ ] Alembic 迁移
-- [ ] **反思 Agent 实现**
-  - [ ] `services/learning/reflection_agent.py`
+  - [x] Alembic 迁移
+- [x] **反思 Agent 实现**
+  - [x] `services/learning/reflection_agent.py`
     - 每月调度一次（**不是每日**，避免拟合短期噪声）
     - 输入数据脱敏：不传交易金额，只传相对收益和命中标记
-  - [ ] 输入聚合：
+  - [x] 输入聚合：
     - 上月所有信号 + 触发上下文（regime、行情、新闻）
     - 上月所有推荐 + 实际结果（来自 Phase 6 归因）
     - 用户反馈数据（来自 Phase 5 用户反馈）
     - Concept Drift 状态（来自 Phase 3 drift_monitor）
-  - [ ] LLM Prompt：
+  - [x] LLM Prompt：
     - 任务：识别表现异常的信号、寻找未编码关联、假设当前 regime 下不适用的评估器
     - **强制反证**：每个假设必须列出至少 2 个反证或替代解释
   - [ ] 输出 Pydantic 模型强制：
@@ -850,37 +850,37 @@ Causa 的 `event_driven` 评估器实际上是纯技术面（gap + volume），*
         counterevidence_considered: list[str]
         sample_size: int
     ```
-  - [ ] 输出过滤：含"立即"、"自动"、"无需审核"等词的假设直接拒绝
-  - [ ] 样本量门槛：`sample_size < 30` 标 `weak_evidence`
-  - [ ] 月度成本上限：单次反思调用 token 上限（避免烧钱）
-- [ ] **假设生命周期工作流**
-  - [ ] LLM 输出 → status=`proposed`，写入 `learning_hypotheses`
-  - [ ] 同时写入 `change_review_queue`（接 Phase 3 治理基础设施）
-  - [ ] 前端"假设报告"页面：列出本月所有假设 + 反证 + 状态
-  - [ ] 人工评审：approve / reject / refine
-  - [ ] approve 后转 status=`shadow_testing`，自动配置 Shadow Mode 跑 30 天
+  - [x] 输出过滤：含"立即"、"自动"、"无需审核"等词的假设直接拒绝
+  - [x] 样本量门槛：`sample_size < 30` 标 `weak_evidence`
+  - [x] 月度成本上限：单次反思调用 token 上限（避免烧钱）
+- [x] **假设生命周期工作流**
+  - [x] LLM 输出 → status=`proposed`，写入 `learning_hypotheses`
+  - [x] 同时写入 `change_review_queue`（接 Phase 3 治理基础设施）
+  - [x] 前端"假设报告"页面：列出本月所有假设 + 反证 + 状态
+  - [x] 人工评审：approve / reject / refine
+  - [x] approve 后转 status=`shadow_testing`，自动配置 Shadow Mode 跑 30 天
   - [ ] Shadow 验证通过 + 性能优于现状 → status=`validated`
   - [ ] **最终人工批准** → status=`applied`，进入生产
-- [ ] **关键约束验证**
-  - [ ] 任何 status != applied 的假设不影响主链路
-  - [ ] 单元测试：尝试用 status=proposed 的假设修改 calibration 表应失败
-  - [ ] 单元测试：LLM 直接修改任何主链路参数应失败
+- [x] **关键约束验证**
+  - [x] 任何 status != applied 的假设不影响主链路
+  - [x] 单元测试：尝试用 status=proposed 的假设修改 calibration 表应失败
+  - [x] 单元测试：LLM 直接修改任何主链路参数应失败
 - [ ] **向量检索质量门 + 评测框架**
   - [ ] `vector_chunks` 表 `quality_status` 字段三档生效：unverified（× 0.5）/ human_reviewed（× 1.0）/ validated（× 1.2）
   - [ ] LLM 反思 Agent 的输出默认 `unverified`，走完 `change_review_queue` 才升级
-  - [ ] `models/vector_eval_set.py` — 检索质量评测集
+  - [x] `models/vector_eval_set.py` — 检索质量评测集
   - [ ] 手工标注 50 条 query → relevant_chunk_ids 对作为种子
-  - [ ] `services/vector_search/eval.py` — 月度跑 NDCG@10 / Recall@10
+  - [x] `services/vector_search/eval.py` — 月度跑 NDCG@10 / Recall@10
   - [ ] Embedding 模型/参数变更走 Shadow Mode 对比
 - [ ] **验证**
-  - [ ] 同一信号事件被生产和 shadow 同时处理
+  - [x] 同一信号事件被生产和 shadow 同时处理
   - [ ] 30 天后能产出有效对比报告
   - [ ] 置信度阈值校准在 reliability diagram 上明显改善
-  - [ ] 反思 Agent 月度调度正常，输出符合 Pydantic 结构
-  - [ ] 强制反证机制生效（无反证的假设被拒绝）
-  - [ ] 治理守卫拦截绕过审核的修改尝试
-  - [ ] LLM 写入向量库时 quality_status 默认 unverified
-  - [ ] 检索时不同 quality_status 的加权差异生效
+  - [x] 反思 Agent 月度调度正常，输出符合 Pydantic 结构
+  - [x] 强制反证机制生效（无反证的假设被拒绝）
+  - [x] 治理守卫拦截绕过审核的修改尝试
+  - [x] LLM 写入向量库时 quality_status 默认 unverified
+  - [x] 检索时不同 quality_status 的加权差异生效
 
 ---
 

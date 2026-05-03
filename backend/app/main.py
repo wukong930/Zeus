@@ -11,6 +11,7 @@ from app.api.cost_models import router as cost_models_router
 from app.api.feedback import router as feedback_router
 from app.api.health import router as health_router
 from app.api.industry_data import router as industry_data_router
+from app.api.learning import router as learning_router
 from app.api.llm_usage import router as llm_usage_router
 from app.api.market_data import router as market_data_router
 from app.api.news_events import router as news_events_router
@@ -64,6 +65,7 @@ def create_app() -> FastAPI:
     app.include_router(news_events_router)
     app.include_router(industry_data_router)
     app.include_router(feedback_router)
+    app.include_router(learning_router)
     app.include_router(llm_usage_router)
     app.include_router(contracts_router)
     app.include_router(cost_models_router)

@@ -5,15 +5,17 @@ import { Card, CardHeader, CardTitle, CardSubtitle } from "@/components/Card";
 import { Badge } from "@/components/Badge";
 import {
   fetchAttributionReport,
+  fetchLearningHypotheses,
   fetchThresholdCalibrationReport,
   type AttributionReport,
   type AttributionSlice,
+  type LearningHypothesis,
   type ThresholdCalibrationReport,
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 export default function AnalyticsPage() {
-  const [tab, setTab] = useState<"attribution" | "calibration" | "drift">("attribution");
+  const [tab, setTab] = useState<"attribution" | "calibration" | "hypotheses" | "drift">("attribution");
 
   return (
     <div className="px-8 py-6 space-y-6 animate-fade-in">
@@ -26,6 +28,7 @@ export default function AnalyticsPage() {
         {[
           { id: "attribution", label: "推荐归因", desc: "Goal B 命脉" },
           { id: "calibration", label: "校准仪表盘" },
+          { id: "hypotheses", label: "反思假设" },
           { id: "drift", label: "Drift 监控" },
         ].map((t) => (
           <button
@@ -46,6 +49,7 @@ export default function AnalyticsPage() {
 
       {tab === "attribution" && <AttributionTab />}
       {tab === "calibration" && <CalibrationTab />}
+      {tab === "hypotheses" && <HypothesesTab />}
       {tab === "drift" && <DriftTab />}
     </div>
   );
@@ -331,6 +335,94 @@ function DriftTab() {
       </div>
     </div>
   );
+}
+
+function HypothesesTab() {
+  const [rows, setRows] = useState<LearningHypothesis[]>([]);
+
+  useEffect(() => {
+    let mounted = true;
+    fetchLearningHypotheses()
+      .then((data) => {
+        if (mounted) setRows(data);
+      })
+      .catch(() => {
+        if (mounted) setRows([]);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  return (
+    <div className="space-y-5 animate-fade-in">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-5">
+        <Stat label="假设总数" value={String(rows.length)} trend="monthly" />
+        <Stat label="待评审" value={String(rows.filter((row) => row.status === "proposed").length)} trend="queue" />
+        <Stat label="Shadow 中" value={String(rows.filter((row) => row.status === "shadow_testing").length)} trend="30d" />
+        <Stat label="弱证据" value={String(rows.filter((row) => row.evidence_strength === "weak_evidence").length)} trend="flagged" />
+      </div>
+
+      <div className="space-y-3">
+        {rows.map((row) => (
+          <Card key={row.id} variant="flat">
+            <CardHeader>
+              <div>
+                <CardTitle>{row.hypothesis}</CardTitle>
+                <CardSubtitle>
+                  n={row.sample_size} · confidence {formatNullableNumber(row.confidence)} · {row.created_at?.slice(0, 10) ?? "-"}
+                </CardSubtitle>
+              </div>
+              <div className="flex items-center gap-2">
+                <Badge variant={row.evidence_strength === "weak_evidence" ? "orange" : "emerald"}>
+                  {row.evidence_strength}
+                </Badge>
+                <Badge variant={statusVariant(row.status)}>{row.status}</Badge>
+              </div>
+            </CardHeader>
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 text-sm">
+              <EvidenceList title="证据" items={row.supporting_evidence} />
+              <EvidenceList title="反证" items={row.counterevidence} />
+              <div>
+                <div className="text-caption text-text-muted uppercase mb-2">变更建议</div>
+                <p className="text-text-secondary leading-relaxed">
+                  {row.proposed_change ?? row.rejection_reason ?? "仅记录假设"}
+                </p>
+              </div>
+            </div>
+          </Card>
+        ))}
+        {rows.length === 0 && (
+          <Card variant="flat">
+            <div className="text-sm text-text-secondary">暂无月度反思假设。</div>
+          </Card>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function EvidenceList({ title, items }: { title: string; items: string[] }) {
+  return (
+    <div>
+      <div className="text-caption text-text-muted uppercase mb-2">{title}</div>
+      <div className="space-y-2">
+        {items.slice(0, 3).map((item, index) => (
+          <div key={`${title}-${index}`} className="text-text-secondary leading-relaxed">
+            {item}
+          </div>
+        ))}
+        {items.length === 0 && <div className="text-text-muted">-</div>}
+      </div>
+    </div>
+  );
+}
+
+function statusVariant(status: string): "neutral" | "emerald" | "orange" | "low" {
+  if (status === "validated" || status === "applied") return "emerald";
+  if (status === "shadow_testing" || status === "proposed") return "orange";
+  if (status === "rejected") return "neutral";
+  return "low";
 }
 
 function Stat({ label, value, trend, trendNegative }: { label: string; value: string; trend: string; trendNegative?: boolean }) {

@@ -22,6 +22,14 @@ class VectorSearchResult:
     created_at: datetime
 
 
+def quality_weight(quality_status: str) -> float:
+    if quality_status == "validated":
+        return 1.2
+    if quality_status == "human_reviewed":
+        return 1.0
+    return 0.5
+
+
 def vector_literal(embedding: list[float]) -> str:
     return "[" + ",".join(f"{float(value):.8f}" for value in embedding) + "]"
 

@@ -1,0 +1,271 @@
+import json
+from datetime import datetime, timedelta, timezone
+from uuid import uuid4
+
+import pytest
+
+from app.models.change_review_queue import ChangeReviewQueue
+from app.models.drift_metrics import DriftMetric
+from app.models.learning_hypotheses import LearningHypothesis
+from app.models.recommendation import Recommendation
+from app.models.signal import SignalTrack
+from app.models.user_feedback import UserFeedback
+from app.models.vector_chunks import VectorChunk
+from app.models.vector_eval_set import VectorEvalCase
+from app.services.calibration.updater import CalibrationProposal, apply_signal_calibration_change
+from app.services.governance.review_queue import ReviewRequiredError
+from app.services.learning.reflection_agent import (
+    LearningHypothesisCandidate,
+    parse_reflection_candidates,
+    persist_learning_hypotheses,
+    run_reflection_agent,
+)
+from app.services.llm.types import LLMCompletionResult
+from app.services.vector_search.eval import evaluate_single_case
+from app.services.vector_search.hybrid_search import VectorSearchResult, quality_weight
+
+
+class FakeScalars:
+    def __init__(self, rows: list | None = None, first_row=None) -> None:
+        self._rows = rows or []
+        self._first_row = first_row
+
+    def all(self) -> list:
+        return self._rows
+
+    def first(self):
+        return self._first_row
+
+
+class FakeSession:
+    def __init__(self, scalar_batches: list[list] | None = None) -> None:
+        self.scalar_batches = scalar_batches or []
+        self.rows: list[object] = []
+        self.flush_count = 0
+
+    async def scalars(self, _) -> FakeScalars:
+        if self.scalar_batches:
+            return FakeScalars(rows=self.scalar_batches.pop(0))
+        return FakeScalars()
+
+    def add(self, row: object) -> None:
+        self.rows.append(row)
+
+    async def flush(self) -> None:
+        self.flush_count += 1
+
+
+def test_parse_reflection_candidates_requires_pydantic_shape() -> None:
+    candidates = parse_reflection_candidates(
+        json.dumps(
+            {
+                "hypotheses": [
+                    {
+                        "hypothesis": "Momentum underperforms after high-volatility regime flips.",
+                        "supporting_evidence": ["momentum misses clustered in range_high_vol"],
+                        "proposed_change": "Review momentum confidence threshold in range_high_vol.",
+                        "confidence": 0.62,
+                        "counterevidence_considered": [
+                            "small sample may be noise",
+                            "inventory shocks overlap with the same period",
+                        ],
+                        "sample_size": 42,
+                    },
+                    {"hypothesis": "too short"},
+                ]
+            }
+        )
+    )
+
+    assert len(candidates) == 1
+    assert candidates[0].sample_size == 42
+
+
+async def test_reflection_hypotheses_are_gated_and_review_queued() -> None:
+    session = FakeSession()
+    candidates = [
+        LearningHypothesisCandidate(
+            hypothesis="Momentum underperforms after high-volatility regime flips.",
+            supporting_evidence=["miss cluster in range_high_vol"],
+            proposed_change="Review momentum confidence threshold in range_high_vol.",
+            confidence=0.62,
+            counterevidence_considered=["sample noise", "overlapping news shocks"],
+            sample_size=42,
+        ),
+        LearningHypothesisCandidate(
+            hypothesis="News severity should be automatically lowered immediately.",
+            supporting_evidence=["several missed alerts"],
+            proposed_change="自动修改 news_event 阈值。",
+            confidence=0.7,
+            counterevidence_considered=["sample noise", "manual labels changed"],
+            sample_size=55,
+        ),
+        LearningHypothesisCandidate(
+            hypothesis="Rubber signals changed behavior after delivery month.",
+            supporting_evidence=["two observations"],
+            proposed_change="Review rubber signal diagnostics.",
+            confidence=0.5,
+            counterevidence_considered=["seasonal effect", "calendar spread noise"],
+            sample_size=12,
+        ),
+    ]
+
+    result = await persist_learning_hypotheses(
+        session,  # type: ignore[arg-type]
+        candidates,
+        source_payload={"model": "fake"},
+    )
+
+    hypotheses = [row for row in session.rows if isinstance(row, LearningHypothesis)]
+    reviews = [row for row in session.rows if isinstance(row, ChangeReviewQueue)]
+    chunks = [row for row in session.rows if isinstance(row, VectorChunk)]
+    assert result.generated == 3
+    assert result.proposed == 2
+    assert result.rejected == 1
+    assert result.weak_evidence == 1
+    assert len(reviews) == 2
+    assert hypotheses[1].status == "rejected"
+    assert hypotheses[1].rejection_reason == "unsafe_auto_apply_language"
+    assert len(chunks) == 3
+    assert all(chunk.quality_status == "unverified" for chunk in chunks)
+
+
+async def test_run_reflection_agent_sends_sanitized_relative_payload() -> None:
+    now = datetime(2026, 5, 4, tzinfo=timezone.utc)
+    session = FakeSession(
+        scalar_batches=[
+            [
+                SignalTrack(
+                    signal_type="momentum",
+                    category="ferrous",
+                    confidence=0.75,
+                    outcome="miss",
+                    forward_return_5d=-0.03,
+                    created_at=now,
+                )
+            ],
+            [
+                Recommendation(
+                    status="completed",
+                    recommended_action="open_spread",
+                    legs=[{"asset": "RB", "direction": "long"}],
+                    priority_score=80,
+                    portfolio_fit_score=70,
+                    margin_efficiency_score=75,
+                    margin_required=100000,
+                    reasoning="test",
+                    expires_at=now + timedelta(days=1),
+                    actual_entry=100,
+                    actual_exit=106,
+                    created_at=now,
+                )
+            ],
+            [UserFeedback(signal_type="momentum", agree="disagree", will_trade="will_not_trade")],
+            [DriftMetric(metric_type="signal_hit_rate", drift_severity="yellow", computed_at=now)],
+        ]
+    )
+
+    async def fake_completer(**kwargs):
+        user_payload = json.loads(kwargs["options"].messages[1].content)
+        encoded = json.dumps(user_payload)
+        assert "margin_required" not in encoded
+        assert "pnl_realized" not in encoded
+        assert user_payload["recommendations"][0]["relative_return"] == 0.06
+        return LLMCompletionResult(
+            content=json.dumps(
+                {
+                    "hypotheses": [
+                        {
+                            "hypothesis": "Momentum misses rose in ferrous during recent drift.",
+                            "supporting_evidence": ["missed signal", "yellow drift"],
+                            "proposed_change": "Review momentum gating in ferrous.",
+                            "confidence": 0.6,
+                            "counterevidence_considered": ["small sample", "single sector"],
+                            "sample_size": 31,
+                        }
+                    ]
+                }
+            ),
+            model="fake-reflector",
+        )
+
+    result = await run_reflection_agent(
+        session,  # type: ignore[arg-type]
+        as_of=now,
+        completer=fake_completer,
+    )
+
+    assert result.proposed == 1
+    assert any(isinstance(row, ChangeReviewQueue) for row in session.rows)
+
+
+async def test_proposed_hypothesis_cannot_modify_calibration_without_review() -> None:
+    session = FakeSession()
+    proposal = CalibrationProposal(
+        signal_type="momentum",
+        category="ferrous",
+        regime="range_high_vol",
+        base_weight=1.0,
+        effective_weight=0.8,
+        rolling_hit_rate=0.45,
+        sample_size=42,
+        hit_count=19,
+        miss_count=23,
+        alpha_prior=4.0,
+        beta_prior=4.0,
+        decay_detected=True,
+        decay_score=3.2,
+        prior_dominant=False,
+    )
+
+    with pytest.raises(ReviewRequiredError):
+        await apply_signal_calibration_change(
+            session,  # type: ignore[arg-type]
+            proposal,
+            review_source="llm_agent",
+            target_key="proposed-hypothesis",
+            proposed_change=proposal.to_change(),
+        )
+
+    assert isinstance(session.rows[0], ChangeReviewQueue)
+
+
+def test_vector_eval_metrics_and_quality_weights_are_active() -> None:
+    relevant_a = uuid4()
+    relevant_b = uuid4()
+    irrelevant = uuid4()
+    case = VectorEvalCase(
+        id=uuid4(),
+        query_text="rubber supply shock",
+        relevant_chunk_ids=[str(relevant_a), str(relevant_b)],
+    )
+    retrieved = [
+        _result(irrelevant, "validated"),
+        _result(relevant_b, "human_reviewed"),
+        _result(relevant_a, "unverified"),
+    ]
+
+    result = evaluate_single_case(case, retrieved)
+
+    assert result.hits == 2
+    assert result.recall_at_10 == 1.0
+    assert 0 < result.ndcg_at_10 < 1
+    assert quality_weight("unverified") == 0.5
+    assert quality_weight("human_reviewed") == 1.0
+    assert quality_weight("validated") == 1.2
+
+
+def _result(chunk_id, quality_status: str) -> VectorSearchResult:
+    return VectorSearchResult(
+        id=chunk_id,
+        chunk_type="news",
+        source_id=None,
+        content_text="sample",
+        metadata={},
+        quality_status=quality_status,
+        final_score=1.0,
+        cosine_score=1.0,
+        text_score=0.0,
+        time_decay=1.0,
+        created_at=datetime(2026, 5, 4, tzinfo=timezone.utc),
+    )

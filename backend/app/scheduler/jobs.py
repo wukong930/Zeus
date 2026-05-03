@@ -17,6 +17,7 @@ from app.services.cost_models.snapshots import (
     snapshot_rubber_costs,
 )
 from app.services.learning.drift_monitor import run_drift_monitor
+from app.services.learning.reflection_agent import run_reflection_agent
 from app.services.learning.recommendation_attribution import update_open_recommendation_excursions
 from app.services.news.collectors import (
     CailiansheCollector,
@@ -59,6 +60,7 @@ DEFAULT_JOB_DEFINITIONS: tuple[JobDefinition, ...] = (
     JobDefinition("recommendation-attribution", "推荐归因更新", "35 16 * * 1-5"),
     JobDefinition("cost-snapshots", "黑色系成本快照", "45 16 * * 1-5"),
     JobDefinition("rubber-cost-snapshots", "橡胶成本快照", "50 16 * * 1-5"),
+    JobDefinition("learning-reflection", "月度反思 Agent", "0 6 1 * *"),
 )
 
 
@@ -358,6 +360,37 @@ async def rubber_cost_snapshots_job() -> dict[str, Any]:
     }
 
 
+async def learning_reflection_job() -> dict[str, Any]:
+    async with AsyncSessionLocal() as session:
+        try:
+            result = await run_reflection_agent(session, lookback_days=30)
+        except Exception as exc:
+            await session.rollback()
+            return {
+                "status": "skipped",
+                "reason": str(exc),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+        event = await publish(
+            "learning.reflection_completed",
+            {
+                "job_id": "learning-reflection",
+                **result.to_dict(),
+                "triggered_at": datetime.now(timezone.utc).isoformat(),
+            },
+            source="scheduler",
+            session=session,
+        )
+        await session.commit()
+    return {
+        "status": "completed",
+        "event_id": str(event.id),
+        "channel": event.channel,
+        **result.to_dict(),
+        "timestamp": event.timestamp.isoformat(),
+    }
+
+
 DEFAULT_JOB_HANDLERS: dict[str, JobHandler] = {
     definition.id: placeholder_job for definition in DEFAULT_JOB_DEFINITIONS
 }
@@ -373,3 +406,4 @@ DEFAULT_JOB_HANDLERS["position-freshness"] = position_freshness_job
 DEFAULT_JOB_HANDLERS["recommendation-attribution"] = recommendation_attribution_job
 DEFAULT_JOB_HANDLERS["cost-snapshots"] = cost_snapshots_job
 DEFAULT_JOB_HANDLERS["rubber-cost-snapshots"] = rubber_cost_snapshots_job
+DEFAULT_JOB_HANDLERS["learning-reflection"] = learning_reflection_job

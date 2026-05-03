@@ -314,6 +314,20 @@ export interface ThresholdCalibrationReport {
   review_required: boolean;
 }
 
+export interface LearningHypothesis {
+  id: string;
+  hypothesis: string;
+  supporting_evidence: string[];
+  proposed_change: string | null;
+  confidence: number;
+  sample_size: number;
+  counterevidence: string[];
+  status: string;
+  evidence_strength: string;
+  rejection_reason: string | null;
+  created_at: string | null;
+}
+
 export interface NewsEvent {
   id: string;
   source: string;
@@ -497,6 +511,10 @@ export async function fetchBacktestQualitySummary(): Promise<BacktestQualitySumm
 
 export async function fetchThresholdCalibrationReport(): Promise<ThresholdCalibrationReport> {
   return fetchJson<ThresholdCalibrationReport>("/api/shadow/calibration");
+}
+
+export async function fetchLearningHypotheses(): Promise<LearningHypothesis[]> {
+  return fetchJson<LearningHypothesis[]>("/api/learning/hypotheses");
 }
 
 export async function submitAlertFeedback(
