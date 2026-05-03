@@ -7,7 +7,7 @@ from app.models.cost_snapshot import CostSnapshot
 from app.services.cost_models.cost_chain import calculate_cost_chain, calculate_symbol_cost
 from app.services.cost_models.framework import cost_curve_percentiles
 from app.services.cost_models.news_extractor import extract_cost_data_points
-from app.services.cost_models.snapshots import write_cost_snapshot
+from app.services.cost_models.snapshots import build_cost_signal_context, write_cost_snapshot
 from app.services.sectors.ferrous import calculate_blast_furnace_margin
 
 
@@ -97,6 +97,37 @@ async def test_write_cost_snapshot_creates_row_from_result() -> None:
     assert row.snapshot_date == date(2026, 5, 3)
     assert row.breakeven_p90 > row.breakeven_p50
     assert session.flush_count == 1
+
+
+def test_build_cost_signal_context_serializes_snapshot_history() -> None:
+    rows = [
+        CostSnapshot(
+            symbol="RB",
+            name="Rebar",
+            sector="ferrous",
+            snapshot_date=date(2026, 5, 2 + idx),
+            current_price=95 + idx,
+            total_unit_cost=100,
+            breakeven_p25=90,
+            breakeven_p50=100,
+            breakeven_p75=110,
+            breakeven_p90=120,
+            profit_margin=-0.04 + idx * 0.01,
+            cost_breakdown=[],
+            inputs={},
+            data_sources=[],
+            uncertainty_pct=0.05,
+            formula_version="phase7a.v1",
+        )
+        for idx in range(2)
+    ]
+
+    context = build_cost_signal_context("RB", rows)
+
+    assert context is not None
+    assert context["symbol1"] == "RB"
+    assert context["regime"] == "cost_model"
+    assert len(context["cost_snapshots"]) == 2
 
 
 def test_news_extractor_finds_cost_data_points() -> None:

@@ -22,6 +22,7 @@ from app.services.scoring.engine import CombinedScore, apply_calibration_weight,
 from app.services.scoring.portfolio_fit import PositionGroup, RecommendationLeg
 from app.services.signals.detector import SignalDetector
 from app.services.signals.types import (
+    CostSnapshotPoint,
     IndustryPoint,
     MarketBar,
     NewsEventPoint,
@@ -84,6 +85,29 @@ def trigger_context_from_payload(payload: dict[str, Any]) -> TriggerContext:
                 timestamp=_parse_datetime(row.get("timestamp")),
             )
             for row in payload.get("inventory", [])
+        ],
+        cost_snapshots=[
+            CostSnapshotPoint(
+                symbol=str(row.get("symbol") or payload["symbol1"]).upper(),
+                timestamp=_parse_datetime(
+                    row.get("timestamp")
+                    or row.get("snapshot_date")
+                    or row.get("created_at")
+                ),
+                current_price=(
+                    float(row["current_price"]) if row.get("current_price") is not None else None
+                ),
+                total_unit_cost=float(row["total_unit_cost"]),
+                breakeven_p25=float(row["breakeven_p25"]),
+                breakeven_p50=float(row["breakeven_p50"]),
+                breakeven_p75=float(row["breakeven_p75"]),
+                breakeven_p90=float(row["breakeven_p90"]),
+                profit_margin=(
+                    float(row["profit_margin"]) if row.get("profit_margin") is not None else None
+                ),
+                uncertainty_pct=float(row.get("uncertainty_pct", 0.05)),
+            )
+            for row in payload.get("cost_snapshots", [])
         ],
         news_events=[
             NewsEventPoint(

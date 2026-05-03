@@ -64,6 +64,77 @@ export interface AttributionReport {
   };
 }
 
+export interface CostComponent {
+  name: string;
+  value: number;
+  unit: string;
+  source: string;
+  uncertainty_pct: number;
+}
+
+export interface CostInput {
+  name: string;
+  value: number;
+  unit: string;
+  source: string;
+  updated_at?: string | null;
+  uncertainty_pct: number;
+}
+
+export interface CostModel {
+  symbol: string;
+  name: string;
+  sector: string;
+  current_price: number | null;
+  total_unit_cost: number;
+  breakevens: {
+    p25: number;
+    p50: number;
+    p75: number;
+    p90: number;
+  };
+  profit_margin: number | null;
+  cost_breakdown: CostComponent[];
+  inputs: Record<string, CostInput>;
+  data_sources: {
+    name: string;
+    unit?: string;
+    updated_at?: string | null;
+    uncertainty_pct?: number;
+  }[];
+  uncertainty_pct: number;
+  formula_version: string;
+}
+
+export interface CostSnapshot {
+  id: string;
+  symbol: string;
+  name: string;
+  sector: string;
+  snapshot_date: string;
+  current_price: number | null;
+  total_unit_cost: number;
+  breakeven_p25: number;
+  breakeven_p50: number;
+  breakeven_p75: number;
+  breakeven_p90: number;
+  profit_margin: number | null;
+  uncertainty_pct: number;
+  formula_version: string;
+  created_at: string;
+}
+
+export interface CostChain {
+  sector: string;
+  symbols: string[];
+  results: Record<string, CostModel>;
+}
+
+export interface CostSimulationRequest {
+  inputs_by_symbol: Record<string, Record<string, number>>;
+  current_prices: Record<string, number | null>;
+}
+
 export interface NewsEvent {
   id: string;
   source: string;
@@ -202,6 +273,27 @@ export async function fetchNewsEventsFromApi(): Promise<NewsEvent[]> {
 
 export async function fetchAttributionReport(): Promise<AttributionReport> {
   return fetchJson<AttributionReport>("/api/attribution/report");
+}
+
+export async function fetchCostChain(symbol = "RB"): Promise<CostChain> {
+  return fetchJson<CostChain>(`/api/cost-models/${encodeURIComponent(symbol)}/chain`);
+}
+
+export async function fetchCostHistory(symbol: string, limit = 30): Promise<CostSnapshot[]> {
+  return fetchJson<CostSnapshot[]>(
+    `/api/cost-models/${encodeURIComponent(symbol)}/history?limit=${limit}`
+  );
+}
+
+export async function simulateCostModel(
+  symbol: string,
+  payload: CostSimulationRequest
+): Promise<CostModel> {
+  return fetchJson<CostModel>(`/api/cost-models/${encodeURIComponent(symbol)}/simulate`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(payload),
+  });
 }
 
 export async function submitAlertFeedback(

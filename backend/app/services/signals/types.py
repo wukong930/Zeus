@@ -24,6 +24,20 @@ class IndustryPoint:
 
 
 @dataclass(frozen=True)
+class CostSnapshotPoint:
+    symbol: str
+    timestamp: datetime
+    current_price: float | None
+    total_unit_cost: float
+    breakeven_p25: float
+    breakeven_p50: float
+    breakeven_p75: float
+    breakeven_p90: float
+    profit_margin: float | None = None
+    uncertainty_pct: float = 0.05
+
+
+@dataclass(frozen=True)
 class NewsEventPoint:
     id: str
     source: str
@@ -83,6 +97,7 @@ class TriggerContext:
     timestamp: datetime
     market_data: list[MarketBar] = field(default_factory=list)
     inventory: list[IndustryPoint] = field(default_factory=list)
+    cost_snapshots: list[CostSnapshotPoint] = field(default_factory=list)
     news_events: list[NewsEventPoint] = field(default_factory=list)
     symbol2: str | None = None
     spread_stats: SpreadStatistics | None = None

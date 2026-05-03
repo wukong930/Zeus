@@ -4,6 +4,12 @@ import pytest
 
 from app.services.signals.detector import SignalDetector
 from app.services.signals.evaluators.basis_shift import BasisShiftEvaluator
+from app.services.signals.evaluators.cost_model import (
+    CapacityContractionEvaluator,
+    MarginalCapacitySqueezeEvaluator,
+    MedianPressureEvaluator,
+    RestartExpectationEvaluator,
+)
 from app.services.signals.evaluators.event_driven import EventDrivenEvaluator
 from app.services.signals.evaluators.inventory_shock import InventoryShockEvaluator
 from app.services.signals.evaluators.momentum import MomentumEvaluator
@@ -12,6 +18,7 @@ from app.services.signals.evaluators.price_gap import PriceGapEvaluator
 from app.services.signals.evaluators.regime_shift import RegimeShiftEvaluator
 from app.services.signals.evaluators.spread_anomaly import SpreadAnomalyEvaluator
 from app.services.signals.types import (
+    CostSnapshotPoint,
     IndustryPoint,
     MarketBar,
     NewsEventPoint,
@@ -335,6 +342,111 @@ async def test_news_event_requires_cross_source_or_manual_confirmation() -> None
     assert result is None
 
 
+def cost_snapshot(
+    idx: int,
+    *,
+    price: float,
+    unit_cost: float = 100.0,
+    p50: float = 100.0,
+    p75: float = 110.0,
+    p90: float = 120.0,
+    margin: float | None = None,
+) -> CostSnapshotPoint:
+    return CostSnapshotPoint(
+        symbol="RB",
+        timestamp=datetime(2026, 5, 1, tzinfo=timezone.utc) + timedelta(days=idx),
+        current_price=price,
+        total_unit_cost=unit_cost,
+        breakeven_p25=90.0,
+        breakeven_p50=p50,
+        breakeven_p75=p75,
+        breakeven_p90=p90,
+        profit_margin=margin,
+    )
+
+
+@pytest.mark.asyncio
+async def test_capacity_contraction_triggers_after_two_weeks_negative_margin() -> None:
+    context = TriggerContext(
+        symbol1="RB",
+        category="ferrous",
+        timestamp=datetime.now(timezone.utc),
+        cost_snapshots=[cost_snapshot(idx, price=94, unit_cost=100, margin=-0.064) for idx in range(10)],
+    )
+
+    result = await CapacityContractionEvaluator().evaluate(context)
+
+    assert result is not None
+    assert result.signal_type == "capacity_contraction"
+    assert result.severity == "high"
+
+
+@pytest.mark.asyncio
+async def test_restart_expectation_triggers_on_margin_cross() -> None:
+    context = TriggerContext(
+        symbol1="RB",
+        category="ferrous",
+        timestamp=datetime.now(timezone.utc),
+        cost_snapshots=[
+            cost_snapshot(0, price=96, unit_cost=100, margin=-0.04),
+            cost_snapshot(1, price=98, unit_cost=100, margin=-0.02),
+            cost_snapshot(2, price=103, unit_cost=100, margin=0.029),
+        ],
+    )
+
+    result = await RestartExpectationEvaluator().evaluate(context)
+
+    assert result is not None
+    assert result.signal_type == "restart_expectation"
+    assert result.severity == "medium"
+
+
+@pytest.mark.asyncio
+async def test_cost_curve_price_breaches_trigger_pressure_signals() -> None:
+    context = TriggerContext(
+        symbol1="RB",
+        category="ferrous",
+        timestamp=datetime.now(timezone.utc),
+        cost_snapshots=[cost_snapshot(0, price=95, p50=100, p75=110, p90=120)],
+    )
+
+    median = await MedianPressureEvaluator().evaluate(context)
+    marginal = await MarginalCapacitySqueezeEvaluator().evaluate(context)
+
+    assert median is not None
+    assert median.signal_type == "median_pressure"
+    assert marginal is not None
+    assert marginal.signal_type == "marginal_capacity_squeeze"
+
+
+def test_trigger_context_parses_cost_snapshot_payload() -> None:
+    from app.services.pipeline.handlers import trigger_context_from_payload
+
+    context = trigger_context_from_payload(
+        {
+            "symbol1": "RB",
+            "category": "ferrous",
+            "timestamp": "2026-05-03T00:00:00+00:00",
+            "cost_snapshots": [
+                {
+                    "symbol": "RB",
+                    "snapshot_date": "2026-05-03",
+                    "current_price": 95,
+                    "total_unit_cost": 100,
+                    "breakeven_p25": 90,
+                    "breakeven_p50": 100,
+                    "breakeven_p75": 110,
+                    "breakeven_p90": 120,
+                    "profit_margin": -0.05,
+                }
+            ],
+        }
+    )
+
+    assert context.cost_snapshots[0].symbol == "RB"
+    assert context.cost_snapshots[0].breakeven_p90 == 120
+
+
 def test_all_evaluators_expose_outcome_evaluation() -> None:
     start = datetime(2026, 5, 1, tzinfo=timezone.utc)
     market_data = [
@@ -375,6 +487,10 @@ def test_all_evaluators_expose_outcome_evaluation() -> None:
         EventDrivenEvaluator(),
         PriceGapEvaluator(),
         NewsEventEvaluator(),
+        CapacityContractionEvaluator(),
+        RestartExpectationEvaluator(),
+        MedianPressureEvaluator(),
+        MarginalCapacitySqueezeEvaluator(),
     ]
 
     outcomes = [
@@ -382,4 +498,17 @@ def test_all_evaluators_expose_outcome_evaluation() -> None:
         for evaluator in evaluators
     ]
 
-    assert outcomes == ["hit", "hit", "hit", "miss", "miss", "hit", "hit", "hit"]
+    assert outcomes == [
+        "hit",
+        "hit",
+        "hit",
+        "miss",
+        "miss",
+        "hit",
+        "hit",
+        "hit",
+        "hit",
+        "hit",
+        "hit",
+        "hit",
+    ]

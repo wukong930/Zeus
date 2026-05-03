@@ -2,11 +2,15 @@ import asyncio
 
 from app.services.signals.evaluators import (
     BasisShiftEvaluator,
+    CapacityContractionEvaluator,
     InventoryShockEvaluator,
+    MarginalCapacitySqueezeEvaluator,
+    MedianPressureEvaluator,
     MomentumEvaluator,
     NewsEventEvaluator,
     PriceGapEvaluator,
     RegimeShiftEvaluator,
+    RestartExpectationEvaluator,
     SpreadAnomalyEvaluator,
 )
 from app.services.signals.types import TriggerContext, TriggerEvaluator, TriggerResult
@@ -20,6 +24,10 @@ DEFAULT_EVALUATORS: tuple[TriggerEvaluator, ...] = (
     InventoryShockEvaluator(),
     PriceGapEvaluator(),
     NewsEventEvaluator(),
+    CapacityContractionEvaluator(),
+    RestartExpectationEvaluator(),
+    MedianPressureEvaluator(),
+    MarginalCapacitySqueezeEvaluator(),
 )
 
 ROLL_WINDOW_DEGRADED_SIGNALS = {"spread_anomaly", "basis_shift"}

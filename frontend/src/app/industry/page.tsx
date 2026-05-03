@@ -1,258 +1,877 @@
 "use client";
 
-import { useState } from "react";
-import { Card, CardHeader, CardTitle, CardSubtitle } from "@/components/Card";
+import { useEffect, useMemo, useState } from "react";
+import {
+  Activity,
+  Database,
+  GitBranch,
+  RefreshCw,
+  RotateCcw,
+  SlidersHorizontal,
+} from "lucide-react";
 import { Badge } from "@/components/Badge";
+import { Button } from "@/components/Button";
+import { Card, CardHeader, CardSubtitle, CardTitle } from "@/components/Card";
+import {
+  fetchCostChain,
+  fetchCostHistory,
+  simulateCostModel,
+  type CostChain,
+  type CostComponent,
+  type CostInput,
+  type CostModel,
+  type CostSnapshot,
+} from "@/lib/api";
 import { cn, formatNumber } from "@/lib/utils";
 
-const COMMODITIES = [
-  { id: "rb", name: "螺纹钢", code: "RB", currentPrice: 4310, breakeven: 4280, breakevenP90: 4480, profit: -0.7 },
-  { id: "hc", name: "热卷", code: "HC", currentPrice: 3950, breakeven: 3880, breakevenP90: 4060, profit: 1.8 },
-  { id: "j", name: "焦炭", code: "J", currentPrice: 2050, breakeven: 2150, breakevenP90: 2280, profit: -4.6 },
-  { id: "jm", name: "焦煤", code: "JM", currentPrice: 1620, breakeven: 1650, breakevenP90: 1750, profit: -1.8 },
-  { id: "i", name: "铁矿石", code: "I", currentPrice: 820, breakeven: 760, breakevenP90: 880, profit: 7.9 },
-];
+const SYMBOL_ORDER = ["RB", "HC", "J", "JM", "I"] as const;
 
-const COST_BREAKDOWN = [
-  { component: "原料: 焦炭", value: 1100, share: 25.7 },
-  { component: "原料: 铁矿石", value: 1840, share: 43.0 },
-  { component: "加工费", value: 580, share: 13.5 },
-  { component: "损耗+回收", value: 220, share: 5.1 },
-  { component: "运输+仓储", value: 260, share: 6.1 },
-  { component: "人工+水电", value: 180, share: 4.2 },
-  { component: "税费", value: 100, share: 2.4 },
-];
+const SYMBOL_META: Record<string, { label: string; role: string }> = {
+  RB: { label: "螺纹钢", role: "成材利润锚" },
+  HC: { label: "热卷", role: "热轧价差" },
+  J: { label: "焦炭", role: "燃料成本" },
+  JM: { label: "焦煤", role: "上游煤源" },
+  I: { label: "铁矿石", role: "炉料成本" },
+};
+
+const MOCK_CHAIN: CostChain = {
+  sector: "ferrous",
+  symbols: ["JM", "J", "I", "RB", "HC"],
+  results: {
+    JM: makeMockModel("JM", "Coking Coal", 1620, 1170, 1029.6, 1111.5, 1228.5, 1333.8),
+    J: makeMockModel("J", "Coke", 2050, 1917.8, 1726.02, 1860.266, 2032.868, 2205.47),
+    I: makeMockModel("I", "Iron Ore", 820, 880, 721.6, 827.2, 950.4, 1056),
+    RB: makeMockModel("RB", "Rebar", 3200, 3196.9, 3100.993, 3100.993, 3356.745, 3612.497),
+    HC: makeMockModel("HC", "Hot Coil", 3500, 3486.9, 3417.162, 3417.162, 3661.245, 3905.328),
+  },
+};
+
+type SourceState = "loading" | "api" | "mock";
+
+interface SimulationInputs {
+  ironOreIndex: number;
+  cokeProcessing: number;
+  conversionFee: number;
+  currentPrice: number;
+}
 
 export default function IndustryLensPage() {
-  const [selected, setSelected] = useState("rb");
-  const commodity = COMMODITIES.find((c) => c.id === selected)!;
+  const [selected, setSelected] = useState<string>("RB");
+  const [chain, setChain] = useState<CostChain>(MOCK_CHAIN);
+  const [histories, setHistories] = useState<Record<string, CostSnapshot[]>>({});
+  const [source, setSource] = useState<SourceState>("loading");
+  const [simInputs, setSimInputs] = useState<SimulationInputs>(() =>
+    defaultSimulationInputs(MOCK_CHAIN.results.RB)
+  );
+  const [simulated, setSimulated] = useState<CostModel | null>(null);
+
+  useEffect(() => {
+    let ignore = false;
+
+    async function load() {
+      try {
+        setSource("loading");
+        const nextChain = await fetchCostChain("RB");
+        const historyEntries = await Promise.all(
+          SYMBOL_ORDER.map(async (symbol) => {
+            try {
+              return [symbol, await fetchCostHistory(symbol, 30)] as const;
+            } catch {
+              return [symbol, []] as const;
+            }
+          })
+        );
+
+        if (!ignore) {
+          setChain(nextChain);
+          setHistories(Object.fromEntries(historyEntries));
+          setSource("api");
+        }
+      } catch {
+        if (!ignore) {
+          setChain(MOCK_CHAIN);
+          setHistories({});
+          setSource("mock");
+        }
+      }
+    }
+
+    load();
+    return () => {
+      ignore = true;
+    };
+  }, []);
+
+  const selectedModel = chain.results[selected] ?? MOCK_CHAIN.results.RB;
+
+  useEffect(() => {
+    setSimInputs(defaultSimulationInputs(selectedModel));
+    setSimulated(null);
+  }, [selected, selectedModel]);
+
+  useEffect(() => {
+    if (source !== "api") return;
+    let ignore = false;
+    const timer = window.setTimeout(() => {
+      simulateCostModel(selected, {
+        inputs_by_symbol: {
+          I: { iron_ore_index_cny: simInputs.ironOreIndex },
+          J: { coking_processing_fee: simInputs.cokeProcessing },
+          RB: { blast_furnace_conversion_fee: simInputs.conversionFee },
+        },
+        current_prices: { [selected]: simInputs.currentPrice },
+      })
+        .then((result) => {
+          if (!ignore) setSimulated(result);
+        })
+        .catch(() => {
+          if (!ignore) setSimulated(null);
+        });
+    }, 180);
+
+    return () => {
+      ignore = true;
+      window.clearTimeout(timer);
+    };
+  }, [selected, simInputs, source]);
+
+  const displayModel = simulated ?? selectedModel;
+  const selectedHistory = histories[selected] ?? [];
+  const signalRules = useMemo(
+    () => buildSignalRules(displayModel, selectedHistory),
+    [displayModel, selectedHistory]
+  );
+  const activeSignals = signalRules.filter((rule) => rule.active).length;
 
   return (
-    <div className="px-8 py-6 space-y-6 animate-fade-in">
-      <div>
-        <h1 className="text-h1 text-text-primary">Industry Lens</h1>
-        <p className="text-sm text-text-secondary mt-1">
-          品种成本结构 · 利润空间 · 盈亏平衡分位（P25/P50/P75/P90）
-        </p>
+    <div className="px-4 sm:px-6 lg:px-8 py-6 space-y-6 animate-fade-in">
+      <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+        <div>
+          <h1 className="text-h1 text-text-primary">Industry Lens</h1>
+          <p className="text-sm text-text-secondary mt-1">
+            黑色系成本链 · 分位成本曲线 · 调价模拟 · 信号触发面板
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Badge variant={source === "mock" ? "orange" : "emerald"}>
+            {source === "loading" ? "SYNC" : source.toUpperCase()}
+          </Badge>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => window.location.reload()}
+            title="刷新成本模型"
+          >
+            <RefreshCw className="w-4 h-4" />
+            刷新
+          </Button>
+        </div>
       </div>
 
-      <div className="flex gap-2 overflow-x-auto">
-        {COMMODITIES.map((c) => (
-          <button
-            key={c.id}
-            onClick={() => setSelected(c.id)}
-            className={cn(
-              "px-4 h-9 rounded-sm text-sm font-medium whitespace-nowrap border transition-colors",
-              selected === c.id
-                ? "bg-brand-emerald/15 border-brand-emerald text-brand-emerald-bright"
-                : "border-border-default text-text-secondary hover:bg-bg-surface-raised"
-            )}
-          >
-            <span className="font-mono mr-2">{c.code}</span>
-            {c.name}
-          </button>
+      <div className="flex gap-2 overflow-x-auto pb-1">
+        {SYMBOL_ORDER.map((symbol) => (
+          <CommodityButton
+            key={symbol}
+            symbol={symbol}
+            model={chain.results[symbol]}
+            active={selected === symbol}
+            onClick={() => setSelected(symbol)}
+          />
         ))}
       </div>
 
-      <div className="grid grid-cols-12 gap-5">
-        {/* Cost waterfall */}
-        <Card variant="flat" className="col-span-7">
+      <div className="grid grid-cols-1 xl:grid-cols-12 gap-5">
+        <Card variant="flat" className="xl:col-span-7">
           <CardHeader>
             <div>
-              <CardTitle>成本分解 — {commodity.name}</CardTitle>
-              <CardSubtitle>每吨单位成本（公开数据 + LLM 提取，误差 ±5%）</CardSubtitle>
+              <CardTitle>成本分解 — {symbolLabel(displayModel.symbol)}</CardTitle>
+              <CardSubtitle>
+                单位成本 {formatCurrency(displayModel.total_unit_cost)} / t · 模型{" "}
+                {displayModel.formula_version}
+              </CardSubtitle>
             </div>
+            <Database className="w-4 h-4 text-brand-emerald-bright" />
           </CardHeader>
-          <div className="space-y-2">
-            {COST_BREAKDOWN.map((item) => (
-              <div key={item.component} className="flex items-center gap-3">
-                <div className="w-32 text-sm text-text-secondary shrink-0">{item.component}</div>
-                <div className="flex-1 h-6 bg-bg-base rounded-sm relative overflow-hidden">
-                  <div
-                    className="h-full bg-gradient-to-r from-brand-emerald/30 to-brand-emerald/60"
-                    style={{ width: `${item.share * 2}%` }}
-                  />
-                  <div className="absolute inset-0 flex items-center justify-end pr-2">
-                    <span className="text-caption font-mono tabular-nums">{item.share}%</span>
-                  </div>
-                </div>
-                <div className="w-20 text-right font-mono text-sm tabular-nums">
-                  ¥{item.value.toLocaleString()}
-                </div>
-              </div>
-            ))}
-            <div className="border-t border-border-default pt-3 mt-3 flex items-center gap-3">
-              <div className="w-32 text-h3 text-text-primary shrink-0">单位成本</div>
-              <div className="flex-1" />
-              <div className="text-h2 font-mono tabular-nums text-text-primary">
-                ¥{COST_BREAKDOWN.reduce((s, c) => s + c.value, 0).toLocaleString()}
-              </div>
-            </div>
-          </div>
-
-          <div className="mt-4 text-caption text-text-muted leading-relaxed">
-            数据来源：交易所公开 · 统计局 · 行业协会报告 · LLM 提取自财联社
-          </div>
+          <CostBreakdown components={displayModel.cost_breakdown} />
         </Card>
 
-        {/* Cost curve quantiles */}
-        <Card variant="flat" className="col-span-5">
+        <Card variant="flat" className="xl:col-span-5">
           <CardHeader>
             <div>
               <CardTitle>成本曲线分位数</CardTitle>
-              <CardSubtitle>边际成本决定价格地板，不是平均成本</CardSubtitle>
+              <CardSubtitle>当前价格相对 P25/P50/P75/P90 的位置</CardSubtitle>
+            </div>
+            <Activity className="w-4 h-4 text-brand-orange" />
+          </CardHeader>
+          <CostQuantileChart model={displayModel} />
+        </Card>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-5">
+        <MetricCard
+          label="当前价格"
+          value={displayModel.current_price}
+          fallback="N/A"
+          suffix="/t"
+          badge={profitBadge(displayModel)}
+        />
+        <MetricCard label="P50 中位成本" value={displayModel.breakevens.p50} suffix="/t" />
+        <MetricCard label="P75 边际成本" value={displayModel.breakevens.p75} suffix="/t" />
+        <MetricCard label="P90 边际成本" value={displayModel.breakevens.p90} suffix="/t" />
+      </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-12 gap-5">
+        <Card variant="flat" className="xl:col-span-5">
+          <CardHeader>
+            <div>
+              <CardTitle>动态调价计算器</CardTitle>
+              <CardSubtitle>滑动关键变量，实时调用模拟端点重算</CardSubtitle>
+            </div>
+            <SlidersHorizontal className="w-4 h-4 text-brand-emerald-bright" />
+          </CardHeader>
+          <SimulationControls
+            model={selectedModel}
+            values={simInputs}
+            onChange={setSimInputs}
+            onReset={() => {
+              setSimInputs(defaultSimulationInputs(selectedModel));
+              setSimulated(null);
+            }}
+          />
+        </Card>
+
+        <Card variant="flat" className="xl:col-span-4">
+          <CardHeader>
+            <div>
+              <CardTitle>利润率趋势</CardTitle>
+              <CardSubtitle>{selectedHistory.length} 个成本快照</CardSubtitle>
             </div>
           </CardHeader>
-          <CostQuantileChart commodity={commodity} />
+          <ProfitTrend history={selectedHistory} model={displayModel} />
         </Card>
-      </div>
 
-      <div className="grid grid-cols-3 gap-5">
-        <Card variant="flat">
-          <div className="text-caption text-text-muted uppercase mb-2">当前价格</div>
-          <div className="text-display font-mono text-text-primary tabular-nums leading-none">
-            ¥{commodity.currentPrice.toLocaleString()}
-          </div>
-          <div className={cn("text-sm font-mono mt-2 tabular-nums", commodity.profit >= 0 ? "text-data-up" : "text-data-down")}>
-            利润率 {commodity.profit >= 0 ? "+" : ""}{commodity.profit}%
-          </div>
-        </Card>
-        <Card variant="flat">
-          <div className="text-caption text-text-muted uppercase mb-2">P75 边际成本</div>
-          <div className="text-display font-mono text-text-primary tabular-nums leading-none">
-            ¥{commodity.breakeven.toLocaleString()}
-          </div>
-          <div className="text-sm text-text-muted mt-2">
-            前 25% 高成本产能盈亏平衡
-          </div>
-        </Card>
-        <Card variant="flat">
-          <div className="text-caption text-text-muted uppercase mb-2">P90 边际成本</div>
-          <div className="text-display font-mono text-text-primary tabular-nums leading-none">
-            ¥{commodity.breakevenP90.toLocaleString()}
-          </div>
-          <div className="text-sm text-text-muted mt-2">
-            前 10% 高成本产能盈亏平衡
-          </div>
-        </Card>
-      </div>
-
-      {/* Cost-driven signal triggers */}
-      <Card variant="flat">
-        <CardHeader>
-          <div>
-            <CardTitle>成本信号触发条件</CardTitle>
-            <CardSubtitle>价格触及关键分位时自动注入信号系统</CardSubtitle>
-          </div>
-        </CardHeader>
-        <div className="grid grid-cols-2 gap-3">
-          {[
-            { condition: "价格跌破 P50 中位数", trigger: "median_pressure 信号", active: false },
-            { condition: "价格跌破 P75 边际", trigger: "marginal_capacity_squeeze 信号", active: commodity.id === "rb" },
-            { condition: "价格跌破 P90 边际", trigger: "capacity_contraction 信号", active: commodity.id === "j" },
-            { condition: "利润率 < -5% 持续 2 周", trigger: "capacity_contraction_persistent", active: false },
-            { condition: "利润率由负转正", trigger: "restart_expectation 信号", active: false },
-            { condition: "成本 / 价格剪刀差扩大", trigger: "cost_squeeze 信号", active: false },
-          ].map((rule, i) => (
-            <div
-              key={i}
-              className={cn(
-                "flex items-center gap-3 p-3 rounded-sm border",
-                rule.active ? "bg-brand-orange/10 border-brand-orange" : "bg-bg-base border-border-subtle"
-              )}
-            >
-              <div
-                className={cn(
-                  "w-2 h-2 rounded-full",
-                  rule.active ? "bg-brand-orange animate-heartbeat" : "bg-text-disabled"
-                )}
-              />
-              <div className="flex-1">
-                <div className="text-sm text-text-primary">{rule.condition}</div>
-                <div className="text-caption text-text-muted font-mono">→ {rule.trigger}</div>
-              </div>
-              {rule.active && <Badge variant="orange">已触发</Badge>}
+        <Card variant="flat" className="xl:col-span-3">
+          <CardHeader>
+            <div>
+              <CardTitle>产业链全景</CardTitle>
+              <CardSubtitle>JM → J → RB / HC</CardSubtitle>
             </div>
-          ))}
-        </div>
-      </Card>
+            <GitBranch className="w-4 h-4 text-brand-orange" />
+          </CardHeader>
+          <ChainMap chain={chain} selected={selected} onSelect={setSelected} />
+        </Card>
+      </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-12 gap-5">
+        <Card variant="flat" className="xl:col-span-7">
+          <CardHeader>
+            <div>
+              <CardTitle>成本信号触发条件</CardTitle>
+              <CardSubtitle>{activeSignals} 个条件处于触发区间</CardSubtitle>
+            </div>
+            <Badge variant={activeSignals > 0 ? "orange" : "emerald"}>
+              {activeSignals > 0 ? "ACTIVE" : "CLEAR"}
+            </Badge>
+          </CardHeader>
+          <SignalRules rules={signalRules} />
+        </Card>
+
+        <Card variant="flat" className="xl:col-span-5">
+          <CardHeader>
+            <div>
+              <CardTitle>数据来源透明度</CardTitle>
+              <CardSubtitle>
+                不确定度 ±{formatNumber(displayModel.uncertainty_pct * 100, { decimals: 1 })}%
+              </CardSubtitle>
+            </div>
+          </CardHeader>
+          <DataSources model={displayModel} />
+        </Card>
+      </div>
     </div>
   );
 }
 
-function CostQuantileChart({ commodity }: { commodity: typeof COMMODITIES[number] }) {
-  const quantiles = [
-    { p: "P25", value: commodity.breakeven * 0.85, label: "低成本" },
-    { p: "P50", value: commodity.breakeven * 0.94, label: "中位数" },
-    { p: "P75", value: commodity.breakeven, label: "高成本" },
-    { p: "P90", value: commodity.breakevenP90, label: "边际产能" },
-  ];
+function CommodityButton({
+  symbol,
+  model,
+  active,
+  onClick,
+}: {
+  symbol: string;
+  model?: CostModel;
+  active: boolean;
+  onClick: () => void;
+}) {
+  const margin = model?.profit_margin ?? null;
+  return (
+    <button
+      onClick={onClick}
+      className={cn(
+        "min-w-[168px] rounded-sm border px-4 py-3 text-left transition-colors",
+        active
+          ? "bg-brand-emerald/15 border-brand-emerald text-text-primary"
+          : "bg-bg-surface border-border-subtle text-text-secondary hover:bg-bg-surface-raised"
+      )}
+    >
+      <div className="flex items-center gap-2">
+        <span className="font-mono text-sm text-text-primary">{symbol}</span>
+        <Badge variant={margin === null ? "neutral" : margin >= 0 ? "up" : "down"}>
+          {margin === null ? "N/A" : `${formatNumber(margin * 100, { decimals: 1, signed: true })}%`}
+        </Badge>
+      </div>
+      <div className="mt-1 text-sm font-medium">{symbolLabel(symbol)}</div>
+      <div className="text-caption text-text-muted">{SYMBOL_META[symbol]?.role}</div>
+    </button>
+  );
+}
 
-  const min = quantiles[0].value * 0.95;
-  const max = quantiles[3].value * 1.08;
-  const norm = (v: number) => ((v - min) / (max - min)) * 100;
+function CostBreakdown({ components }: { components: CostComponent[] }) {
+  const max = Math.max(...components.map((item) => Math.abs(item.value)), 1);
+  const total = components.reduce((sum, item) => sum + item.value, 0);
 
   return (
-    <div className="space-y-3 py-3">
-      <div className="relative h-32 bg-bg-base rounded-sm">
-        {/* Cumulative cost curve illustration */}
+    <div className="space-y-3">
+      {components.map((item) => {
+        const credit = item.value < 0;
+        const width = Math.max(4, (Math.abs(item.value) / max) * 100);
+        return (
+          <div key={item.name} className="grid grid-cols-[minmax(104px,150px)_1fr_92px] gap-3 items-center">
+            <div className="min-w-0 text-sm text-text-secondary truncate" title={item.name}>
+              {componentLabel(item.name)}
+            </div>
+            <div className="h-7 bg-bg-base rounded-sm overflow-hidden relative">
+              <div
+                className={cn(
+                  "h-full rounded-sm",
+                  credit ? "bg-data-down/45" : "bg-brand-emerald/55"
+                )}
+                style={{ width: `${width}%` }}
+              />
+              <div className="absolute inset-0 flex items-center justify-end pr-2">
+                <span className="text-caption font-mono tabular-nums text-text-secondary">
+                  {formatNumber((Math.abs(item.value) / Math.max(Math.abs(total), 1)) * 100, {
+                    decimals: 1,
+                  })}
+                  %
+                </span>
+              </div>
+            </div>
+            <div className="text-right font-mono text-sm tabular-nums text-text-primary">
+              {formatCurrency(item.value)}
+            </div>
+          </div>
+        );
+      })}
+      <div className="border-t border-border-default pt-3 mt-3 flex items-center gap-3">
+        <div className="text-h3 text-text-primary">单位成本</div>
+        <div className="flex-1" />
+        <div className="text-h2 font-mono tabular-nums text-text-primary">
+          {formatCurrency(total)}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CostQuantileChart({ model }: { model: CostModel }) {
+  const current = model.current_price ?? model.total_unit_cost;
+  const quantiles = [
+    { p: "P25", value: model.breakevens.p25, label: "低成本" },
+    { p: "P50", value: model.breakevens.p50, label: "中位数" },
+    { p: "P75", value: model.breakevens.p75, label: "高成本" },
+    { p: "P90", value: model.breakevens.p90, label: "边际产能" },
+  ];
+  const values = [...quantiles.map((item) => item.value), current];
+  const min = Math.min(...values) * 0.96;
+  const max = Math.max(...values) * 1.04;
+  const norm = (value: number) => clamp(((value - min) / Math.max(max - min, 1)) * 100, 0, 100);
+
+  return (
+    <div className="space-y-3 py-2">
+      <div className="relative h-36 bg-bg-base rounded-sm overflow-hidden">
         <svg viewBox="0 0 200 100" className="w-full h-full" preserveAspectRatio="none">
-          <defs>
-            <linearGradient id="curveGrad" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#10B981" stopOpacity="0.4" />
-              <stop offset="100%" stopColor="#10B981" stopOpacity="0" />
-            </linearGradient>
-          </defs>
           <path
-            d="M 0 90 C 30 88 50 80 80 65 C 110 50 140 30 200 10 L 200 100 L 0 100 Z"
-            fill="url(#curveGrad)"
+            d="M 0 88 C 34 86 54 78 82 64 C 112 48 142 30 200 12 L 200 100 L 0 100 Z"
+            fill="rgba(16,185,129,0.18)"
           />
           <path
-            d="M 0 90 C 30 88 50 80 80 65 C 110 50 140 30 200 10"
+            d="M 0 88 C 34 86 54 78 82 64 C 112 48 142 30 200 12"
             fill="none"
             stroke="#10B981"
             strokeWidth="1.5"
           />
-          {/* Current price line */}
           <line
-            x1={norm(commodity.currentPrice) * 2}
+            x1={norm(current) * 2}
             y1="0"
-            x2={norm(commodity.currentPrice) * 2}
+            x2={norm(current) * 2}
             y2="100"
             stroke="#F97316"
             strokeWidth="1.5"
             strokeDasharray="3 2"
           />
         </svg>
-        <div
-          className="absolute top-1 -translate-x-1/2"
-          style={{ left: `${norm(commodity.currentPrice)}%` }}
-        >
-          <Badge variant="orange">当前 ¥{formatNumber(commodity.currentPrice, { decimals: 0 })}</Badge>
+        <div className="absolute top-2 -translate-x-1/2" style={{ left: `${norm(current)}%` }}>
+          <Badge variant="orange">当前 {formatCurrency(current)}</Badge>
         </div>
       </div>
-      <div className="space-y-1.5">
-        {quantiles.map((q) => {
-          const breached = commodity.currentPrice < q.value;
+
+      <div className="space-y-2">
+        {quantiles.map((item) => {
+          const breached = current < item.value;
           return (
-            <div key={q.p} className="flex items-center gap-2 text-sm">
-              <div className="w-12 font-mono text-text-muted">{q.p}</div>
-              <div className="flex-1 h-1.5 bg-bg-surface-raised rounded-full relative">
+            <div key={item.p} className="grid grid-cols-[44px_1fr_86px_48px] gap-2 items-center text-sm">
+              <div className="font-mono text-text-muted">{item.p}</div>
+              <div className="h-2 bg-bg-surface-raised rounded-full relative">
                 <div
                   className="absolute top-0 left-0 h-full bg-brand-emerald rounded-full"
-                  style={{ width: `${norm(q.value)}%` }}
+                  style={{ width: `${norm(item.value)}%` }}
                 />
                 <div
-                  className="absolute top-0 w-0.5 h-full bg-brand-orange"
-                  style={{ left: `${norm(commodity.currentPrice)}%` }}
+                  className="absolute top-[-3px] w-0.5 h-4 bg-brand-orange"
+                  style={{ left: `${norm(current)}%` }}
                 />
               </div>
-              <div className="w-20 text-right font-mono tabular-nums text-text-primary">¥{formatNumber(q.value, { decimals: 0 })}</div>
-              {breached && <Badge variant="critical">突破</Badge>}
+              <div className="text-right font-mono tabular-nums text-text-primary">
+                {formatCurrency(item.value)}
+              </div>
+              <Badge variant={breached ? "critical" : "neutral"}>{breached ? "破位" : item.label}</Badge>
             </div>
           );
         })}
       </div>
     </div>
   );
+}
+
+function MetricCard({
+  label,
+  value,
+  suffix,
+  fallback = "--",
+  badge,
+}: {
+  label: string;
+  value: number | null;
+  suffix?: string;
+  fallback?: string;
+  badge?: { label: string; variant: "up" | "down" | "neutral" };
+}) {
+  return (
+    <Card variant="flat">
+      <div className="text-caption text-text-muted uppercase mb-2">{label}</div>
+      <div className="text-display font-mono text-text-primary tabular-nums leading-none">
+        {value === null ? fallback : formatCurrency(value)}
+      </div>
+      <div className="flex items-center gap-2 text-sm text-text-muted mt-3">
+        {suffix ? <span>{suffix}</span> : null}
+        {badge ? <Badge variant={badge.variant}>{badge.label}</Badge> : null}
+      </div>
+    </Card>
+  );
+}
+
+function SimulationControls({
+  model,
+  values,
+  onChange,
+  onReset,
+}: {
+  model: CostModel;
+  values: SimulationInputs;
+  onChange: (value: SimulationInputs) => void;
+  onReset: () => void;
+}) {
+  const priceBase = model.current_price ?? model.total_unit_cost;
+
+  return (
+    <div className="space-y-4">
+      <RangeControl
+        label="铁矿石指数"
+        value={values.ironOreIndex}
+        min={500}
+        max={1000}
+        step={5}
+        unit="CNY/t"
+        onChange={(ironOreIndex) => onChange({ ...values, ironOreIndex })}
+      />
+      <RangeControl
+        label="焦炭加工费"
+        value={values.cokeProcessing}
+        min={120}
+        max={420}
+        step={5}
+        unit="CNY/t"
+        onChange={(cokeProcessing) => onChange({ ...values, cokeProcessing })}
+      />
+      <RangeControl
+        label="高炉加工费"
+        value={values.conversionFee}
+        min={520}
+        max={980}
+        step={5}
+        unit="CNY/t"
+        onChange={(conversionFee) => onChange({ ...values, conversionFee })}
+      />
+      <RangeControl
+        label="当前价格"
+        value={values.currentPrice}
+        min={Math.max(1, Math.round(priceBase * 0.75))}
+        max={Math.max(2, Math.round(priceBase * 1.25))}
+        step={10}
+        unit="CNY/t"
+        onChange={(currentPrice) => onChange({ ...values, currentPrice })}
+      />
+      <div className="flex justify-end">
+        <Button variant="ghost" size="sm" onClick={onReset} title="重置模拟参数">
+          <RotateCcw className="w-4 h-4" />
+          重置
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function RangeControl({
+  label,
+  value,
+  min,
+  max,
+  step,
+  unit,
+  onChange,
+}: {
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  step: number;
+  unit: string;
+  onChange: (value: number) => void;
+}) {
+  return (
+    <label className="block">
+      <div className="flex items-center gap-3 mb-2">
+        <span className="text-sm text-text-secondary flex-1">{label}</span>
+        <input
+          value={Number.isFinite(value) ? value : 0}
+          onChange={(event) => onChange(Number(event.target.value))}
+          className="w-24 h-8 bg-bg-base border border-border-default rounded-sm px-2 text-right text-sm font-mono focus:border-brand-emerald focus:outline-none"
+          type="number"
+        />
+        <span className="text-caption text-text-muted w-12">{unit}</span>
+      </div>
+      <input
+        type="range"
+        min={min}
+        max={max}
+        step={step}
+        value={Number.isFinite(value) ? value : min}
+        onChange={(event) => onChange(Number(event.target.value))}
+        className="w-full accent-brand-emerald"
+      />
+    </label>
+  );
+}
+
+function ProfitTrend({ history, model }: { history: CostSnapshot[]; model: CostModel }) {
+  const points = history.length > 0 ? history.slice().reverse() : syntheticHistory(model);
+  const margins = points.map((row) => costSnapshotMargin(row) * 100);
+  const min = Math.min(...margins, -1);
+  const max = Math.max(...margins, 1);
+  const x = (idx: number) => (idx / Math.max(points.length - 1, 1)) * 100;
+  const y = (value: number) => 86 - ((value - min) / Math.max(max - min, 1)) * 72;
+  const path = margins.map((value, idx) => `${idx === 0 ? "M" : "L"} ${x(idx)} ${y(value)}`).join(" ");
+  const latest = margins[margins.length - 1] ?? 0;
+
+  return (
+    <div className="space-y-3">
+      <div className="h-36 bg-bg-base rounded-sm p-2">
+        <svg viewBox="0 0 100 100" className="w-full h-full" preserveAspectRatio="none">
+          <line x1="0" y1={y(0)} x2="100" y2={y(0)} stroke="rgba(148,163,184,0.35)" strokeDasharray="3 2" />
+          <path d={path} fill="none" stroke={latest >= 0 ? "#22C55E" : "#EF4444"} strokeWidth="1.8" />
+        </svg>
+      </div>
+      <div className="flex items-center justify-between">
+        <span className="text-sm text-text-secondary">最新利润率</span>
+        <Badge variant={latest >= 0 ? "up" : "down"}>
+          {formatNumber(latest, { decimals: 2, signed: true })}%
+        </Badge>
+      </div>
+    </div>
+  );
+}
+
+function ChainMap({
+  chain,
+  selected,
+  onSelect,
+}: {
+  chain: CostChain;
+  selected: string;
+  onSelect: (symbol: string) => void;
+}) {
+  return (
+    <div className="space-y-2">
+      {chain.symbols.map((symbol) => {
+        const model = chain.results[symbol];
+        return (
+          <button
+            key={symbol}
+            onClick={() => onSelect(symbol)}
+            className={cn(
+              "w-full rounded-sm border p-3 text-left transition-colors",
+              selected === symbol
+                ? "border-brand-emerald bg-brand-emerald/10"
+                : "border-border-subtle bg-bg-base hover:bg-bg-surface-raised"
+            )}
+          >
+            <div className="flex items-center gap-2">
+              <span className="font-mono text-sm text-text-primary">{symbol}</span>
+              <span className="text-sm text-text-secondary">{symbolLabel(symbol)}</span>
+            </div>
+            <div className="mt-1 text-caption text-text-muted">
+              单位成本 {formatCurrency(model?.total_unit_cost ?? 0)}
+            </div>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function SignalRules({
+  rules,
+}: {
+  rules: { condition: string; trigger: string; active: boolean; severity: "high" | "medium" | "low" }[];
+}) {
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+      {rules.map((rule) => (
+        <div
+          key={rule.trigger}
+          className={cn(
+            "flex items-center gap-3 p-3 rounded-sm border min-h-[76px]",
+            rule.active ? "bg-brand-orange/10 border-brand-orange" : "bg-bg-base border-border-subtle"
+          )}
+        >
+          <div
+            className={cn(
+              "w-2.5 h-2.5 rounded-full shrink-0",
+              rule.active ? "bg-brand-orange animate-heartbeat" : "bg-text-disabled"
+            )}
+          />
+          <div className="min-w-0 flex-1">
+            <div className="text-sm text-text-primary">{rule.condition}</div>
+            <div className="text-caption text-text-muted font-mono mt-1">{rule.trigger}</div>
+          </div>
+          <Badge variant={rule.active ? rule.severity : "neutral"}>
+            {rule.active ? "触发" : "待机"}
+          </Badge>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function DataSources({ model }: { model: CostModel }) {
+  const inputs = Object.values(model.inputs).slice(0, 8);
+  return (
+    <div className="space-y-3">
+      <div className="space-y-2">
+        {inputs.map((input) => (
+          <SourceRow key={input.name} input={input} />
+        ))}
+      </div>
+      <div className="border-t border-border-subtle pt-3">
+        <div className="text-caption text-text-muted uppercase mb-2">Sources</div>
+        <div className="flex flex-wrap gap-2">
+          {model.data_sources.map((source) => (
+            <Badge key={source.name} variant="neutral">
+              {source.name}
+            </Badge>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SourceRow({ input }: { input: CostInput }) {
+  return (
+    <div className="grid grid-cols-[1fr_88px_58px] gap-2 items-center text-sm">
+      <div className="min-w-0">
+        <div className="text-text-secondary truncate" title={input.name}>
+          {componentLabel(input.name)}
+        </div>
+        <div className="text-caption text-text-muted truncate">{input.source}</div>
+      </div>
+      <div className="text-right font-mono tabular-nums text-text-primary">
+        {formatNumber(input.value, { decimals: input.unit === "t/t" ? 2 : 0 })}
+      </div>
+      <div className="text-caption text-text-muted">{input.unit}</div>
+    </div>
+  );
+}
+
+function defaultSimulationInputs(model: CostModel): SimulationInputs {
+  return {
+    ironOreIndex: inputValue(model.inputs, "iron_ore_index_cny", 760),
+    cokeProcessing: inputValue(model.inputs, "coking_processing_fee", 250),
+    conversionFee: inputValue(model.inputs, "blast_furnace_conversion_fee", 760),
+    currentPrice: Math.round(model.current_price ?? model.total_unit_cost),
+  };
+}
+
+function inputValue(inputs: Record<string, CostInput>, key: string, fallback: number): number {
+  return inputs[key]?.value ?? fallback;
+}
+
+function buildSignalRules(model: CostModel, history: CostSnapshot[]) {
+  const price = model.current_price;
+  const latestMargin = model.profit_margin;
+  const historyMargins = history.map(costSnapshotMargin);
+  const recentMargins = historyMargins.slice(0, 10);
+  const persistentNegative =
+    recentMargins.length >= 10 && recentMargins.every((margin) => margin < -0.05);
+  const crossedPositive =
+    latestMargin !== null &&
+    latestMargin > 0 &&
+    historyMargins.slice(1, 8).some((margin) => margin < 0);
+
+  return [
+    {
+      condition: "价格跌破 P50 中位成本",
+      trigger: "median_pressure",
+      active: price !== null && price < model.breakevens.p50,
+      severity: "high" as const,
+    },
+    {
+      condition: "价格跌破 P75 高成本线",
+      trigger: "marginal_capacity_squeeze",
+      active: price !== null && price < model.breakevens.p75,
+      severity: "high" as const,
+    },
+    {
+      condition: "价格跌破 P90 边际产能线",
+      trigger: "marginal_capacity_squeeze",
+      active: price !== null && price < model.breakevens.p90,
+      severity: "medium" as const,
+    },
+    {
+      condition: "利润率 < -5% 持续 2 周",
+      trigger: "capacity_contraction",
+      active: persistentNegative,
+      severity: "high" as const,
+    },
+    {
+      condition: "利润率由负转正",
+      trigger: "restart_expectation",
+      active: crossedPositive,
+      severity: "medium" as const,
+    },
+  ];
+}
+
+function syntheticHistory(model: CostModel): CostSnapshot[] {
+  return Array.from({ length: 8 }, (_, idx) => {
+    const drift = (idx - 6) * 0.006;
+    return {
+      id: `mock-${idx}`,
+      symbol: model.symbol,
+      name: model.name,
+      sector: model.sector,
+      snapshot_date: `2026-05-${String(idx + 1).padStart(2, "0")}`,
+      current_price: model.current_price,
+      total_unit_cost: model.total_unit_cost,
+      breakeven_p25: model.breakevens.p25,
+      breakeven_p50: model.breakevens.p50,
+      breakeven_p75: model.breakevens.p75,
+      breakeven_p90: model.breakevens.p90,
+      profit_margin: (model.profit_margin ?? 0) + drift,
+      uncertainty_pct: model.uncertainty_pct,
+      formula_version: model.formula_version,
+      created_at: new Date().toISOString(),
+    };
+  });
+}
+
+function costSnapshotMargin(row: CostSnapshot): number {
+  if (row.profit_margin !== null) return row.profit_margin;
+  if (row.current_price === null || row.current_price <= 0) return 0;
+  return (row.current_price - row.total_unit_cost) / row.current_price;
+}
+
+function profitBadge(model: CostModel): { label: string; variant: "up" | "down" | "neutral" } {
+  if (model.profit_margin === null) return { label: "利润率 N/A", variant: "neutral" };
+  return {
+    label: `利润率 ${formatNumber(model.profit_margin * 100, { decimals: 2, signed: true })}%`,
+    variant: model.profit_margin >= 0 ? "up" : "down",
+  };
+}
+
+function makeMockModel(
+  symbol: string,
+  name: string,
+  currentPrice: number,
+  unitCost: number,
+  p25: number,
+  p50: number,
+  p75: number,
+  p90: number
+): CostModel {
+  const profitMargin = currentPrice > 0 ? (currentPrice - unitCost) / currentPrice : null;
+  return {
+    symbol,
+    name,
+    sector: "ferrous",
+    current_price: currentPrice,
+    total_unit_cost: unitCost,
+    breakevens: { p25, p50, p75, p90 },
+    profit_margin: profitMargin,
+    cost_breakdown: [
+      { name: "raw_materials", value: unitCost * 0.68, unit: "CNY/t", source: "mock", uncertainty_pct: 0.05 },
+      { name: "processing_fee", value: unitCost * 0.18, unit: "CNY/t", source: "mock", uncertainty_pct: 0.05 },
+      { name: "freight_tax_fee", value: unitCost * 0.1, unit: "CNY/t", source: "mock", uncertainty_pct: 0.05 },
+      { name: "energy_labor_fee", value: unitCost * 0.08, unit: "CNY/t", source: "mock", uncertainty_pct: 0.05 },
+      { name: "credit", value: -unitCost * 0.04, unit: "CNY/t", source: "mock", uncertainty_pct: 0.05 },
+    ],
+    inputs: {
+      iron_ore_index_cny: input("iron_ore_index_cny", 760),
+      coking_processing_fee: input("coking_processing_fee", 250),
+      blast_furnace_conversion_fee: input("blast_furnace_conversion_fee", 760),
+    },
+    data_sources: [{ name: "mock", unit: "CNY/t", uncertainty_pct: 0.05 }],
+    uncertainty_pct: 0.05,
+    formula_version: "phase7a.mock",
+  };
+}
+
+function input(name: string, value: number): CostInput {
+  return {
+    name,
+    value,
+    unit: name.includes("ratio") ? "t/t" : "CNY/t",
+    source: "mock",
+    updated_at: null,
+    uncertainty_pct: 0.05,
+  };
+}
+
+function symbolLabel(symbol: string): string {
+  return SYMBOL_META[symbol]?.label ?? symbol;
+}
+
+function componentLabel(name: string): string {
+  return name
+    .replaceAll("_", " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function formatCurrency(value: number): string {
+  return `¥${formatNumber(value, { decimals: 0 })}`;
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
 }

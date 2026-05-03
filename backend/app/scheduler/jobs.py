@@ -10,7 +10,7 @@ from app.services.calibration.regime_batch import detect_and_record_all_regimes
 from app.services.calibration.shadow_tracker import evaluate_pending_signals
 from app.services.calibration.updater import generate_calibration_reviews
 from app.services.contracts.main_contract_batch import detect_and_apply_main_contracts
-from app.services.cost_models.snapshots import snapshot_ferrous_costs
+from app.services.cost_models.snapshots import cost_signal_contexts, snapshot_ferrous_costs
 from app.services.learning.drift_monitor import run_drift_monitor
 from app.services.learning.recommendation_attribution import update_open_recommendation_excursions
 from app.services.news.collectors import (
@@ -293,10 +293,23 @@ async def recommendation_attribution_job() -> dict[str, Any]:
 async def cost_snapshots_job() -> dict[str, Any]:
     async with AsyncSessionLocal() as session:
         rows = await snapshot_ferrous_costs(session)
+        contexts = await cost_signal_contexts(session)
+        event = await publish(
+            "market.update",
+            {
+                "job_id": "cost-snapshots",
+                "triggered_at": datetime.now(timezone.utc).isoformat(),
+                "contexts": contexts,
+            },
+            source="cost-model-scheduler",
+            session=session,
+        )
         await session.commit()
     return {
         "status": "completed",
+        "event_id": str(event.id),
         "symbols": [row.symbol for row in rows],
+        "contexts": len(contexts),
         "snapshots": len(rows),
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }

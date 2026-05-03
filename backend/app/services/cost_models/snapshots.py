@@ -149,6 +149,75 @@ async def snapshot_ferrous_costs(
     return rows
 
 
+def cost_snapshot_context_payload(row: CostSnapshot) -> dict[str, Any]:
+    snapshot_time = row.created_at or datetime.combine(
+        row.snapshot_date,
+        datetime.min.time(),
+        timezone.utc,
+    )
+    return {
+        "symbol": row.symbol,
+        "timestamp": snapshot_time.isoformat(),
+        "snapshot_date": row.snapshot_date.isoformat(),
+        "current_price": row.current_price,
+        "total_unit_cost": row.total_unit_cost,
+        "breakeven_p25": row.breakeven_p25,
+        "breakeven_p50": row.breakeven_p50,
+        "breakeven_p75": row.breakeven_p75,
+        "breakeven_p90": row.breakeven_p90,
+        "profit_margin": row.profit_margin,
+        "uncertainty_pct": row.uncertainty_pct,
+    }
+
+
+def build_cost_signal_context(symbol: str, rows: list[CostSnapshot]) -> dict[str, Any] | None:
+    normalized = symbol.upper()
+    ordered = sorted(
+        (row for row in rows if row.symbol == normalized),
+        key=lambda row: row.snapshot_date,
+    )
+    if not ordered:
+        return None
+
+    latest = ordered[-1]
+    timestamp = latest.created_at or datetime.combine(
+        latest.snapshot_date,
+        datetime.min.time(),
+        timezone.utc,
+    )
+    return {
+        "symbol1": normalized,
+        "category": latest.sector,
+        "timestamp": timestamp.isoformat(),
+        "regime": "cost_model",
+        "cost_snapshots": [cost_snapshot_context_payload(row) for row in ordered],
+    }
+
+
+async def cost_signal_contexts(
+    session: AsyncSession,
+    *,
+    symbols: tuple[str, ...] = FERROUS_SYMBOLS,
+    limit_per_symbol: int = 20,
+) -> list[dict[str, Any]]:
+    contexts: list[dict[str, Any]] = []
+    for symbol in symbols:
+        rows = list(
+            (
+                await session.scalars(
+                    select(CostSnapshot)
+                    .where(CostSnapshot.symbol == symbol)
+                    .order_by(CostSnapshot.snapshot_date.desc())
+                    .limit(limit_per_symbol)
+                )
+            ).all()
+        )
+        context = build_cost_signal_context(symbol, rows)
+        if context is not None:
+            contexts.append(context)
+    return contexts
+
+
 async def latest_cost_snapshot(session: AsyncSession, symbol: str) -> CostSnapshot | None:
     return (
         await session.scalars(
