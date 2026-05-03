@@ -3,6 +3,9 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
+from app.core.database import AsyncSessionLocal
+from app.core.events import publish
+
 
 JobHandler = Callable[[], Awaitable[dict[str, Any]]]
 
@@ -35,6 +38,28 @@ async def placeholder_job() -> dict[str, Any]:
     }
 
 
+async def ingest_job() -> dict[str, Any]:
+    async with AsyncSessionLocal() as session:
+        event = await publish(
+            "market.update",
+            {
+                "job_id": "ingest",
+                "triggered_at": datetime.now(timezone.utc).isoformat(),
+                "status": "ready",
+            },
+            source="scheduler",
+            session=session,
+        )
+        await session.commit()
+    return {
+        "status": "published",
+        "event_id": str(event.id),
+        "channel": event.channel,
+        "timestamp": event.timestamp.isoformat(),
+    }
+
+
 DEFAULT_JOB_HANDLERS: dict[str, JobHandler] = {
     definition.id: placeholder_job for definition in DEFAULT_JOB_DEFINITIONS
 }
+DEFAULT_JOB_HANDLERS["ingest"] = ingest_job

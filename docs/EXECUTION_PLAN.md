@@ -206,26 +206,26 @@ zeus/
 
 ### 任务清单
 
-- [ ] **事件总线**
-  - [ ] `core/events.py` — Redis Pub/Sub 封装
+- [x] **事件总线**
+  - [x] `core/events.py` — Redis Pub/Sub 封装
     - ZeusEvent dataclass（id, channel, timestamp, source, payload, correlation_id）
     - `publish(channel, payload)` — 发布事件
     - `subscribe(channel, handler)` — 订阅事件（async handler）
     - 死信队列：handler 异常时写入 `event_log` 表
-  - [ ] `models/event_log.py` — 事件审计表
-  - [ ] Alembic 迁移：创建 `event_log` 表
-- [ ] **DB 驱动监控列表**
-  - [ ] `models/watchlist.py` — 监控列表表
-  - [ ] Alembic 迁移：创建 `watchlist` 表
-  - [ ] 种子数据：从 Causa 硬编码的 145 对迁移
-  - [ ] `services/signals/watchlist.py` — 从 DB 读取监控列表
+  - [x] `models/event_log.py` — 事件审计表
+  - [x] Alembic 迁移：创建 `event_log` 表
+- [x] **DB 驱动监控列表**
+  - [x] `models/watchlist.py` — 监控列表表
+  - [x] Alembic 迁移：创建 `watchlist` 表
+  - [x] 种子数据：从 Causa 当前硬编码清单迁移（脚本核对为 102 条；文档早期写的 145 条待产品侧补充）
+  - [x] `services/signals/watchlist.py` — 从 DB 读取监控列表
 - [ ] **管道重构**
-  - [ ] 调度器触发 ETL → 发布 `market.update`
+  - [x] 调度器触发 ingest job → 发布 `market.update`
   - [ ] 信号检测订阅 `market.update` → 发布 `signal.detected`
   - [ ] 评分引擎订阅 `signal.detected` → 发布 `signal.scored`
   - [ ] 预警创建订阅 `signal.scored` → 发布 `alert.created`
 - [ ] **验证**
-  - [ ] 手动触发 ETL，检查 `event_log` 表中的事件流
+  - [x] 手动触发 ingest job，检查 `event_log` 表中的 `market.update` 事件
   - [ ] 预警生成行为与 Phase 1 一致（功能不变，架构变了）
 
 ---

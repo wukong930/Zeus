@@ -1,5 +1,6 @@
 from app.models.alert import Alert
 from app.models.contract_metadata import ContractMetadata
+from app.models.event_log import EventLog
 from app.models.graph import CommodityNode, RelationshipEdge
 from app.models.industry_data import IndustryData
 from app.models.llm_config import LLMConfig
@@ -10,11 +11,13 @@ from app.models.research import ResearchHypothesis, ResearchReport
 from app.models.sector import SectorAssessment
 from app.models.signal import SignalTrack
 from app.models.strategy import Strategy
+from app.models.watchlist import Watchlist
 
 __all__ = [
     "Alert",
     "CommodityNode",
     "ContractMetadata",
+    "EventLog",
     "IndustryData",
     "LLMConfig",
     "MarketData",
@@ -26,4 +29,5 @@ __all__ = [
     "SectorAssessment",
     "SignalTrack",
     "Strategy",
+    "Watchlist",
 ]
