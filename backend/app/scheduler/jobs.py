@@ -11,6 +11,7 @@ from app.services.calibration.shadow_tracker import evaluate_pending_signals
 from app.services.calibration.updater import generate_calibration_reviews
 from app.services.contracts.main_contract_batch import detect_and_apply_main_contracts
 from app.services.cost_models.snapshots import (
+    RUBBER_SYMBOLS,
     cost_signal_contexts,
     snapshot_ferrous_costs,
     snapshot_rubber_costs,
@@ -323,10 +324,23 @@ async def cost_snapshots_job() -> dict[str, Any]:
 async def rubber_cost_snapshots_job() -> dict[str, Any]:
     async with AsyncSessionLocal() as session:
         rows = await snapshot_rubber_costs(session)
+        contexts = await cost_signal_contexts(session, symbols=RUBBER_SYMBOLS)
+        event = await publish(
+            "market.update",
+            {
+                "job_id": "rubber-cost-snapshots",
+                "triggered_at": datetime.now(timezone.utc).isoformat(),
+                "contexts": contexts,
+            },
+            source="rubber-cost-model-scheduler",
+            session=session,
+        )
         await session.commit()
     return {
         "status": "completed",
+        "event_id": str(event.id),
         "symbols": [row.symbol for row in rows],
+        "contexts": len(contexts),
         "snapshots": len(rows),
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }

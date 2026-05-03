@@ -19,7 +19,9 @@ from app.services.cost_models.rubber_sources import (
     rubber_seasonal_factor,
 )
 from app.services.cost_models.snapshots import build_cost_signal_context, write_cost_snapshot
+from app.services.pipeline.handlers import trigger_context_from_payload
 from app.services.sectors.ferrous import calculate_blast_furnace_margin
+from app.services.signals.detector import SignalDetector
 
 
 class FakeScalars:
@@ -162,6 +164,43 @@ def test_build_cost_signal_context_serializes_snapshot_history() -> None:
     assert context["symbol1"] == "RB"
     assert context["regime"] == "cost_model"
     assert len(context["cost_snapshots"]) == 2
+
+
+async def test_rubber_cost_context_triggers_profit_margin_signals() -> None:
+    rows = [
+        CostSnapshot(
+            symbol="RU",
+            name="SHFE Rubber",
+            sector="rubber",
+            snapshot_date=date(2026, 5, 3),
+            current_price=14000,
+            total_unit_cost=15327.8,
+            breakeven_p25=14867.966,
+            breakeven_p50=14867.966,
+            breakeven_p75=16094.19,
+            breakeven_p90=17473.692,
+            profit_margin=-0.094843,
+            cost_breakdown=[],
+            inputs={},
+            data_sources=[],
+            uncertainty_pct=0.07,
+            formula_version="phase7b.v1",
+        )
+    ]
+    payload = build_cost_signal_context("RU", rows)
+
+    assert payload is not None
+    context = trigger_context_from_payload(payload)
+    results = await SignalDetector().detect(
+        context,
+        signal_types={"median_pressure", "marginal_capacity_squeeze"},
+    )
+
+    assert {result.signal_type for result in results} == {
+        "median_pressure",
+        "marginal_capacity_squeeze",
+    }
+    assert all("RU" in result.related_assets for result in results)
 
 
 def test_public_benchmark_comparisons_pass_phase7a_tolerance() -> None:

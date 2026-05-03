@@ -9,6 +9,7 @@ import {
   RotateCcw,
   ShieldCheck,
   SlidersHorizontal,
+  Sprout,
 } from "lucide-react";
 import { Badge } from "@/components/Badge";
 import { Button } from "@/components/Button";
@@ -27,7 +28,39 @@ import {
 } from "@/lib/api";
 import { cn, formatNumber } from "@/lib/utils";
 
-const SYMBOL_ORDER = ["RB", "HC", "J", "JM", "I"] as const;
+type SectorKey = "ferrous" | "rubber";
+
+const FERROUS_SYMBOL_ORDER = ["RB", "HC", "J", "JM", "I"] as const;
+const RUBBER_SYMBOL_ORDER = ["RU", "NR"] as const;
+
+const SECTOR_CONFIG: Record<
+  SectorKey,
+  {
+    label: string;
+    subtitle: string;
+    defaultSymbol: string;
+    symbols: readonly string[];
+    chainLabel: string;
+    quality: "ferrous" | "bootstrap";
+  }
+> = {
+  ferrous: {
+    label: "黑色系",
+    subtitle: "黑色系成本链 · 分位成本曲线 · 调价模拟 · 信号触发面板",
+    defaultSymbol: "RB",
+    symbols: FERROUS_SYMBOL_ORDER,
+    chainLabel: "JM → J → RB / HC",
+    quality: "ferrous",
+  },
+  rubber: {
+    label: "橡胶",
+    subtitle: "NR → RU 成本链 · 产区季节性 · 加工费模拟 · 利润率信号",
+    defaultSymbol: "RU",
+    symbols: RUBBER_SYMBOL_ORDER,
+    chainLabel: "NR → RU",
+    quality: "bootstrap",
+  },
+};
 
 const SYMBOL_META: Record<string, { label: string; role: string }> = {
   RB: { label: "螺纹钢", role: "成材利润锚" },
@@ -35,6 +68,8 @@ const SYMBOL_META: Record<string, { label: string; role: string }> = {
   J: { label: "焦炭", role: "燃料成本" },
   JM: { label: "焦煤", role: "上游煤源" },
   I: { label: "铁矿石", role: "炉料成本" },
+  RU: { label: "沪胶", role: "交割品成本" },
+  NR: { label: "天然胶现货", role: "产区成本锚" },
 };
 
 const MOCK_CHAIN: CostChain = {
@@ -47,6 +82,20 @@ const MOCK_CHAIN: CostChain = {
     RB: makeMockModel("RB", "Rebar", 3200, 3196.9, 3100.993, 3100.993, 3356.745, 3612.497),
     HC: makeMockModel("HC", "Hot Coil", 3500, 3486.9, 3417.162, 3417.162, 3661.245, 3905.328),
   },
+};
+
+const MOCK_RUBBER_CHAIN: CostChain = {
+  sector: "rubber",
+  symbols: ["NR", "RU"],
+  results: {
+    NR: makeMockRubberModel("NR", "Natural Rubber", null, 13260, 12729.6, 12729.6, 14055.6, 15646.8),
+    RU: makeMockRubberModel("RU", "SHFE Rubber", 15400, 15327.8, 14867.966, 14867.966, 16094.19, 17473.692),
+  },
+};
+
+const MOCK_CHAINS: Record<SectorKey, CostChain> = {
+  ferrous: MOCK_CHAIN,
+  rubber: MOCK_RUBBER_CHAIN,
 };
 
 const MOCK_QUALITY: CostQualityReport = {
@@ -102,11 +151,18 @@ interface SimulationInputs {
   ironOreIndex: number;
   cokeProcessing: number;
   conversionFee: number;
+  thaiFieldLatex: number;
+  seasonalFactorPct: number;
+  ruProcessingFee: number;
+  rawRubberRatio: number;
   currentPrice: number;
 }
 
 export default function IndustryLensPage() {
-  const [selected, setSelected] = useState<string>("RB");
+  const [sector, setSector] = useState<SectorKey>("ferrous");
+  const config = SECTOR_CONFIG[sector];
+  const fallbackChain = MOCK_CHAINS[sector];
+  const [selected, setSelected] = useState<string>(SECTOR_CONFIG.ferrous.defaultSymbol);
   const [chain, setChain] = useState<CostChain>(MOCK_CHAIN);
   const [histories, setHistories] = useState<Record<string, CostSnapshot[]>>({});
   const [qualityReport, setQualityReport] = useState<CostQualityReport>(MOCK_QUALITY);
@@ -120,12 +176,17 @@ export default function IndustryLensPage() {
     let ignore = false;
 
     async function load() {
+      const nextSelected = config.defaultSymbol;
       try {
         setSource("loading");
-        const nextChain = await fetchCostChain("RB");
+        setSelected(nextSelected);
+        setChain(fallbackChain);
+        setHistories({});
+        setQualityReport(MOCK_QUALITY);
+        const nextChain = await fetchCostChain(nextSelected);
         const [historyEntries, nextQuality] = await Promise.all([
           Promise.all(
-            SYMBOL_ORDER.map(async (symbol) => {
+            config.symbols.map(async (symbol) => {
               try {
                 return [symbol, await fetchCostHistory(symbol, 30)] as const;
               } catch {
@@ -133,7 +194,9 @@ export default function IndustryLensPage() {
               }
             })
           ),
-          fetchCostQualityReport().catch(() => MOCK_QUALITY),
+          config.quality === "ferrous"
+            ? fetchCostQualityReport().catch(() => MOCK_QUALITY)
+            : Promise.resolve(MOCK_QUALITY),
         ]);
 
         if (!ignore) {
@@ -144,7 +207,8 @@ export default function IndustryLensPage() {
         }
       } catch {
         if (!ignore) {
-          setChain(MOCK_CHAIN);
+          setSelected(nextSelected);
+          setChain(fallbackChain);
           setHistories({});
           setQualityReport(MOCK_QUALITY);
           setSource("mock");
@@ -156,26 +220,23 @@ export default function IndustryLensPage() {
     return () => {
       ignore = true;
     };
-  }, []);
+  }, [config.defaultSymbol, config.quality, config.symbols, fallbackChain]);
 
-  const selectedModel = chain.results[selected] ?? MOCK_CHAIN.results.RB;
+  const activeSymbol = config.symbols.includes(selected) ? selected : config.defaultSymbol;
+  const selectedModel = chain.results[activeSymbol] ?? fallbackChain.results[config.defaultSymbol];
 
   useEffect(() => {
     setSimInputs(defaultSimulationInputs(selectedModel));
     setSimulated(null);
-  }, [selected, selectedModel]);
+  }, [activeSymbol, selectedModel]);
 
   useEffect(() => {
     if (source !== "api") return;
     let ignore = false;
     const timer = window.setTimeout(() => {
-      simulateCostModel(selected, {
-        inputs_by_symbol: {
-          I: { iron_ore_index_cny: simInputs.ironOreIndex },
-          J: { coking_processing_fee: simInputs.cokeProcessing },
-          RB: { blast_furnace_conversion_fee: simInputs.conversionFee },
-        },
-        current_prices: { [selected]: simInputs.currentPrice },
+      simulateCostModel(activeSymbol, {
+        inputs_by_symbol: simulationInputsPayload(sector, simInputs),
+        current_prices: { [activeSymbol]: simInputs.currentPrice },
       })
         .then((result) => {
           if (!ignore) setSimulated(result);
@@ -189,10 +250,10 @@ export default function IndustryLensPage() {
       ignore = true;
       window.clearTimeout(timer);
     };
-  }, [selected, simInputs, source]);
+  }, [activeSymbol, sector, simInputs, source]);
 
   const displayModel = simulated ?? selectedModel;
-  const selectedHistory = histories[selected] ?? [];
+  const selectedHistory = histories[activeSymbol] ?? [];
   const signalRules = useMemo(
     () => buildSignalRules(displayModel, selectedHistory),
     [displayModel, selectedHistory]
@@ -205,10 +266,11 @@ export default function IndustryLensPage() {
         <div>
           <h1 className="text-h1 text-text-primary">Industry Lens</h1>
           <p className="text-sm text-text-secondary mt-1">
-            黑色系成本链 · 分位成本曲线 · 调价模拟 · 信号触发面板
+            {config.subtitle}
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <SectorToggle value={sector} onChange={setSector} />
           <Badge variant={source === "mock" ? "orange" : "emerald"}>
             {source === "loading" ? "SYNC" : source.toUpperCase()}
           </Badge>
@@ -225,12 +287,12 @@ export default function IndustryLensPage() {
       </div>
 
       <div className="flex gap-2 overflow-x-auto pb-1">
-        {SYMBOL_ORDER.map((symbol) => (
+        {config.symbols.map((symbol) => (
           <CommodityButton
             key={symbol}
             symbol={symbol}
             model={chain.results[symbol]}
-            active={selected === symbol}
+            active={activeSymbol === symbol}
             onClick={() => setSelected(symbol)}
           />
         ))}
@@ -286,6 +348,7 @@ export default function IndustryLensPage() {
             <SlidersHorizontal className="w-4 h-4 text-brand-emerald-bright" />
           </CardHeader>
           <SimulationControls
+            sector={sector}
             model={selectedModel}
             values={simInputs}
             onChange={setSimInputs}
@@ -310,13 +373,15 @@ export default function IndustryLensPage() {
           <CardHeader>
             <div>
               <CardTitle>产业链全景</CardTitle>
-              <CardSubtitle>JM → J → RB / HC</CardSubtitle>
+              <CardSubtitle>{config.chainLabel}</CardSubtitle>
             </div>
             <GitBranch className="w-4 h-4 text-brand-orange" />
           </CardHeader>
-          <ChainMap chain={chain} selected={selected} onSelect={setSelected} />
+          <ChainMap chain={chain} selected={activeSymbol} onSelect={setSelected} />
         </Card>
       </div>
+
+      {sector === "rubber" ? <RubberSeasonalityPanel model={displayModel} values={simInputs} /> : null}
 
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-5">
         <Card variant="flat" className="xl:col-span-7">
@@ -345,7 +410,11 @@ export default function IndustryLensPage() {
         </Card>
       </div>
 
-      <QualityReportPanel report={qualityReport} />
+      {config.quality === "ferrous" ? (
+        <QualityReportPanel report={qualityReport} />
+      ) : (
+        <RubberValidationPanel model={displayModel} />
+      )}
     </div>
   );
 }
@@ -381,6 +450,33 @@ function CommodityButton({
       <div className="mt-1 text-sm font-medium">{symbolLabel(symbol)}</div>
       <div className="text-caption text-text-muted">{SYMBOL_META[symbol]?.role}</div>
     </button>
+  );
+}
+
+function SectorToggle({
+  value,
+  onChange,
+}: {
+  value: SectorKey;
+  onChange: (value: SectorKey) => void;
+}) {
+  return (
+    <div className="flex h-9 rounded-sm border border-border-subtle bg-bg-surface p-0.5">
+      {(Object.keys(SECTOR_CONFIG) as SectorKey[]).map((key) => (
+        <button
+          key={key}
+          onClick={() => onChange(key)}
+          className={cn(
+            "px-3 text-sm transition-colors rounded-xs",
+            value === key
+              ? "bg-brand-emerald/15 text-text-primary"
+              : "text-text-secondary hover:text-text-primary"
+          )}
+        >
+          {SECTOR_CONFIG[key].label}
+        </button>
+      ))}
+    </div>
   );
 }
 
@@ -530,11 +626,13 @@ function MetricCard({
 }
 
 function SimulationControls({
+  sector,
   model,
   values,
   onChange,
   onReset,
 }: {
+  sector: SectorKey;
   model: CostModel;
   values: SimulationInputs;
   onChange: (value: SimulationInputs) => void;
@@ -544,33 +642,78 @@ function SimulationControls({
 
   return (
     <div className="space-y-4">
-      <RangeControl
-        label="铁矿石指数"
-        value={values.ironOreIndex}
-        min={500}
-        max={1000}
-        step={5}
-        unit="CNY/t"
-        onChange={(ironOreIndex) => onChange({ ...values, ironOreIndex })}
-      />
-      <RangeControl
-        label="焦炭加工费"
-        value={values.cokeProcessing}
-        min={120}
-        max={420}
-        step={5}
-        unit="CNY/t"
-        onChange={(cokeProcessing) => onChange({ ...values, cokeProcessing })}
-      />
-      <RangeControl
-        label="高炉加工费"
-        value={values.conversionFee}
-        min={520}
-        max={980}
-        step={5}
-        unit="CNY/t"
-        onChange={(conversionFee) => onChange({ ...values, conversionFee })}
-      />
+      {sector === "ferrous" ? (
+        <>
+          <RangeControl
+            label="铁矿石指数"
+            value={values.ironOreIndex}
+            min={500}
+            max={1000}
+            step={5}
+            unit="CNY/t"
+            onChange={(ironOreIndex) => onChange({ ...values, ironOreIndex })}
+          />
+          <RangeControl
+            label="焦炭加工费"
+            value={values.cokeProcessing}
+            min={120}
+            max={420}
+            step={5}
+            unit="CNY/t"
+            onChange={(cokeProcessing) => onChange({ ...values, cokeProcessing })}
+          />
+          <RangeControl
+            label="高炉加工费"
+            value={values.conversionFee}
+            min={520}
+            max={980}
+            step={5}
+            unit="CNY/t"
+            onChange={(conversionFee) => onChange({ ...values, conversionFee })}
+          />
+        </>
+      ) : (
+        <>
+          <RangeControl
+            label="泰国产区胶价"
+            value={values.thaiFieldLatex}
+            min={9000}
+            max={15000}
+            step={50}
+            unit="CNY/t"
+            onChange={(thaiFieldLatex) => onChange({ ...values, thaiFieldLatex })}
+          />
+          <RangeControl
+            label="季节性因子"
+            value={values.seasonalFactorPct * 100}
+            min={-3}
+            max={8}
+            step={0.5}
+            unit="%"
+            onChange={(seasonalFactorPct) =>
+              onChange({ ...values, seasonalFactorPct: seasonalFactorPct / 100 })
+            }
+          />
+          <RangeControl
+            label="RU 加工费"
+            value={values.ruProcessingFee}
+            min={700}
+            max={1200}
+            step={10}
+            unit="CNY/t"
+            onChange={(ruProcessingFee) => onChange({ ...values, ruProcessingFee })}
+          />
+          <RangeControl
+            label="原胶折耗"
+            value={values.rawRubberRatio}
+            min={1}
+            max={1.08}
+            step={0.01}
+            unit="t/t"
+            onChange={(rawRubberRatio) => onChange({ ...values, rawRubberRatio })}
+          />
+        </>
+      )}
       <RangeControl
         label="当前价格"
         value={values.currentPrice}
@@ -732,6 +875,129 @@ function SignalRules({
   );
 }
 
+function RubberSeasonalityPanel({
+  model,
+  values,
+}: {
+  model: CostModel;
+  values: SimulationInputs;
+}) {
+  const active = rubberSeasonalityLabel(values.seasonalFactorPct);
+  const sourceNames = Object.values(model.inputs)
+    .filter((input) =>
+      ["thai_field_latex_cny", "qingdao_bonded_spot_premium", "hainan_yunnan_collection_cost"].includes(
+        input.name
+      )
+    )
+    .map((input) => componentLabel(input.name));
+  const originNames = sourceNames.length
+    ? sourceNames
+    : ["泰国产区胶价", "青岛保税区升水", "海南/云南收胶成本"];
+
+  return (
+    <Card variant="flat">
+      <CardHeader>
+        <div>
+          <CardTitle>产区季节性</CardTitle>
+          <CardSubtitle>
+            {active.title} · 季节因子 {formatNumber(values.seasonalFactorPct * 100, { decimals: 1, signed: true })}%
+          </CardSubtitle>
+        </div>
+        <Sprout className="w-4 h-4 text-brand-emerald-bright" />
+      </CardHeader>
+
+      <div className="grid grid-cols-1 lg:grid-cols-[1.2fr_1fr] gap-5">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {[
+            { label: "停割期", months: "12-2月", value: "+6%" },
+            { label: "低供给", months: "3-4月", value: "+4%" },
+            { label: "开割初期", months: "5-6月", value: "+2%" },
+            { label: "旺割期", months: "7-9月", value: "-1%" },
+          ].map((item) => (
+            <div
+              key={item.label}
+              className={cn(
+                "rounded-sm border p-3 bg-bg-base",
+                active.title === item.label ? "border-brand-emerald" : "border-border-subtle"
+              )}
+            >
+              <div className="text-sm text-text-primary">{item.label}</div>
+              <div className="mt-1 text-caption text-text-muted">{item.months}</div>
+              <div className="mt-3 font-mono text-h3 text-text-primary">{item.value}</div>
+            </div>
+          ))}
+        </div>
+
+        <div className="rounded-sm bg-bg-base border border-border-subtle p-4">
+          <div className="text-caption text-text-muted uppercase mb-2">Origin Basket</div>
+          <div className="flex flex-wrap gap-2">
+            {originNames.map((name) => (
+              <Badge key={name} variant="neutral">
+                {name}
+              </Badge>
+            ))}
+          </div>
+          <div className="mt-4 grid grid-cols-2 gap-3">
+            <QualityMetric
+              label="产区胶价"
+              value={formatCurrency(values.thaiFieldLatex)}
+              suffix="泰国口径"
+            />
+            <QualityMetric
+              label="RU 加工费"
+              value={formatCurrency(values.ruProcessingFee)}
+              suffix="交割品加工"
+            />
+          </div>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+function RubberValidationPanel({ model }: { model: CostModel }) {
+  return (
+    <Card variant="flat">
+      <CardHeader>
+        <div>
+          <CardTitle>橡胶验证队列</CardTitle>
+          <CardSubtitle>盈亏平衡价 · 产区冲击 · 生产级数据采集</CardSubtitle>
+        </div>
+        <ShieldCheck className="w-4 h-4 text-brand-emerald-bright" />
+      </CardHeader>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        {[
+          {
+            title: "RU 盈亏平衡价",
+            body: `当前 bootstrap P50 ${formatCurrency(model.breakevens.p50)}，P90 ${formatCurrency(
+              model.breakevens.p90
+            )}`,
+            badge: "已接入",
+          },
+          {
+            title: "产区供给冲击",
+            body: "泰国干旱、强降雨、出口政策进入新闻事件联动队列",
+            badge: "待接入",
+          },
+          {
+            title: "生产级数据源",
+            body: "青岛保税区、海南/云南、东南亚出口价、Drewry/CCFI",
+            badge: "待采集",
+          },
+        ].map((item) => (
+          <div key={item.title} className="rounded-sm bg-bg-base border border-border-subtle p-4">
+            <div className="flex items-center justify-between gap-3">
+              <div className="text-h3 text-text-primary">{item.title}</div>
+              <Badge variant={item.badge === "已接入" ? "emerald" : "orange"}>{item.badge}</Badge>
+            </div>
+            <p className="mt-3 text-sm text-text-secondary leading-relaxed">{item.body}</p>
+          </div>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
 function QualityReportPanel({ report }: { report: CostQualityReport }) {
   const recommendation = recommendationLabel(report);
   const bestComparisons = report.benchmark_comparisons.slice(0, 4);
@@ -883,7 +1149,34 @@ function defaultSimulationInputs(model: CostModel): SimulationInputs {
     ironOreIndex: inputValue(model.inputs, "iron_ore_index_cny", 760),
     cokeProcessing: inputValue(model.inputs, "coking_processing_fee", 250),
     conversionFee: inputValue(model.inputs, "blast_furnace_conversion_fee", 760),
+    thaiFieldLatex: inputValue(model.inputs, "thai_field_latex_cny", 11200),
+    seasonalFactorPct: inputValue(model.inputs, "seasonal_factor_pct", 0.02),
+    ruProcessingFee: inputValue(model.inputs, "ru_processing_fee", 950),
+    rawRubberRatio: inputValue(model.inputs, "raw_rubber_ratio", 1.03),
     currentPrice: Math.round(model.current_price ?? model.total_unit_cost),
+  };
+}
+
+function simulationInputsPayload(
+  sector: SectorKey,
+  values: SimulationInputs
+): Record<string, Record<string, number>> {
+  if (sector === "rubber") {
+    return {
+      NR: {
+        thai_field_latex_cny: values.thaiFieldLatex,
+        seasonal_factor_pct: values.seasonalFactorPct,
+      },
+      RU: {
+        raw_rubber_ratio: values.rawRubberRatio,
+        ru_processing_fee: values.ruProcessingFee,
+      },
+    };
+  }
+  return {
+    I: { iron_ore_index_cny: values.ironOreIndex },
+    J: { coking_processing_fee: values.cokeProcessing },
+    RB: { blast_furnace_conversion_fee: values.conversionFee },
   };
 }
 
@@ -1011,11 +1304,61 @@ function makeMockModel(
   };
 }
 
-function input(name: string, value: number): CostInput {
+function makeMockRubberModel(
+  symbol: string,
+  name: string,
+  currentPrice: number | null,
+  unitCost: number,
+  p25: number,
+  p50: number,
+  p75: number,
+  p90: number
+): CostModel {
+  const profitMargin = currentPrice && currentPrice > 0 ? (currentPrice - unitCost) / currentPrice : null;
+  const isRu = symbol === "RU";
+  return {
+    symbol,
+    name,
+    sector: "rubber",
+    current_price: currentPrice,
+    total_unit_cost: unitCost,
+    breakevens: { p25, p50, p75, p90 },
+    profit_margin: profitMargin,
+    cost_breakdown: isRu
+      ? [
+          { name: "upstream_nr_charge", value: unitCost - 1670, unit: "CNY/t", source: "mock", uncertainty_pct: 0.07 },
+          { name: "ru_processing_fee", value: 950, unit: "CNY/t", source: "mock", uncertainty_pct: 0.05 },
+          { name: "grade_premium", value: 260, unit: "CNY/t", source: "mock", uncertainty_pct: 0.05 },
+          { name: "warehouse_finance_fee", value: 180, unit: "CNY/t", source: "mock", uncertainty_pct: 0.05 },
+          { name: "exchange_delivery_fee", value: 120, unit: "CNY/t", source: "mock", uncertainty_pct: 0.05 },
+          { name: "loss_adjustment_fee", value: 160, unit: "CNY/t", source: "mock", uncertainty_pct: 0.05 },
+        ]
+      : [
+          { name: "thai_field_latex_cny", value: 11200, unit: "CNY/t", source: "mock", uncertainty_pct: 0.07 },
+          { name: "qingdao_bonded_spot_premium", value: 320, unit: "CNY/t", source: "mock", uncertainty_pct: 0.05 },
+          { name: "hainan_yunnan_collection_cost", value: 420, unit: "CNY/t", source: "mock", uncertainty_pct: 0.05 },
+          { name: "primary_processing_fee", value: 280, unit: "CNY/t", source: "mock", uncertainty_pct: 0.05 },
+          { name: "ocean_freight", value: 260, unit: "CNY/t", source: "mock", uncertainty_pct: 0.05 },
+          { name: "import_tax_vat_fee", value: 520, unit: "CNY/t", source: "mock", uncertainty_pct: 0.05 },
+          { name: "seasonal_premium", value: 260, unit: "CNY/t", source: "mock", uncertainty_pct: 0.05 },
+        ],
+    inputs: {
+      thai_field_latex_cny: input("thai_field_latex_cny", 11200),
+      seasonal_factor_pct: input("seasonal_factor_pct", 0.02, "pct"),
+      ru_processing_fee: input("ru_processing_fee", 950),
+      raw_rubber_ratio: input("raw_rubber_ratio", 1.03, "t/t"),
+    },
+    data_sources: [{ name: "mock", unit: "CNY/t", uncertainty_pct: 0.07 }],
+    uncertainty_pct: 0.07,
+    formula_version: "phase7b.mock",
+  };
+}
+
+function input(name: string, value: number, unit?: string): CostInput {
   return {
     name,
     value,
-    unit: name.includes("ratio") ? "t/t" : "CNY/t",
+    unit: unit ?? (name.includes("ratio") ? "t/t" : "CNY/t"),
     source: "mock",
     updated_at: null,
     uncertainty_pct: 0.05,
@@ -1027,9 +1370,39 @@ function symbolLabel(symbol: string): string {
 }
 
 function componentLabel(name: string): string {
+  const labels: Record<string, string> = {
+    iron_ore_index_cny: "铁矿石指数",
+    coking_processing_fee: "焦炭加工费",
+    blast_furnace_conversion_fee: "高炉加工费",
+    thai_field_latex_cny: "泰国产区胶价",
+    qingdao_bonded_spot_premium: "青岛保税区升水",
+    hainan_yunnan_collection_cost: "海南/云南收胶成本",
+    primary_processing_fee: "初加工费",
+    ocean_freight: "进口运费",
+    import_tax_vat_fee: "进口税费",
+    seasonal_premium: "季节性溢价",
+    seasonal_factor_pct: "季节性因子",
+    upstream_nr_charge: "NR 原料成本",
+    upstream_nr_unit_cost: "NR 单位成本",
+    raw_rubber_ratio: "原胶折耗",
+    ru_processing_fee: "RU 加工费",
+    grade_premium: "交割等级升水",
+    warehouse_finance_fee: "仓储资金费",
+    exchange_delivery_fee: "交易所交割费",
+    loss_adjustment_fee: "损耗调整费",
+  };
+  if (labels[name]) return labels[name];
   return name
     .replaceAll("_", " ")
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function rubberSeasonalityLabel(factor: number): { title: string } {
+  if (factor >= 0.055) return { title: "停割期" };
+  if (factor >= 0.035) return { title: "低供给" };
+  if (factor >= 0.015) return { title: "开割初期" };
+  if (factor < 0) return { title: "旺割期" };
+  return { title: "平稳期" };
 }
 
 function metricLabel(metric: string): string {
