@@ -135,6 +135,42 @@ export interface CostSimulationRequest {
   current_prices: Record<string, number | null>;
 }
 
+export interface CostBenchmarkComparison {
+  symbol: string;
+  metric: string;
+  model_value: number;
+  public_value: number;
+  error_pct: number;
+  within_tolerance: boolean;
+  source: string;
+  observed_at: string;
+  note: string;
+}
+
+export interface CostSignalCase {
+  case_id: string;
+  title: string;
+  expected_signals: string[];
+  triggered_signals: string[];
+  passed: boolean;
+  note: string;
+}
+
+export interface CostQualityReport {
+  sector: string;
+  generated_at: string;
+  benchmark_error_avg_pct: number;
+  benchmark_error_max_pct: number;
+  benchmark_pass_rate: number;
+  signal_case_hit_rate: number;
+  data_quality_score: number;
+  paid_data_recommendation: string;
+  preferred_vendor: string | null;
+  benchmark_comparisons: CostBenchmarkComparison[];
+  signal_cases: CostSignalCase[];
+  limitations: string[];
+}
+
 export interface NewsEvent {
   id: string;
   source: string;
@@ -294,6 +330,10 @@ export async function simulateCostModel(
     headers: { "content-type": "application/json" },
     body: JSON.stringify(payload),
   });
+}
+
+export async function fetchCostQualityReport(): Promise<CostQualityReport> {
+  return fetchJson<CostQualityReport>("/api/cost-models/quality/ferrous");
 }
 
 export async function submitAlertFeedback(

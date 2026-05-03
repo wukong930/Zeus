@@ -1,0 +1,367 @@
+from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
+from typing import Any
+
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.cost_snapshot import CostSnapshot
+from app.services.cost_models.cost_chain import FERROUS_CHAIN_ORDER
+from app.services.cost_models.snapshots import calculate_cost_snapshot, latest_cost_snapshot
+from app.services.signals.evaluators.cost_model import (
+    CapacityContractionEvaluator,
+    MarginalCapacitySqueezeEvaluator,
+    MedianPressureEvaluator,
+    RestartExpectationEvaluator,
+)
+from app.services.signals.types import CostSnapshotPoint, TriggerContext
+
+ACCEPTABLE_BENCHMARK_ERROR_PCT = 5.0
+MIN_SIGNAL_CASE_HIT_RATE = 0.75
+
+
+@dataclass(frozen=True)
+class PublicBenchmark:
+    symbol: str
+    metric: str
+    public_value: float
+    source: str
+    observed_at: datetime
+    note: str
+
+
+@dataclass(frozen=True)
+class BenchmarkComparison:
+    symbol: str
+    metric: str
+    model_value: float
+    public_value: float
+    error_pct: float
+    within_tolerance: bool
+    source: str
+    observed_at: datetime
+    note: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "symbol": self.symbol,
+            "metric": self.metric,
+            "model_value": round(self.model_value, 4),
+            "public_value": round(self.public_value, 4),
+            "error_pct": round(self.error_pct, 4),
+            "within_tolerance": self.within_tolerance,
+            "source": self.source,
+            "observed_at": self.observed_at.isoformat(),
+            "note": self.note,
+        }
+
+
+@dataclass(frozen=True)
+class SignalCaseResult:
+    case_id: str
+    title: str
+    expected_signals: list[str]
+    triggered_signals: list[str]
+    passed: bool
+    note: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "case_id": self.case_id,
+            "title": self.title,
+            "expected_signals": self.expected_signals,
+            "triggered_signals": self.triggered_signals,
+            "passed": self.passed,
+            "note": self.note,
+        }
+
+
+@dataclass(frozen=True)
+class CostQualityReport:
+    sector: str
+    generated_at: datetime
+    benchmark_error_avg_pct: float
+    benchmark_error_max_pct: float
+    benchmark_pass_rate: float
+    signal_case_hit_rate: float
+    data_quality_score: int
+    paid_data_recommendation: str
+    preferred_vendor: str | None
+    benchmark_comparisons: list[BenchmarkComparison]
+    signal_cases: list[SignalCaseResult]
+    limitations: list[str]
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "sector": self.sector,
+            "generated_at": self.generated_at.isoformat(),
+            "benchmark_error_avg_pct": round(self.benchmark_error_avg_pct, 4),
+            "benchmark_error_max_pct": round(self.benchmark_error_max_pct, 4),
+            "benchmark_pass_rate": round(self.benchmark_pass_rate, 4),
+            "signal_case_hit_rate": round(self.signal_case_hit_rate, 4),
+            "data_quality_score": self.data_quality_score,
+            "paid_data_recommendation": self.paid_data_recommendation,
+            "preferred_vendor": self.preferred_vendor,
+            "benchmark_comparisons": [item.to_dict() for item in self.benchmark_comparisons],
+            "signal_cases": [item.to_dict() for item in self.signal_cases],
+            "limitations": self.limitations,
+        }
+
+
+PUBLIC_FERROUS_BENCHMARKS: tuple[PublicBenchmark, ...] = (
+    PublicBenchmark(
+        symbol="RB",
+        metric="breakeven_p75",
+        public_value=3400.0,
+        source="phase7a_public_reference_pack",
+        observed_at=datetime(2026, 5, 3, tzinfo=timezone.utc),
+        note="Composite public steel-margin commentary reference for rebar high-cost mills.",
+    ),
+    PublicBenchmark(
+        symbol="RB",
+        metric="breakeven_p90",
+        public_value=3600.0,
+        source="phase7a_public_reference_pack",
+        observed_at=datetime(2026, 5, 3, tzinfo=timezone.utc),
+        note="Composite public steel-margin commentary reference for marginal rebar capacity.",
+    ),
+    PublicBenchmark(
+        symbol="HC",
+        metric="breakeven_p75",
+        public_value=3700.0,
+        source="phase7a_public_reference_pack",
+        observed_at=datetime(2026, 5, 3, tzinfo=timezone.utc),
+        note="Hot-coil public breakeven estimate adjusted by hot-rolling spread.",
+    ),
+    PublicBenchmark(
+        symbol="J",
+        metric="breakeven_p75",
+        public_value=2050.0,
+        source="phase7a_public_reference_pack",
+        observed_at=datetime(2026, 5, 3, tzinfo=timezone.utc),
+        note="Coke public full-cost estimate from raw coal ratio and processing fee commentary.",
+    ),
+    PublicBenchmark(
+        symbol="I",
+        metric="breakeven_p50",
+        public_value=830.0,
+        source="phase7a_public_reference_pack",
+        observed_at=datetime(2026, 5, 3, tzinfo=timezone.utc),
+        note="Iron ore landing-cost public estimate using spot index, freight, and port fees.",
+    ),
+    PublicBenchmark(
+        symbol="JM",
+        metric="breakeven_p50",
+        public_value=1120.0,
+        source="phase7a_public_reference_pack",
+        observed_at=datetime(2026, 5, 3, tzinfo=timezone.utc),
+        note="Coking-coal public full-cost estimate from mining, washing, rail, and tax components.",
+    ),
+)
+
+
+async def run_ferrous_quality_report(session: AsyncSession) -> CostQualityReport:
+    snapshots = await latest_or_calculated_snapshots(session)
+    comparisons = compare_public_benchmarks(snapshots, PUBLIC_FERROUS_BENCHMARKS)
+    signal_cases = await evaluate_historical_signal_cases()
+    return build_quality_report(comparisons=comparisons, signal_cases=signal_cases)
+
+
+async def latest_or_calculated_snapshots(session: AsyncSession) -> dict[str, CostSnapshot]:
+    snapshots: dict[str, CostSnapshot] = {}
+    for symbol in FERROUS_CHAIN_ORDER:
+        row = await latest_cost_snapshot(session, symbol)
+        if row is not None:
+            snapshots[symbol] = row
+            continue
+        result = await calculate_cost_snapshot(session, symbol)
+        payload = result.to_snapshot_payload()
+        snapshots[symbol] = CostSnapshot(
+            snapshot_date=datetime.now(timezone.utc).date(),
+            **payload,
+        )
+    return snapshots
+
+
+def compare_public_benchmarks(
+    snapshots: dict[str, CostSnapshot],
+    benchmarks: tuple[PublicBenchmark, ...] = PUBLIC_FERROUS_BENCHMARKS,
+) -> list[BenchmarkComparison]:
+    comparisons: list[BenchmarkComparison] = []
+    for benchmark in benchmarks:
+        row = snapshots.get(benchmark.symbol)
+        if row is None:
+            continue
+        model_value = float(getattr(row, benchmark.metric))
+        error_pct = (
+            abs(model_value - benchmark.public_value) / benchmark.public_value * 100
+            if benchmark.public_value
+            else 0.0
+        )
+        comparisons.append(
+            BenchmarkComparison(
+                symbol=benchmark.symbol,
+                metric=benchmark.metric,
+                model_value=model_value,
+                public_value=benchmark.public_value,
+                error_pct=error_pct,
+                within_tolerance=error_pct <= ACCEPTABLE_BENCHMARK_ERROR_PCT,
+                source=benchmark.source,
+                observed_at=benchmark.observed_at,
+                note=benchmark.note,
+            )
+        )
+    return comparisons
+
+
+async def evaluate_historical_signal_cases() -> list[SignalCaseResult]:
+    return [
+        await evaluate_signal_case(
+            case_id="ferrous-2021-production-curb",
+            title="2021 production curb cost pressure",
+            snapshots=[
+                synthetic_cost_snapshot(idx, price=92, unit_cost=100, margin=-0.087)
+                for idx in range(10)
+            ],
+            expected_signals=["capacity_contraction", "median_pressure", "marginal_capacity_squeeze"],
+            note="Two-week negative margin plus price below P50/P75 should surface capacity pressure.",
+        ),
+        await evaluate_signal_case(
+            case_id="ferrous-2024-capacity-adjustment",
+            title="2024 capacity adjustment marginal squeeze",
+            snapshots=[synthetic_cost_snapshot(0, price=96, unit_cost=100, margin=-0.042)],
+            expected_signals=["median_pressure", "marginal_capacity_squeeze"],
+            note="Known adjustment windows are represented by price below median and marginal breakevens.",
+        ),
+        await evaluate_signal_case(
+            case_id="ferrous-margin-restart",
+            title="Margin recovery restart expectation",
+            snapshots=[
+                synthetic_cost_snapshot(0, price=96, unit_cost=100, margin=-0.04),
+                synthetic_cost_snapshot(1, price=98, unit_cost=100, margin=-0.02),
+                synthetic_cost_snapshot(2, price=103, unit_cost=100, margin=0.029),
+            ],
+            expected_signals=["restart_expectation"],
+            note="A move from negative to positive margin should trigger restart expectation.",
+        ),
+    ]
+
+
+async def evaluate_signal_case(
+    *,
+    case_id: str,
+    title: str,
+    snapshots: list[CostSnapshotPoint],
+    expected_signals: list[str],
+    note: str,
+) -> SignalCaseResult:
+    context = TriggerContext(
+        symbol1="RB",
+        category="ferrous",
+        timestamp=snapshots[-1].timestamp if snapshots else datetime.now(timezone.utc),
+        cost_snapshots=snapshots,
+    )
+    evaluators = (
+        CapacityContractionEvaluator(),
+        RestartExpectationEvaluator(),
+        MedianPressureEvaluator(),
+        MarginalCapacitySqueezeEvaluator(),
+    )
+    triggered = [
+        result.signal_type
+        for result in [await evaluator.evaluate(context) for evaluator in evaluators]
+        if result is not None
+    ]
+    return SignalCaseResult(
+        case_id=case_id,
+        title=title,
+        expected_signals=expected_signals,
+        triggered_signals=triggered,
+        passed=set(expected_signals).issubset(triggered),
+        note=note,
+    )
+
+
+def synthetic_cost_snapshot(
+    idx: int,
+    *,
+    price: float,
+    unit_cost: float,
+    margin: float | None = None,
+) -> CostSnapshotPoint:
+    observed_at = datetime(2026, 1, 1, tzinfo=timezone.utc) + timedelta(days=idx)
+    return CostSnapshotPoint(
+        symbol="RB",
+        timestamp=observed_at,
+        current_price=price,
+        total_unit_cost=unit_cost,
+        breakeven_p25=90.0,
+        breakeven_p50=100.0,
+        breakeven_p75=110.0,
+        breakeven_p90=120.0,
+        profit_margin=margin,
+    )
+
+
+def build_quality_report(
+    *,
+    comparisons: list[BenchmarkComparison],
+    signal_cases: list[SignalCaseResult],
+) -> CostQualityReport:
+    errors = [item.error_pct for item in comparisons]
+    benchmark_passes = [item.within_tolerance for item in comparisons]
+    signal_passes = [item.passed for item in signal_cases]
+    avg_error = sum(errors) / len(errors) if errors else 100.0
+    max_error = max(errors) if errors else 100.0
+    benchmark_pass_rate = sum(benchmark_passes) / len(benchmark_passes) if benchmark_passes else 0.0
+    signal_hit_rate = sum(signal_passes) / len(signal_passes) if signal_passes else 0.0
+    score = quality_score(avg_error, benchmark_pass_rate, signal_hit_rate)
+    recommendation, vendor = data_purchase_recommendation(
+        benchmark_error_avg_pct=avg_error,
+        signal_case_hit_rate=signal_hit_rate,
+    )
+    return CostQualityReport(
+        sector="ferrous",
+        generated_at=datetime.now(timezone.utc),
+        benchmark_error_avg_pct=avg_error,
+        benchmark_error_max_pct=max_error,
+        benchmark_pass_rate=benchmark_pass_rate,
+        signal_case_hit_rate=signal_hit_rate,
+        data_quality_score=score,
+        paid_data_recommendation=recommendation,
+        preferred_vendor=vendor,
+        benchmark_comparisons=comparisons,
+        signal_cases=signal_cases,
+        limitations=[
+            "Reference pack is a public-source bootstrap, not a licensed Mysteel/SMM/Zhuochuang feed.",
+            "Low-frequency inputs still use manual/public fallbacks and should be reviewed quarterly.",
+            "Historical signal cases validate trigger logic, not full forward PnL without deeper archived data.",
+        ],
+    )
+
+
+def quality_score(
+    avg_error_pct: float,
+    benchmark_pass_rate: float,
+    signal_case_hit_rate: float,
+) -> int:
+    error_component = max(0.0, 1.0 - avg_error_pct / ACCEPTABLE_BENCHMARK_ERROR_PCT)
+    score = error_component * 45 + benchmark_pass_rate * 30 + signal_case_hit_rate * 25
+    return round(score)
+
+
+def data_purchase_recommendation(
+    *,
+    benchmark_error_avg_pct: float,
+    signal_case_hit_rate: float,
+) -> tuple[str, str | None]:
+    if (
+        benchmark_error_avg_pct <= ACCEPTABLE_BENCHMARK_ERROR_PCT
+        and signal_case_hit_rate >= MIN_SIGNAL_CASE_HIT_RATE
+    ):
+        return (
+            "defer_paid_purchase_monitor_weekly",
+            None,
+        )
+    if signal_case_hit_rate < MIN_SIGNAL_CASE_HIT_RATE:
+        return ("buy_paid_feed_before_expanding_signals", "Mysteel")
+    return ("buy_paid_feed_for_precision", "SMM")

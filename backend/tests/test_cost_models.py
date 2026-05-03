@@ -2,11 +2,17 @@ from datetime import date, datetime, timezone
 
 from fastapi.testclient import TestClient
 
+from app.core.database import get_db
 from app.main import create_app
 from app.models.cost_snapshot import CostSnapshot
 from app.services.cost_models.cost_chain import calculate_cost_chain, calculate_symbol_cost
 from app.services.cost_models.framework import cost_curve_percentiles
 from app.services.cost_models.news_extractor import extract_cost_data_points
+from app.services.cost_models.quality import (
+    build_quality_report,
+    compare_public_benchmarks,
+    evaluate_historical_signal_cases,
+)
 from app.services.cost_models.snapshots import build_cost_signal_context, write_cost_snapshot
 from app.services.sectors.ferrous import calculate_blast_furnace_margin
 
@@ -130,6 +136,43 @@ def test_build_cost_signal_context_serializes_snapshot_history() -> None:
     assert len(context["cost_snapshots"]) == 2
 
 
+def test_public_benchmark_comparisons_pass_phase7a_tolerance() -> None:
+    chain = calculate_cost_chain()
+    snapshots = {
+        symbol: CostSnapshot(
+            snapshot_date=date(2026, 5, 3),
+            **result.to_snapshot_payload(),
+        )
+        for symbol, result in chain.results.items()
+    }
+
+    comparisons = compare_public_benchmarks(snapshots)
+
+    assert len(comparisons) >= 5
+    assert max(item.error_pct for item in comparisons) < 5
+    assert all(item.within_tolerance for item in comparisons)
+
+
+async def test_quality_report_recommends_deferring_paid_feed_when_checks_pass() -> None:
+    chain = calculate_cost_chain()
+    snapshots = {
+        symbol: CostSnapshot(
+            snapshot_date=date(2026, 5, 3),
+            **result.to_snapshot_payload(),
+        )
+        for symbol, result in chain.results.items()
+    }
+    comparisons = compare_public_benchmarks(snapshots)
+    signal_cases = await evaluate_historical_signal_cases()
+
+    report = build_quality_report(comparisons=comparisons, signal_cases=signal_cases)
+
+    assert report.benchmark_error_avg_pct < 5
+    assert report.signal_case_hit_rate == 1.0
+    assert report.paid_data_recommendation == "defer_paid_purchase_monitor_weekly"
+    assert report.preferred_vendor is None
+
+
 def test_news_extractor_finds_cost_data_points() -> None:
     points = extract_cost_data_points(
         title="Iron ore freight rises",
@@ -163,3 +206,36 @@ def test_simulation_api_returns_cost_breakdown() -> None:
     assert payload["total_unit_cost"] < 3196.9
     assert payload["breakevens"]["p90"] > payload["breakevens"]["p50"]
     assert payload["profit_margin"] > 0
+
+
+def test_quality_api_returns_report(monkeypatch) -> None:
+    chain = calculate_cost_chain()
+    snapshots = {
+        symbol: CostSnapshot(
+            snapshot_date=date(2026, 5, 3),
+            **result.to_snapshot_payload(),
+        )
+        for symbol, result in chain.results.items()
+    }
+
+    async def fake_report(_session):
+        return build_quality_report(
+            comparisons=compare_public_benchmarks(snapshots),
+            signal_cases=await evaluate_historical_signal_cases(),
+        )
+
+    async def fake_db():
+        yield object()
+
+    monkeypatch.setattr("app.api.cost_models.run_ferrous_quality_report", fake_report)
+    app = create_app()
+    app.dependency_overrides[get_db] = fake_db
+    client = TestClient(app)
+
+    response = client.get("/api/cost-models/quality/ferrous")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["sector"] == "ferrous"
+    assert payload["benchmark_pass_rate"] >= 0.8
+    assert payload["signal_case_hit_rate"] == 1.0

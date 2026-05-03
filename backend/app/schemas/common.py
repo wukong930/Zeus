@@ -227,6 +227,42 @@ class CostChainRead(BaseModel):
     results: dict[str, CostModelRead]
 
 
+class CostBenchmarkComparisonRead(BaseModel):
+    symbol: str
+    metric: str
+    model_value: float
+    public_value: float
+    error_pct: float
+    within_tolerance: bool
+    source: str
+    observed_at: datetime
+    note: str
+
+
+class CostSignalCaseRead(BaseModel):
+    case_id: str
+    title: str
+    expected_signals: list[str]
+    triggered_signals: list[str]
+    passed: bool
+    note: str
+
+
+class CostQualityReportRead(BaseModel):
+    sector: str
+    generated_at: datetime
+    benchmark_error_avg_pct: float
+    benchmark_error_max_pct: float
+    benchmark_pass_rate: float
+    signal_case_hit_rate: float
+    data_quality_score: int
+    paid_data_recommendation: str
+    preferred_vendor: str | None = None
+    benchmark_comparisons: list[CostBenchmarkComparisonRead]
+    signal_cases: list[CostSignalCaseRead]
+    limitations: list[str]
+
+
 class StrategyCreate(BaseModel):
     name: str
     description: str

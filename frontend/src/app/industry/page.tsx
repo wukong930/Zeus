@@ -7,6 +7,7 @@ import {
   GitBranch,
   RefreshCw,
   RotateCcw,
+  ShieldCheck,
   SlidersHorizontal,
 } from "lucide-react";
 import { Badge } from "@/components/Badge";
@@ -15,11 +16,13 @@ import { Card, CardHeader, CardSubtitle, CardTitle } from "@/components/Card";
 import {
   fetchCostChain,
   fetchCostHistory,
+  fetchCostQualityReport,
   simulateCostModel,
   type CostChain,
   type CostComponent,
   type CostInput,
   type CostModel,
+  type CostQualityReport,
   type CostSnapshot,
 } from "@/lib/api";
 import { cn, formatNumber } from "@/lib/utils";
@@ -46,6 +49,53 @@ const MOCK_CHAIN: CostChain = {
   },
 };
 
+const MOCK_QUALITY: CostQualityReport = {
+  sector: "ferrous",
+  generated_at: new Date().toISOString(),
+  benchmark_error_avg_pct: 1.1,
+  benchmark_error_max_pct: 2.4,
+  benchmark_pass_rate: 1,
+  signal_case_hit_rate: 1,
+  data_quality_score: 90,
+  paid_data_recommendation: "defer_paid_purchase_monitor_weekly",
+  preferred_vendor: null,
+  benchmark_comparisons: [
+    {
+      symbol: "RB",
+      metric: "breakeven_p75",
+      model_value: 3357,
+      public_value: 3400,
+      error_pct: 1.3,
+      within_tolerance: true,
+      source: "phase7a_public_reference_pack",
+      observed_at: new Date().toISOString(),
+      note: "Public bootstrap reference for high-cost mills.",
+    },
+    {
+      symbol: "J",
+      metric: "breakeven_p75",
+      model_value: 2033,
+      public_value: 2050,
+      error_pct: 0.8,
+      within_tolerance: true,
+      source: "phase7a_public_reference_pack",
+      observed_at: new Date().toISOString(),
+      note: "Public bootstrap reference for coke full-cost estimate.",
+    },
+  ],
+  signal_cases: [
+    {
+      case_id: "ferrous-2021-production-curb",
+      title: "2021 production curb cost pressure",
+      expected_signals: ["capacity_contraction", "median_pressure"],
+      triggered_signals: ["capacity_contraction", "median_pressure", "marginal_capacity_squeeze"],
+      passed: true,
+      note: "Two-week negative margin should surface capacity pressure.",
+    },
+  ],
+  limitations: ["Public reference pack is a bootstrap, not a licensed paid feed."],
+};
+
 type SourceState = "loading" | "api" | "mock";
 
 interface SimulationInputs {
@@ -59,6 +109,7 @@ export default function IndustryLensPage() {
   const [selected, setSelected] = useState<string>("RB");
   const [chain, setChain] = useState<CostChain>(MOCK_CHAIN);
   const [histories, setHistories] = useState<Record<string, CostSnapshot[]>>({});
+  const [qualityReport, setQualityReport] = useState<CostQualityReport>(MOCK_QUALITY);
   const [source, setSource] = useState<SourceState>("loading");
   const [simInputs, setSimInputs] = useState<SimulationInputs>(() =>
     defaultSimulationInputs(MOCK_CHAIN.results.RB)
@@ -72,25 +123,30 @@ export default function IndustryLensPage() {
       try {
         setSource("loading");
         const nextChain = await fetchCostChain("RB");
-        const historyEntries = await Promise.all(
-          SYMBOL_ORDER.map(async (symbol) => {
-            try {
-              return [symbol, await fetchCostHistory(symbol, 30)] as const;
-            } catch {
-              return [symbol, []] as const;
-            }
-          })
-        );
+        const [historyEntries, nextQuality] = await Promise.all([
+          Promise.all(
+            SYMBOL_ORDER.map(async (symbol) => {
+              try {
+                return [symbol, await fetchCostHistory(symbol, 30)] as const;
+              } catch {
+                return [symbol, []] as const;
+              }
+            })
+          ),
+          fetchCostQualityReport().catch(() => MOCK_QUALITY),
+        ]);
 
         if (!ignore) {
           setChain(nextChain);
           setHistories(Object.fromEntries(historyEntries));
+          setQualityReport(nextQuality);
           setSource("api");
         }
       } catch {
         if (!ignore) {
           setChain(MOCK_CHAIN);
           setHistories({});
+          setQualityReport(MOCK_QUALITY);
           setSource("mock");
         }
       }
@@ -288,6 +344,8 @@ export default function IndustryLensPage() {
           <DataSources model={displayModel} />
         </Card>
       </div>
+
+      <QualityReportPanel report={qualityReport} />
     </div>
   );
 }
@@ -674,6 +732,112 @@ function SignalRules({
   );
 }
 
+function QualityReportPanel({ report }: { report: CostQualityReport }) {
+  const recommendation = recommendationLabel(report);
+  const bestComparisons = report.benchmark_comparisons.slice(0, 4);
+  const bestCases = report.signal_cases.slice(0, 3);
+
+  return (
+    <Card variant="flat">
+      <CardHeader>
+        <div>
+          <CardTitle>数据质量评估</CardTitle>
+          <CardSubtitle>
+            公开基准误差 · 历史场景触发 · 付费数据源决策
+          </CardSubtitle>
+        </div>
+        <ShieldCheck className="w-4 h-4 text-brand-emerald-bright" />
+      </CardHeader>
+
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
+        <QualityMetric label="综合评分" value={`${report.data_quality_score}`} suffix="/100" />
+        <QualityMetric
+          label="平均误差"
+          value={`${formatNumber(report.benchmark_error_avg_pct, { decimals: 2 })}%`}
+          suffix="目标 < 5%"
+        />
+        <QualityMetric
+          label="基准通过率"
+          value={`${formatNumber(report.benchmark_pass_rate * 100, { decimals: 0 })}%`}
+          suffix="公开参考"
+        />
+        <QualityMetric
+          label="场景命中率"
+          value={`${formatNumber(report.signal_case_hit_rate * 100, { decimals: 0 })}%`}
+          suffix="历史压力"
+        />
+      </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-[1.2fr_1fr_1fr] gap-5 mt-5">
+        <div className="space-y-2">
+          <div className="text-caption text-text-muted uppercase">Benchmark Drift</div>
+          {bestComparisons.map((item) => (
+            <div
+              key={`${item.symbol}-${item.metric}`}
+              className="grid grid-cols-[58px_1fr_74px_64px] gap-2 items-center rounded-sm bg-bg-base border border-border-subtle p-2 text-sm"
+            >
+              <span className="font-mono text-text-primary">{item.symbol}</span>
+              <span className="text-text-secondary truncate">{metricLabel(item.metric)}</span>
+              <span className="font-mono text-right text-text-primary">
+                {formatNumber(item.error_pct, { decimals: 2 })}%
+              </span>
+              <Badge variant={item.within_tolerance ? "emerald" : "orange"}>
+                {item.within_tolerance ? "通过" : "偏离"}
+              </Badge>
+            </div>
+          ))}
+        </div>
+
+        <div className="space-y-2">
+          <div className="text-caption text-text-muted uppercase">Historical Cases</div>
+          {bestCases.map((item) => (
+            <div
+              key={item.case_id}
+              className="rounded-sm bg-bg-base border border-border-subtle p-3"
+            >
+              <div className="flex items-center gap-2">
+                <Badge variant={item.passed ? "emerald" : "orange"}>
+                  {item.passed ? "PASS" : "REVIEW"}
+                </Badge>
+                <span className="text-sm text-text-primary truncate">{item.title}</span>
+              </div>
+              <div className="mt-2 text-caption text-text-muted font-mono truncate">
+                {item.triggered_signals.join(" · ")}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="rounded-sm bg-bg-base border border-border-subtle p-4">
+          <div className="text-caption text-text-muted uppercase mb-2">Purchase Decision</div>
+          <div className="text-h3 text-text-primary">{recommendation.title}</div>
+          <p className="text-sm text-text-secondary mt-2 leading-relaxed">
+            {recommendation.body}
+          </p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Badge variant={report.preferred_vendor ? "orange" : "emerald"}>
+              {report.preferred_vendor ?? "暂不采购"}
+            </Badge>
+            <Badge variant="neutral">
+              {new Date(report.generated_at).toISOString().slice(0, 10)}
+            </Badge>
+          </div>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+function QualityMetric({ label, value, suffix }: { label: string; value: string; suffix: string }) {
+  return (
+    <div className="rounded-sm bg-bg-base border border-border-subtle p-3">
+      <div className="text-caption text-text-muted uppercase">{label}</div>
+      <div className="mt-2 text-h2 font-mono text-text-primary tabular-nums">{value}</div>
+      <div className="text-caption text-text-muted mt-1">{suffix}</div>
+    </div>
+  );
+}
+
 function DataSources({ model }: { model: CostModel }) {
   const inputs = Object.values(model.inputs).slice(0, 8);
   return (
@@ -866,6 +1030,34 @@ function componentLabel(name: string): string {
   return name
     .replaceAll("_", " ")
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function metricLabel(metric: string): string {
+  const labels: Record<string, string> = {
+    breakeven_p50: "P50 中位成本",
+    breakeven_p75: "P75 高成本",
+    breakeven_p90: "P90 边际产能",
+  };
+  return labels[metric] ?? componentLabel(metric);
+}
+
+function recommendationLabel(report: CostQualityReport): { title: string; body: string } {
+  if (report.paid_data_recommendation === "defer_paid_purchase_monitor_weekly") {
+    return {
+      title: "暂缓采购，周度复核",
+      body: "当前公开源降级方案通过误差和历史触发评估，可以继续小步扩展，但保留每周复核和供应商试用入口。",
+    };
+  }
+  if (report.paid_data_recommendation === "buy_paid_feed_before_expanding_signals") {
+    return {
+      title: "先采购再扩展信号",
+      body: `${report.preferred_vendor ?? "Mysteel"} 优先级最高；当前历史触发稳定性不足，不宜继续扩大自动告警覆盖。`,
+    };
+  }
+  return {
+    title: "采购以提升精度",
+    body: `${report.preferred_vendor ?? "SMM"} 可优先试用；公开源信号可用，但精细化分位和低频参数需要付费源校准。`,
+  };
 }
 
 function formatCurrency(value: number): string {

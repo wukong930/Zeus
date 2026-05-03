@@ -4,8 +4,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.models.cost_snapshot import CostSnapshot
-from app.schemas.common import CostChainRead, CostModelRead, CostSimulationRequest, CostSnapshotRead
+from app.schemas.common import (
+    CostChainRead,
+    CostModelRead,
+    CostQualityReportRead,
+    CostSimulationRequest,
+    CostSnapshotRead,
+)
 from app.services.cost_models.cost_chain import FERROUS_CHAIN_ORDER, calculate_cost_chain
+from app.services.cost_models.quality import run_ferrous_quality_report
 from app.services.cost_models.snapshots import (
     FERROUS_SYMBOLS,
     calculate_cost_snapshot,
@@ -14,6 +21,12 @@ from app.services.cost_models.snapshots import (
 )
 
 router = APIRouter(prefix="/api/cost-models", tags=["cost-models"])
+
+
+@router.get("/quality/ferrous", response_model=CostQualityReportRead)
+async def get_ferrous_cost_quality_report(session: AsyncSession = Depends(get_db)) -> dict:
+    report = await run_ferrous_quality_report(session)
+    return report.to_dict()
 
 
 @router.get("/{symbol}", response_model=CostModelRead)
