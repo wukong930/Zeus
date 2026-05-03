@@ -1,5 +1,7 @@
 from app.models.alert import Alert
+from app.models.calibration import SignalCalibration
 from app.models.contract_metadata import ContractMetadata
+from app.models.drift_metrics import DriftMetric
 from app.models.event_log import EventLog
 from app.models.graph import CommodityNode, RelationshipEdge
 from app.models.industry_data import IndustryData
@@ -7,6 +9,7 @@ from app.models.llm_config import LLMConfig
 from app.models.market_data import MarketData
 from app.models.position import Position
 from app.models.recommendation import Recommendation
+from app.models.regime_state import RegimeState
 from app.models.research import ResearchHypothesis, ResearchReport
 from app.models.sector import SectorAssessment
 from app.models.signal import SignalTrack
@@ -17,6 +20,7 @@ __all__ = [
     "Alert",
     "CommodityNode",
     "ContractMetadata",
+    "DriftMetric",
     "EventLog",
     "IndustryData",
     "LLMConfig",
@@ -24,9 +28,11 @@ __all__ = [
     "Position",
     "Recommendation",
     "RelationshipEdge",
+    "RegimeState",
     "ResearchHypothesis",
     "ResearchReport",
     "SectorAssessment",
+    "SignalCalibration",
     "SignalTrack",
     "Strategy",
     "Watchlist",

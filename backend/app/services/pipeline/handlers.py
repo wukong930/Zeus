@@ -2,7 +2,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import asdict, is_dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,7 +10,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.events import ZeusEvent, publish
 from app.models.alert import Alert
 from app.models.position import Position
-from app.services.scoring.engine import score_recommendation
+from app.models.signal import SignalTrack
+from app.services.calibration.tracker import get_calibration_weight, track_signal_emission
+from app.services.scoring.engine import apply_calibration_weight, score_recommendation
 from app.services.scoring.portfolio_fit import PositionGroup, RecommendationLeg
 from app.services.signals.detector import SignalDetector
 from app.services.signals.types import (
@@ -119,21 +121,27 @@ async def handle_market_update(
     detector: SignalDetector | None = None,
     publisher: EventPublisher = publish,
 ) -> list[ZeusEvent]:
-    contexts = [trigger_context_from_payload(raw) for raw in trigger_context_payloads(event)]
+    raw_contexts = trigger_context_payloads(event)
+    contexts = [trigger_context_from_payload(raw) for raw in raw_contexts]
     if not contexts:
         return []
 
     signal_detector = detector or SignalDetector()
     published: list[ZeusEvent] = []
-    for context in contexts:
+    for raw_context, context in zip(raw_contexts, contexts, strict=False):
         results = await signal_detector.detect(context)
+        context_payload = jsonable(context)
+        if raw_context.get("regime") is not None:
+            context_payload["regime"] = raw_context["regime"]
+        if raw_context.get("regime_at_emission") is not None:
+            context_payload["regime_at_emission"] = raw_context["regime_at_emission"]
         for result in results:
             published.append(
                 await publisher(
                     "signal.detected",
                     {
                         "signal": jsonable(result),
-                        "context": jsonable(context),
+                        "context": context_payload,
                     },
                     source="signal-detector",
                     correlation_id=event.correlation_id,
@@ -158,7 +166,16 @@ async def handle_signal_detected(
     open_positions = await open_positions_for_scoring(session, event.payload)
     margin_required = float(event.payload.get("margin_required", DEFAULT_MARGIN_REQUIRED))
     account_net_value = float(event.payload.get("account_net_value", DEFAULT_ACCOUNT_NET_VALUE))
-    score = score_recommendation(
+    context = event.payload.get("context", {})
+    category = str(context.get("category") or signal.get("category") or "unknown")
+    regime = context.get("regime") or context.get("regime_at_emission") or "unknown"
+    calibration_weight = await get_calibration_weight(
+        session,
+        signal_type=str(signal["signal_type"]),
+        category=category,
+        regime=str(regime),
+    )
+    base_score = score_recommendation(
         spread_info=spread_info,
         confidence=float(signal.get("confidence", 0)),
         legs=legs,
@@ -166,13 +183,24 @@ async def handle_signal_detected(
         margin_required=margin_required,
         account_net_value=account_net_value,
     )
+    score = apply_calibration_weight(base_score, calibration_weight)
+    signal_track = await track_signal_emission(
+        session,
+        signal=signal,
+        category=category,
+        regime=str(regime),
+        calibration_weight=calibration_weight,
+    )
 
     return await publisher(
         "signal.scored",
         {
             "signal": signal,
-            "context": event.payload.get("context", {}),
+            "context": context,
             "score": jsonable(score),
+            "base_score": jsonable(base_score),
+            "calibration_weight": calibration_weight,
+            "signal_track_id": str(signal_track.id) if signal_track is not None else None,
             "legs": jsonable(legs),
             "margin_required": margin_required,
             "account_net_value": account_net_value,
@@ -220,6 +248,7 @@ async def handle_signal_scored(
     )
     session.add(alert)
     await session.flush()
+    await attach_alert_to_signal_track(session, event.payload.get("signal_track_id"), alert)
 
     return await publisher(
         "alert.created",
@@ -314,3 +343,16 @@ async def open_positions_for_scoring(
         )
         for row in rows
     ]
+
+
+async def attach_alert_to_signal_track(
+    session: AsyncSession,
+    signal_track_id: str | None,
+    alert: Alert,
+) -> None:
+    if signal_track_id is None:
+        return
+
+    row = await session.get(SignalTrack, UUID(signal_track_id))
+    if row is not None:
+        row.alert_id = alert.id

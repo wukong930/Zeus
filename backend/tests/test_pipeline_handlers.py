@@ -45,6 +45,7 @@ def _market_update_event() -> ZeusEvent:
                     "symbol1": "RB",
                     "symbol2": "HC",
                     "category": "ferrous",
+                    "regime": "range_low_vol",
                     "timestamp": datetime(2026, 5, 3, tzinfo=timezone.utc).isoformat(),
                     "spread_stats": {
                         "adf_p_value": 0.03,
@@ -68,6 +69,7 @@ async def test_market_update_handler_publishes_detected_signals() -> None:
     assert [event.channel for event in published] == ["signal.detected", "signal.detected"]
     assert publisher.calls[0]["event"].payload["signal"]["signal_type"] == "spread_anomaly"
     assert publisher.calls[0]["event"].payload["context"]["symbol1"] == "RB"
+    assert publisher.calls[0]["event"].payload["context"]["regime"] == "range_low_vol"
 
 
 async def test_signal_detected_handler_publishes_score() -> None:

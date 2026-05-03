@@ -1,4 +1,4 @@
-from app.services.scoring.engine import combine_scores, score_recommendation
+from app.services.scoring.engine import apply_calibration_weight, combine_scores, score_recommendation
 from app.services.scoring.margin_efficiency import margin_efficiency_score
 from app.services.scoring.portfolio_fit import (
     PositionGroup,
@@ -55,3 +55,20 @@ def test_score_recommendation_returns_all_dimensions() -> None:
     assert score.portfolio_fit == 75
     assert score.margin_efficiency == 80
     assert score.combined == 62
+
+
+def test_apply_calibration_weight_recomputes_combined_score() -> None:
+    score = score_recommendation(
+        spread_info=None,
+        confidence=0.7,
+        legs=[RecommendationLeg(asset="RB", direction="long")],
+        open_positions=[],
+        margin_required=10_000,
+        account_net_value=100_000,
+    )
+
+    calibrated = apply_calibration_weight(score, 1.5)
+
+    assert calibrated.priority == 60
+    assert calibrated.portfolio_fit == score.portfolio_fit
+    assert calibrated.combined == combine_scores(60, 75, 80)

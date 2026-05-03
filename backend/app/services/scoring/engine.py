@@ -18,6 +18,16 @@ def combine_scores(priority: int, portfolio_fit: int, margin_efficiency: int) ->
     return round(priority * 0.4 + portfolio_fit * 0.3 + margin_efficiency * 0.3)
 
 
+def apply_calibration_weight(score: CombinedScore, calibration_weight: float) -> CombinedScore:
+    calibrated_priority = round(max(0.0, min(100.0, score.priority * calibration_weight)))
+    return CombinedScore(
+        priority=calibrated_priority,
+        portfolio_fit=score.portfolio_fit,
+        margin_efficiency=score.margin_efficiency,
+        combined=combine_scores(calibrated_priority, score.portfolio_fit, score.margin_efficiency),
+    )
+
+
 def score_recommendation(
     *,
     spread_info: SpreadInfo | None,

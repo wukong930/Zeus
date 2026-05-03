@@ -27,6 +27,9 @@ DEFAULT_JOB_DEFINITIONS: tuple[JobDefinition, ...] = (
     JobDefinition("risk", "风险计算", "30 8 * * *"),
     JobDefinition("auto-eval", "信号评判", "0 9 * * *"),
     JobDefinition("track-outcomes", "绩效追踪", "30 16 * * 1-5"),
+    JobDefinition("calibration", "校准更新", "0 2 * * *"),
+    JobDefinition("regime-detect", "Regime 检测", "20 16 * * 1-5"),
+    JobDefinition("drift-monitor", "漂移监控", "40 16 * * 1-5"),
     JobDefinition("cleanup", "数据清理", "0 3 * * *"),
     JobDefinition("main-contract", "主力合约日检", "10 16 * * 1-5"),
 )
@@ -62,7 +65,43 @@ async def ingest_job() -> dict[str, Any]:
     }
 
 
+async def publish_job_event(job_id: str, channel: str) -> dict[str, Any]:
+    async with AsyncSessionLocal() as session:
+        event = await publish(
+            channel,
+            {
+                "job_id": job_id,
+                "triggered_at": datetime.now(timezone.utc).isoformat(),
+                "status": "requested",
+            },
+            source="scheduler",
+            session=session,
+        )
+        await session.commit()
+    return {
+        "status": "published",
+        "event_id": str(event.id),
+        "channel": event.channel,
+        "timestamp": event.timestamp.isoformat(),
+    }
+
+
+async def calibration_job() -> dict[str, Any]:
+    return await publish_job_event("calibration", "calibration.run_requested")
+
+
+async def regime_detection_job() -> dict[str, Any]:
+    return await publish_job_event("regime-detect", "regime.detect_requested")
+
+
+async def drift_monitor_job() -> dict[str, Any]:
+    return await publish_job_event("drift-monitor", "drift.check_requested")
+
+
 DEFAULT_JOB_HANDLERS: dict[str, JobHandler] = {
     definition.id: placeholder_job for definition in DEFAULT_JOB_DEFINITIONS
 }
 DEFAULT_JOB_HANDLERS["ingest"] = ingest_job
+DEFAULT_JOB_HANDLERS["calibration"] = calibration_job
+DEFAULT_JOB_HANDLERS["regime-detect"] = regime_detection_job
+DEFAULT_JOB_HANDLERS["drift-monitor"] = drift_monitor_job

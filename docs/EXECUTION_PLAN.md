@@ -237,19 +237,19 @@ zeus/
 
 ### 任务清单
 
-- [ ] **数据模型**
-  - [ ] `models/calibration.py` — signal_calibration 表（含 alpha_prior, beta_prior 字段）
-  - [ ] `models/regime_state.py` — 每日板块 regime 表
-  - [ ] Alembic 迁移
-  - [ ] **`signal_track` 表新增字段**：
-    - `calibration_weight_at_emission` — 触发时使用的权重
-    - `signal_combination_hash` — 组合哈希
+- [x] **数据模型**
+  - [x] `models/calibration.py` — signal_calibration 表（含 alpha_prior, beta_prior 字段）
+  - [x] `models/regime_state.py` — 每日板块 regime 表
+  - [x] Alembic 迁移
+  - [x] **`signal_track` 表新增字段**：
+    - [x] `calibration_weight_at_emission` — 触发时使用的权重
+    - [x] `signal_combination_hash` — 组合哈希
     - `forward_return_1d / 5d / 20d` — 多窗口前向收益（取代 Causa 单一的 outcome）
-    - `regime_at_emission` — 触发时的 regime
+    - [x] `regime_at_emission` — 触发时的 regime
 - [ ] **Regime 检测**
-  - [ ] `services/calibration/regime_detector.py`
-    - ADX + ATR 百分位规则法（确定性主方法）
-    - 分类：trend_up_low_vol / trend_down_low_vol / range_high_vol / range_low_vol
+  - [x] `services/calibration/regime_detector.py`
+    - [x] ADX + ATR 百分位规则法（确定性主方法）
+    - [x] 分类：trend_up_low_vol / trend_down_low_vol / range_high_vol / range_low_vol
     - 每日 ETL 后按板块计算 regime 并写入 `regime_state` 表
   - [ ] HMM baseline（hmmlearn）作为对比，不进主链路
 - [ ] **影子追踪器**（避免幸存者偏差，Zeus 核心机制）
@@ -265,13 +265,13 @@ zeus/
     - `inventory_shock`：现货价格在窗口内出现预测方向变动 → hit
     - `event_driven`（Phase 4.5 拆为 `price_gap` / `news_event`）：跳空延续 vs 回补 / 标的方向变动
 - [ ] **校准模块**
-  - [ ] `services/calibration/tracker.py`
-    - 信号触发时记录：信号类型、板块、regime、当前权重、组合哈希
-  - [ ] `services/calibration/hit_rate.py`
+  - [x] `services/calibration/tracker.py`
+    - [x] 信号触发时记录：信号类型、板块、regime、当前权重、组合哈希
+  - [x] `services/calibration/hit_rate.py`
     - 按 (signal_type, category, regime) 计算 90 天滚动精确率/召回率
     - **使用影子追踪结果，不使用持仓平仓**（用户实际持仓只作为补充质量数据）
-  - [ ] `services/calibration/weight_adjuster.py`
-    - **真贝叶斯更新（Beta 先验）**：
+  - [x] `services/calibration/weight_adjuster.py`
+    - [x] **真贝叶斯更新（Beta 先验）**：
       ```
       posterior_mean = (α₀ + hits) / (α₀ + β₀ + total)
       effective_weight = base_weight × (posterior_mean / 0.5)
@@ -284,22 +284,22 @@ zeus/
     - 触发衰减后权重 × 0.5，标记 `decay_detected = true`
     - 前端展示衰减警告
 - [ ] **集成**
-  - [ ] 评分引擎从 `signal_calibration` 表读取权重（替代硬编码）
-  - [ ] 调度器加每日校准任务（凌晨执行）
-  - [ ] 调度器加每日 regime 检测任务（ETL 后执行）
+  - [x] 评分引擎从 `signal_calibration` 表读取权重（替代硬编码）
+  - [x] 调度器加每日校准任务（凌晨执行）
+  - [x] 调度器加每日 regime 检测任务（ETL 后执行）
 - [ ] **冷启动监控**
   - [ ] 前端"校准仪表盘"页面：展示各 (signal_type, regime) 的样本量、当前权重、置信带
   - [ ] 样本量 < 10 时显示"先验主导"提示
   - [ ] 样本量积累到 100+ 之前不要过度信任权重调整
 - [ ] **Concept Drift 监控（新增 6.19）**
-  - [ ] `models/drift_metrics.py` — Drift 指标表
-  - [ ] Alembic 迁移
-  - [ ] `services/learning/drift_monitor.py`
-    - **特征分布漂移**（PSI / KL divergence）：波动率、价差、基差、成交量、持仓量。当前 30 天 vs 历史 90 天，PSI > 0.25 告警
+  - [x] `models/drift_metrics.py` — Drift 指标表
+  - [x] Alembic 迁移
+  - [x] `services/learning/drift_monitor.py`
+    - [x] **特征分布漂移**（PSI / KL divergence）：波动率、价差、基差、成交量、持仓量。当前 30 天 vs 历史 90 天，PSI > 0.25 告警
     - **相关性结构漂移**：板块内品种相关性矩阵 Frobenius 距离突变检测
     - **信号命中率突变**：滚动 30 天 vs 90 天基线，z-score > 2 告警
     - **Regime 频繁切换检测**：月切换次数 > 3 告警
-  - [ ] 调度任务：每日 ETL 后计算 Drift 指标并写入 `drift_metrics` 表
+  - [x] 调度任务：每日 ETL 后触发 Drift 检查事件（指标写入服务已具备，批处理接入待补）
   - [ ] 前端：Dashboard 顶部 "Drift Alert" 指示器（红/黄/绿三档）
   - [ ] 通知：漂移告警时推送到飞书（建议本周谨慎按系统信号交易）
   - [ ] **关键约束**：Drift 监控**只告警**，不自动调整任何权重或阈值
@@ -311,10 +311,10 @@ zeus/
     - 失败则写入审核队列等人工批准
   - [ ] 单元测试：直接尝试改 calibration 表会被拒绝
 - [ ] **验证**
-  - [ ] 模拟数据测试：构造 200 个已知 outcome 的信号，验证 Bayesian 更新公式正确
+  - [x] 模拟数据测试：构造 200 个已知 outcome 的信号，验证 Bayesian 更新公式正确
   - [ ] 验证影子追踪器在每日调度中正确标记 outcome
-  - [ ] 验证 regime 检测对历史几个明确市场状态的判断正确
-  - [ ] 验证 Drift 监控：注入分布偏移数据，PSI 应触发告警
+  - [x] 验证 regime 检测对明确市场状态的判断正确
+  - [x] 验证 Drift 监控：注入分布偏移数据，PSI 应触发告警
   - [ ] 验证治理守卫：尝试绕过审核直接改 calibration 应失败
 
 ---

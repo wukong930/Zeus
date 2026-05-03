@@ -15,6 +15,8 @@ class SignalTrack(Base):
         Index("ix_signal_track_category", "category"),
         Index("ix_signal_track_outcome", "outcome"),
         Index("ix_signal_track_alert_id", "alert_id"),
+        Index("ix_signal_track_combination_hash", "signal_combination_hash"),
+        Index("ix_signal_track_regime_at_emission", "regime_at_emission"),
     )
 
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
@@ -24,6 +26,9 @@ class SignalTrack(Base):
     confidence: Mapped[float] = mapped_column(Float, nullable=False)
     z_score: Mapped[float | None] = mapped_column(Float)
     regime: Mapped[str | None] = mapped_column(String(30))
+    regime_at_emission: Mapped[str | None] = mapped_column(String(40))
+    calibration_weight_at_emission: Mapped[float | None] = mapped_column(Float)
+    signal_combination_hash: Mapped[str | None] = mapped_column(String(64))
     outcome: Mapped[str] = mapped_column(String(20), default="pending", nullable=False)
     position_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True))
     forward_return_1d: Mapped[float | None] = mapped_column(Float)
