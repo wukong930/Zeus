@@ -140,6 +140,7 @@ class ScenarioReport:
     narrative: str
     risk_points: tuple[str, ...]
     suggested_actions: tuple[str, ...]
+    narrative_source: str = "deterministic"
     scenario_id: str = field(default_factory=lambda: str(uuid4()))
     generated_at: str = field(default_factory=utc_now_iso)
     status: str = "completed"
@@ -156,6 +157,7 @@ class ScenarioReport:
             "what_if": self.what_if.to_dict(),
             "monte_carlo": self.monte_carlo.to_dict(),
             "narrative": self.narrative,
+            "narrative_source": self.narrative_source,
             "risk_points": list(self.risk_points),
             "suggested_actions": list(self.suggested_actions),
         }

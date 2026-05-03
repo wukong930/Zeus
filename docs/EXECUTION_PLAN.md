@@ -694,12 +694,12 @@ Causa 的 `event_driven` 评估器实际上是纯技术面（gap + volume），*
   - [x] `services/scenarios/simulator.py`
     - 编排器：接收推演请求 → 执行模拟 → 生成报告
     - 异步执行（不阻塞主链路）
-- [ ] **触发机制**
+- [x] **触发机制**
   - [x] 手动触发：`api/scenarios.py` POST 端点
-  - [ ] 条件触发：Alert Agent 在 `arbitrate` 级别时可请求推演
+  - [x] 条件触发：Alert Agent 在 `arbitrate` 级别时可请求推演
   - [x] 订阅 `scenario.requested` 事件
-- [ ] **报告生成**
-  - [ ] LLM 将数值结果翻译为可读的情景描述（当前为本地确定性叙事生成，待接 LLM Provider）
+- [x] **报告生成**
+  - [x] LLM 将数值结果翻译为可读的情景描述（无 LLM 配置时稳定回退到本地确定性叙事）
   - [x] 输出：概率分布、关键路径、风险点、建议行动
 - [x] **前端**
   - [x] 场景配置界面（选择品种、设定假设）

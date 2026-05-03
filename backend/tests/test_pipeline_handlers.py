@@ -223,3 +223,44 @@ async def test_signal_scored_handler_creates_alert_and_publishes_event() -> None
     assert session.rows[0].adversarial_passed is True
     assert created.payload["adversarial_passed"] is True
     assert created.payload["alert_id"] == str(session.rows[0].id)
+
+
+async def test_signal_scored_handler_requests_scenario_for_arbitration_route() -> None:
+    event = ZeusEvent(
+        channel="signal.scored",
+        payload={
+            "signal": {
+                "signal_type": "momentum",
+                "severity": "high",
+                "confidence": 0.72,
+                "title": "RB bullish signal with bearish inventory conflict",
+                "summary": "Momentum is bullish while inventory pressure is bearish.",
+                "related_assets": ["RB"],
+                "risk_items": [],
+                "manual_check_items": [],
+            },
+            "context": {
+                "category": "ferrous",
+                "timestamp": datetime(2026, 5, 3, tzinfo=timezone.utc).isoformat(),
+                "market_data": [{"close": 3250}],
+            },
+            "score": {"priority": 75, "combined": 75},
+        },
+        source="test",
+    )
+    session = FakeSession()
+    publisher = CapturingPublisher()
+
+    created = await handle_signal_scored(
+        event,
+        session=session,  # type: ignore[arg-type]
+        publisher=publisher,
+    )
+
+    assert created is not None
+    assert created.channel == "alert.created"
+    requested = next(call["event"] for call in publisher.calls if call["event"].channel == "scenario.requested")
+    assert requested.payload["request"]["target_symbol"] == "RB"
+    assert requested.payload["request"]["shocks"] == {"RB": 0.08}
+    assert requested.payload["request"]["base_price"] == 3250
+    assert requested.payload["trigger"]["route"] == "arbitrate"

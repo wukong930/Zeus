@@ -8,7 +8,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.events import publish
-from app.services.scenarios import ScenarioRequest, run_scenario_simulation
+from app.services.scenarios import (
+    ScenarioRequest,
+    run_scenario_simulation,
+    run_scenario_simulation_with_llm_narrative,
+)
 
 router = APIRouter(prefix="/api/scenarios", tags=["scenarios"])
 
@@ -58,6 +62,18 @@ async def simulate_scenario(payload: ScenarioSimulationPayload) -> dict[str, Any
     return run_scenario_simulation(payload.to_service_request()).to_dict()
 
 
+@router.post("/simulate/llm")
+async def simulate_scenario_with_llm(
+    payload: ScenarioSimulationPayload,
+    session: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    report = await run_scenario_simulation_with_llm_narrative(
+        payload.to_service_request(),
+        session=session,
+    )
+    return report.to_dict()
+
+
 @router.post("/requests")
 async def request_scenario(
     payload: ScenarioSimulationPayload,
@@ -65,7 +81,7 @@ async def request_scenario(
 ) -> dict[str, Any]:
     event = await publish(
         "scenario.requested",
-        {"request": payload.model_dump()},
+        {"request": payload.model_dump(), "use_llm_narrative": True},
         source="scenario-api",
         session=session,
     )

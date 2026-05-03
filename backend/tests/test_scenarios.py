@@ -1,11 +1,19 @@
 from __future__ import annotations
 
+import json
+
 from fastapi.testclient import TestClient
 
 from app.core.events import ZeusEvent
 from app.main import create_app
+from app.services.llm.types import LLMCompletionResult
 from app.services.pipeline.handlers import handle_scenario_requested
-from app.services.scenarios import ScenarioRequest, run_scenario_simulation, run_what_if
+from app.services.scenarios import (
+    ScenarioRequest,
+    run_scenario_simulation,
+    run_scenario_simulation_with_llm_narrative,
+    run_what_if,
+)
 from app.services.scenarios.monte_carlo import run_monte_carlo
 from app.services.scenarios.what_if import impact_for_symbol
 
@@ -82,6 +90,49 @@ def test_simulator_combines_what_if_and_monte_carlo_report() -> None:
     assert "NR" in payload["narrative"]
     assert payload["risk_points"]
     assert payload["suggested_actions"]
+    assert payload["narrative_source"] == "deterministic"
+
+
+async def test_llm_narrative_enrichment_updates_report_text() -> None:
+    async def fake_completer(**_kwargs):
+        return LLMCompletionResult(
+            content=json.dumps(
+                {
+                    "narrative": "LLM narrative: NR pass-through keeps RU skewed upward.",
+                    "risk_points": ["NR path is the dominant driver."],
+                    "suggested_actions": ["Keep the scenario under active review."],
+                }
+            ),
+            model="fake-llm",
+        )
+
+    report = await run_scenario_simulation_with_llm_narrative(
+        ScenarioRequest(
+            target_symbol="RU",
+            shocks={"NR": 0.06},
+            base_price=15400,
+            simulations=500,
+        ),
+        completer=fake_completer,
+    )
+
+    payload = report.to_dict()
+    assert payload["narrative_source"] == "llm"
+    assert payload["narrative"].startswith("LLM narrative")
+    assert payload["risk_points"] == ["NR path is the dominant driver."]
+
+
+async def test_llm_narrative_enrichment_falls_back_on_error() -> None:
+    async def failing_completer(**_kwargs):
+        raise RuntimeError("llm unavailable")
+
+    report = await run_scenario_simulation_with_llm_narrative(
+        ScenarioRequest(target_symbol="RU", shocks={"NR": 0.06}, simulations=500),
+        completer=failing_completer,
+    )
+
+    assert report.narrative_source == "deterministic_fallback"
+    assert "RU 场景推演显示" in report.narrative
 
 
 def test_scenario_simulation_api_returns_report() -> None:

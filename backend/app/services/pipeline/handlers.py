@@ -15,12 +15,22 @@ from app.services.adversarial.engine import (
     attach_signal_track_to_adversarial_result,
     evaluate_adversarial_signal,
 )
-from app.services.alert_agent.dedup import check_alert_dedup, record_alert_emitted
+from app.services.alert_agent.dedup import (
+    check_alert_dedup,
+    primary_symbol,
+    record_alert_emitted,
+    signal_direction,
+)
 from app.services.alert_agent.router import route_alert
 from app.services.calibration.tracker import get_calibration_weight, track_signal_emission
 from app.services.scoring.engine import CombinedScore, apply_calibration_weight, score_recommendation
 from app.services.scoring.portfolio_fit import PositionGroup, RecommendationLeg
-from app.services.scenarios import ScenarioRequest, run_scenario_simulation
+from app.services.risk.stress import symbol_prefix
+from app.services.scenarios import (
+    ScenarioRequest,
+    run_scenario_simulation,
+    run_scenario_simulation_with_llm_narrative,
+)
 from app.services.signals.detector import SignalDetector
 from app.services.signals.types import (
     CostSnapshotPoint,
@@ -434,6 +444,26 @@ async def handle_signal_scored(
             session=session,
         )
 
+    scenario_request = scenario_request_from_alert(signal, context, score)
+    if agent_decision.route == "arbitrate" and scenario_request is not None:
+        await publisher(
+            "scenario.requested",
+            {
+                "request": scenario_request,
+                "use_llm_narrative": True,
+                "trigger": {
+                    "alert_id": str(alert.id),
+                    "route": agent_decision.route,
+                    "confidence_tier": agent_decision.confidence_tier,
+                    "reasons": agent_decision.reasons,
+                    "signal_type": alert.type,
+                },
+            },
+            source="alert-agent",
+            correlation_id=event.correlation_id,
+            session=session,
+        )
+
     await record_alert_emitted(
         session,
         signal=signal,
@@ -474,30 +504,32 @@ async def handle_scenario_requested(
     if not isinstance(request_payload, dict):
         return None
 
-    report = run_scenario_simulation(
-        ScenarioRequest(
-            target_symbol=str(request_payload["target_symbol"]),
-            shocks={
-                str(symbol): float(shock)
-                for symbol, shock in dict(request_payload.get("shocks") or {}).items()
-            },
-            base_price=(
-                float(request_payload["base_price"])
-                if request_payload.get("base_price") is not None
-                else None
-            ),
-            days=int(request_payload.get("days", 20)),
-            simulations=int(request_payload.get("simulations", 1000)),
-            volatility_pct=(
-                float(request_payload["volatility_pct"])
-                if request_payload.get("volatility_pct") is not None
-                else None
-            ),
-            drift_pct=float(request_payload.get("drift_pct", 0.0)),
-            seed=int(request_payload.get("seed", 7)),
-            max_depth=int(request_payload.get("max_depth", 3)),
-        )
+    request = ScenarioRequest(
+        target_symbol=str(request_payload["target_symbol"]),
+        shocks={
+            str(symbol): float(shock)
+            for symbol, shock in dict(request_payload.get("shocks") or {}).items()
+        },
+        base_price=(
+            float(request_payload["base_price"])
+            if request_payload.get("base_price") is not None
+            else None
+        ),
+        days=int(request_payload.get("days", 20)),
+        simulations=int(request_payload.get("simulations", 1000)),
+        volatility_pct=(
+            float(request_payload["volatility_pct"])
+            if request_payload.get("volatility_pct") is not None
+            else None
+        ),
+        drift_pct=float(request_payload.get("drift_pct", 0.0)),
+        seed=int(request_payload.get("seed", 7)),
+        max_depth=int(request_payload.get("max_depth", 3)),
     )
+    if event.payload.get("use_llm_narrative", False):
+        report = await run_scenario_simulation_with_llm_narrative(request, session=session)
+    else:
+        report = run_scenario_simulation(request)
     return await publisher(
         "scenario.completed",
         {"report": report.to_dict()},
@@ -505,6 +537,68 @@ async def handle_scenario_requested(
         correlation_id=event.correlation_id,
         session=session,
     )
+
+
+def scenario_request_from_alert(
+    signal: dict[str, Any],
+    context: dict[str, Any],
+    score: dict[str, Any] | Any | None,
+) -> dict[str, Any] | None:
+    target_symbol = _target_symbol_from_signal(signal, context)
+    if target_symbol is None:
+        return None
+
+    shock_size = _shock_size_for_signal(signal, score)
+    direction = signal_direction(signal)
+    sign = -1 if direction == "bearish" else 1
+    return {
+        "target_symbol": target_symbol,
+        "shocks": {target_symbol: round(sign * shock_size, 4)},
+        "base_price": _latest_context_price(context),
+        "days": 20,
+        "simulations": 1000,
+        "seed": 17,
+        "max_depth": 3,
+    }
+
+
+def _target_symbol_from_signal(signal: dict[str, Any], context: dict[str, Any]) -> str | None:
+    candidates = [
+        primary_symbol(signal),
+        context.get("symbol1"),
+        context.get("symbol"),
+    ]
+    for candidate in candidates:
+        symbol = symbol_prefix(str(candidate or ""))
+        if symbol and symbol != "UNKNOWN":
+            return symbol
+    return None
+
+
+def _shock_size_for_signal(signal: dict[str, Any], score: dict[str, Any] | Any | None) -> float:
+    severity = str(signal.get("severity") or "medium").lower()
+    base = {
+        "critical": 0.10,
+        "high": 0.07,
+        "medium": 0.05,
+        "low": 0.03,
+    }.get(severity, 0.05)
+    score_value = float(score.get("combined") or score.get("priority") or 0) if isinstance(score, dict) else 0.0
+    if score_value >= 85:
+        base += 0.02
+    elif score_value >= 70:
+        base += 0.01
+    return min(0.12, base)
+
+
+def _latest_context_price(context: dict[str, Any]) -> float | None:
+    market_data = context.get("market_data")
+    if not isinstance(market_data, list) or not market_data:
+        return None
+    latest = market_data[-1]
+    if not isinstance(latest, dict) or latest.get("close") is None:
+        return None
+    return float(latest["close"])
 
 
 def _spread_info_from_payload(payload: Any) -> SpreadInfo | None:

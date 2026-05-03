@@ -232,6 +232,7 @@ export interface ScenarioReport {
     seed: number;
   };
   narrative: string;
+  narrative_source: string;
   risk_points: string[];
   suggested_actions: string[];
 }

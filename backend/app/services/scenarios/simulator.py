@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.services.risk.stress import symbol_prefix
 from app.services.scenarios.monte_carlo import run_monte_carlo
+from app.services.scenarios.narrative import ScenarioCompleter, enrich_report_with_llm_narrative
 from app.services.scenarios.types import ScenarioReport, ScenarioRequest, WhatIfResult
 from app.services.scenarios.what_if import impact_for_symbol, run_what_if
 
@@ -78,6 +81,18 @@ def run_scenario_simulation(request: ScenarioRequest) -> ScenarioReport:
         risk_points=tuple(build_risk_points(target_symbol, what_if, applied_shock)),
         suggested_actions=tuple(build_suggested_actions(applied_shock, monte_carlo.downside_probability)),
     )
+
+
+async def run_scenario_simulation_with_llm_narrative(
+    request: ScenarioRequest,
+    *,
+    session: AsyncSession | None = None,
+    completer: ScenarioCompleter | None = None,
+) -> ScenarioReport:
+    report = run_scenario_simulation(request)
+    if completer is None:
+        return await enrich_report_with_llm_narrative(report, session=session)
+    return await enrich_report_with_llm_narrative(report, session=session, completer=completer)
 
 
 def build_scenario_narrative(

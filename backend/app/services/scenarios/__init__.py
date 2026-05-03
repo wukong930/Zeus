@@ -1,4 +1,7 @@
-from app.services.scenarios.simulator import run_scenario_simulation
+from app.services.scenarios.simulator import (
+    run_scenario_simulation,
+    run_scenario_simulation_with_llm_narrative,
+)
 from app.services.scenarios.types import (
     ImpactSummary,
     MonteCarloResult,
@@ -19,5 +22,6 @@ __all__ = [
     "ScenarioRequest",
     "WhatIfResult",
     "run_scenario_simulation",
+    "run_scenario_simulation_with_llm_narrative",
     "run_what_if",
 ]
