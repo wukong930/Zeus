@@ -2,6 +2,10 @@ from __future__ import annotations
 
 from datetime import date, datetime, timezone
 
+from fastapi.testclient import TestClient
+
+from app.core.database import get_db
+from app.main import create_app
 from app.models.change_review_queue import ChangeReviewQueue
 from app.models.live_divergence_metrics import LiveDivergenceMetric
 from app.services.backtest.calibration_replay import (
@@ -19,8 +23,11 @@ from app.services.backtest.multiple_testing import (
     bonferroni_correction,
     deflated_sharpe_ratio,
 )
+from app.services.backtest.path_metrics import calculate_path_metrics
+from app.services.backtest.regime_profile import RegimeObservation, build_regime_profile
 from app.services.backtest.slippage import calculate_slippage
 from app.services.backtest.strategy_registry import build_strategy_run, stable_strategy_hash
+from app.services.backtest.universe import validate_backtest_universe_from_symbols
 from app.services.backtest.walk_forward import (
     generate_walk_forward_windows,
     walk_forward_defaults,
@@ -201,6 +208,48 @@ def test_live_divergence_detects_tracking_and_sharpe_breaks() -> None:
     assert sharpe.triggered is True
 
 
+def test_path_metrics_calculates_drawdown_and_excursions() -> None:
+    metrics = calculate_path_metrics(
+        [0.10, -0.05, -0.10, 0.08, 0.04],
+        mae_values=[-0.02, -0.08, -0.04],
+        mfe_values=[0.03, 0.12, 0.06],
+    )
+
+    assert metrics.max_drawdown < -0.14
+    assert metrics.underwater_durations == (4,)
+    assert metrics.recovery_factor > 0
+    assert metrics.cvar95 == -0.10
+    assert metrics.mae_p80 == -0.027999999999999997
+    assert metrics.mfe_p80 == 0.096
+
+
+def test_regime_profile_slices_returns_by_regime() -> None:
+    profile = build_regime_profile(
+        [
+            RegimeObservation("range_low_vol", 0.01),
+            RegimeObservation("range_low_vol", -0.005),
+            RegimeObservation("trend_up_low_vol", 0.02),
+            RegimeObservation("trend_up_low_vol", 0.01),
+        ]
+    )
+
+    by_regime = {item.regime: item for item in profile}
+    assert by_regime["range_low_vol"].sample_size == 2
+    assert by_regime["range_low_vol"].win_rate == 0.5
+    assert by_regime["trend_up_low_vol"].win_rate == 1.0
+
+
+def test_pit_universe_validation_rejects_missing_symbol() -> None:
+    validation = validate_backtest_universe_from_symbols(
+        symbols=["RB", "RU", "ZZ"],
+        active_symbols=["RB", "RU"],
+        as_of=date(2026, 5, 4),
+    )
+
+    assert validation.valid is False
+    assert validation.missing_symbols == ("ZZ",)
+
+
 async def test_record_live_divergence_queues_review_for_red_metric() -> None:
     session = FakeSession()
     result = sharpe_divergence(
@@ -238,3 +287,25 @@ def test_walk_forward_defaults_generate_reproducible_windows() -> None:
     assert windows[0].test_start == date(2023, 1, 1)
     assert windows[0].test_end == date(2023, 4, 1)
     assert windows[-1].test_end == date(2023, 7, 1)
+
+
+def test_backtest_quality_api_returns_guardrail_summary(monkeypatch) -> None:
+    async def fake_db():
+        yield object()
+
+    async def fake_universe(_session, *, as_of):
+        return ["RB", "HC", "I", "J", "JM", "RU", "NR", "BR"]
+
+    monkeypatch.setattr("app.api.strategies.pit_commodity_universe", fake_universe)
+    app = create_app()
+    app.dependency_overrides[get_db] = fake_db
+    client = TestClient(app)
+
+    response = client.get("/api/strategies/backtest-quality?as_of=2026-05-04")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["guardrails"]["calibration_strategy"] == "pit"
+    assert payload["universe"]["valid"] is True
+    assert payload["regime_profile"]
+    assert payload["path_metrics"]["max_drawdown"] < 0

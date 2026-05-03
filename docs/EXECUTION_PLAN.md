@@ -764,22 +764,22 @@ Causa 的 `event_driven` 评估器实际上是纯技术面（gap + volume），*
   - [x] 写入 `services/backtest/walk_forward.py` 作为常量
   - [x] 所有策略回测必须使用此默认参数，覆盖需写入策略元数据
 
-- [ ] **应修：Regime profile 分解**
-  - [ ] 每个回测输出按 regime 切片：Sharpe / 胜率 / 最大回撤 / 样本量
-  - [ ] 前端：策略详情页加 regime profile 表
+- [x] **应修：Regime profile 分解**
+  - [x] 每个回测输出按 regime 切片：Sharpe / 胜率 / 最大回撤 / 样本量
+  - [x] 前端：策略详情页加 regime profile 表（Strategy Forge 回测可信度面板）
 
-- [ ] **应修：路径相关指标**
-  - [ ] Underwater duration（峰值到回归峰值的天数分布）
-  - [ ] Pain ratio（累积 drawdown / 平均回报）
-  - [ ] Recovery factor（总回报 / 最大回撤）
-  - [ ] CVaR(95%) 实际值
-  - [ ] MAE / MFE 分布（与 Phase 6 推荐归因用同一指标体系）
+- [x] **应修：路径相关指标**
+  - [x] Underwater duration（峰值到回归峰值的天数分布）
+  - [x] Pain ratio（累积 drawdown / 平均回报）
+  - [x] Recovery factor（总回报 / 最大回撤）
+  - [x] CVaR(95%) 实际值
+  - [x] MAE / MFE 分布（与 Phase 6 推荐归因用同一指标体系）
 
-- [ ] **应修：Survivorship bias 处理**
+- [x] **应修：Survivorship bias 处理**
   - [x] `models/commodity_history.py` — 品种宇宙历史快照表
   - [x] Alembic 迁移
-  - [ ] 种子数据：从 Causa 数据 + 公开退市记录补全
-  - [ ] 回测必须基于 PIT 品种宇宙
+  - [x] 种子数据：从 Causa 数据 + 公开退市记录补全（Phase 8.5 核心品种 bootstrap，生产前继续扩充退市记录）
+  - [x] 回测必须基于 PIT 品种宇宙
 
 - [ ] **验证**
   - [x] PIT 校准回放正确性：用人工构造的"已知未来"权重验证不会泄露

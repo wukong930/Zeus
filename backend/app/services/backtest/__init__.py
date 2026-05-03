@@ -19,11 +19,23 @@ from app.services.backtest.multiple_testing import (
     deflated_sharpe_ratio,
     sharpe_ratio,
 )
+from app.services.backtest.path_metrics import PathMetrics, calculate_path_metrics
+from app.services.backtest.regime_profile import (
+    RegimeObservation,
+    RegimeProfileSlice,
+    build_regime_profile,
+)
 from app.services.backtest.slippage import SlippageEstimate, calculate_slippage
 from app.services.backtest.strategy_registry import (
     build_strategy_run,
     record_strategy_run,
     stable_strategy_hash,
+)
+from app.services.backtest.universe import (
+    UniverseValidation,
+    pit_commodity_universe,
+    validate_backtest_universe,
+    validate_backtest_universe_from_symbols,
 )
 from app.services.backtest.walk_forward import (
     WalkForwardWindow,
@@ -35,16 +47,23 @@ __all__ = [
     "CalibrationReplayMetadata",
     "DeflatedSharpeResult",
     "DivergenceResult",
+    "PathMetrics",
+    "RegimeObservation",
+    "RegimeProfileSlice",
     "SlippageEstimate",
+    "UniverseValidation",
     "WalkForwardWindow",
     "algorithm_drift_divergence",
     "benjamini_hochberg_fdr",
     "bonferroni_correction",
     "build_strategy_run",
     "calculate_slippage",
+    "calculate_path_metrics",
     "calibration_metadata",
     "deflated_sharpe_ratio",
     "generate_walk_forward_windows",
+    "build_regime_profile",
+    "pit_commodity_universe",
     "record_live_divergence",
     "record_strategy_run",
     "replay_calibration_weight",
@@ -52,5 +71,7 @@ __all__ = [
     "sharpe_ratio",
     "stable_strategy_hash",
     "tracking_error_divergence",
+    "validate_backtest_universe",
+    "validate_backtest_universe_from_symbols",
     "walk_forward_defaults",
 ]

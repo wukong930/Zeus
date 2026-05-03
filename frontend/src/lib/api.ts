@@ -237,6 +237,53 @@ export interface ScenarioReport {
   suggested_actions: string[];
 }
 
+export interface BacktestRegimeProfile {
+  regime: string;
+  sample_size: number;
+  win_rate: number;
+  sharpe: number;
+  max_drawdown: number;
+  cvar95: number;
+}
+
+export interface BacktestPathMetrics {
+  total_return: number;
+  max_drawdown: number;
+  underwater_durations: number[];
+  pain_ratio: number;
+  recovery_factor: number;
+  cvar95: number;
+  mae_p50: number | null;
+  mae_p80: number | null;
+  mfe_p50: number | null;
+  mfe_p80: number | null;
+}
+
+export interface BacktestQualitySummary {
+  as_of: string;
+  walk_forward: {
+    training_years: number;
+    test_months: number;
+    step_months: number;
+    mode: string;
+  };
+  regime_profile: BacktestRegimeProfile[];
+  path_metrics: BacktestPathMetrics;
+  universe: {
+    as_of: string;
+    requested_symbols: string[];
+    active_symbols: string[];
+    missing_symbols: string[];
+    valid: boolean;
+  };
+  guardrails: {
+    calibration_strategy: string;
+    multiple_testing: string;
+    slippage_model: string;
+    decision_grade_required: boolean;
+  };
+}
+
 export interface NewsEvent {
   id: string;
   source: string;
@@ -412,6 +459,10 @@ export async function runScenarioSimulation(
     headers: { "content-type": "application/json" },
     body: JSON.stringify(payload),
   });
+}
+
+export async function fetchBacktestQualitySummary(): Promise<BacktestQualitySummary> {
+  return fetchJson<BacktestQualitySummary>("/api/strategies/backtest-quality");
 }
 
 export async function submitAlertFeedback(
