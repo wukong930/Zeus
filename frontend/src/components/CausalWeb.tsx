@@ -423,7 +423,7 @@ function CausalWebCanvas({ variant = "full", className }: CausalWebProps) {
   return (
     <div
       className={cn(
-        "causal-web-flow flex h-full w-full flex-col overflow-hidden bg-bg-base",
+        "causal-web-flow isolate flex h-full w-full flex-col overflow-hidden bg-bg-base",
         !isFull && "pointer-events-none",
         className
       )}
@@ -522,7 +522,7 @@ function CausalWebCanvas({ variant = "full", className }: CausalWebProps) {
         )}
       </div>
 
-      {isFull && (
+      {isFull && !selected && (
         <div className="shrink-0 border-t border-border-subtle bg-bg-surface/90 px-4 py-3">
           <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
             <ViewBrief view={view} focusId={activeFocusId} visibleCount={viewNodeIds.size} />
@@ -983,76 +983,80 @@ function NodeDetails({ node, onClose }: { node: CausalNode; onClose: () => void 
   const Icon = nodeIcon(node.type);
 
   return (
-    <div className="absolute right-4 top-4 z-20 w-[360px] max-w-[calc(100%-2rem)] rounded-sm border border-border-default bg-bg-surface-overlay p-4 shadow-xl animate-fade-in">
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex items-start gap-3">
-          <div
-            className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-sm border"
-            style={{ borderColor: color, backgroundColor: `${color}22`, color }}
-          >
-            <Icon className="h-4 w-4" />
-          </div>
-          <div>
-            <div className="text-h3 text-text-primary">{node.label}</div>
-            <div className="mt-1 text-caption" style={{ color }}>
-              {NODE_LABELS[node.type]}
+    <div className="absolute inset-x-4 bottom-20 top-4 z-[1100] flex min-h-0 flex-col overflow-hidden rounded-sm border border-border-default bg-bg-surface-overlay shadow-xl animate-fade-in sm:left-auto sm:w-[380px]">
+      <div className="shrink-0 border-b border-border-subtle p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-start gap-3">
+            <div
+              className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-sm border"
+              style={{ borderColor: color, backgroundColor: `${color}22`, color }}
+            >
+              <Icon className="h-4 w-4" />
+            </div>
+            <div>
+              <div className="text-h3 text-text-primary">{node.label}</div>
+              <div className="mt-1 text-caption" style={{ color }}>
+                {NODE_LABELS[node.type]}
+              </div>
             </div>
           </div>
+          <button
+            type="button"
+            title="Close"
+            onClick={onClose}
+            className="flex h-7 w-7 items-center justify-center rounded-xs text-text-muted transition-colors hover:bg-bg-surface-raised hover:text-text-primary"
+          >
+            <X className="h-4 w-4" />
+          </button>
         </div>
-        <button
-          type="button"
-          title="Close"
-          onClick={onClose}
-          className="flex h-7 w-7 items-center justify-center rounded-xs text-text-muted transition-colors hover:bg-bg-surface-raised hover:text-text-primary"
-        >
-          <X className="h-4 w-4" />
-        </button>
       </div>
 
-      <div className="mt-4 rounded-xs border border-border-subtle bg-bg-base p-3 text-sm text-text-secondary">
-        {meta.narrative}
-      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4">
+        <div className="rounded-xs border border-border-subtle bg-bg-base p-3 text-sm text-text-secondary">
+          {meta.narrative}
+        </div>
 
-      <div className="mt-3 flex flex-wrap gap-1.5">
-        <span
-          className="rounded-xs border px-2 py-1 text-caption"
-          style={{ borderColor: `${stage.color}55`, color: stage.color }}
-        >
-          {stage.label}
-        </span>
-        <span
-          className="rounded-xs border px-2 py-1 text-caption"
-          style={{ borderColor: `${sector.color}55`, color: sector.color }}
-        >
-          {sector.label}
-        </span>
-        {meta.tags.map((tag) => (
-          <span key={tag} className="rounded-xs border border-border-subtle px-2 py-1 text-caption text-text-muted">
-            {tag}
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          <span
+            className="rounded-xs border px-2 py-1 text-caption"
+            style={{ borderColor: `${stage.color}55`, color: stage.color }}
+          >
+            {stage.label}
           </span>
-        ))}
-        {meta.portfolioLinked && (
-          <span className="inline-flex items-center gap-1 rounded-xs border border-brand-emerald/40 px-2 py-1 text-caption text-brand-emerald-bright">
-            <Briefcase className="h-3 w-3" />
-            Position
+          <span
+            className="rounded-xs border px-2 py-1 text-caption"
+            style={{ borderColor: `${sector.color}55`, color: sector.color }}
+          >
+            {sector.label}
           </span>
-        )}
-        {meta.alertLinked && (
-          <span className="inline-flex items-center gap-1 rounded-xs border border-brand-orange/40 px-2 py-1 text-caption text-brand-orange">
-            <Target className="h-3 w-3" />
-            Alert
-          </span>
-        )}
-      </div>
+          {meta.tags.map((tag) => (
+            <span key={tag} className="rounded-xs border border-border-subtle px-2 py-1 text-caption text-text-muted">
+              {tag}
+            </span>
+          ))}
+          {meta.portfolioLinked && (
+            <span className="inline-flex items-center gap-1 rounded-xs border border-brand-emerald/40 px-2 py-1 text-caption text-brand-emerald-bright">
+              <Briefcase className="h-3 w-3" />
+              Position
+            </span>
+          )}
+          {meta.alertLinked && (
+            <span className="inline-flex items-center gap-1 rounded-xs border border-brand-orange/40 px-2 py-1 text-caption text-brand-orange">
+              <Target className="h-3 w-3" />
+              Alert
+            </span>
+          )}
+        </div>
 
-      <div className="mt-4 grid grid-cols-3 gap-2">
-        <DetailMetric label="Fresh" value={`${Math.round(node.freshness * 100)}%`} />
-        <DetailMetric label="Impact" value={`${node.influence}/4`} />
-        <DetailMetric label="State" value={node.active ? "Active" : "Quiet"} />
-      </div>
+        <div className="mt-4 grid grid-cols-3 gap-2">
+          <DetailMetric label="Fresh" value={`${Math.round(node.freshness * 100)}%`} />
+          <DetailMetric label="Impact" value={`${node.influence}/4`} />
+          <DetailMetric label="State" value={node.active ? "Active" : "Quiet"} />
+        </div>
 
-      <EdgeList title="上游" edges={upstream} side="source" />
-      <EdgeList title="下游" edges={downstream} side="target" />
+        <EdgeList title="上游" edges={upstream} side="source" />
+        <EdgeList title="下游" edges={downstream} side="target" />
+      </div>
     </div>
   );
 }
