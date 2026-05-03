@@ -797,25 +797,25 @@ Causa 的 `event_driven` 评估器实际上是纯技术面（gap + volume），*
 
 ### 第 1 周：Shadow Mode + 阈值校准
 
-- [ ] **Shadow Mode 基础设施**
-  - [ ] `models/shadow_runs.py` — Shadow 配置追踪表
-  - [ ] `models/shadow_signals.py` — Shadow 影子信号表
-  - [ ] Alembic 迁移
-  - [ ] `services/shadow/runner.py`
+- [x] **Shadow Mode 基础设施**
+  - [x] `models/shadow_runs.py` — Shadow 配置追踪表
+  - [x] `models/shadow_signals.py` — Shadow 影子信号表
+  - [x] Alembic 迁移
+  - [x] `services/shadow/runner.py`
     - 新逻辑订阅相同事件，跑出"假信号"写入 `shadow_signals` 表
     - **不发预警**，只记录
     - 支持配置：算法版本、参数 diff
-  - [ ] `services/shadow/comparator.py`
+  - [x] `services/shadow/comparator.py`
     - 每日生成对比报告：信号数量差异、命中率差异（30 天滑窗）、关键样本案例
     - 生产路径触发但 shadow 没触发，反之亦然
-  - [ ] `api/shadow.py` — Shadow 配置管理 + 报告查询
-- [ ] **置信度阈值二级校准**
-  - [ ] `services/calibration/threshold_calibrator.py`
+  - [x] `api/shadow.py` — Shadow 配置管理 + 报告查询
+- [x] **置信度阈值二级校准**
+  - [x] `services/calibration/threshold_calibrator.py`
     - 每月统计 `预测置信度 vs 实际命中率` 的 reliability diagram
     - 用 isotonic regression 或 Platt scaling 学习单调映射
     - 输出建议的新阈值（85% / 60%）
-  - [ ] **不自动调整**：阈值变更走 `change_review_queue`，人工评审 + 确认后才生效
-  - [ ] 前端：校准曲线可视化页面
+  - [x] **不自动调整**：阈值变更走 `change_review_queue`，人工评审 + 确认后才生效
+  - [x] 前端：校准曲线可视化页面
 - [ ] **首批 Shadow 应用场景**
   - [ ] 校准公式参数变更（α₀ / β₀ 不同先验值的对比）
   - [ ] 对抗引擎历史组合检验阈值（Jaccard 相似度 0.6 vs 0.7 vs 0.8）

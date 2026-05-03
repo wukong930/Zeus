@@ -13,12 +13,25 @@ from app.services.pipeline.handlers import (
 )
 from app.services.positions.events import handle_position_changed
 from app.services.positions.threshold_modifier import refresh_position_threshold_cache
+from app.services.shadow.runner import handle_shadow_event
 
 logger = logging.getLogger(__name__)
 
+async def handle_market_update_with_shadow(event, session=None):
+    result = await handle_market_update(event, session=session)
+    await handle_shadow_event(event)
+    return result
+
+
+async def handle_news_event_with_shadow(event, session=None):
+    result = await handle_news_event(event, session=session)
+    await handle_shadow_event(event)
+    return result
+
+
 PIPELINE_SUBSCRIPTIONS: tuple[tuple[str, EventHandler], ...] = (
-    ("market.update", handle_market_update),
-    ("news.event", handle_news_event),
+    ("market.update", handle_market_update_with_shadow),
+    ("news.event", handle_news_event_with_shadow),
     ("signal.detected", handle_signal_detected),
     ("signal.scored", handle_signal_scored),
     ("position.changed", handle_position_changed),

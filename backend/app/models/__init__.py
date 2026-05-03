@@ -23,6 +23,8 @@ from app.models.regime_state import RegimeState
 from app.models.research import ResearchHypothesis, ResearchReport
 from app.models.sector import SectorAssessment
 from app.models.signal import SignalTrack
+from app.models.shadow_runs import ShadowRun
+from app.models.shadow_signals import ShadowSignal
 from app.models.slippage_models import SlippageModel
 from app.models.strategy import Strategy
 from app.models.strategy_runs import StrategyRun
@@ -62,6 +64,8 @@ __all__ = [
     "SectorAssessment",
     "SignalCalibration",
     "SignalTrack",
+    "ShadowRun",
+    "ShadowSignal",
     "SlippageModel",
     "Strategy",
     "StrategyRun",

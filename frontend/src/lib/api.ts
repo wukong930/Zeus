@@ -284,6 +284,36 @@ export interface BacktestQualitySummary {
   };
 }
 
+export interface ReliabilityBin {
+  lower: number;
+  upper: number;
+  samples: number;
+  avg_confidence: number | null;
+  hit_rate: number | null;
+  calibration_gap: number | null;
+}
+
+export interface IsotonicPoint {
+  confidence: number;
+  calibrated_probability: number;
+  samples: number;
+}
+
+export interface ThresholdCalibrationReport {
+  signal_type: string | null;
+  category: string | null;
+  samples: number;
+  hits: number;
+  misses: number;
+  brier_score: number | null;
+  expected_calibration_error: number | null;
+  bins: ReliabilityBin[];
+  isotonic_curve: IsotonicPoint[];
+  current_thresholds: Record<"auto" | "notify", number>;
+  suggested_thresholds: Record<"auto" | "notify", number>;
+  review_required: boolean;
+}
+
 export interface NewsEvent {
   id: string;
   source: string;
@@ -463,6 +493,10 @@ export async function runScenarioSimulation(
 
 export async function fetchBacktestQualitySummary(): Promise<BacktestQualitySummary> {
   return fetchJson<BacktestQualitySummary>("/api/strategies/backtest-quality");
+}
+
+export async function fetchThresholdCalibrationReport(): Promise<ThresholdCalibrationReport> {
+  return fetchJson<ThresholdCalibrationReport>("/api/shadow/calibration");
 }
 
 export async function submitAlertFeedback(

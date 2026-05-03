@@ -3,7 +3,13 @@
 import { useEffect, useState } from "react";
 import { Card, CardHeader, CardTitle, CardSubtitle } from "@/components/Card";
 import { Badge } from "@/components/Badge";
-import { fetchAttributionReport, type AttributionReport, type AttributionSlice } from "@/lib/api";
+import {
+  fetchAttributionReport,
+  fetchThresholdCalibrationReport,
+  type AttributionReport,
+  type AttributionSlice,
+  type ThresholdCalibrationReport,
+} from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 export default function AnalyticsPage() {
@@ -156,6 +162,22 @@ function formatPnl(value: number) {
 }
 
 function CalibrationTab() {
+  const [report, setReport] = useState<ThresholdCalibrationReport | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+    fetchThresholdCalibrationReport()
+      .then((data) => {
+        if (mounted) setReport(data);
+      })
+      .catch(() => {
+        if (mounted) setReport(null);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
   const evaluators = [
     { name: "spread_anomaly", samples: 47, hitRate: 0.71, weight: 1.18, status: "mature" as const },
     { name: "basis_shift", samples: 23, hitRate: 0.62, weight: 1.04, status: "warmup" as const },
@@ -165,8 +187,31 @@ function CalibrationTab() {
     { name: "price_gap", samples: 56, hitRate: 0.48, weight: 0.86, status: "mature" as const },
     { name: "news_event", samples: 8, hitRate: 0.5, weight: 1.0, status: "warmup" as const },
   ];
+  const auto = report?.suggested_thresholds.auto ?? 0.85;
+  const notify = report?.suggested_thresholds.notify ?? 0.6;
   return (
     <div className="space-y-5 animate-fade-in">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-5">
+        <Stat label="校准样本" value={String(report?.samples ?? 0)} trend="resolved" />
+        <Stat
+          label="命中率"
+          value={`${report && report.samples > 0 ? ((report.hits / report.samples) * 100).toFixed(1) : "0.0"}%`}
+          trend={`${report?.hits ?? 0}/${report?.samples ?? 0}`}
+        />
+        <Stat
+          label="建议 auto"
+          value={auto.toFixed(2)}
+          trend={`current ${(report?.current_thresholds.auto ?? 0.85).toFixed(2)}`}
+          trendNegative={report?.review_required}
+        />
+        <Stat
+          label="建议 notify"
+          value={notify.toFixed(2)}
+          trend={`current ${(report?.current_thresholds.notify ?? 0.6).toFixed(2)}`}
+          trendNegative={report?.review_required}
+        />
+      </div>
+
       <Card variant="flat">
         <CardHeader>
           <div>
@@ -220,10 +265,13 @@ function CalibrationTab() {
         <CardHeader>
           <div>
             <CardTitle>Reliability Diagram</CardTitle>
-            <CardSubtitle>预测置信度 vs 实际命中率（理想是对角线）</CardSubtitle>
+            <CardSubtitle>
+              ECE {formatNullablePercent(report?.expected_calibration_error)} · Brier {formatNullableNumber(report?.brier_score)}
+            </CardSubtitle>
           </div>
+          {report?.review_required ? <Badge variant="orange">review required</Badge> : <Badge variant="emerald">stable</Badge>}
         </CardHeader>
-        <ReliabilityDiagram />
+        <ReliabilityDiagram report={report} />
       </Card>
     </div>
   );
@@ -349,7 +397,26 @@ function MFEDistribution() {
   );
 }
 
-function ReliabilityDiagram() {
+function ReliabilityDiagram({ report }: { report: ThresholdCalibrationReport | null }) {
+  const fallback = [
+    { x: 0.1, y: 0.08 },
+    { x: 0.2, y: 0.18 },
+    { x: 0.3, y: 0.32 },
+    { x: 0.4, y: 0.38 },
+    { x: 0.5, y: 0.55 },
+    { x: 0.6, y: 0.58 },
+    { x: 0.7, y: 0.66 },
+    { x: 0.8, y: 0.74 },
+    { x: 0.9, y: 0.82 },
+  ];
+  const points =
+    report?.bins
+      .filter((bin) => bin.samples > 0 && bin.avg_confidence !== null && bin.hit_rate !== null)
+      .map((bin) => ({ x: bin.avg_confidence as number, y: bin.hit_rate as number })) ?? [];
+  const renderedPoints = points.length >= 2 ? points : fallback;
+  const path = renderedPoints
+    .map((point, index) => `${index === 0 ? "M" : "L"} ${point.x * 400} ${(1 - point.y) * 240}`)
+    .join(" ");
   return (
     <div className="h-64 relative">
       <svg viewBox="0 0 400 240" className="w-full h-full">
@@ -362,30 +429,29 @@ function ReliabilityDiagram() {
         ))}
         {/* Ideal line (diagonal) */}
         <line x1="0" y1="240" x2="400" y2="0" stroke="#404040" strokeWidth="1" strokeDasharray="3 2" />
-        {/* Actual calibration points */}
-        {[
-          { x: 0.1, y: 0.08 },
-          { x: 0.2, y: 0.18 },
-          { x: 0.3, y: 0.32 },
-          { x: 0.4, y: 0.38 },
-          { x: 0.5, y: 0.55 },
-          { x: 0.6, y: 0.58 },
-          { x: 0.7, y: 0.66 },
-          { x: 0.8, y: 0.74 },
-          { x: 0.9, y: 0.82 },
-        ].map((p, i) => (
+        {renderedPoints.map((p, i) => (
           <circle key={i} cx={p.x * 400} cy={(1 - p.y) * 240} r="4" fill="#10B981" stroke="#000" strokeWidth="1" />
         ))}
         <path
-          d="M 40 220 L 80 196 L 120 163 L 160 149 L 200 108 L 240 101 L 280 82 L 320 62 L 360 43"
+          d={path}
           fill="none"
           stroke="#10B981"
           strokeWidth="1.5"
         />
-        <text x="200" y="20" textAnchor="middle" className="text-[11px] fill-text-muted">系统略微低估高置信度信号</text>
+        <text x="200" y="20" textAnchor="middle" className="text-[11px] fill-text-muted">
+          {report && report.samples > 0 ? `${report.samples} resolved signals` : "waiting for resolved signals"}
+        </text>
       </svg>
     </div>
   );
+}
+
+function formatNullablePercent(value: number | null | undefined) {
+  return value == null ? "-" : `${(value * 100).toFixed(1)}%`;
+}
+
+function formatNullableNumber(value: number | null | undefined) {
+  return value == null ? "-" : value.toFixed(3);
 }
 
 function DriftTrend() {
