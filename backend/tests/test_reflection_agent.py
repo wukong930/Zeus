@@ -3,11 +3,14 @@ from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 import pytest
+from fastapi import HTTPException
 
+from app.api.learning import validate_learning_hypothesis
 from app.models.change_review_queue import ChangeReviewQueue
 from app.models.drift_metrics import DriftMetric
 from app.models.learning_hypotheses import LearningHypothesis
 from app.models.recommendation import Recommendation
+from app.models.shadow_runs import ShadowRun
 from app.models.signal import SignalTrack
 from app.models.user_feedback import UserFeedback
 from app.models.vector_chunks import VectorChunk
@@ -54,6 +57,19 @@ class FakeSession:
 
     async def flush(self) -> None:
         self.flush_count += 1
+
+
+class FakeLearningValidationSession:
+    def __init__(self, hypothesis: LearningHypothesis, shadow_run: ShadowRun) -> None:
+        self.hypothesis = hypothesis
+        self.shadow_run = shadow_run
+
+    async def get(self, model, _):
+        if model is LearningHypothesis:
+            return self.hypothesis
+        if model is ShadowRun:
+            return self.shadow_run
+        return None
 
 
 def test_parse_reflection_candidates_requires_pydantic_shape() -> None:
@@ -229,6 +245,37 @@ async def test_proposed_hypothesis_cannot_modify_calibration_without_review() ->
         )
 
     assert isinstance(session.rows[0], ChangeReviewQueue)
+
+
+async def test_validate_hypothesis_rejects_unlinked_shadow_run() -> None:
+    hypothesis_id = uuid4()
+    hypothesis = LearningHypothesis(
+        id=hypothesis_id,
+        hypothesis="Review momentum threshold after drift.",
+        supporting_evidence=[],
+        status="shadow_testing",
+    )
+    shadow_run = ShadowRun(
+        id=uuid4(),
+        name="other-hypothesis-shadow",
+        algorithm_version="llm-reflection-shadow",
+        config_diff={"source_hypothesis_id": str(uuid4())},
+        status="active",
+        started_at=datetime(2026, 5, 4, tzinfo=timezone.utc),
+    )
+    session = FakeLearningValidationSession(hypothesis, shadow_run)
+
+    with pytest.raises(HTTPException) as exc:
+        await validate_learning_hypothesis(
+            hypothesis_id,
+            shadow_run.id,
+            min_hit_rate_delta=0.0,
+            max_disagreement_rate=0.35,
+            session=session,  # type: ignore[arg-type]
+        )
+
+    assert exc.value.status_code == 409
+    assert "not linked" in exc.value.detail
 
 
 def test_vector_eval_metrics_and_quality_weights_are_active() -> None:

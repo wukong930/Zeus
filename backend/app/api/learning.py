@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.models.learning_hypotheses import LearningHypothesis
+from app.models.shadow_runs import ShadowRun
 from app.services.learning.reflection_agent import run_reflection_agent
 from app.services.shadow.comparator import compare_shadow_run
 from app.services.shadow.runner import create_shadow_run
@@ -107,6 +108,14 @@ async def validate_learning_hypothesis(
         raise HTTPException(status_code=404, detail="Learning hypothesis not found")
     if row.status != "shadow_testing":
         raise HTTPException(status_code=409, detail=f"Hypothesis status is {row.status}")
+    shadow_run = await session.get(ShadowRun, shadow_run_id)
+    if shadow_run is None:
+        raise HTTPException(status_code=404, detail="Shadow run not found")
+    if not shadow_run_belongs_to_hypothesis(shadow_run, row.id):
+        raise HTTPException(
+            status_code=409,
+            detail="Shadow run is not linked to this learning hypothesis",
+        )
     report = await compare_shadow_run(session, shadow_run_id)
     if report is None:
         raise HTTPException(status_code=404, detail="Shadow run not found")
@@ -209,3 +218,8 @@ def learning_hypothesis_to_dict(row: LearningHypothesis) -> dict[str, Any]:
         "created_at": row.created_at.isoformat() if row.created_at else None,
         "updated_at": row.updated_at.isoformat() if row.updated_at else None,
     }
+
+
+def shadow_run_belongs_to_hypothesis(row: ShadowRun, hypothesis_id: UUID) -> bool:
+    config = row.config_diff or {}
+    return str(config.get("source_hypothesis_id") or "") == str(hypothesis_id)

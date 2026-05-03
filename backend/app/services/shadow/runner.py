@@ -160,7 +160,7 @@ async def record_shadow_signal(
     score: dict[str, Any],
 ) -> ShadowSignal:
     thresholds = shadow_threshold_config(run.config_diff)
-    confidence = float(signal.get("confidence") or 0)
+    confidence = _effective_shadow_confidence(signal, score)
     score_value = combined_score(score)
     suppressed = bool(score.get("shadow_suppressed", False))
     would_emit = (
@@ -439,6 +439,15 @@ def _shadow_reason(
     if score < thresholds.min_combined_score:
         return "below_score_threshold"
     return "would_emit"
+
+
+def _effective_shadow_confidence(signal: dict[str, Any], score: dict[str, Any]) -> float:
+    raw_value = score.get("effective_confidence", signal.get("confidence"))
+    try:
+        confidence = float(raw_value or 0)
+    except (TypeError, ValueError):
+        confidence = 0.0
+    return max(0.0, min(1.0, confidence))
 
 
 def _optional_uuid(value: Any) -> UUID | None:

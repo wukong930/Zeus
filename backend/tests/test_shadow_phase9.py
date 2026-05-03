@@ -14,6 +14,7 @@ from app.services.calibration.threshold_calibrator import (
 from app.services.shadow.applications import initial_shadow_application_specs
 from app.services.shadow.comparator import build_shadow_comparison_report
 from app.services.shadow.runner import (
+    record_shadow_signal,
     run_shadow_for_event,
     shadow_context_payload,
     shadow_threshold_config,
@@ -96,6 +97,33 @@ def test_shadow_threshold_config_clamps_experiment_values() -> None:
 
     assert config.min_confidence == 1.0
     assert config.min_combined_score == 100.0
+
+
+async def test_shadow_would_emit_uses_effective_confidence() -> None:
+    session = FakeSession()
+    event = ZeusEvent(
+        channel="market.update",
+        payload={},
+        timestamp=datetime(2026, 5, 4, tzinfo=timezone.utc),
+    )
+
+    row = await record_shadow_signal(
+        session,  # type: ignore[arg-type]
+        run=_run({"confidence_thresholds": {"notify": 0.7}, "min_combined_score": 60}),
+        event=event,
+        signal={
+            "signal_type": "momentum",
+            "category": "ferrous",
+            "confidence": 0.74,
+            "related_assets": ["RB"],
+        },
+        context={"category": "ferrous", "regime": "range_low_vol"},
+        score={"combined": 72, "effective_confidence": 0.63},
+    )
+
+    assert row.confidence == 0.63
+    assert row.would_emit is False
+    assert row.reason == "below_confidence_threshold"
 
 
 def test_initial_shadow_application_specs_cover_first_use_cases() -> None:
