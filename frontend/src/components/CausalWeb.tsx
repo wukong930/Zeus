@@ -10,7 +10,6 @@ import {
   Handle,
   MarkerType,
   MiniMap,
-  Panel,
   Position,
   ReactFlow,
   ReactFlowProvider,
@@ -153,10 +152,10 @@ const STAGE_META: Record<Stage, { label: string; color: string; description: str
 const STAGE_ORDER: Stage[] = ["source", "thesis", "validation", "impact"];
 
 const STAGE_BANDS: Array<{ stage: Stage; x: number; width: number }> = [
-  { stage: "source", x: -16, width: 320 },
-  { stage: "thesis", x: 318, width: 276 },
-  { stage: "validation", x: 608, width: 284 },
-  { stage: "impact", x: 906, width: 342 },
+  { stage: "source", x: -30, width: 410 },
+  { stage: "thesis", x: 390, width: 390 },
+  { stage: "validation", x: 790, width: 370 },
+  { stage: "impact", x: 1170, width: 560 },
 ];
 
 const SECTOR_META: Record<Sector, { label: string; color: string }> = {
@@ -248,22 +247,30 @@ const NODE_META: Record<string, NodeSemanticMeta> = {
 };
 
 const FLOW_LAYOUT: Record<string, { x: number; y: number }> = {
-  n1: { x: 40, y: 110 },
-  n2: { x: 280, y: 100 },
-  n3: { x: 530, y: 190 },
-  n4: { x: 760, y: 110 },
-  n5: { x: 1040, y: 40 },
-  n6: { x: 1050, y: 220 },
-  n7: { x: 560, y: 360 },
-  n8: { x: 40, y: 470 },
-  n9: { x: 1030, y: 430 },
-  n10: { x: 560, y: 620 },
-  n11: { x: 810, y: 610 },
-  n12: { x: 1060, y: 500 },
+  n1: { x: 60, y: 140 },
+  n2: { x: 430, y: 130 },
+  n3: { x: 820, y: 260 },
+  n4: { x: 1120, y: 140 },
+  n5: { x: 1490, y: 80 },
+  n6: { x: 1490, y: 310 },
+  n7: { x: 820, y: 470 },
+  n8: { x: 60, y: 610 },
+  n9: { x: 1490, y: 590 },
+  n10: { x: 820, y: 800 },
+  n11: { x: 1120, y: 800 },
+  n12: { x: 1490, y: 760 },
 };
 
-const fitViewOptions = { padding: 0.18, duration: 500 };
+const fitViewOptions = { padding: 0.1, duration: 500 };
 const previewFitViewOptions = { padding: 0.08, duration: 500 };
+
+const FLOW_NODE_TYPES = {
+  causalNode: CausalNodeCard,
+} satisfies NodeTypes;
+
+const FLOW_EDGE_TYPES = {
+  causalEdge: CausalEdgeLine,
+} satisfies EdgeTypes;
 
 export function CausalWeb(props: CausalWebProps) {
   return (
@@ -280,8 +287,6 @@ function CausalWebCanvas({ variant = "full", className }: CausalWebProps) {
   const [hoveredNode, setHoveredNode] = useState<string | null>(null);
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
   const isFull = variant === "full";
-  const flowNodeTypes = useMemo<NodeTypes>(() => ({ causalNode: CausalNodeCard }), []);
-  const flowEdgeTypes = useMemo<EdgeTypes>(() => ({ causalEdge: CausalEdgeLine }), []);
 
   const viewNodeIds = useMemo(() => viewVisibleNodeIds(view), [view]);
   const focusId = selectedNode ?? hoveredNode;
@@ -416,100 +421,103 @@ function CausalWebCanvas({ variant = "full", className }: CausalWebProps) {
   );
 
   return (
-    <div className={cn("causal-web-flow relative h-full w-full overflow-hidden bg-bg-base", className)}>
-      <ReactFlow
-        nodes={nodes}
-        edges={edges}
-        nodeTypes={flowNodeTypes}
-        edgeTypes={flowEdgeTypes}
-        onInit={onInit}
-        onNodeMouseEnter={(_, node) => {
-          if (viewNodeIds.has(node.id)) setHoveredNode(node.id);
-        }}
-        onNodeMouseLeave={() => setHoveredNode(null)}
-        onNodeClick={(_, node) => {
-          if (isFull && viewNodeIds.has(node.id)) {
-            setSelectedNode((current) => (current === node.id ? null : node.id));
-          }
-        }}
-        onPaneClick={() => {
-          setSelectedNode(null);
-          setHoveredNode(null);
-        }}
-        fitView
-        fitViewOptions={isFull ? fitViewOptions : previewFitViewOptions}
-        minZoom={0.35}
-        maxZoom={1.8}
-        nodesDraggable={isFull && mode === "explorer"}
-        nodesConnectable={false}
-        edgesFocusable={isFull}
-        elementsSelectable={isFull}
-        panOnDrag={isFull}
-        zoomOnScroll={isFull}
-        zoomOnPinch={isFull}
-        zoomOnDoubleClick={isFull}
-        preventScrolling={isFull}
-        proOptions={{ hideAttribution: true }}
-      >
-        <Background
-          variant={BackgroundVariant.Dots}
-          gap={26}
-          size={1}
-          color="rgba(115, 115, 115, 0.22)"
-        />
-
-        {isFull && (
-          <>
-            <SemanticBackdrop viewNodeIds={viewNodeIds} />
-
-            <Panel position="top-left" className="m-4">
-              <div className="space-y-2">
-                <ModeToolbar mode={mode} onChange={setMode} onFit={fitCanvas} />
-                <ViewToolbar view={view} onChange={changeView} />
-              </div>
-            </Panel>
-
-            <Panel position="top-center" className="m-4">
-              <StageRail viewNodeIds={viewNodeIds} />
-            </Panel>
-
-            <Panel position="top-right" className="m-4 hidden xl:block">
+    <div className={cn("causal-web-flow flex h-full w-full flex-col overflow-hidden bg-bg-base", className)}>
+      {isFull && (
+        <div className="shrink-0 overflow-x-auto border-b border-border-subtle bg-bg-surface/80 px-4 py-3">
+          <div className="flex min-w-max items-center gap-4">
+            <div className="flex flex-wrap gap-2">
+              <ModeToolbar mode={mode} onChange={setMode} onFit={fitCanvas} />
+              <ViewToolbar view={view} onChange={changeView} />
+            </div>
+            <StageRail viewNodeIds={viewNodeIds} />
+            <div className="hidden xl:block">
               <GraphStats
                 focusId={activeFocusId}
                 mode={mode}
                 view={view}
                 visibleCount={viewNodeIds.size}
               />
-            </Panel>
+            </div>
+          </div>
+        </div>
+      )}
 
-            <Panel position="bottom-center" className="m-4 hidden xl:block">
-              <ViewBrief view={view} focusId={activeFocusId} visibleCount={viewNodeIds.size} />
-            </Panel>
+      <div className="relative min-h-0 flex-1">
+        <ReactFlow
+          nodes={nodes}
+          edges={edges}
+          nodeTypes={FLOW_NODE_TYPES}
+          edgeTypes={FLOW_EDGE_TYPES}
+          onInit={onInit}
+          onNodeMouseEnter={(_, node) => {
+            if (viewNodeIds.has(node.id)) setHoveredNode(node.id);
+          }}
+          onNodeMouseLeave={() => setHoveredNode(null)}
+          onNodeClick={(_, node) => {
+            if (isFull && viewNodeIds.has(node.id)) {
+              setSelectedNode((current) => (current === node.id ? null : node.id));
+            }
+          }}
+          onPaneClick={() => {
+            setSelectedNode(null);
+            setHoveredNode(null);
+          }}
+          fitView
+          fitViewOptions={isFull ? fitViewOptions : previewFitViewOptions}
+          minZoom={0.28}
+          maxZoom={1.55}
+          nodesDraggable={isFull && mode === "explorer"}
+          nodesConnectable={false}
+          edgesFocusable={isFull}
+          elementsSelectable={isFull}
+          panOnDrag={isFull}
+          zoomOnScroll={isFull}
+          zoomOnPinch={isFull}
+          zoomOnDoubleClick={isFull}
+          preventScrolling={isFull}
+          proOptions={{ hideAttribution: true }}
+        >
+          <Background
+            variant={BackgroundVariant.Dots}
+            gap={30}
+            size={1}
+            color="rgba(115, 115, 115, 0.2)"
+          />
 
-            <Panel position="bottom-left" className="m-4 hidden xl:block">
-              <Legend />
-            </Panel>
+          {isFull && (
+            <>
+              <SemanticBackdrop viewNodeIds={viewNodeIds} />
 
-            <Controls
-              position="bottom-right"
-              showInteractive={false}
-              fitViewOptions={fitViewOptions}
-            />
+              <Controls
+                position="bottom-right"
+                showInteractive={false}
+                fitViewOptions={fitViewOptions}
+              />
 
-            <MiniMap
-              position="bottom-right"
-              pannable
-              zoomable
-              nodeColor={(node) => NODE_COLORS[(node.data as CausalFlowNodeData).causal.type]}
-              nodeStrokeWidth={2}
-              className="causal-minimap !bottom-20 !right-4 !h-28 !w-44 !rounded-sm !border !border-border-default !bg-bg-surface-overlay"
-            />
-          </>
+              <MiniMap
+                position="bottom-right"
+                pannable
+                zoomable
+                nodeColor={(node) => NODE_COLORS[(node.data as CausalFlowNodeData).causal.type]}
+                nodeStrokeWidth={2}
+                className="causal-minimap !bottom-16 !right-4 !h-24 !w-40 !rounded-sm !border !border-border-default !bg-bg-surface-overlay"
+              />
+            </>
+          )}
+        </ReactFlow>
+
+        {isFull && selected && (
+          <NodeDetails node={selected} onClose={() => setSelectedNode(null)} />
         )}
-      </ReactFlow>
+      </div>
 
-      {isFull && selected && (
-        <NodeDetails node={selected} onClose={() => setSelectedNode(null)} />
+      {isFull && (
+        <div className="shrink-0 border-t border-border-subtle bg-bg-surface/90 px-4 py-3">
+          <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+            <ViewBrief view={view} focusId={activeFocusId} visibleCount={viewNodeIds.size} />
+            <Legend />
+          </div>
+        </div>
       )}
     </div>
   );
@@ -525,7 +533,7 @@ function ModeToolbar({
   onFit: () => void;
 }) {
   return (
-    <div className="flex items-center gap-2 rounded-sm border border-border-default bg-bg-surface-overlay p-1 shadow-md">
+    <div className="flex items-center gap-1 rounded-sm border border-border-default bg-bg-base p-1">
       {(Object.keys(MODE_META) as Mode[]).map((item) => {
         const meta = MODE_META[item];
         const Icon = meta.icon;
@@ -563,7 +571,7 @@ function ModeToolbar({
 
 function ViewToolbar({ view, onChange }: { view: View; onChange: (view: View) => void }) {
   return (
-    <div className="flex items-center gap-1 rounded-sm border border-border-default bg-bg-surface-overlay p-1 shadow-md">
+    <div className="flex items-center gap-1 rounded-sm border border-border-default bg-bg-base p-1">
       {VIEW_ORDER.map((item) => {
         const meta = VIEW_META[item];
         const Icon = meta.icon;
@@ -609,9 +617,9 @@ function SemanticBackdrop({ viewNodeIds }: { viewNodeIds: Set<string> }) {
               className="causal-stage-band absolute rounded-sm border"
               style={{
                 left: band.x,
-                top: 20,
+                top: 28,
                 width: band.width,
-                height: 720,
+                height: 910,
                 borderColor: `${meta.color}${active ? "35" : "18"}`,
                 background: `linear-gradient(180deg, ${meta.color}${active ? "12" : "07"} 0%, rgba(10,10,10,0.04) 70%)`,
                 opacity: active ? 1 : 0.45,
@@ -639,7 +647,7 @@ function StageRail({ viewNodeIds }: { viewNodeIds: Set<string> }) {
   );
 
   return (
-    <div className="hidden items-center gap-1 rounded-sm border border-border-default bg-bg-surface-overlay px-2 py-1.5 shadow-md lg:flex">
+    <div className="hidden min-w-[360px] justify-center gap-1 rounded-sm border border-border-default bg-bg-base px-2 py-1.5 xl:flex">
       {STAGE_ORDER.map((stage, index) => {
         const meta = STAGE_META[stage];
         const active = activeStages.has(stage);
@@ -680,7 +688,7 @@ function ViewBrief({
   const focusMeta = focusNode ? NODE_META[focusNode.id] : null;
 
   return (
-    <div className="max-w-[520px] rounded-sm border border-border-default bg-bg-surface-overlay px-3 py-2 shadow-md">
+    <div className="min-w-0 flex-1 rounded-sm border border-border-default bg-bg-base px-3 py-2 xl:max-w-[560px]">
       <div className="flex items-center gap-2 text-caption text-text-muted">
         <Icon className="h-3.5 w-3.5" />
         <span className="text-text-secondary">{meta.label}</span>
@@ -692,7 +700,7 @@ function ViewBrief({
           </>
         )}
       </div>
-      <div className="mt-1 line-clamp-2 text-xs text-text-secondary">
+      <div className="mt-1 line-clamp-1 text-xs text-text-secondary">
         {focusMeta?.narrative ?? meta.brief}
       </div>
     </div>
@@ -916,18 +924,18 @@ function GraphStats({
   const ViewIcon = VIEW_META[view].icon;
 
   return (
-    <div className="grid grid-cols-4 gap-2 rounded-sm border border-border-default bg-bg-surface-overlay p-2 shadow-md">
+    <div className="flex flex-wrap items-stretch gap-2 rounded-sm border border-border-default bg-bg-base p-1.5">
       <StatCell icon={ModeIcon} label="Mode" value={mode} />
       <StatCell icon={ViewIcon} label="View" value={VIEW_META[view].label} />
       <StatCell icon={CircleDot} label="Active" value={`${activeNodes}/${CAUSAL_NODES.length}`} />
       <StatCell icon={CheckCircle2} label="Verified" value={`${verifiedEdges}/${CAUSAL_EDGES.length}`} />
-      <div className="col-span-4 border-t border-border-subtle pt-2 text-caption text-text-muted">
-        Visible: <span className="font-mono text-text-primary">{visibleCount}/{CAUSAL_NODES.length}</span>
+      <div className="min-w-[112px] rounded-xs bg-bg-surface-raised px-2.5 py-1.5 text-caption text-text-muted">
+        <span>Visible</span>
+        <span className="ml-2 font-mono text-sm text-text-primary">{visibleCount}/{CAUSAL_NODES.length}</span>
         {focusId && (
-          <>
-            <span className="mx-2 text-text-disabled">·</span>
-            Focus: <span className="text-text-primary">{CAUSAL_NODES.find((node) => node.id === focusId)?.label}</span>
-          </>
+          <div className="mt-1 max-w-40 truncate text-text-secondary">
+            {CAUSAL_NODES.find((node) => node.id === focusId)?.label}
+          </div>
         )}
       </div>
     </div>
@@ -944,12 +952,12 @@ function StatCell({
   value: string;
 }) {
   return (
-    <div className="min-w-20 rounded-xs bg-bg-base px-3 py-2">
+    <div className="min-w-16 rounded-xs bg-bg-surface-raised px-2.5 py-1.5">
       <div className="flex items-center gap-1.5 text-caption text-text-muted">
         <Icon className="h-3 w-3" />
         {label}
       </div>
-      <div className="mt-1 max-w-24 truncate font-mono text-sm text-text-primary">{value}</div>
+      <div className="mt-0.5 max-w-20 truncate font-mono text-sm text-text-primary">{value}</div>
     </div>
   );
 }
@@ -964,7 +972,7 @@ function NodeDetails({ node, onClose }: { node: CausalNode; onClose: () => void 
   const Icon = nodeIcon(node.type);
 
   return (
-    <div className="absolute right-4 top-20 z-20 w-[360px] max-w-[calc(100%-2rem)] rounded-sm border border-border-default bg-bg-surface-overlay p-4 shadow-xl animate-fade-in">
+    <div className="absolute right-4 top-4 z-20 w-[360px] max-w-[calc(100%-2rem)] rounded-sm border border-border-default bg-bg-surface-overlay p-4 shadow-xl animate-fade-in">
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-start gap-3">
           <div
@@ -1098,47 +1106,42 @@ function EdgeList({
 
 function Legend() {
   return (
-    <div className="w-[300px] rounded-sm border border-border-default bg-bg-surface-overlay p-3 shadow-md">
-      <div className="mb-2 flex items-center gap-2 text-caption font-medium text-text-secondary">
+    <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2 rounded-sm border border-border-default bg-bg-base px-3 py-2">
+      <div className="flex items-center gap-2 text-caption font-medium text-text-secondary">
         <Network className="h-3.5 w-3.5" />
         Causal Layers
       </div>
-      <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-caption text-text-muted">
-        {(Object.keys(NODE_LABELS) as CausalNode["type"][]).map((type) => {
-          const Icon = nodeIcon(type);
-          return (
-            <div key={type} className="flex items-center gap-2">
-              <span
-                className="flex h-4 w-4 items-center justify-center rounded-xs border"
-                style={{ borderColor: NODE_COLORS[type], color: NODE_COLORS[type] }}
-              >
-                <Icon className="h-2.5 w-2.5" />
-              </span>
-              {NODE_LABELS[type]}
-            </div>
-          );
-        })}
+      {(Object.keys(NODE_LABELS) as CausalNode["type"][]).map((type) => {
+        const Icon = nodeIcon(type);
+        return (
+          <div key={type} className="flex items-center gap-1.5 text-caption text-text-muted">
+            <span
+              className="flex h-4 w-4 items-center justify-center rounded-xs border"
+              style={{ borderColor: NODE_COLORS[type], color: NODE_COLORS[type] }}
+            >
+              <Icon className="h-2.5 w-2.5" />
+            </span>
+            {NODE_LABELS[type]}
+          </div>
+        );
+      })}
+      <div className="hidden h-5 w-px bg-border-subtle xl:block" />
+      <div className="flex items-center gap-2 text-caption font-medium text-text-secondary">
+        <Layers className="h-3.5 w-3.5" />
+        Semantic Stages
       </div>
-      <div className="mt-3 border-t border-border-subtle pt-3">
-        <div className="mb-2 flex items-center gap-2 text-caption font-medium text-text-secondary">
-          <Layers className="h-3.5 w-3.5" />
-          Semantic Stages
-        </div>
-        <div className="grid grid-cols-2 gap-2 text-caption text-text-muted">
-          {STAGE_ORDER.map((stage) => {
-            const meta = STAGE_META[stage];
-            return (
-              <div key={stage} className="flex items-center gap-2">
-                <span
-                  className="h-1.5 w-5 rounded-full"
-                  style={{ backgroundColor: meta.color }}
-                />
-                {meta.label}
-              </div>
-            );
-          })}
-        </div>
-      </div>
+      {STAGE_ORDER.map((stage) => {
+        const meta = STAGE_META[stage];
+        return (
+          <div key={stage} className="flex items-center gap-1.5 text-caption text-text-muted">
+            <span
+              className="h-1.5 w-5 rounded-full"
+              style={{ backgroundColor: meta.color }}
+            />
+            {meta.label}
+          </div>
+        );
+      })}
     </div>
   );
 }
