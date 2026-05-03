@@ -74,20 +74,62 @@ body {
 }
 
 /* React Flow customization */
-.react-flow__renderer {
+.causal-web-flow .react-flow__renderer {
   background: #000;
 }
 
-.react-flow__edge-path {
+.causal-web-flow .react-flow__edge-path {
   stroke-linecap: round;
 }
 
-.react-flow__handle {
+.causal-web-flow .react-flow__handle {
   opacity: 0;
 }
 
-.react-flow__attribution {
+.causal-web-flow .react-flow__attribution {
   display: none !important;
+}
+
+.causal-web-flow .react-flow__controls {
+  right: 1rem;
+  bottom: 1rem;
+  overflow: hidden;
+  border: 1px solid #262626;
+  border-radius: 2px;
+  background: rgba(20, 20, 20, 0.92);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.35);
+}
+
+.causal-web-flow .react-flow__controls-button {
+  border-bottom: 1px solid #262626;
+  background: rgba(20, 20, 20, 0.92);
+  color: #d4d4d4;
+}
+
+.causal-web-flow .react-flow__controls-button:hover {
+  background: #262626;
+}
+
+.causal-web-flow .react-flow__controls-button svg {
+  fill: currentColor;
+}
+
+.causal-web-flow .react-flow__minimap-mask {
+  fill: rgba(5, 150, 105, 0.14);
+}
+
+.causal-web-flow .react-flow__minimap-node {
+  rx: 2;
+}
+
+.causal-node-hex {
+  clip-path: polygon(25% 6%, 75% 6%, 100% 50%, 75% 94%, 25% 94%, 0 50%);
+}
+
+@keyframes causal-flow-dash {
+  to {
+    stroke-dashoffset: -26;
+  }
 }
 
 /* Skeleton loading shimmer */

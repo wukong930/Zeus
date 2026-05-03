@@ -9,6 +9,7 @@
     "lint": "tsc --noEmit"
   },
   "dependencies": {
+    "@xyflow/react": "^12.10.2",
     "clsx": "^2.1.1",
     "cmdk": "^1.0.4",
     "d3-force": "^3.0.0",
@@ -17,7 +18,6 @@
     "next": "^16.2.4",
     "react": "19.0.0",
     "react-dom": "19.0.0",
-    "reactflow": "^11.11.4",
     "recharts": "^2.15.0",
     "tailwind-merge": "^2.5.5"
   },
