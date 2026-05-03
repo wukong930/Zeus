@@ -7,6 +7,7 @@ from app.services.calibration.shadow_tracker import (
     alert_to_signal_payload,
     apply_outcome,
     evaluate_pending_signals,
+    load_forward_market_data,
     primary_symbol,
 )
 from app.services.signals.types import MarketBar, OutcomeEvaluation
@@ -49,6 +50,17 @@ def _bars() -> list[MarketBar]:
         )
         for idx in range(25)
     ]
+
+
+class FakeMarketRow:
+    def __init__(self, timestamp: datetime, close: float) -> None:
+        self.timestamp = timestamp
+        self.open = close
+        self.high = close + 1
+        self.low = close - 1
+        self.close = close
+        self.volume = 100
+        self.open_interest = 200
 
 
 def test_alert_to_signal_payload_uses_alert_and_track_metadata() -> None:
@@ -141,3 +153,33 @@ async def test_evaluate_pending_signals_marks_due_signal_hit(monkeypatch) -> Non
     assert track.outcome == "hit"
     assert track.forward_return_20d is not None
     assert session.flush_count == 1
+
+
+async def test_load_forward_market_data_uses_pit_as_of(monkeypatch) -> None:
+    captured: dict = {}
+    start_at = datetime(2026, 5, 1, tzinfo=timezone.utc)
+    end_at = start_at + timedelta(days=20)
+    as_of = end_at + timedelta(hours=2)
+
+    async def fake_get_market_data_pit(*_, **kwargs):
+        captured.update(kwargs)
+        return [FakeMarketRow(start_at, 100), FakeMarketRow(end_at, 120)]
+
+    monkeypatch.setattr(
+        "app.services.calibration.shadow_tracker.get_market_data_pit",
+        fake_get_market_data_pit,
+    )
+
+    rows = await load_forward_market_data(
+        object(),  # type: ignore[arg-type]
+        signal={"related_assets": ["RB"]},
+        start_at=start_at,
+        end_at=end_at,
+        as_of=as_of,
+    )
+
+    assert captured["symbol"] == "RB"
+    assert captured["start"] == start_at
+    assert captured["end"] == end_at
+    assert captured["as_of"] == as_of
+    assert [row.close for row in rows] == [100, 120]

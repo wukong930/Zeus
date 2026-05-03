@@ -95,6 +95,7 @@ async def evaluate_pending_signals(
             signal=signal,
             start_at=start_at,
             end_at=due_at,
+            as_of=effective_as_of,
         )
         evaluation = evaluator.evaluate_outcome(signal, market_data, horizon_days)
         if evaluation.outcome == "pending":
@@ -128,6 +129,7 @@ async def load_forward_market_data(
     signal: dict[str, Any],
     start_at: datetime,
     end_at: datetime,
+    as_of: datetime | None = None,
 ) -> list[MarketBar]:
     symbol = primary_symbol(signal)
     if symbol is None:
@@ -136,6 +138,7 @@ async def load_forward_market_data(
     rows = await get_market_data_pit(
         session,
         symbol=symbol,
+        as_of=as_of,
         start=start_at,
         end=end_at,
         limit=1_000,

@@ -2,6 +2,7 @@ from uuid import UUID
 
 import pytest
 
+from app.api.alerts import format_sse_event
 from app.core.events import ZeusEvent, dispatch_event, publish
 
 
@@ -39,6 +40,21 @@ def test_zeus_event_round_trips_json() -> None:
     assert restored.channel == "market.update"
     assert restored.payload == {"symbols": ["RB", "HC"]}
     assert restored.correlation_id == str(event.id)
+
+
+def test_format_sse_event_uses_alert_channel_and_json_payload() -> None:
+    event = ZeusEvent(
+        channel="alert.created",
+        payload={"alert_id": "a1", "severity": "high"},
+        source="alert-service",
+    )
+
+    payload = format_sse_event(event)
+
+    assert payload.startswith(f"id: {event.id}\n")
+    assert "event: alert.created\n" in payload
+    assert '"severity": "high"' in payload
+    assert payload.endswith("\n\n")
 
 
 async def test_publish_sends_to_redis_and_records_audit() -> None:

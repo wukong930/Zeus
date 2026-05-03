@@ -87,7 +87,7 @@
 - [ ] **验证**
   - [ ] `docker compose up` 全部服务健康
   - [x] `GET /api/health` 返回 200
-  - [ ] 前端首页可访问
+  - [x] 前端首页可访问
 
 ### 产出文件
 ```
@@ -141,7 +141,7 @@ zeus/
 - [ ] **核心 API 路由**
   - [x] `api/market_data.py` — 行情数据 CRUD + 查询（可选 as_of 参数）
   - [x] `api/contracts.py` — 合约元数据查询
-  - [ ] `api/alerts.py` — 预警列表/详情/SSE 流（列表/详情/创建已完成，SSE 待事件总线）
+  - [x] `api/alerts.py` — 预警列表/详情/SSE 流
   - [x] `api/positions.py` — 持仓 CRUD（create/list/detail）
   - [x] `api/recommendations.py` — 建议列表/详情
   - [x] `api/strategies.py` — 策略 CRUD（create/list/detail）
@@ -195,7 +195,7 @@ zeus/
 - [x] 调度器可启动/停止/手动触发任务
 - [x] LLM 调用正常（至少一个供应商；MockTransport 覆盖 OpenAI/Anthropic/DeepSeek 请求与响应解析）
   - [x] **PIT 查询验证**：插入修订数据后，`get_market_data_pit(as_of=昨天)` 返回原始版本，`market_data_latest` 返回修订版本
-- [ ] **合约换月验证**：`contract_metadata` 表有数据，主力合约判断正确
+- [x] **合约换月验证**：`contract_metadata` 表有数据，主力合约判断正确
 
 ---
 

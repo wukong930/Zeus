@@ -205,6 +205,14 @@ async def run_drift_monitor(
     skipped = 0
     for category in sorted(requested_categories):
         category_symbols = symbols_by_category.get(category, [])
+        feature_metrics = await record_feature_distribution_drifts(
+            session,
+            category=category,
+            symbols=category_symbols,
+            as_of=effective_as_of,
+            current_days=current_days,
+            baseline_days=baseline_days,
+        )
         category_metrics = [
             await record_signal_hit_rate_drift(
                 session,
@@ -228,6 +236,7 @@ async def run_drift_monitor(
                 current_days=current_days,
                 baseline_days=baseline_days,
             ),
+            *feature_metrics,
         ]
 
         for item in category_metrics:
@@ -411,6 +420,74 @@ async def record_correlation_structure_drift(
     )
 
 
+async def record_feature_distribution_drifts(
+    session: AsyncSession,
+    *,
+    category: str,
+    symbols: list[str],
+    as_of: datetime | None = None,
+    current_days: int = 30,
+    baseline_days: int = 90,
+    min_samples: int = 5,
+) -> list[DriftMetric]:
+    effective_as_of = as_of or datetime.now(timezone.utc)
+    unique_symbols = _unique_symbols(symbols)
+    if not unique_symbols:
+        return []
+
+    current_start = effective_as_of - timedelta(days=current_days)
+    baseline_start = current_start - timedelta(days=baseline_days)
+    baseline_features: dict[str, list[float]] = {}
+    current_features: dict[str, list[float]] = {}
+
+    for symbol in unique_symbols:
+        rows = await get_market_data_pit(
+            session,
+            symbol=symbol,
+            as_of=effective_as_of,
+            start=baseline_start,
+            end=effective_as_of,
+            limit=1000,
+        )
+        baseline_rows = [
+            row for row in rows if baseline_start <= row.timestamp < current_start
+        ]
+        current_rows = [
+            row for row in rows if current_start <= row.timestamp <= effective_as_of
+        ]
+        _merge_feature_values(baseline_features, market_feature_distributions(baseline_rows))
+        _merge_feature_values(current_features, market_feature_distributions(current_rows))
+
+    recorded: list[DriftMetric] = []
+    for feature_name in sorted(set(baseline_features) | set(current_features)):
+        baseline = baseline_features.get(feature_name, [])
+        current = current_features.get(feature_name, [])
+        if len(baseline) < min_samples or len(current) < min_samples:
+            continue
+
+        measurement = feature_distribution_drift(
+            feature_name=feature_name,
+            baseline=baseline,
+            current=current,
+        )
+        recorded.append(
+            await record_drift_measurement(
+                session,
+                measurement,
+                category=category,
+                details={
+                    "symbols": unique_symbols,
+                    "baseline_samples": len(baseline),
+                    "current_samples": len(current),
+                    "baseline_days": baseline_days,
+                    "current_days": current_days,
+                },
+            )
+        )
+
+    return recorded
+
+
 def threshold_severity(
     value: float,
     *,
@@ -477,6 +554,31 @@ def correlation_matrix_from_returns(
     return matrix, len(common_dates)
 
 
+def market_feature_distributions(rows: list) -> dict[str, list[float]]:
+    ordered = sorted(rows, key=lambda row: row.timestamp)
+    features: dict[str, list[float]] = {
+        "daily_range_pct": [],
+        "realized_volatility_proxy": [],
+        "volume": [],
+        "open_interest": [],
+    }
+    previous_close: float | None = None
+    for row in ordered:
+        close = float(row.close)
+        if close != 0:
+            features["daily_range_pct"].append((float(row.high) - float(row.low)) / abs(close))
+        if previous_close is not None and previous_close != 0:
+            features["realized_volatility_proxy"].append(
+                abs((close - previous_close) / previous_close)
+            )
+        features["volume"].append(float(row.volume))
+        if row.open_interest is not None:
+            features["open_interest"].append(float(row.open_interest))
+        previous_close = close
+
+    return {name: values for name, values in features.items() if values}
+
+
 def _quantile_edges(values: list[float], buckets: int) -> list[float]:
     edges = [values[0]]
     max_index = len(values) - 1
@@ -504,6 +606,14 @@ def _bucket_counts(values: list[float], edges: list[float]) -> list[int]:
                 counts[idx] += 1
                 break
     return counts
+
+
+def _merge_feature_values(
+    target: dict[str, list[float]],
+    source: dict[str, list[float]],
+) -> None:
+    for feature_name, values in source.items():
+        target.setdefault(feature_name, []).extend(values)
 
 
 async def _load_signal_track_window(

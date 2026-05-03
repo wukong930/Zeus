@@ -1,5 +1,10 @@
 from datetime import date, datetime, timezone
 
+from app.models.market_data import MarketData
+from app.services.contracts.main_contract_batch import (
+    contract_candidate_from_market_data,
+    latest_contract_snapshots,
+)
 from app.services.contracts.continuous import PricePoint, build_back_adjusted_main_series
 from app.services.contracts.main_contract_detector import (
     ContractCandidate,
@@ -40,3 +45,40 @@ def test_build_back_adjusted_main_series_removes_roll_gap() -> None:
     assert continuous[-1].raw_close == 96
     assert continuous[-1].adjusted_close == 102
     assert continuous[-1].adjustment == 6
+
+
+def _market_row(contract_month: str, timestamp: datetime, volume: float) -> MarketData:
+    return MarketData(
+        market="CN",
+        exchange="SHFE",
+        commodity="rebar",
+        symbol="RB",
+        contract_month=contract_month,
+        timestamp=timestamp,
+        open=100,
+        high=101,
+        low=99,
+        close=100,
+        volume=volume,
+        open_interest=volume * 2,
+    )
+
+
+def test_contract_candidate_from_market_data_preserves_liquidity_inputs() -> None:
+    timestamp = datetime(2026, 5, 3, tzinfo=timezone.utc)
+    row = _market_row("2601", timestamp, 1000)
+
+    candidate = contract_candidate_from_market_data(row)
+
+    assert candidate == ContractCandidate("RB", "2601", timestamp.date(), 1000, 2000)
+
+
+def test_latest_contract_snapshots_keeps_latest_row_per_month() -> None:
+    older = _market_row("2601", datetime(2026, 5, 1, tzinfo=timezone.utc), 100)
+    newer = _market_row("2601", datetime(2026, 5, 2, tzinfo=timezone.utc), 200)
+    other = _market_row("2605", datetime(2026, 5, 1, tzinfo=timezone.utc), 300)
+
+    snapshots = latest_contract_snapshots([newer, other, older])
+
+    assert snapshots["2601"] is newer
+    assert snapshots["2605"] is other

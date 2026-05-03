@@ -8,6 +8,7 @@ from app.core.events import publish
 from app.services.calibration.regime_batch import detect_and_record_all_regimes
 from app.services.calibration.shadow_tracker import evaluate_pending_signals
 from app.services.calibration.updater import generate_calibration_reviews
+from app.services.contracts.main_contract_batch import detect_and_apply_main_contracts
 from app.services.learning.drift_monitor import run_drift_monitor
 from app.services.signals.watchlist import get_enabled_watchlist
 
@@ -167,6 +168,34 @@ async def drift_monitor_job() -> dict[str, Any]:
     }
 
 
+async def main_contract_job() -> dict[str, Any]:
+    async with AsyncSessionLocal() as session:
+        result = await detect_and_apply_main_contracts(session)
+        event = await publish(
+            "contract.main_checked",
+            {
+                "job_id": "main-contract",
+                "symbols": result.symbols,
+                "updated": result.updated,
+                "skipped": result.skipped,
+                "details": result.details,
+                "triggered_at": datetime.now(timezone.utc).isoformat(),
+            },
+            source="scheduler",
+            session=session,
+        )
+        await session.commit()
+    return {
+        "status": "completed",
+        "event_id": str(event.id),
+        "channel": event.channel,
+        "symbols": result.symbols,
+        "updated": result.updated,
+        "skipped": result.skipped,
+        "timestamp": event.timestamp.isoformat(),
+    }
+
+
 DEFAULT_JOB_HANDLERS: dict[str, JobHandler] = {
     definition.id: placeholder_job for definition in DEFAULT_JOB_DEFINITIONS
 }
@@ -175,3 +204,4 @@ DEFAULT_JOB_HANDLERS["track-outcomes"] = track_outcomes_job
 DEFAULT_JOB_HANDLERS["calibration"] = calibration_job
 DEFAULT_JOB_HANDLERS["regime-detect"] = regime_detection_job
 DEFAULT_JOB_HANDLERS["drift-monitor"] = drift_monitor_job
+DEFAULT_JOB_HANDLERS["main-contract"] = main_contract_job

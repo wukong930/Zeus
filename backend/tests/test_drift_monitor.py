@@ -5,10 +5,30 @@ from app.services.learning.drift_monitor import (
     drift_severity,
     feature_distribution_drift,
     frobenius_distance,
+    market_feature_distributions,
     regime_switch_count,
     regime_switching_drift,
     signal_hit_rate_drift,
 )
+
+
+class MarketFeatureRow:
+    def __init__(
+        self,
+        *,
+        day: int,
+        high: float,
+        low: float,
+        close: float,
+        volume: float,
+        open_interest: float | None,
+    ) -> None:
+        self.timestamp = day
+        self.high = high
+        self.low = low
+        self.close = close
+        self.volume = volume
+        self.open_interest = open_interest
 
 
 def test_calculate_psi_is_small_for_matching_distributions() -> None:
@@ -89,3 +109,17 @@ def test_correlation_matrix_from_returns_aligns_common_dates() -> None:
 
     assert samples == 3
     assert matrix == [[1.0, 1.0], [1.0, 1.0]]
+
+
+def test_market_feature_distributions_extracts_available_ohlcv_features() -> None:
+    features = market_feature_distributions(
+        [
+            MarketFeatureRow(day=2, high=112, low=108, close=110, volume=1200, open_interest=None),
+            MarketFeatureRow(day=1, high=105, low=95, close=100, volume=1000, open_interest=500),
+        ]
+    )
+
+    assert features["daily_range_pct"] == [0.1, 4 / 110]
+    assert features["realized_volatility_proxy"] == [0.1]
+    assert features["volume"] == [1000.0, 1200.0]
+    assert features["open_interest"] == [500.0]
