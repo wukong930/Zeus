@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     log_level: str = "info"
 
     database_url: str = Field(
-        default="postgresql+asyncpg://zeus:zeus@localhost:5432/zeus",
+        default="postgresql+asyncpg://zeus:zeus@localhost:55432/zeus",
         description="Async SQLAlchemy database URL.",
     )
     database_pool_size: int = 10
@@ -26,6 +26,7 @@ class Settings(BaseSettings):
         env_file=".env",
         env_file_encoding="utf-8",
         case_sensitive=False,
+        enable_decoding=False,
         extra="ignore",
     )
 

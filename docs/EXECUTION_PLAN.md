@@ -128,14 +128,14 @@ zeus/
   - [x] `models/industry_data.py` — 产业数据 + **vintage_at**
   - [x] `models/llm_config.py` — LLM 配置（加密存储字段占位）
   - [x] 生成 Alembic 迁移：`20260503_0001_phase1_core_schema.py`
-  - [ ] 运行 `alembic upgrade head` 创建表（本地 Docker daemon 未运行，待有 Postgres 时执行）
+  - [x] 运行 `alembic upgrade head` 创建表（已在 backend 容器内连接 compose Postgres 验证）
 - [ ] **PIT 数据架构**（Causa 用覆盖更新，Zeus 重写为 append-only）
-  - [ ] ETL 写入策略改造：所有数据行附 `vintage_at`，修订型数据每次拉取生成新 vintage 行
+  - [x] ETL 写入策略改造：所有数据行附 `vintage_at`，修订型数据每次拉取生成新 vintage 行
   - [x] 创建数据库视图 `market_data_latest`、`industry_data_latest`（默认查询使用）
   - [x] 实现 PIT 查询函数：`get_market_data_pit(symbol, as_of)`, `get_industry_data_pit(symbol, as_of)`
-  - [ ] 所有下游模块约定：实时决策用 `_latest`，回测/校准用 PIT 函数
+  - [x] 所有下游模块约定：实时决策用 `_latest`，回测/校准用 PIT 函数
 - [ ] **合约元数据初始化**
-  - [ ] 主力合约切换规则：成交量 + 持仓量综合排名第一，连续 3 天领先则切换
+  - [x] 主力合约切换规则：成交量 + 持仓量综合排名第一，连续 3 天领先则切换
   - [x] `services/contracts/main_contract_detector.py`：每日识别主力合约
   - [x] `services/contracts/continuous.py`：拼接 `continuous_main_adjusted`（带跳空调整）和 `continuous_main_raw`
 - [ ] **核心 API 路由**
@@ -149,19 +149,19 @@ zeus/
 ### 第 2 周：信号检测 + 调度器 + LLM
 
 - [ ] **信号检测**（移植 Causa 的 6 个 evaluator，注意 `event_driven` 在 Phase 4.5 才会拆分）
-  - [ ] `services/signals/evaluators/spread_anomaly.py`
+  - [x] `services/signals/evaluators/spread_anomaly.py`
   - [ ] `services/signals/evaluators/basis_shift.py`
-  - [ ] `services/signals/evaluators/momentum.py`
+  - [x] `services/signals/evaluators/momentum.py`
   - [ ] `services/signals/evaluators/regime_shift.py`
   - [ ] `services/signals/evaluators/inventory_shock.py`
   - [ ] `services/signals/evaluators/event_driven.py`（保留 Causa 原逻辑，Phase 4.5 重命名为 `price_gap` 并新增 `news_event`）
-  - [ ] `services/signals/detector.py`（编排器，asyncio.gather 并行）
+  - [x] `services/signals/detector.py`（编排器，asyncio.gather 并行）
   - [ ] 信号检测在换月窗口期（前后 5 天）自动降级 `spread_anomaly` / `basis_shift`
 - [ ] **评分引擎**（移植 scoring.ts，权重暂硬编码，Phase 3 接入校准）
-  - [ ] `services/scoring/priority.py`
-  - [ ] `services/scoring/portfolio_fit.py`
-  - [ ] `services/scoring/margin_efficiency.py`
-  - [ ] `services/scoring/engine.py`（组合评分）
+  - [x] `services/scoring/priority.py`
+  - [x] `services/scoring/portfolio_fit.py`
+  - [x] `services/scoring/margin_efficiency.py`
+  - [x] `services/scoring/engine.py`（组合评分）
 - [ ] **调度器**（替代 node-cron）
   - [ ] `scheduler/manager.py`（APScheduler 封装 + 健康追踪）
   - [ ] `scheduler/jobs.py`（8 个定时任务定义 + 主力合约日检任务）
@@ -187,11 +187,11 @@ zeus/
   - [ ] PIT 查询性能测试（带 `as_of` 参数 vs 默认 latest）
 
 ### 验证
-- [ ] `pytest` 全部通过
+- [x] `pytest` 全部通过
 - [ ] 前端所有已实现页面数据正常
 - [ ] 调度器可启动/停止/手动触发任务
 - [ ] LLM 调用正常（至少一个供应商）
-- [ ] **PIT 查询验证**：插入修订数据后，`get_market_data_pit(as_of=昨天)` 返回原始版本，`market_data_latest` 返回修订版本
+  - [x] **PIT 查询验证**：插入修订数据后，`get_market_data_pit(as_of=昨天)` 返回原始版本，`market_data_latest` 返回修订版本
 - [ ] **合约换月验证**：`contract_metadata` 表有数据，主力合约判断正确
 
 ---

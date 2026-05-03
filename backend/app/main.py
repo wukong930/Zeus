@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.alerts import router as alerts_router
 from app.api.contracts import router as contracts_router
 from app.api.health import router as health_router
+from app.api.industry_data import router as industry_data_router
 from app.api.market_data import router as market_data_router
 from app.api.positions import router as positions_router
 from app.api.recommendations import router as recommendations_router
@@ -40,6 +41,7 @@ def create_app() -> FastAPI:
 
     app.include_router(health_router)
     app.include_router(market_data_router)
+    app.include_router(industry_data_router)
     app.include_router(contracts_router)
     app.include_router(alerts_router)
     app.include_router(positions_router)

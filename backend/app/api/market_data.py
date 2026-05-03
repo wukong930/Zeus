@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.models.market_data import MarketData
 from app.schemas.common import MarketDataCreate, MarketDataRead
+from app.services.etl.writers import append_market_data
 from app.services.market_data.pit import get_market_data_pit
 
 router = APIRouter(prefix="/api/market-data", tags=["market-data"])
@@ -37,8 +38,7 @@ async def create_market_data(
     payload: MarketDataCreate,
     session: AsyncSession = Depends(get_db),
 ) -> MarketData:
-    row = MarketData(**payload.model_dump(exclude_none=True))
-    session.add(row)
+    row = (await append_market_data(session, [payload]))[0]
     await session.commit()
     await session.refresh(row)
     return row

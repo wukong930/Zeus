@@ -35,6 +35,22 @@ class MarketDataRead(MarketDataCreate, ORMModel):
     ingested_at: datetime
 
 
+class IndustryDataCreate(BaseModel):
+    source_key: str | None = None
+    symbol: str
+    data_type: str
+    value: float
+    unit: str
+    source: str
+    timestamp: datetime
+    vintage_at: datetime | None = None
+
+
+class IndustryDataRead(IndustryDataCreate, ORMModel):
+    id: UUID
+    ingested_at: datetime
+
+
 class ContractCreate(BaseModel):
     symbol: str
     exchange: str | None = None

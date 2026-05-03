@@ -24,6 +24,8 @@ Zeus 是 Causa 的下一代演进，目标：从"硬编码线性管道"升级为
 
 **🚧 Phase 0 后端骨架完成**：FastAPI 入口、健康检查、配置管理、SQLAlchemy async engine、Redis 连接、Alembic 骨架、Docker Compose 已就位。
 
+**🚧 Phase 1 数据层进行中**：Causa 核心表已迁移为 SQLAlchemy 模型，PIT 行情/产业数据结构、合约元数据、核心 API、首个 Alembic 迁移已落地。
+
 ## 快速开始
 
 ```bash
@@ -40,6 +42,7 @@ cp .env.example .env
 docker compose up --build
 # Frontend: http://localhost:3000
 # Backend health: http://localhost:8000/api/health
+# Postgres host port: 55432
 ```
 
 ## 设计文档
