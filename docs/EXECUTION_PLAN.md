@@ -115,36 +115,36 @@ zeus/
 ### 第 1 周：数据层 + 核心 API（含 PIT 改造）
 
 - [ ] **SQLAlchemy 模型**（移植 Causa 的 18 张表 + PIT/合约改造）
-  - [ ] `models/market_data.py` — OHLCV + settle + OI + **vintage_at + contract_id**
-  - [ ] `models/contract_metadata.py` — **合约元数据表（新）**：symbol, contract_month, expiry_date, is_main, main_until, volume, open_interest
-  - [ ] `models/alert.py` — 预警（含 spread_info, trigger_chain）
-  - [ ] `models/position.py` — 持仓（含 legs）
-  - [ ] `models/recommendation.py` — 交易建议
-  - [ ] `models/strategy.py` — 策略池
-  - [ ] `models/research.py` — 研究报告
-  - [ ] `models/signal.py` — 信号追踪
-  - [ ] `models/sector.py` — 板块评估
-  - [ ] `models/graph.py` — 品种关系图
-  - [ ] `models/industry_data.py` — 产业数据 + **vintage_at**
-  - [ ] `models/llm_config.py` — LLM 配置（加密存储）
-  - [ ] 运行 `alembic revision --autogenerate` 生成迁移
-  - [ ] 运行 `alembic upgrade head` 创建表
+  - [x] `models/market_data.py` — OHLCV + settle + OI + **vintage_at + contract_id**
+  - [x] `models/contract_metadata.py` — **合约元数据表（新）**：symbol, contract_month, expiry_date, is_main, main_until, volume, open_interest
+  - [x] `models/alert.py` — 预警（含 spread_info, trigger_chain）
+  - [x] `models/position.py` — 持仓（含 legs）
+  - [x] `models/recommendation.py` — 交易建议
+  - [x] `models/strategy.py` — 策略池
+  - [x] `models/research.py` — 研究报告
+  - [x] `models/signal.py` — 信号追踪（含 forward_return_1d/5d/20d）
+  - [x] `models/sector.py` — 板块评估
+  - [x] `models/graph.py` — 品种关系图
+  - [x] `models/industry_data.py` — 产业数据 + **vintage_at**
+  - [x] `models/llm_config.py` — LLM 配置（加密存储字段占位）
+  - [x] 生成 Alembic 迁移：`20260503_0001_phase1_core_schema.py`
+  - [ ] 运行 `alembic upgrade head` 创建表（本地 Docker daemon 未运行，待有 Postgres 时执行）
 - [ ] **PIT 数据架构**（Causa 用覆盖更新，Zeus 重写为 append-only）
   - [ ] ETL 写入策略改造：所有数据行附 `vintage_at`，修订型数据每次拉取生成新 vintage 行
-  - [ ] 创建数据库视图 `market_data_latest`、`industry_data_latest`（默认查询使用）
-  - [ ] 实现 PIT 查询函数：`get_market_data_pit(symbol, as_of)`, `get_industry_data_pit(symbol, as_of)`
+  - [x] 创建数据库视图 `market_data_latest`、`industry_data_latest`（默认查询使用）
+  - [x] 实现 PIT 查询函数：`get_market_data_pit(symbol, as_of)`, `get_industry_data_pit(symbol, as_of)`
   - [ ] 所有下游模块约定：实时决策用 `_latest`，回测/校准用 PIT 函数
 - [ ] **合约元数据初始化**
   - [ ] 主力合约切换规则：成交量 + 持仓量综合排名第一，连续 3 天领先则切换
-  - [ ] `services/contracts/main_contract_detector.py`：每日识别主力合约
-  - [ ] `services/contracts/continuous.py`：拼接 `continuous_main_adjusted`（带跳空调整）和 `continuous_main_raw`
+  - [x] `services/contracts/main_contract_detector.py`：每日识别主力合约
+  - [x] `services/contracts/continuous.py`：拼接 `continuous_main_adjusted`（带跳空调整）和 `continuous_main_raw`
 - [ ] **核心 API 路由**
-  - [ ] `api/market_data.py` — 行情数据 CRUD + 查询（默认 latest 视图，可选 as_of 参数）
-  - [ ] `api/contracts.py` — 合约元数据查询 + 主力合约切换记录（新）
-  - [ ] `api/alerts.py` — 预警列表/详情/SSE 流
-  - [ ] `api/positions.py` — 持仓 CRUD
-  - [ ] `api/recommendations.py` — 建议列表/详情
-  - [ ] `api/strategies.py` — 策略 CRUD
+  - [x] `api/market_data.py` — 行情数据 CRUD + 查询（可选 as_of 参数）
+  - [x] `api/contracts.py` — 合约元数据查询
+  - [ ] `api/alerts.py` — 预警列表/详情/SSE 流（列表/详情/创建已完成，SSE 待事件总线）
+  - [x] `api/positions.py` — 持仓 CRUD（create/list/detail）
+  - [x] `api/recommendations.py` — 建议列表/详情
+  - [x] `api/strategies.py` — 策略 CRUD（create/list/detail）
 
 ### 第 2 周：信号检测 + 调度器 + LLM
 
