@@ -10,6 +10,7 @@ from app.services.pipeline.handlers import (
     handle_signal_detected,
     handle_signal_scored,
 )
+from app.services.positions.events import handle_position_changed
 
 logger = logging.getLogger(__name__)
 
@@ -18,6 +19,7 @@ PIPELINE_SUBSCRIPTIONS: tuple[tuple[str, EventHandler], ...] = (
     ("news.event", handle_news_event),
     ("signal.detected", handle_signal_detected),
     ("signal.scored", handle_signal_scored),
+    ("position.changed", handle_position_changed),
 )
 
 

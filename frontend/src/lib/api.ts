@@ -40,6 +40,30 @@ export interface PortfolioSnapshot {
   correlation: CorrelationMatrix | null;
 }
 
+export interface AttributionSlice {
+  label: string;
+  samples: number;
+  wins: number;
+  win_rate: number;
+  expected_pnl: number;
+  avg_mae: number;
+  avg_mfe: number;
+}
+
+export interface AttributionReport {
+  period_start: string;
+  period_end: string;
+  total_recommendations: number;
+  closed_recommendations: number;
+  win_rate: number;
+  expected_pnl: number;
+  slices: Record<string, AttributionSlice[]>;
+  risk_assessment: {
+    stop_loss?: { p50_mae: number; p80_mae: number; note: string };
+    take_profit?: { p50_mfe: number; p80_mfe: number; note: string };
+  };
+}
+
 export interface NewsEvent {
   id: string;
   source: string;
@@ -105,6 +129,10 @@ interface BackendPosition {
   unrealized_pnl: number;
   total_margin_used: number;
   status: string;
+  manual_entry?: boolean;
+  monitoring_priority?: number;
+  propagation_nodes?: { symbol: string; category: string; relationship: string }[];
+  data_mode?: string;
 }
 
 interface BackendLeg {
@@ -170,6 +198,10 @@ export async function fetchPortfolioSnapshot(): Promise<PortfolioSnapshot> {
 export async function fetchNewsEventsFromApi(): Promise<NewsEvent[]> {
   const rows = await fetchJson<BackendNewsEvent[]>("/api/news-events?limit=200");
   return rows.map(mapNewsEvent);
+}
+
+export async function fetchAttributionReport(): Promise<AttributionReport> {
+  return fetchJson<AttributionReport>("/api/attribution/report");
 }
 
 export async function submitAlertFeedback(
@@ -306,6 +338,10 @@ function mapPosition(
     pnlPercent,
     openDate: position.opened_at.slice(0, 10),
     sector: guessSector(symbol),
+    manualEntry: Boolean(position.manual_entry),
+    monitoringPriority: position.monitoring_priority,
+    propagationNodes: position.propagation_nodes,
+    dataMode: position.data_mode,
     marginUsed: position.total_margin_used,
     status: position.status,
     dataTimestamp: latest?.timestamp,

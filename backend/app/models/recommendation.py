@@ -15,6 +15,7 @@ class Recommendation(Base):
         Index("ix_recommendations_strategy_id", "strategy_id"),
         Index("ix_recommendations_alert_id", "alert_id"),
         Index("ix_recommendations_created_at", "created_at"),
+        Index("ix_recommendations_actual_exit_reason", "actual_exit_reason"),
     )
 
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
@@ -55,3 +56,13 @@ class Recommendation(Base):
     position_size_pct: Mapped[float | None] = mapped_column(Float)
     risk_reward_ratio: Mapped[float | None] = mapped_column(Float)
     backtest_summary: Mapped[dict | None] = mapped_column(JSONB)
+    entry_price: Mapped[float | None] = mapped_column(Float)
+    stop_loss: Mapped[float | None] = mapped_column(Float)
+    take_profit: Mapped[float | None] = mapped_column(Float)
+    actual_entry: Mapped[float | None] = mapped_column(Float)
+    actual_exit: Mapped[float | None] = mapped_column(Float)
+    actual_exit_reason: Mapped[str | None] = mapped_column(String(40))
+    pnl_realized: Mapped[float | None] = mapped_column(Float)
+    mae: Mapped[float | None] = mapped_column(Float)
+    mfe: Mapped[float | None] = mapped_column(Float)
+    holding_period_days: Mapped[float | None] = mapped_column(Float)

@@ -508,58 +508,58 @@ Causa 的 `event_driven` 评估器实际上是纯技术面（gap + volume），*
 
 ### 任务清单
 
-- [ ] **持仓录入**
-  - [ ] `positions` 表新增：`manual_entry`, `avg_entry_price`, `monitoring_priority`, `propagation_nodes`
-  - [ ] `api/positions.py` 扩展：最小录入（5 字段）、快捷操作（平仓/加仓/减半）
-  - [ ] 交易建议采纳时自动预填持仓
-- [ ] **监控升级**
-  - [ ] `services/positions/threshold_modifier.py`
+- [x] **持仓录入**
+  - [x] `positions` 表新增：`manual_entry`, `avg_entry_price`, `monitoring_priority`, `propagation_nodes`
+  - [x] `api/positions.py` 扩展：最小录入（5 字段）、快捷操作（平仓/加仓/减半）
+  - [x] 交易建议采纳时自动预填持仓
+- [x] **监控升级**
+  - [x] `services/positions/threshold_modifier.py`
     - 持仓品种阈值 × 0.8
     - 订阅 `position.changed` 事件，维护内存阈值缓存
-  - [ ] `services/positions/propagation_activator.py`
+  - [x] `services/positions/propagation_activator.py`
     - 查询传导图，激活关联品种
     - 在 `watchlist` 表中添加 `position_linked=true` 的条目
     - 持仓平仓时移除关联条目
-- [ ] **风控联动**
-  - [ ] `services/positions/risk_recalc.py`
+- [x] **风控联动**
+  - [x] `services/positions/risk_recalc.py`
     - `position.changed` 时重算 VaR、相关性、集中度
     - 超限时降级新建议
-  - [ ] 新建议与持仓方向冲突 → 标记警告
-  - [ ] 持仓品种出现反向信号 → 优先推送
-- [ ] **数据腐烂防护**
-  - [ ] 定时检查：持仓 N 天未更新 → 推送提醒
-  - [ ] 长期不更新 → 降级为无持仓模式
-- [ ] **推荐级归因（新增 6.17）**
-  - [ ] `recommendations` 表新增字段：
+  - [x] 新建议与持仓方向冲突 → 标记警告
+  - [x] 持仓品种出现反向信号 → 优先推送
+- [x] **数据腐烂防护**
+  - [x] 定时检查：持仓 N 天未更新 → 推送提醒
+  - [x] 长期不更新 → 降级为无持仓模式
+- [x] **推荐级归因（新增 6.17）**
+  - [x] `recommendations` 表新增字段：
     - `entry_price`, `stop_loss`, `take_profit`（推荐时定的）
     - `actual_entry`, `actual_exit`, `actual_exit_reason`（实际执行）
     - `pnl_realized` — 按手数 × 合约乘数计算
     - `mae`（最大不利偏移）, `mfe`（最大有利偏移）
     - `holding_period_days`
-  - [ ] Alembic 迁移
-  - [ ] `services/learning/recommendation_attribution.py`
+  - [x] Alembic 迁移
+  - [x] `services/learning/recommendation_attribution.py`
     - 持仓变动时自动更新对应推荐的执行字段
     - 持仓平仓时计算最终 P&L
     - 持仓持续期间每日更新 MAE / MFE
-  - [ ] 月度归因报表（`learning/attribution_report.py`）：
+  - [x] 月度归因报表（`learning/attribution_report.py`）：
     - 信号组合 × 胜率 × 期望收益 × 样本量
     - Regime × 胜率
     - 板块 × 胜率
     - 季节（月份）× 胜率
     - 持仓时长 × 胜率
     - 入场时段 × 胜率
-  - [ ] 风控参数评估报表：
+  - [x] 风控参数评估报表：
     - Stop loss：基于 MAE 分布判断止损是太紧还是太松
     - Take profit：基于 MFE 分布判断止盈是否过早
     - 持仓时长：哪个区间胜率最高
-  - [ ] 前端：归因报表页面
-  - [ ] **关键约束**：归因系统**只产生报表**，不自动调整任何止损止盈或推荐参数
-- [ ] **验证**
-  - [ ] 录入橡胶持仓，验证 RU 阈值降低 + 关联品种进入监控
-  - [ ] 验证持仓冲突检测
-  - [ ] 验证数据腐烂提醒
-  - [ ] 验证推荐归因：模拟一个完整交易周期（开仓 → 持仓 → 平仓），验证 MAE/MFE/PnL 计算正确
-  - [ ] 验证月度报表生成正确
+  - [x] 前端：归因报表页面
+  - [x] **关键约束**：归因系统**只产生报表**，不自动调整任何止损止盈或推荐参数
+- [x] **验证**
+  - [x] 录入橡胶持仓，验证 RU 阈值降低 + 关联品种进入监控
+  - [x] 验证持仓冲突检测
+  - [x] 验证数据腐烂提醒
+  - [x] 验证推荐归因：模拟一个完整交易周期（开仓 → 持仓 → 平仓），验证 MAE/MFE/PnL 计算正确
+  - [x] 验证月度报表生成正确
 
 ---
 

@@ -1,6 +1,7 @@
 from app.services.signals.helpers import build_trigger_step, severity_from_z_score
 from typing import Any
 
+from app.services.positions.threshold_modifier import get_position_aware_thresholds
 from app.services.signals.outcomes import outcome_result, pending_result, sorted_bars
 from app.services.signals.types import MarketBar, OutcomeEvaluation, SpreadInfo, TriggerContext, TriggerResult
 
@@ -14,7 +15,12 @@ class SpreadAnomalyEvaluator:
 
         stats = context.spread_stats
         abs_z = abs(stats.current_z_score)
-        if abs_z <= 2.0:
+        thresholds = get_position_aware_thresholds(
+            context.category,
+            symbols=(context.symbol1, context.symbol2),
+            half_life=stats.half_life,
+        )
+        if abs_z <= thresholds.z_score_entry:
             return None
 
         display_mean = stats.raw_spread_mean if stats.raw_spread_mean is not None else stats.spread_mean

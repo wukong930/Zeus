@@ -220,6 +220,16 @@ class RecommendationCreate(BaseModel):
     position_size_pct: float | None = None
     risk_reward_ratio: float | None = None
     backtest_summary: dict[str, Any] | None = None
+    entry_price: float | None = None
+    stop_loss: float | None = None
+    take_profit: float | None = None
+    actual_entry: float | None = None
+    actual_exit: float | None = None
+    actual_exit_reason: str | None = None
+    pnl_realized: float | None = None
+    mae: float | None = None
+    mfe: float | None = None
+    holding_period_days: float | None = None
 
 
 class RecommendationRead(RecommendationCreate, ORMModel):
@@ -247,7 +257,46 @@ class PositionCreate(BaseModel):
     status: str = "open"
     closed_at: datetime | None = None
     realized_pnl: float | None = None
+    manual_entry: bool = False
+    avg_entry_price: float | None = None
+    monitoring_priority: int = 50
+    propagation_nodes: list[dict[str, Any]] = Field(default_factory=list)
+    last_updated_at: datetime | None = None
+    stale_since: datetime | None = None
+    data_mode: str = "position_aware"
 
 
 class PositionRead(PositionCreate, ORMModel):
     id: UUID
+
+
+class PositionMinimalCreate(BaseModel):
+    symbol: str = Field(min_length=1)
+    direction: str = Field(pattern="^(long|short)$")
+    lots: float = Field(gt=0)
+    avg_entry_price: float = Field(gt=0)
+    opened_at: datetime
+    category: str = "unknown"
+    recommendation_id: UUID | None = None
+    strategy_name: str | None = None
+    total_margin_used: float = 0
+
+
+class PositionCloseRequest(BaseModel):
+    actual_exit: float | None = None
+    actual_exit_reason: str = "manual_close"
+    realized_pnl: float | None = None
+    closed_at: datetime | None = None
+
+
+class PositionResizeRequest(BaseModel):
+    lots: float | None = Field(default=None, gt=0)
+    fraction: float | None = Field(default=None, gt=0, le=1)
+    reason: str | None = None
+
+
+class RecommendationAdoptRequest(BaseModel):
+    opened_at: datetime | None = None
+    actual_entry: float | None = None
+    lots: float = Field(default=1, gt=0)
+    total_margin_used: float | None = None

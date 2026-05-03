@@ -1,8 +1,8 @@
 from typing import Any
 
+from app.services.positions.threshold_modifier import get_position_aware_thresholds
 from app.services.signals.helpers import build_trigger_step, severity_from_z_score, volume_change
 from app.services.signals.outcomes import directional_outcome
-from app.services.signals.thresholds import get_thresholds
 from app.services.signals.types import MarketBar, OutcomeEvaluation, SpreadInfo, TriggerContext, TriggerResult
 
 
@@ -16,8 +16,9 @@ class BasisShiftEvaluator:
         stats = context.spread_stats
         abs_z = abs(stats.current_z_score)
         volatility_regime = "high" if abs_z > 3.5 else "low" if abs_z < 1.5 else "normal"
-        thresholds = get_thresholds(
+        thresholds = get_position_aware_thresholds(
             context.category,
+            symbols=(context.symbol1, context.symbol2),
             volatility_regime=volatility_regime,
             half_life=stats.half_life,
         )

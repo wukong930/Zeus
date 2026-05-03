@@ -11,12 +11,14 @@ from app.services.calibration.shadow_tracker import evaluate_pending_signals
 from app.services.calibration.updater import generate_calibration_reviews
 from app.services.contracts.main_contract_batch import detect_and_apply_main_contracts
 from app.services.learning.drift_monitor import run_drift_monitor
+from app.services.learning.recommendation_attribution import update_open_recommendation_excursions
 from app.services.news.collectors import (
     CailiansheCollector,
     ExchangeAnnouncementsCollector,
     SinaFuturesCollector,
 )
 from app.services.news.ingest import ingest_news_items
+from app.services.positions.data_freshness import check_position_freshness
 from app.services.signals.watchlist import get_enabled_watchlist
 
 
@@ -46,6 +48,8 @@ DEFAULT_JOB_DEFINITIONS: tuple[JobDefinition, ...] = (
     JobDefinition("main-contract", "主力合约日检", "10 16 * * 1-5"),
     JobDefinition("adversarial-cache", "对抗零分布", "25 16 * * 1-5"),
     JobDefinition("news-ingest", "新闻事件采集", "*/30 * * * *"),
+    JobDefinition("position-freshness", "持仓数据新鲜度", "15 9 * * 1-5"),
+    JobDefinition("recommendation-attribution", "推荐归因更新", "35 16 * * 1-5"),
 )
 
 
@@ -251,6 +255,39 @@ async def news_ingest_job() -> dict[str, Any]:
     }
 
 
+async def position_freshness_job() -> dict[str, Any]:
+    async with AsyncSessionLocal() as session:
+        result = await check_position_freshness(session)
+        if result.stale:
+            await publish(
+                "position.stale",
+                {
+                    "job_id": "position-freshness",
+                    **result.to_dict(),
+                    "triggered_at": datetime.now(timezone.utc).isoformat(),
+                },
+                source="scheduler",
+                session=session,
+            )
+        await session.commit()
+    return {
+        "status": "completed",
+        **result.to_dict(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+async def recommendation_attribution_job() -> dict[str, Any]:
+    async with AsyncSessionLocal() as session:
+        updated = await update_open_recommendation_excursions(session)
+        await session.commit()
+    return {
+        "status": "completed",
+        "updated": updated,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+
 DEFAULT_JOB_HANDLERS: dict[str, JobHandler] = {
     definition.id: placeholder_job for definition in DEFAULT_JOB_DEFINITIONS
 }
@@ -262,3 +299,5 @@ DEFAULT_JOB_HANDLERS["drift-monitor"] = drift_monitor_job
 DEFAULT_JOB_HANDLERS["main-contract"] = main_contract_job
 DEFAULT_JOB_HANDLERS["adversarial-cache"] = adversarial_cache_job
 DEFAULT_JOB_HANDLERS["news-ingest"] = news_ingest_job
+DEFAULT_JOB_HANDLERS["position-freshness"] = position_freshness_job
+DEFAULT_JOB_HANDLERS["recommendation-attribution"] = recommendation_attribution_job

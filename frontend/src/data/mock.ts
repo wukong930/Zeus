@@ -61,6 +61,10 @@ export interface Position {
   pnlPercent: number;
   openDate: string;
   sector: Sector;
+  manualEntry?: boolean;
+  monitoringPriority?: number;
+  dataMode?: string;
+  propagationNodes?: { symbol: string; category: string; relationship: string }[];
 }
 
 export interface SectorData {

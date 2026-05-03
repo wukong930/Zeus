@@ -18,7 +18,7 @@ from app.services.adversarial.engine import (
 from app.services.alert_agent.dedup import check_alert_dedup, record_alert_emitted
 from app.services.alert_agent.router import route_alert
 from app.services.calibration.tracker import get_calibration_weight, track_signal_emission
-from app.services.scoring.engine import apply_calibration_weight, score_recommendation
+from app.services.scoring.engine import CombinedScore, apply_calibration_weight, score_recommendation
 from app.services.scoring.portfolio_fit import PositionGroup, RecommendationLeg
 from app.services.signals.detector import SignalDetector
 from app.services.signals.types import (
@@ -281,6 +281,13 @@ async def handle_signal_detected(
         margin_required=margin_required,
         account_net_value=account_net_value,
     )
+    conflicts = position_conflict_warnings(legs, open_positions)
+    if conflicts:
+        signal = {
+            **signal,
+            "risk_items": list(signal.get("risk_items", [])) + conflicts,
+        }
+        base_score = boost_priority_for_position_signal(base_score, boost=10)
     score = apply_calibration_weight(base_score, calibration_weight)
     signal_track = await track_signal_emission(
         session,
@@ -471,6 +478,37 @@ def recommended_action(signal: dict[str, Any]) -> str:
     if signal.get("spread_info") is not None:
         return "open_spread"
     return "watchlist_only"
+
+
+def position_conflict_warnings(
+    legs: list[RecommendationLeg],
+    open_positions: list[PositionGroup],
+) -> list[str]:
+    warnings: list[str] = []
+    for leg in legs:
+        if leg.direction not in {"long", "short"}:
+            continue
+        for position in open_positions:
+            for existing in position.legs:
+                if existing.asset != leg.asset or existing.direction not in {"long", "short"}:
+                    continue
+                if existing.direction != leg.direction:
+                    warnings.append(
+                        f"Position conflict: {leg.asset} signal is {leg.direction}, "
+                        f"open position is {existing.direction}."
+                    )
+    return sorted(set(warnings))
+
+
+def boost_priority_for_position_signal(score: CombinedScore, *, boost: int) -> CombinedScore:
+    priority = min(100, score.priority + boost)
+    combined = round(priority * 0.4 + score.portfolio_fit * 0.3 + score.margin_efficiency * 0.3)
+    return CombinedScore(
+        priority=priority,
+        portfolio_fit=score.portfolio_fit,
+        margin_efficiency=score.margin_efficiency,
+        combined=combined,
+    )
 
 
 async def open_positions_for_scoring(
