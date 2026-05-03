@@ -87,6 +87,7 @@ async def track_signal_emission(
     category: str,
     regime: str | None,
     calibration_weight: float,
+    adversarial_passed: bool | None = None,
     position_id: UUID | None = None,
 ) -> SignalTrack | None:
     if session is None:
@@ -108,6 +109,7 @@ async def track_signal_emission(
             regime=regime,
             related_assets=related_assets,
         ),
+        adversarial_passed=adversarial_passed,
         outcome="pending",
         position_id=position_id,
     )

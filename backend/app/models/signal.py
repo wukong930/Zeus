@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import DateTime, Float, Index, String, func
+from sqlalchemy import Boolean, DateTime, Float, Index, String, func
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -29,6 +29,7 @@ class SignalTrack(Base):
     regime_at_emission: Mapped[str | None] = mapped_column(String(40))
     calibration_weight_at_emission: Mapped[float | None] = mapped_column(Float)
     signal_combination_hash: Mapped[str | None] = mapped_column(String(64))
+    adversarial_passed: Mapped[bool | None] = mapped_column(Boolean)
     outcome: Mapped[str] = mapped_column(String(20), default="pending", nullable=False)
     position_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True))
     forward_return_1d: Mapped[float | None] = mapped_column(Float)

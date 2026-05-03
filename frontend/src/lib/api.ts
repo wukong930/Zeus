@@ -49,6 +49,7 @@ interface BackendAlert {
   type: string;
   triggered_at: string;
   confidence: number;
+  adversarial_passed?: boolean;
   related_assets: string[];
   trigger_chain: { label?: string; description?: string }[];
   risk_items: string[];
@@ -167,7 +168,7 @@ function mapAlert(alert: BackendAlert): Alert {
     counterEvidence: alert.risk_items,
     sector: categoryToSector(alert.category),
     regime: alert.category,
-    adversarialPassed: alert.manual_check_items.length > 0,
+    adversarialPassed: Boolean(alert.adversarial_passed),
   };
 }
 

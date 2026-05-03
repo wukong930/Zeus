@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import DateTime, Float, ForeignKey, Index, String, Text, func
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, String, Text, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -15,6 +15,7 @@ class Alert(Base):
         Index("ix_alerts_category", "category"),
         Index("ix_alerts_severity", "severity"),
         Index("ix_alerts_triggered_at", "triggered_at"),
+        Index("ix_alerts_adversarial_passed", "adversarial_passed"),
     )
 
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
@@ -33,6 +34,7 @@ class Alert(Base):
     )
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     confidence: Mapped[float] = mapped_column(Float, nullable=False)
+    adversarial_passed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     related_assets: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
     spread_info: Mapped[dict | None] = mapped_column(JSONB)
     trigger_chain: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)

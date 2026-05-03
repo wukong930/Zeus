@@ -11,6 +11,10 @@ from app.core.events import ZeusEvent, publish
 from app.models.alert import Alert
 from app.models.position import Position
 from app.models.signal import SignalTrack
+from app.services.adversarial.engine import (
+    attach_signal_track_to_adversarial_result,
+    evaluate_adversarial_signal,
+)
 from app.services.calibration.tracker import get_calibration_weight, track_signal_emission
 from app.services.scoring.engine import apply_calibration_weight, score_recommendation
 from app.services.scoring.portfolio_fit import PositionGroup, RecommendationLeg
@@ -161,14 +165,34 @@ async def handle_signal_detected(
     if not isinstance(signal, dict):
         return None
 
+    context = event.payload.get("context", {})
+    category = str(context.get("category") or signal.get("category") or "unknown")
+    regime = context.get("regime") or context.get("regime_at_emission") or "unknown"
+    adversarial_decision = await evaluate_adversarial_signal(
+        session,
+        signal=signal,
+        context=context,
+        correlation_id=event.correlation_id,
+    )
+    if adversarial_decision.suppressed:
+        return await publisher(
+            "signal.suppressed",
+            {
+                "signal": signal,
+                "context": context,
+                "adversarial_result": adversarial_decision.to_payload(),
+            },
+            source="adversarial-engine",
+            correlation_id=event.correlation_id,
+            session=session,
+        )
+
+    signal = adversarial_decision.adjusted_signal
     spread_info = _spread_info_from_payload(signal.get("spread_info"))
     legs = recommendation_legs_from_signal(signal)
     open_positions = await open_positions_for_scoring(session, event.payload)
     margin_required = float(event.payload.get("margin_required", DEFAULT_MARGIN_REQUIRED))
     account_net_value = float(event.payload.get("account_net_value", DEFAULT_ACCOUNT_NET_VALUE))
-    context = event.payload.get("context", {})
-    category = str(context.get("category") or signal.get("category") or "unknown")
-    regime = context.get("regime") or context.get("regime_at_emission") or "unknown"
     calibration_weight = await get_calibration_weight(
         session,
         signal_type=str(signal["signal_type"]),
@@ -190,7 +214,14 @@ async def handle_signal_detected(
         category=category,
         regime=str(regime),
         calibration_weight=calibration_weight,
+        adversarial_passed=adversarial_decision.passed,
     )
+    if signal_track is not None:
+        await attach_signal_track_to_adversarial_result(
+            session,
+            result_id=adversarial_decision.result_id,
+            signal_track_id=signal_track.id,
+        )
 
     return await publisher(
         "signal.scored",
@@ -200,6 +231,7 @@ async def handle_signal_detected(
             "score": jsonable(score),
             "base_score": jsonable(base_score),
             "calibration_weight": calibration_weight,
+            "adversarial_result": adversarial_decision.to_payload(),
             "signal_track_id": str(signal_track.id) if signal_track is not None else None,
             "legs": jsonable(legs),
             "margin_required": margin_required,
@@ -239,6 +271,7 @@ async def handle_signal_scored(
         triggered_at=triggered_at,
         expires_at=triggered_at + timedelta(days=1),
         confidence=float(signal.get("confidence", 0)),
+        adversarial_passed=bool(event.payload.get("adversarial_result", {}).get("passed", False)),
         related_assets=list(signal.get("related_assets", [])),
         spread_info=signal.get("spread_info"),
         trigger_chain=list(signal.get("trigger_chain", [])),
@@ -258,6 +291,7 @@ async def handle_signal_scored(
             "severity": alert.severity,
             "category": alert.category,
             "score": score,
+            "adversarial_passed": alert.adversarial_passed,
             "related_assets": alert.related_assets,
         },
         source="alert-service",

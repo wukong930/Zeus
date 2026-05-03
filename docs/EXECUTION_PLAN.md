@@ -326,42 +326,42 @@ zeus/
 
 ### 任务清单
 
-- [ ] **数据模型**
-  - [ ] `models/adversarial.py` — adversarial_results 表
-  - [ ] `models/null_distribution_cache.py` — 零分布预计算缓存表
-  - [ ] Alembic 迁移
-- [ ] **对抗模块**
-  - [ ] `services/adversarial/null_hypothesis.py`
-    - 改为**预计算策略**：每日 ETL 后按 (signal_type, category) 预计算零分布统计量
-    - 实时检测 O(1) 查表对比，避免每个信号都跑 1000 次 Bootstrap
-    - 预计算结果存 `null_distribution_cache`
-    - 输出：p-value，p < 0.05 为通过
-  - [ ] `services/adversarial/historical_combo.py`
-    - **模糊哈希**：基于排序后的 (signal_type_set, category, regime)，新增评估器时旧哈希可匹配子集
-    - Jaccard 相似度 ≥ 0.7 视为匹配
-    - 查询 `signal_calibration` 中相似组合的历史命中率
-    - 命中率 < 0.3 且样本 > 20 为失败
-  - [ ] `services/adversarial/structural_counter.py`
-    - 遍历传导图寻找反向路径
-    - 检查季节性反转因素
-    - 检查替代品压力
-    - 输出：反驳论据列表 + 数量
+- [x] **数据模型**
+  - [x] `models/adversarial.py` — adversarial_results 表
+  - [x] `models/null_distribution_cache.py` — 零分布预计算缓存表
+  - [x] Alembic 迁移
+- [x] **对抗模块**
+  - [x] `services/adversarial/null_hypothesis.py`
+    - [x] 改为**预计算策略**：每日 ETL 后按 (signal_type, category) 预计算零分布统计量
+    - [x] 实时检测 O(1) 查表对比，避免每个信号都跑 1000 次 Bootstrap
+    - [x] 预计算结果存 `null_distribution_cache`
+    - [x] 输出：p-value，p < 0.05 为通过
+  - [x] `services/adversarial/historical_combo.py`
+    - [x] **模糊哈希**：基于排序后的 (signal_type_set, category, regime)，新增评估器时旧哈希可匹配子集
+    - [x] Jaccard 相似度 ≥ 0.7 视为匹配
+    - [x] 查询 `signal_calibration` 中相似组合的历史命中率
+    - [x] 命中率 < 0.3 且样本 > 20 为失败
+  - [x] `services/adversarial/structural_counter.py`
+    - [x] 遍历传导图寻找反向路径
+    - [x] 检查季节性反转因素
+    - [x] 检查替代品压力
+    - [x] 输出：反驳论据列表 + 数量
 - [ ] **冷启动 warmup 模式**
-  - [ ] 历史组合检验添加 `mode` 字段：`informational` / `enforcing`
-  - [ ] 系统上线前 90 天默认 `informational`：执行检查并记录，**不阻塞信号、不施加置信度惩罚**
-  - [ ] 调度任务每日检查切换条件：所有 signal_combination_hash 累积样本 ≥ 20 后切到 `enforcing`
+  - [x] 历史组合检验添加 `mode` 字段：`informational` / `enforcing`
+  - [x] 系统上线前 90 天默认 `informational`：执行检查并记录，**不阻塞信号、不施加置信度惩罚**
+  - [x] 样本量达到阈值（sample_size ≥ 20）后自动按 `enforcing` 处理
   - [ ] 切换可手动覆盖（运营后台开关）
-  - [ ] 零假设检验 + 结构性反驳从第一天就 `enforcing`（不依赖历史）
-- [ ] **集成**
-  - [ ] 在事件流中插入：`signal.detected` → 对抗引擎 → 通过后才进入评分
-  - [ ] 三项全失败 → 抑制信号（warmup 模式下例外：历史组合检验失败仅记录）
-  - [ ] 部分失败 → 置信度 × 0.7
-  - [ ] `alerts` 表新增 `adversarial_passed` 字段
-- [ ] **验证**
-  - [ ] 构造已知噪声信号，验证零假设检验能拦截
-  - [ ] 构造历史低命中率组合，验证历史检验能降级（enforcing 模式）
-  - [ ] 验证 warmup 模式下不阻塞信号
-  - [ ] 检查 `adversarial_results` 表记录完整
+  - [x] 零假设检验 + 结构性反驳从第一天就 `enforcing`（不依赖历史）
+- [x] **集成**
+  - [x] 在事件流中插入：`signal.detected` → 对抗引擎 → 通过后才进入评分
+  - [x] 三项全失败 → 抑制信号（warmup 模式下例外：历史组合检验失败仅记录）
+  - [x] 部分失败 → 置信度 × 0.7
+  - [x] `alerts` 表新增 `adversarial_passed` 字段
+- [x] **验证**
+  - [x] 构造已知噪声信号，验证零假设检验能拦截
+  - [x] 构造历史低命中率组合，验证历史检验能降级（enforcing 模式）
+  - [x] 验证 warmup 模式下不阻塞信号
+  - [x] 检查 `adversarial_results` 表记录完整
 
 ---
 

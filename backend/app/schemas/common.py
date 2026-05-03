@@ -80,6 +80,7 @@ class AlertCreate(BaseModel):
     triggered_at: datetime
     expires_at: datetime | None = None
     confidence: float
+    adversarial_passed: bool = False
     related_assets: list[str] = Field(default_factory=list)
     spread_info: dict[str, Any] | None = None
     trigger_chain: list[dict[str, Any]] = Field(default_factory=list)

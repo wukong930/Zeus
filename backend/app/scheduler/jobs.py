@@ -5,6 +5,7 @@ from typing import Any
 
 from app.core.database import AsyncSessionLocal
 from app.core.events import publish
+from app.services.adversarial.null_hypothesis import precompute_all_null_distributions
 from app.services.calibration.regime_batch import detect_and_record_all_regimes
 from app.services.calibration.shadow_tracker import evaluate_pending_signals
 from app.services.calibration.updater import generate_calibration_reviews
@@ -37,6 +38,7 @@ DEFAULT_JOB_DEFINITIONS: tuple[JobDefinition, ...] = (
     JobDefinition("drift-monitor", "漂移监控", "40 16 * * 1-5"),
     JobDefinition("cleanup", "数据清理", "0 3 * * *"),
     JobDefinition("main-contract", "主力合约日检", "10 16 * * 1-5"),
+    JobDefinition("adversarial-cache", "对抗零分布", "25 16 * * 1-5"),
 )
 
 
@@ -196,6 +198,29 @@ async def main_contract_job() -> dict[str, Any]:
     }
 
 
+async def adversarial_cache_job() -> dict[str, Any]:
+    async with AsyncSessionLocal() as session:
+        rows = await precompute_all_null_distributions(session)
+        event = await publish(
+            "adversarial.cache_updated",
+            {
+                "job_id": "adversarial-cache",
+                "updated": len(rows),
+                "triggered_at": datetime.now(timezone.utc).isoformat(),
+            },
+            source="scheduler",
+            session=session,
+        )
+        await session.commit()
+    return {
+        "status": "completed",
+        "event_id": str(event.id),
+        "channel": event.channel,
+        "updated": len(rows),
+        "timestamp": event.timestamp.isoformat(),
+    }
+
+
 DEFAULT_JOB_HANDLERS: dict[str, JobHandler] = {
     definition.id: placeholder_job for definition in DEFAULT_JOB_DEFINITIONS
 }
@@ -205,3 +230,4 @@ DEFAULT_JOB_HANDLERS["calibration"] = calibration_job
 DEFAULT_JOB_HANDLERS["regime-detect"] = regime_detection_job
 DEFAULT_JOB_HANDLERS["drift-monitor"] = drift_monitor_job
 DEFAULT_JOB_HANDLERS["main-contract"] = main_contract_job
+DEFAULT_JOB_HANDLERS["adversarial-cache"] = adversarial_cache_job

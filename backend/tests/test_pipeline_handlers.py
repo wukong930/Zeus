@@ -86,6 +86,7 @@ async def test_signal_detected_handler_publishes_score() -> None:
     assert scored.channel == "signal.scored"
     assert scored.payload["recommended_action"] == "open_spread"
     assert scored.payload["score"]["priority"] > 0
+    assert scored.payload["adversarial_result"]["passed"] is True
     assert scored.payload["legs"][0]["asset"] == "RB"
 
 
@@ -108,4 +109,6 @@ async def test_signal_scored_handler_creates_alert_and_publishes_event() -> None
     assert created.channel == "alert.created"
     assert isinstance(session.rows[0], Alert)
     assert session.rows[0].type == "spread_anomaly"
+    assert session.rows[0].adversarial_passed is True
+    assert created.payload["adversarial_passed"] is True
     assert created.payload["alert_id"] == str(session.rows[0].id)
