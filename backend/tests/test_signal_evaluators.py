@@ -7,9 +7,17 @@ from app.services.signals.evaluators.basis_shift import BasisShiftEvaluator
 from app.services.signals.evaluators.event_driven import EventDrivenEvaluator
 from app.services.signals.evaluators.inventory_shock import InventoryShockEvaluator
 from app.services.signals.evaluators.momentum import MomentumEvaluator
+from app.services.signals.evaluators.news_event import NewsEventEvaluator
+from app.services.signals.evaluators.price_gap import PriceGapEvaluator
 from app.services.signals.evaluators.regime_shift import RegimeShiftEvaluator
 from app.services.signals.evaluators.spread_anomaly import SpreadAnomalyEvaluator
-from app.services.signals.types import IndustryPoint, MarketBar, SpreadStatistics, TriggerContext
+from app.services.signals.types import (
+    IndustryPoint,
+    MarketBar,
+    NewsEventPoint,
+    SpreadStatistics,
+    TriggerContext,
+)
 
 
 @pytest.mark.asyncio
@@ -234,6 +242,99 @@ async def test_event_driven_triggers_on_gap_and_volume_spike() -> None:
     assert result.signal_type == "event_driven"
 
 
+@pytest.mark.asyncio
+async def test_price_gap_triggers_with_new_signal_type() -> None:
+    start = datetime(2026, 5, 1, tzinfo=timezone.utc)
+    closes = [100.0, 100.2, 99.8, 100.1, 108.0]
+    market_data = [
+        MarketBar(
+            timestamp=start + timedelta(days=idx),
+            open=close,
+            high=close + 0.3,
+            low=close - 0.3,
+            close=close,
+            volume=500 if idx == len(closes) - 1 else 100,
+        )
+        for idx, close in enumerate(closes)
+    ]
+
+    result = await PriceGapEvaluator().evaluate(
+        TriggerContext(
+            symbol1="RB",
+            category="ferrous",
+            timestamp=datetime.now(timezone.utc),
+            market_data=market_data,
+        )
+    )
+
+    assert result is not None
+    assert result.signal_type == "price_gap"
+
+
+@pytest.mark.asyncio
+async def test_news_event_triggers_for_cross_verified_severe_event() -> None:
+    event = NewsEventPoint(
+        id="evt-1",
+        source="cailianshe",
+        title="OPEC+ extends production cuts",
+        summary="OPEC+ extends production cuts, bullish for crude oil.",
+        published_at=datetime(2026, 5, 3, tzinfo=timezone.utc),
+        event_type="supply",
+        affected_symbols=["SC"],
+        direction="bullish",
+        severity=5,
+        time_horizon="medium",
+        confidence=0.82,
+        source_count=2,
+        verification_status="cross_verified",
+    )
+
+    result = await NewsEventEvaluator().evaluate(
+        TriggerContext(
+            symbol1="SC",
+            category="energy",
+            timestamp=datetime.now(timezone.utc),
+            news_events=[event],
+        )
+    )
+
+    assert result is not None
+    assert result.signal_type == "news_event"
+    assert result.severity == "critical"
+    assert result.related_assets == ["SC"]
+
+
+@pytest.mark.asyncio
+async def test_news_event_requires_cross_source_or_manual_confirmation() -> None:
+    event = NewsEventPoint(
+        id="evt-2",
+        source="exchange_announcements",
+        title="Exchange risk notice",
+        summary="Single source policy event.",
+        published_at=datetime(2026, 5, 3, tzinfo=timezone.utc),
+        event_type="policy",
+        affected_symbols=["I"],
+        direction="mixed",
+        severity=4,
+        time_horizon="immediate",
+        confidence=0.7,
+        source_count=1,
+        verification_status="single_source",
+        requires_manual_confirmation=True,
+    )
+
+    result = await NewsEventEvaluator().evaluate(
+        TriggerContext(
+            symbol1="I",
+            category="ferrous",
+            timestamp=datetime.now(timezone.utc),
+            news_events=[event],
+        )
+    )
+
+    assert result is None
+
+
 def test_all_evaluators_expose_outcome_evaluation() -> None:
     start = datetime(2026, 5, 1, tzinfo=timezone.utc)
     market_data = [
@@ -272,6 +373,8 @@ def test_all_evaluators_expose_outcome_evaluation() -> None:
         RegimeShiftEvaluator(),
         InventoryShockEvaluator(),
         EventDrivenEvaluator(),
+        PriceGapEvaluator(),
+        NewsEventEvaluator(),
     ]
 
     outcomes = [
@@ -279,4 +382,4 @@ def test_all_evaluators_expose_outcome_evaluation() -> None:
         for evaluator in evaluators
     ]
 
-    assert outcomes == ["hit", "hit", "hit", "miss", "miss", "hit"]
+    assert outcomes == ["hit", "hit", "hit", "miss", "miss", "hit", "hit", "hit"]

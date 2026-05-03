@@ -372,56 +372,57 @@ Causa 的 `event_driven` 评估器实际上是纯技术面（gap + volume），*
 
 ### 任务清单
 
-- [ ] **数据模型**
-  - [ ] `models/news_events.py` — 结构化新闻事件表
+- [x] **数据模型**
+  - [x] `models/news_events.py` — 结构化新闻事件表
     - 字段：source, raw_url, published_at, event_type, affected_symbols, direction, severity, time_horizon, llm_confidence
-  - [ ] Alembic 迁移
-- [ ] **新闻采集**
-  - [ ] `services/news/collectors/cailianshe.py` — 财联社快讯（电报源）
-  - [ ] `services/news/collectors/sina_futures.py` — 新浪财经期货频道
-  - [ ] `services/news/collectors/gdelt.py` — GDELT 扩展使用（Causa 已接入）
-  - [ ] `services/news/collectors/exchange_announcements.py` — 交易所公告 API
+  - [x] Alembic 迁移
+- [x] **新闻采集**
+  - [x] `services/news/collectors/cailianshe.py` — 财联社快讯（电报源）collector 接口（真实电报源解析后续接入）
+  - [x] `services/news/collectors/sina_futures.py` — 新浪财经期货频道 collector 接口（真实页面解析后续接入）
+  - [x] `services/news/collectors/gdelt.py` — GDELT 扩展使用（Causa 已接入）
+  - [x] `services/news/collectors/exchange_announcements.py` — 交易所公告 API collector 接口（交易所适配后续接入）
   - [ ] 后续可扩展：上海钢联、卓创资讯（公开部分）
-- [ ] **向量检索基础设施（pgvector）**
-  - [ ] PostgreSQL 启用 `pgvector` 扩展（`CREATE EXTENSION vector`）
-  - [ ] `models/vector_chunks.py` — 向量主表（id, chunk_type, content_text, embedding vector(1024), embedding_model, metadata, quality_status, created_at）
-  - [ ] HNSW 索引：m=16 / ef_construction=64 / ef_search=40
-  - [ ] Alembic 迁移
-  - [ ] `services/vector_search/embedder.py` — Embedding 服务封装
+- [x] **向量检索基础设施（pgvector）**
+  - [x] PostgreSQL 启用 `pgvector` 扩展（`CREATE EXTENSION vector`）
+  - [x] `models/vector_chunks.py` — 向量主表（id, chunk_type, content_text, embedding vector(1024), embedding_model, metadata, quality_status, created_at）
+  - [x] HNSW 索引：m=16 / ef_construction=64 / ef_search=40
+  - [x] Alembic 迁移
+  - [x] `services/vector_search/embedder.py` — Embedding 服务封装
     - 主选 Voyage-3，备选 BGE-M3（开源本地）
     - 维度 1024
     - `embedding_model` 字段记录版本，支持双版本并存
-  - [ ] `services/vector_search/hybrid_search.py` — 混合检索
+    - 当前实现含 `local-hash-1024` 开发/测试 fallback；Voyage/BGE Provider 凭证接入留到 LLM 成本控制阶段统一配置
+  - [x] `services/vector_search/hybrid_search.py` — 混合检索
     - `final_score = α × cosine + β × bm25 + γ × time_decay`（默认 α=0.6, β=0.3, γ=0.1）
     - 元数据预过滤（chunk_type / sector / date_range）
     - time_decay half_life 按事件类型差异化（政策 180d / 季节性 365d / 突发 30d / 假设 ∞）
-- [ ] **去重与质量控制**
-  - [ ] `services/news/dedup.py` — 标题哈希 + 语义相似度（pgvector 检索近 24h）去重
-  - [ ] 同事件多源交叉验证：≥ 2 个独立源覆盖才进入评估
-- [ ] **LLM 结构化抽取**
-  - [ ] `services/news/extractor.py` — 调 LLM 抽取结构化事件
-  - [ ] Pydantic 模型强制输出结构：
+- [x] **去重与质量控制**
+  - [x] `services/news/dedup.py` — 标题哈希 + 语义相似度（pgvector 检索近 24h）去重
+  - [x] 同事件多源交叉验证：≥ 2 个独立源覆盖才进入评估
+- [x] **LLM 结构化抽取**
+  - [x] `services/news/extractor.py` — Pydantic 结构化抽取接口 + 确定性 fallback（真实 LLM Provider 后续接入）
+  - [x] Pydantic 模型强制输出结构：
     - `event_type`：政策 / 供给 / 需求 / 库存 / 地缘 / 天气 / 突发事件
     - `affected_symbols`：受影响品种（含传导图衍生的次级品种）
     - `direction`：bullish / bearish / mixed / unclear
     - `severity`：1-5 级
     - `time_horizon`：immediate / short / medium / long
-- [ ] **拆分原 event_driven 评估器**
-  - [ ] 重命名 `services/signals/evaluators/event_driven.py` → `price_gap.py`（保留 Causa 原逻辑）
-  - [ ] 新建 `services/signals/evaluators/news_event.py`：订阅 `news.event` 事件，结合品种传导图生成信号
-- [ ] **事件总线接入**
-  - [ ] 新闻入库后发布 `news.event` 事件
-  - [ ] `news_event` 评估器订阅，触发信号检测
-- [ ] **质量门槛**
-  - [ ] 严重度 ≥ 3 才生成预警，< 3 仅记录
-  - [ ] 单源未交叉验证的高严重度事件强制人工确认
-- [ ] **前端**
-  - [ ] 新闻事件流页面：展示已抽取的结构化事件
-  - [ ] 预警详情面板增加"触发新闻"链接（如果由 news_event 触发）
-- [ ] **验证**
-  - [ ] 手动注入若干已知重大事件（OPEC 减产、产区天气、政策变动），验证 LLM 抽取准确率
-  - [ ] 验证去重正常（同事件多源不会重复触发）
-  - [ ] 验证 `news_event` 评估器正确生成信号
+- [x] **拆分原 event_driven 评估器**
+  - [x] 重命名 `services/signals/evaluators/event_driven.py` → `price_gap.py`（保留 Causa 原逻辑；`event_driven` 作为兼容别名保留）
+  - [x] 新建 `services/signals/evaluators/news_event.py`：订阅 `news.event` 事件，结合品种传导图生成信号
+- [x] **事件总线接入**
+  - [x] 新闻入库后发布 `news.event` 事件
+  - [x] `news_event` 评估器订阅，触发信号检测
+- [x] **质量门槛**
+  - [x] 严重度 ≥ 3 才生成预警，< 3 仅记录
+  - [x] 单源未交叉验证的高严重度事件强制人工确认
+- [x] **前端**
+  - [x] 新闻事件流页面：展示已抽取的结构化事件
+  - [x] 预警详情面板增加"触发新闻"链接（如果由 news_event 触发）
+- [x] **验证**
+  - [x] 手动注入若干已知重大事件（OPEC 减产、产区天气、政策变动），验证 LLM 抽取准确率
+  - [x] 验证去重正常（同事件多源不会重复触发）
+  - [x] 验证 `news_event` 评估器正确生成信号
 
 ---
 

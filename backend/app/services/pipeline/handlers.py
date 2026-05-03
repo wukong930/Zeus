@@ -22,6 +22,7 @@ from app.services.signals.detector import SignalDetector
 from app.services.signals.types import (
     IndustryPoint,
     MarketBar,
+    NewsEventPoint,
     SpreadInfo,
     SpreadStatistics,
     TriggerContext,
@@ -82,6 +83,30 @@ def trigger_context_from_payload(payload: dict[str, Any]) -> TriggerContext:
             )
             for row in payload.get("inventory", [])
         ],
+        news_events=[
+            NewsEventPoint(
+                id=str(row.get("id") or ""),
+                source=str(row.get("source") or "unknown"),
+                title=str(row.get("title") or "Untitled event"),
+                summary=str(row.get("summary") or row.get("title") or ""),
+                published_at=_parse_datetime(row.get("published_at") or row.get("timestamp")),
+                event_type=str(row.get("event_type") or "breaking"),
+                affected_symbols=[
+                    str(symbol).upper()
+                    for symbol in row.get("affected_symbols", [])
+                    if str(symbol).strip()
+                ],
+                direction=str(row.get("direction") or "unclear"),
+                severity=int(row.get("severity") or 1),
+                time_horizon=str(row.get("time_horizon") or "short"),
+                confidence=float(row.get("confidence", row.get("llm_confidence", 0))),
+                source_count=int(row.get("source_count") or 1),
+                verification_status=str(row.get("verification_status") or "single_source"),
+                requires_manual_confirmation=bool(row.get("requires_manual_confirmation", False)),
+                raw_url=row.get("raw_url"),
+            )
+            for row in payload.get("news_events", [])
+        ],
         spread_stats=(
             SpreadStatistics(
                 adf_p_value=float(spread_stats["adf_p_value"]),
@@ -116,6 +141,53 @@ def trigger_context_payloads(event: ZeusEvent) -> list[dict[str, Any]]:
     if "context" in payload:
         return [payload["context"]]
     return []
+
+
+async def handle_news_event(
+    event: ZeusEvent,
+    session: AsyncSession | None = None,
+    *,
+    detector: SignalDetector | None = None,
+    publisher: EventPublisher = publish,
+) -> list[ZeusEvent]:
+    contexts_payload = trigger_context_payloads(event)
+    if not contexts_payload:
+        news_event = event.payload.get("news_event")
+        if not isinstance(news_event, dict):
+            return []
+        contexts_payload = [
+            {
+                "symbol1": symbol,
+                "category": "unknown",
+                "timestamp": news_event.get("published_at") or event.timestamp.isoformat(),
+                "regime": "news",
+                "news_events": [news_event],
+            }
+            for symbol in news_event.get("affected_symbols", [])
+        ]
+
+    signal_detector = detector or SignalDetector()
+    published: list[ZeusEvent] = []
+    for raw_context in contexts_payload:
+        context = trigger_context_from_payload(raw_context)
+        results = await signal_detector.detect(context, signal_types={"news_event"})
+        context_payload = jsonable(context)
+        if raw_context.get("regime") is not None:
+            context_payload["regime"] = raw_context["regime"]
+        for result in results:
+            published.append(
+                await publisher(
+                    "signal.detected",
+                    {
+                        "signal": jsonable(result),
+                        "context": context_payload,
+                    },
+                    source="news-event-evaluator",
+                    correlation_id=event.correlation_id,
+                    session=session,
+                )
+            )
+    return published
 
 
 async def handle_market_update(

@@ -40,6 +40,24 @@ export interface PortfolioSnapshot {
   correlation: CorrelationMatrix | null;
 }
 
+export interface NewsEvent {
+  id: string;
+  source: string;
+  rawUrl?: string | null;
+  title: string;
+  summary: string;
+  publishedAt: string;
+  eventType: string;
+  affectedSymbols: string[];
+  direction: "bullish" | "bearish" | "mixed" | "unclear";
+  severity: number;
+  timeHorizon: string;
+  confidence: number;
+  sourceCount: number;
+  verificationStatus: string;
+  requiresManualConfirmation: boolean;
+}
+
 interface BackendAlert {
   id: string;
   title: string;
@@ -54,6 +72,24 @@ interface BackendAlert {
   trigger_chain: { label?: string; description?: string }[];
   risk_items: string[];
   manual_check_items: string[];
+}
+
+interface BackendNewsEvent {
+  id: string;
+  source: string;
+  raw_url?: string | null;
+  title: string;
+  summary: string;
+  published_at: string;
+  event_type: string;
+  affected_symbols: string[];
+  direction: string;
+  severity: number;
+  time_horizon: string;
+  llm_confidence: number;
+  source_count: number;
+  verification_status: string;
+  requires_manual_confirmation: boolean;
 }
 
 interface BackendPosition {
@@ -126,6 +162,11 @@ export async function fetchPortfolioSnapshot(): Promise<PortfolioSnapshot> {
   };
 }
 
+export async function fetchNewsEventsFromApi(): Promise<NewsEvent[]> {
+  const rows = await fetchJson<BackendNewsEvent[]>("/api/news-events?limit=200");
+  return rows.map(mapNewsEvent);
+}
+
 async function fetchJson<T>(path: string): Promise<T> {
   const response = await fetch(path, { cache: "no-store" });
   if (!response.ok) {
@@ -151,6 +192,26 @@ async function fetchLatestMarketRows(symbols: string[]): Promise<Map<string, Bac
   return new Map(entries.filter((entry): entry is readonly [string, BackendMarketData] => entry[1] !== null));
 }
 
+function mapNewsEvent(event: BackendNewsEvent): NewsEvent {
+  return {
+    id: event.id,
+    source: event.source,
+    rawUrl: event.raw_url,
+    title: event.title,
+    summary: event.summary,
+    publishedAt: event.published_at,
+    eventType: event.event_type,
+    affectedSymbols: event.affected_symbols,
+    direction: toNewsDirection(event.direction),
+    severity: event.severity,
+    timeHorizon: event.time_horizon,
+    confidence: event.llm_confidence,
+    sourceCount: event.source_count,
+    verificationStatus: event.verification_status,
+    requiresManualConfirmation: event.requires_manual_confirmation,
+  };
+}
+
 function mapAlert(alert: BackendAlert): Alert {
   const symbol = alert.related_assets[0] ?? "N/A";
   return {
@@ -170,6 +231,11 @@ function mapAlert(alert: BackendAlert): Alert {
     regime: alert.category,
     adversarialPassed: Boolean(alert.adversarial_passed),
   };
+}
+
+function toNewsDirection(value: string): NewsEvent["direction"] {
+  if (value === "bullish" || value === "bearish" || value === "mixed") return value;
+  return "unclear";
 }
 
 function mapPosition(

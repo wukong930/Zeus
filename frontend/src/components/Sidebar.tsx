@@ -15,6 +15,7 @@ import {
   NotebookPen,
   BarChart3,
   Settings,
+  Newspaper,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -25,6 +26,7 @@ const NAV_ITEMS = [
   { href: "/portfolio", label: "Portfolio Map", icon: MapIcon },
   { divider: true } as const,
   { href: "/causal-web", label: "Causal Web", icon: Network },
+  { href: "/news", label: "News Events", icon: Newspaper },
   { href: "/industry", label: "Industry Lens", icon: Factory },
   { href: "/sectors", label: "Sectors", icon: Layers },
   { href: "/future-lab", label: "Future Lab", icon: Beaker },

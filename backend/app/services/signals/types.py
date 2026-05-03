@@ -24,6 +24,25 @@ class IndustryPoint:
 
 
 @dataclass(frozen=True)
+class NewsEventPoint:
+    id: str
+    source: str
+    title: str
+    summary: str
+    published_at: datetime
+    event_type: str
+    affected_symbols: list[str]
+    direction: str
+    severity: int
+    time_horizon: str
+    confidence: float
+    source_count: int = 1
+    verification_status: str = "single_source"
+    requires_manual_confirmation: bool = False
+    raw_url: str | None = None
+
+
+@dataclass(frozen=True)
 class SpreadStatistics:
     adf_p_value: float
     half_life: float
@@ -64,6 +83,7 @@ class TriggerContext:
     timestamp: datetime
     market_data: list[MarketBar] = field(default_factory=list)
     inventory: list[IndustryPoint] = field(default_factory=list)
+    news_events: list[NewsEventPoint] = field(default_factory=list)
     symbol2: str | None = None
     spread_stats: SpreadStatistics | None = None
     in_roll_window: bool = False

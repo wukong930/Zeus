@@ -11,6 +11,12 @@ from app.services.calibration.shadow_tracker import evaluate_pending_signals
 from app.services.calibration.updater import generate_calibration_reviews
 from app.services.contracts.main_contract_batch import detect_and_apply_main_contracts
 from app.services.learning.drift_monitor import run_drift_monitor
+from app.services.news.collectors import (
+    CailiansheCollector,
+    ExchangeAnnouncementsCollector,
+    SinaFuturesCollector,
+)
+from app.services.news.ingest import ingest_news_items
 from app.services.signals.watchlist import get_enabled_watchlist
 
 
@@ -39,6 +45,7 @@ DEFAULT_JOB_DEFINITIONS: tuple[JobDefinition, ...] = (
     JobDefinition("cleanup", "数据清理", "0 3 * * *"),
     JobDefinition("main-contract", "主力合约日检", "10 16 * * 1-5"),
     JobDefinition("adversarial-cache", "对抗零分布", "25 16 * * 1-5"),
+    JobDefinition("news-ingest", "新闻事件采集", "*/30 * * * *"),
 )
 
 
@@ -221,6 +228,29 @@ async def adversarial_cache_job() -> dict[str, Any]:
     }
 
 
+async def news_ingest_job() -> dict[str, Any]:
+    collectors = (
+        CailiansheCollector(),
+        SinaFuturesCollector(),
+        ExchangeAnnouncementsCollector(),
+    )
+    raw_items = []
+    for collector in collectors:
+        raw_items.extend(await collector.collect(limit=50))
+
+    async with AsyncSessionLocal() as session:
+        result = await ingest_news_items(session, raw_items)
+        await session.commit()
+    return {
+        "status": "completed",
+        "collected": result.collected,
+        "recorded": result.recorded,
+        "duplicates": result.duplicates,
+        "published": result.published,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+
 DEFAULT_JOB_HANDLERS: dict[str, JobHandler] = {
     definition.id: placeholder_job for definition in DEFAULT_JOB_DEFINITIONS
 }
@@ -231,3 +261,4 @@ DEFAULT_JOB_HANDLERS["regime-detect"] = regime_detection_job
 DEFAULT_JOB_HANDLERS["drift-monitor"] = drift_monitor_job
 DEFAULT_JOB_HANDLERS["main-contract"] = main_contract_job
 DEFAULT_JOB_HANDLERS["adversarial-cache"] = adversarial_cache_job
+DEFAULT_JOB_HANDLERS["news-ingest"] = news_ingest_job

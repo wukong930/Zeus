@@ -4,6 +4,7 @@ from app.core.events import ZeusEvent
 from app.models.alert import Alert
 from app.services.pipeline.handlers import (
     handle_market_update,
+    handle_news_event,
     handle_signal_detected,
     handle_signal_scored,
 )
@@ -70,6 +71,64 @@ async def test_market_update_handler_publishes_detected_signals() -> None:
     assert publisher.calls[0]["event"].payload["signal"]["signal_type"] == "spread_anomaly"
     assert publisher.calls[0]["event"].payload["context"]["symbol1"] == "RB"
     assert publisher.calls[0]["event"].payload["context"]["regime"] == "range_low_vol"
+
+
+async def test_news_event_handler_publishes_news_signal() -> None:
+    event = ZeusEvent(
+        channel="news.event",
+        payload={
+            "news_event": {
+                "id": "evt-1",
+                "source": "cailianshe",
+                "title": "OPEC+ extends production cuts",
+                "summary": "OPEC+ extends production cuts, bullish for crude oil.",
+                "published_at": datetime(2026, 5, 3, tzinfo=timezone.utc).isoformat(),
+                "event_type": "supply",
+                "affected_symbols": ["SC"],
+                "direction": "bullish",
+                "severity": 5,
+                "time_horizon": "medium",
+                "llm_confidence": 0.82,
+                "source_count": 2,
+                "verification_status": "cross_verified",
+                "requires_manual_confirmation": False,
+            },
+            "contexts": [
+                {
+                    "symbol1": "SC",
+                    "category": "energy",
+                    "regime": "news",
+                    "timestamp": datetime(2026, 5, 3, tzinfo=timezone.utc).isoformat(),
+                    "news_events": [
+                        {
+                            "id": "evt-1",
+                            "source": "cailianshe",
+                            "title": "OPEC+ extends production cuts",
+                            "summary": "OPEC+ extends production cuts, bullish for crude oil.",
+                            "published_at": datetime(2026, 5, 3, tzinfo=timezone.utc).isoformat(),
+                            "event_type": "supply",
+                            "affected_symbols": ["SC"],
+                            "direction": "bullish",
+                            "severity": 5,
+                            "time_horizon": "medium",
+                            "llm_confidence": 0.82,
+                            "source_count": 2,
+                            "verification_status": "cross_verified",
+                            "requires_manual_confirmation": False,
+                        }
+                    ],
+                }
+            ],
+        },
+        source="test",
+    )
+    publisher = CapturingPublisher()
+
+    published = await handle_news_event(event, publisher=publisher)
+
+    assert [item.channel for item in published] == ["signal.detected"]
+    assert publisher.calls[0]["event"].payload["signal"]["signal_type"] == "news_event"
+    assert publisher.calls[0]["event"].payload["context"]["news_events"][0]["id"] == "evt-1"
 
 
 async def test_signal_detected_handler_publishes_score() -> None:

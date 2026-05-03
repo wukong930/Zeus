@@ -6,6 +6,7 @@ from app.core.database import AsyncSessionLocal
 from app.core.events import EventHandler, subscribe
 from app.services.pipeline.handlers import (
     handle_market_update,
+    handle_news_event,
     handle_signal_detected,
     handle_signal_scored,
 )
@@ -14,6 +15,7 @@ logger = logging.getLogger(__name__)
 
 PIPELINE_SUBSCRIPTIONS: tuple[tuple[str, EventHandler], ...] = (
     ("market.update", handle_market_update),
+    ("news.event", handle_news_event),
     ("signal.detected", handle_signal_detected),
     ("signal.scored", handle_signal_scored),
 )

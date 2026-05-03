@@ -1,6 +1,7 @@
 "use client";
 
 import { Clock, ChevronRight, Sparkles } from "lucide-react";
+import Link from "next/link";
 import { type Alert } from "@/data/mock";
 import { Card } from "./Card";
 import { Badge } from "./Badge";
@@ -60,6 +61,15 @@ export function AlertCard({ alert, onClick, glow }: AlertCardProps) {
               </span>
             )}
             <span className="text-text-muted">samples · {alert.sampleSize}</span>
+            {alert.evaluator === "news_event" && (
+              <Link
+                href={`/news?symbol=${encodeURIComponent(alert.symbol)}`}
+                onClick={(event) => event.stopPropagation()}
+                className="text-brand-emerald-bright hover:text-brand-emerald flex items-center gap-1"
+              >
+                触发新闻
+              </Link>
+            )}
           </div>
         </div>
 

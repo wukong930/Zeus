@@ -98,6 +98,35 @@ class AlertRead(AlertCreate, ORMModel):
     updated_at: datetime
 
 
+class NewsEventCreate(BaseModel):
+    source: str = Field(min_length=1, max_length=50)
+    raw_url: str | None = None
+    title: str = Field(min_length=1)
+    summary: str | None = None
+    content_text: str | None = None
+    published_at: datetime
+    event_type: str = Field(
+        pattern="^(policy|supply|demand|inventory|geopolitical|weather|breaking)$"
+    )
+    affected_symbols: list[str] = Field(default_factory=list)
+    direction: str = Field(pattern="^(bullish|bearish|mixed|unclear)$")
+    severity: int = Field(ge=1, le=5)
+    time_horizon: str = Field(pattern="^(immediate|short|medium|long)$")
+    llm_confidence: float = Field(ge=0, le=1)
+    source_count: int = Field(default=1, ge=1)
+    verification_status: str | None = None
+    dedup_hash: str | None = None
+    extraction_payload: dict[str, Any] = Field(default_factory=dict)
+
+
+class NewsEventRead(NewsEventCreate, ORMModel):
+    id: UUID
+    summary: str
+    requires_manual_confirmation: bool
+    created_at: datetime
+    updated_at: datetime
+
+
 class StrategyCreate(BaseModel):
     name: str
     description: str

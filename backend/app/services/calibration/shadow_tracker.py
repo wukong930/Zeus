@@ -13,6 +13,8 @@ from app.services.signals.evaluators import (
     EventDrivenEvaluator,
     InventoryShockEvaluator,
     MomentumEvaluator,
+    NewsEventEvaluator,
+    PriceGapEvaluator,
     RegimeShiftEvaluator,
     SpreadAnomalyEvaluator,
 )
@@ -25,6 +27,8 @@ DEFAULT_OUTCOME_HORIZONS: dict[str, int] = {
     "regime_shift": 30,
     "inventory_shock": 30,
     "event_driven": 5,
+    "price_gap": 5,
+    "news_event": 10,
 }
 
 DEFAULT_OUTCOME_EVALUATORS: dict[str, TriggerEvaluator] = {
@@ -34,6 +38,8 @@ DEFAULT_OUTCOME_EVALUATORS: dict[str, TriggerEvaluator] = {
     "regime_shift": RegimeShiftEvaluator(),
     "inventory_shock": InventoryShockEvaluator(),
     "event_driven": EventDrivenEvaluator(),
+    "price_gap": PriceGapEvaluator(),
+    "news_event": NewsEventEvaluator(),
 }
 
 
