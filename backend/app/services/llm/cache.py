@@ -51,18 +51,23 @@ async def get_cached_completion(
         return None
     if row is None:
         return None
-    row.hit_count = int(row.hit_count or 0) + 1
-    row.updated_at = effective_at
-    await session.flush()
-    usage = row.response.get("usage") or {}
+    response = dict(row.response or {})
+    model = str(response.get("model") or row.model)
+    try:
+        row.hit_count = int(row.hit_count or 0) + 1
+        row.updated_at = effective_at
+        await session.flush()
+    except Exception:
+        await rollback_if_possible(session)
+    usage = response.get("usage") or {}
     return LLMCompletionResult(
-        content=str(row.response.get("content") or ""),
-        model=str(row.response.get("model") or row.model),
+        content=str(response.get("content") or ""),
+        model=model,
         usage=LLMUsage(
             input_tokens=usage.get("input_tokens"),
             output_tokens=usage.get("output_tokens"),
         ),
-        raw=row.response.get("raw"),
+        raw=response.get("raw"),
     )
 
 
@@ -82,28 +87,30 @@ async def store_cached_completion(
     if session is None:
         return None
     effective_at = as_of or datetime.now(timezone.utc)
-    row = LLMCache(
-        cache_key=cache_key,
-        module=module,
-        provider=provider,
-        model=model,
-        system_hash=prompt_hash(system),
-        user_hash=prompt_hash(user),
-        response={
-            "content": result.content,
-            "model": result.model,
-            "usage": {
-                "input_tokens": result.usage.input_tokens if result.usage else None,
-                "output_tokens": result.usage.output_tokens if result.usage else None,
-            },
-            "raw": result.raw,
-        },
-        hit_count=0,
-        expires_at=effective_at + ttl,
-    )
-    session.add(row)
-    await session.flush()
-    return row
+    try:
+        row = (
+            await session.scalars(select(LLMCache).where(LLMCache.cache_key == cache_key).limit(1))
+        ).first()
+        expires_at = effective_at + ttl
+        if row is None:
+            row = LLMCache(cache_key=cache_key)
+            session.add(row)
+        _apply_cached_completion(
+            row,
+            module=module,
+            provider=provider,
+            model=model,
+            system=system,
+            user=user,
+            result=result,
+            expires_at=expires_at,
+            updated_at=effective_at,
+        )
+        await session.flush()
+        return row
+    except Exception:
+        await rollback_if_possible(session)
+        return None
 
 
 def messages_to_prompt_parts(messages: list[dict[str, Any]] | Any) -> tuple[str, str]:
@@ -117,3 +124,34 @@ def messages_to_prompt_parts(messages: list[dict[str, Any]] | Any) -> tuple[str,
         elif role == "user":
             user_parts.append(str(content))
     return "\n".join(system_parts), "\n".join(user_parts)
+
+
+def _apply_cached_completion(
+    row: LLMCache,
+    *,
+    module: str,
+    provider: str,
+    model: str,
+    system: str,
+    user: str,
+    result: LLMCompletionResult,
+    expires_at: datetime,
+    updated_at: datetime,
+) -> None:
+    row.module = module
+    row.provider = provider
+    row.model = model
+    row.system_hash = prompt_hash(system)
+    row.user_hash = prompt_hash(user)
+    row.response = {
+        "content": result.content,
+        "model": result.model,
+        "usage": {
+            "input_tokens": result.usage.input_tokens if result.usage else None,
+            "output_tokens": result.usage.output_tokens if result.usage else None,
+        },
+        "raw": result.raw,
+    }
+    row.hit_count = 0
+    row.expires_at = expires_at
+    row.updated_at = updated_at
