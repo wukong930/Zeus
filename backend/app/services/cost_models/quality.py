@@ -1,3 +1,4 @@
+import asyncio
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -14,7 +15,13 @@ from app.services.signals.evaluators.cost_model import (
     RestartExpectationEvaluator,
 )
 from app.services.signals.evaluators.rubber_supply import RubberSupplyShockEvaluator
-from app.services.signals.types import CostSnapshotPoint, NewsEventPoint, TriggerContext
+from app.services.signals.types import (
+    CostSnapshotPoint,
+    NewsEventPoint,
+    TriggerContext,
+    TriggerEvaluator,
+    TriggerResult,
+)
 
 ACCEPTABLE_BENCHMARK_ERROR_PCT = 5.0
 MIN_SIGNAL_CASE_HIT_RATE = 0.75
@@ -285,84 +292,92 @@ def compare_public_benchmarks(
 
 
 async def evaluate_historical_signal_cases() -> list[SignalCaseResult]:
-    return [
-        await evaluate_signal_case(
-            case_id="ferrous-2021-production-curb",
-            title="2021 production curb cost pressure",
-            snapshots=[
-                synthetic_cost_snapshot(idx, price=92, unit_cost=100, margin=-0.087)
-                for idx in range(10)
-            ],
-            expected_signals=["capacity_contraction", "median_pressure", "marginal_capacity_squeeze"],
-            note="Two-week negative margin plus price below P50/P75 should surface capacity pressure.",
-        ),
-        await evaluate_signal_case(
-            case_id="ferrous-2024-capacity-adjustment",
-            title="2024 capacity adjustment marginal squeeze",
-            snapshots=[synthetic_cost_snapshot(0, price=96, unit_cost=100, margin=-0.042)],
-            expected_signals=["median_pressure", "marginal_capacity_squeeze"],
-            note="Known adjustment windows are represented by price below median and marginal breakevens.",
-        ),
-        await evaluate_signal_case(
-            case_id="ferrous-margin-restart",
-            title="Margin recovery restart expectation",
-            snapshots=[
-                synthetic_cost_snapshot(0, price=96, unit_cost=100, margin=-0.04),
-                synthetic_cost_snapshot(1, price=98, unit_cost=100, margin=-0.02),
-                synthetic_cost_snapshot(2, price=103, unit_cost=100, margin=0.029),
-            ],
-            expected_signals=["restart_expectation"],
-            note="A move from negative to positive margin should trigger restart expectation.",
-        ),
-    ]
+    return list(
+        await asyncio.gather(
+            evaluate_signal_case(
+                case_id="ferrous-2021-production-curb",
+                title="2021 production curb cost pressure",
+                snapshots=[
+                    synthetic_cost_snapshot(idx, price=92, unit_cost=100, margin=-0.087)
+                    for idx in range(10)
+                ],
+                expected_signals=[
+                    "capacity_contraction",
+                    "median_pressure",
+                    "marginal_capacity_squeeze",
+                ],
+                note="Two-week negative margin plus price below P50/P75 should surface capacity pressure.",
+            ),
+            evaluate_signal_case(
+                case_id="ferrous-2024-capacity-adjustment",
+                title="2024 capacity adjustment marginal squeeze",
+                snapshots=[synthetic_cost_snapshot(0, price=96, unit_cost=100, margin=-0.042)],
+                expected_signals=["median_pressure", "marginal_capacity_squeeze"],
+                note="Known adjustment windows are represented by price below median and marginal breakevens.",
+            ),
+            evaluate_signal_case(
+                case_id="ferrous-margin-restart",
+                title="Margin recovery restart expectation",
+                snapshots=[
+                    synthetic_cost_snapshot(0, price=96, unit_cost=100, margin=-0.04),
+                    synthetic_cost_snapshot(1, price=98, unit_cost=100, margin=-0.02),
+                    synthetic_cost_snapshot(2, price=103, unit_cost=100, margin=0.029),
+                ],
+                expected_signals=["restart_expectation"],
+                note="A move from negative to positive margin should trigger restart expectation.",
+            ),
+        )
+    )
 
 
 async def evaluate_historical_rubber_signal_cases() -> list[SignalCaseResult]:
-    return [
-        await evaluate_signal_case(
-            case_id="rubber-ru-marginal-squeeze",
-            title="RU price below rubber cost curve",
-            snapshots=[
-                synthetic_cost_snapshot(
-                    0,
-                    symbol="RU",
-                    price=14000,
-                    unit_cost=15327.8,
-                    p25=14867.966,
-                    p50=14867.966,
-                    p75=16094.19,
-                    p90=17473.692,
-                    margin=-0.094843,
-                )
-            ],
-            expected_signals=["median_pressure", "marginal_capacity_squeeze"],
-            note="RU below P50/P75 should surface rubber margin pressure.",
-            symbol="RU",
-            category="rubber",
-        ),
-        await evaluate_news_signal_case(
-            case_id="rubber-2019-thai-drought",
-            title="2019 Thai drought rubber supply stress",
-            event=synthetic_rubber_news_event(
-                "rubber-2019-thai-drought",
-                "Thailand drought cuts natural rubber tapping",
-                "Dry weather in Thai rubber producing regions lowers field latex flow.",
+    return list(
+        await asyncio.gather(
+            evaluate_signal_case(
+                case_id="rubber-ru-marginal-squeeze",
+                title="RU price below rubber cost curve",
+                snapshots=[
+                    synthetic_cost_snapshot(
+                        0,
+                        symbol="RU",
+                        price=14000,
+                        unit_cost=15327.8,
+                        p25=14867.966,
+                        p50=14867.966,
+                        p75=16094.19,
+                        p90=17473.692,
+                        margin=-0.094843,
+                    )
+                ],
+                expected_signals=["median_pressure", "marginal_capacity_squeeze"],
+                note="RU below P50/P75 should surface rubber margin pressure.",
+                symbol="RU",
+                category="rubber",
             ),
-            expected_signals=["rubber_supply_shock"],
-            note="Thai drought maps to NR/RU supply stress through origin tapping disruption.",
-        ),
-        await evaluate_news_signal_case(
-            case_id="rubber-2020-covid-tapping",
-            title="2020 tapping disruption during Covid restrictions",
-            event=synthetic_rubber_news_event(
-                "rubber-2020-covid-tapping",
-                "Malaysia rubber tapping disruption during Covid restrictions",
-                "Movement restrictions disrupt rubber tapping and export logistics.",
+            evaluate_news_signal_case(
+                case_id="rubber-2019-thai-drought",
+                title="2019 Thai drought rubber supply stress",
+                event=synthetic_rubber_news_event(
+                    "rubber-2019-thai-drought",
+                    "Thailand drought cuts natural rubber tapping",
+                    "Dry weather in Thai rubber producing regions lowers field latex flow.",
+                ),
+                expected_signals=["rubber_supply_shock"],
+                note="Thai drought maps to NR/RU supply stress through origin tapping disruption.",
             ),
-            expected_signals=["rubber_supply_shock"],
-            note="Covid-era tapping/logistics restrictions should be visible as rubber supply shock.",
-        ),
-    ]
+            evaluate_news_signal_case(
+                case_id="rubber-2020-covid-tapping",
+                title="2020 tapping disruption during Covid restrictions",
+                event=synthetic_rubber_news_event(
+                    "rubber-2020-covid-tapping",
+                    "Malaysia rubber tapping disruption during Covid restrictions",
+                    "Movement restrictions disrupt rubber tapping and export logistics.",
+                ),
+                expected_signals=["rubber_supply_shock"],
+                note="Covid-era tapping/logistics restrictions should be visible as rubber supply shock.",
+            ),
+        )
+    )
 
 
 async def evaluate_signal_case(
@@ -389,8 +404,7 @@ async def evaluate_signal_case(
     )
     triggered = [
         result.signal_type
-        for result in [await evaluator.evaluate(context) for evaluator in evaluators]
-        if result is not None
+        for result in await _evaluate_trigger_results(context, evaluators)
     ]
     return SignalCaseResult(
         case_id=case_id,
@@ -419,8 +433,7 @@ async def evaluate_news_signal_case(
     evaluators = (RubberSupplyShockEvaluator(),)
     triggered = [
         result.signal_type
-        for result in [await evaluator.evaluate(context) for evaluator in evaluators]
-        if result is not None
+        for result in await _evaluate_trigger_results(context, evaluators)
     ]
     return SignalCaseResult(
         case_id=case_id,
@@ -430,6 +443,14 @@ async def evaluate_news_signal_case(
         passed=set(expected_signals).issubset(triggered),
         note=note,
     )
+
+
+async def _evaluate_trigger_results(
+    context: TriggerContext,
+    evaluators: tuple[TriggerEvaluator, ...],
+) -> list[TriggerResult]:
+    results = await asyncio.gather(*(evaluator.evaluate(context) for evaluator in evaluators))
+    return [result for result in results if result is not None]
 
 
 def synthetic_cost_snapshot(

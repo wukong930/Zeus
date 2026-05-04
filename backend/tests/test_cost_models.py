@@ -1,3 +1,4 @@
+import asyncio
 from datetime import date, datetime, timezone
 
 from fastapi.testclient import TestClient
@@ -10,6 +11,7 @@ from app.services.cost_models.framework import cost_curve_percentiles
 from app.services.cost_models.news_extractor import extract_cost_data_points
 from app.services.cost_models.quality import (
     PUBLIC_RUBBER_BENCHMARKS,
+    _evaluate_trigger_results,
     build_quality_report,
     compare_public_benchmarks,
     evaluate_historical_signal_cases,
@@ -33,6 +35,7 @@ from app.services.cost_models.snapshots import (
 from app.services.pipeline.handlers import trigger_context_from_payload
 from app.services.sectors.ferrous import calculate_blast_furnace_margin
 from app.services.signals.detector import SignalDetector
+from app.services.signals.types import TriggerContext, TriggerResult
 
 
 class FakeScalars:
@@ -306,6 +309,21 @@ def cost_snapshot_row(symbol: str, snapshot_date: date) -> CostSnapshot:
     )
 
 
+def trigger_result(signal_type: str) -> TriggerResult:
+    return TriggerResult(
+        signal_type=signal_type,
+        triggered=True,
+        severity="medium",
+        confidence=0.7,
+        trigger_chain=[],
+        related_assets=["RB"],
+        risk_items=[],
+        manual_check_items=[],
+        title=signal_type,
+        summary=signal_type,
+    )
+
+
 async def test_rubber_cost_context_triggers_profit_margin_signals() -> None:
     rows = [
         CostSnapshot(
@@ -358,6 +376,39 @@ def test_public_benchmark_comparisons_pass_phase7a_tolerance() -> None:
     assert len(comparisons) >= 5
     assert max(item.error_pct for item in comparisons) < 5
     assert all(item.within_tolerance for item in comparisons)
+
+
+async def test_quality_evaluator_helper_runs_independent_evaluators_concurrently() -> None:
+    gate = asyncio.Event()
+    context = TriggerContext(
+        symbol1="RB",
+        category="ferrous",
+        timestamp=datetime(2026, 5, 3, tzinfo=timezone.utc),
+    )
+
+    class WaitingEvaluator:
+        signal_type = "waiting"
+
+        async def evaluate(self, _context):
+            await gate.wait()
+            return trigger_result(self.signal_type)
+
+    class ReleasingEvaluator:
+        signal_type = "releasing"
+
+        async def evaluate(self, _context):
+            gate.set()
+            return trigger_result(self.signal_type)
+
+    results = await asyncio.wait_for(
+        _evaluate_trigger_results(
+            context,
+            (WaitingEvaluator(), ReleasingEvaluator()),  # type: ignore[arg-type]
+        ),
+        timeout=0.2,
+    )
+
+    assert [result.signal_type for result in results] == ["waiting", "releasing"]
 
 
 async def test_quality_report_recommends_deferring_paid_feed_when_checks_pass() -> None:
