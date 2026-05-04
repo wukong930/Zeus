@@ -8,7 +8,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -138,12 +138,16 @@ async def get_causal_web(
     limit: int = Query(default=12, ge=4, le=40),
     session: AsyncSession = Depends(get_db),
 ) -> CausalWebGraph:
-    news = list(
-        (
-            await session.scalars(
-                select(NewsEvent).order_by(NewsEvent.published_at.desc()).limit(max(3, limit // 3))
-            )
-        ).all()
+    news_limit = max(3, limit // 3)
+    news = _unique_recent_news(
+        list(
+            (
+                await session.scalars(
+                    select(NewsEvent).order_by(NewsEvent.published_at.desc()).limit(news_limit * 4)
+                )
+            ).all()
+        ),
+        limit=news_limit,
     )
     signals = list(
         (
@@ -176,15 +180,12 @@ async def get_causal_web(
             )
         ).all()
     )
-    market_metrics = _latest_market_metrics(
-        list(
-            (
-                await session.scalars(
-                    select(MarketData).order_by(MarketData.ingested_at.desc()).limit(limit * 240)
-                )
-            ).all()
-        ),
-        limit=max(6, limit),
+    market_metrics = list(
+        (
+            await session.scalars(
+                _latest_market_metrics_statement(limit=max(6, limit))
+            )
+        ).all()
     )
     metric_contexts = [
         *[_metric_context_from_industry(row) for row in metrics],
@@ -533,17 +534,60 @@ def _unique_by_id(rows: list[Alert]) -> list[Alert]:
     return unique
 
 
-def _latest_market_metrics(rows: list[MarketData], *, limit: int) -> list[MarketData]:
-    seen: set[str] = set()
-    latest: list[MarketData] = []
+def _unique_recent_news(rows: list[NewsEvent], *, limit: int) -> list[NewsEvent]:
+    seen: set[tuple[str, tuple[str, ...], str]] = set()
+    unique: list[NewsEvent] = []
     for row in rows:
-        if row.symbol in seen:
+        key = _news_display_key(row)
+        if key in seen:
             continue
-        seen.add(row.symbol)
-        latest.append(row)
-        if len(latest) >= limit:
+        seen.add(key)
+        unique.append(row)
+        if len(unique) >= limit:
             break
-    return latest
+    return unique
+
+
+def _news_display_key(row: NewsEvent) -> tuple[str, tuple[str, ...], str]:
+    symbols = tuple(sorted(str(symbol).upper() for symbol in row.affected_symbols[:5]))
+    return (row.event_type.lower(), symbols, _normalize_news_title(row.title))
+
+
+def _normalize_news_title(value: str) -> str:
+    normalized = value.strip().lower()
+    normalized = re.sub(r"^\s*\([^)]*\)\s*", "", normalized)
+    normalized = re.sub(r"^\s*feature\s*:\s*", "", normalized)
+    normalized = normalized.split("--", 1)[0]
+    normalized = re.sub(r"[^a-z0-9\u4e00-\u9fff]+", " ", normalized)
+    return " ".join(normalized.split())
+
+
+def _latest_market_metrics_statement(*, limit: int):
+    ranked = (
+        select(
+            MarketData.id.label("id"),
+            func.row_number()
+            .over(
+                partition_by=MarketData.symbol,
+                order_by=(
+                    MarketData.ingested_at.desc(),
+                    MarketData.timestamp.desc(),
+                    MarketData.vintage_at.desc(),
+                ),
+            )
+            .label("rn"),
+        )
+        .select_from(MarketData)
+        .subquery()
+    )
+
+    return (
+        select(MarketData)
+        .join(ranked, MarketData.id == ranked.c.id)
+        .where(ranked.c.rn == 1)
+        .order_by(MarketData.ingested_at.desc(), MarketData.timestamp.desc())
+        .limit(limit)
+    )
 
 
 def _metric_context_from_industry(row: IndustryData) -> MetricContext:

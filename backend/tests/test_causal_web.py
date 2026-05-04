@@ -8,7 +8,9 @@ from app.api.causal_web import (
     _append_edge,
     _build_edges,
     _counter_seeds_from_alert,
+    _latest_market_metrics_statement,
     _layout_nodes,
+    _unique_recent_news,
 )
 from app.models.alert import Alert
 from app.models.news_events import NewsEvent
@@ -152,3 +154,68 @@ def test_counter_seeds_from_alert_create_review_nodes_and_edges() -> None:
     )
 
     assert [(edge.source, edge.target) for edge in edges] == [(counters[0].id, f"alert-{alert_id}")]
+
+
+def test_unique_recent_news_collapses_syndicated_titles() -> None:
+    now = datetime.now(timezone.utc)
+
+    def news(title: str, *, summary: str, dedup_hash: str) -> NewsEvent:
+        return NewsEvent(
+            id=uuid4(),
+            source="gdelt",
+            title=title,
+            summary=summary,
+            published_at=now,
+            event_type="policy",
+            affected_symbols=["NR", "RU"],
+            direction="bullish",
+            severity=3,
+            time_horizon="short",
+            llm_confidence=0.73,
+            verification_status="single_source",
+            requires_manual_confirmation=False,
+            dedup_hash=dedup_hash,
+        )
+
+    first = news(
+        "( Hello Africa ) China zero - tariff policy opens new opportunities for Cote dIvoire rubber sector",
+        summary="India",
+        dedup_hash="news-1",
+    )
+    duplicate_prefix = news(
+        "Feature : China zero - tariff policy opens new opportunities for Cote dIvoire rubber sector",
+        summary="Japan",
+        dedup_hash="news-2",
+    )
+    duplicate_suffix = news(
+        "China zero - tariff policy opens new opportunities for Cote dIvoire rubber sector -- China Economic Net",
+        summary="China",
+        dedup_hash="news-3",
+    )
+    unrelated = news(
+        "China zero-tariff policy expands copper trade",
+        summary="Metals",
+        dedup_hash="news-4",
+    )
+
+    unique = _unique_recent_news(
+        [first, duplicate_prefix, duplicate_suffix, unrelated],
+        limit=4,
+    )
+
+    assert [row.id for row in unique] == [first.id, unrelated.id]
+
+
+def test_latest_market_metrics_statement_prefers_latest_row_per_symbol() -> None:
+    compiled = str(
+        _latest_market_metrics_statement(limit=6).compile(
+            compile_kwargs={"literal_binds": True}
+        )
+    )
+
+    assert "row_number() OVER" in compiled
+    assert "PARTITION BY market_data.symbol" in compiled
+    assert "market_data.ingested_at DESC" in compiled
+    assert "market_data.timestamp DESC" in compiled
+    assert "anon_1.rn = 1" in compiled
+    assert "LIMIT 6" in compiled
