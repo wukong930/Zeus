@@ -12,7 +12,8 @@
 
 html,
 body {
-  background: #000;
+  background:
+    linear-gradient(180deg, #020403 0%, #000 42%, #020302 100%);
   color: #fff;
   font-family: "Inter", "PingFang SC", "HarmonyOS Sans", -apple-system, sans-serif;
   font-size: 14px;
@@ -75,7 +76,9 @@ body {
 
 /* React Flow customization */
 .causal-web-flow .react-flow__renderer {
-  background: #000;
+  background:
+    linear-gradient(180deg, rgba(10, 14, 12, 0.9), rgba(0, 0, 0, 0.92)),
+    #000;
 }
 
 .causal-web-flow .react-flow__edge-path {
@@ -138,6 +141,27 @@ body {
 
 .causal-stage-band {
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+
+.zeus-grid-surface {
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+
+.zeus-chart-grid line {
+  stroke: #1f241f;
+  stroke-width: 0.75;
+}
+
+.zeus-chart-axis {
+  color: #737373;
+  font-variant-numeric: tabular-nums;
+}
+
+.zeus-data-line {
+  filter: drop-shadow(0 0 8px rgba(16, 185, 129, 0.18));
 }
 
 .causal-node-hex {

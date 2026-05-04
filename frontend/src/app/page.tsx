@@ -5,8 +5,9 @@ import { CausalWeb } from "@/components/CausalWeb";
 import { SectorHeatmap } from "@/components/SectorHeatmap";
 import { AlertCard } from "@/components/AlertCard";
 import { Badge } from "@/components/Badge";
+import { MetricTile } from "@/components/MetricTile";
 import { ALERTS, POSITIONS, PERSONAL_GREETING } from "@/data/mock";
-import { ArrowRight, Network, TrendingUp, TrendingDown } from "lucide-react";
+import { Activity, ArrowRight, Gauge, Network, TrendingUp, TrendingDown, WalletCards } from "lucide-react";
 import Link from "next/link";
 import { cn, formatPercent } from "@/lib/utils";
 
@@ -65,7 +66,8 @@ export default function CommandCenterPage() {
           {recentAlerts.map((alert) => (
             <Card
               key={alert.id}
-              variant="flat"
+              variant="data"
+              interactive
               className={cn(
                 "border-l-[3px] cursor-pointer hover:bg-bg-surface-raised",
                 alert.severity === "critical" && "border-l-data-down",
@@ -148,38 +150,11 @@ export default function CommandCenterPage() {
 
       {/* Bottom: Quick stats */}
       <div className="grid grid-cols-4 gap-5">
-        <StatCard label="活跃信号" value="17" trend="+3" subtext="过去 24h" />
-        <StatCard label="本月预警" value="142" trend="+8.2%" subtext="vs 上月" />
-        <StatCard label="校准进度" value="73 / 100" subtext="样本量" />
-        <StatCard label="LLM 月度成本" value="$24.30" subtext="预算 $80" />
+        <MetricTile label="活跃信号" value="17" trend="+3" caption="过去 24h" icon={Activity} tone="up" />
+        <MetricTile label="本月预警" value="142" trend="+8.2%" caption="vs 上月" icon={TrendingUp} tone="warning" />
+        <MetricTile label="校准进度" value="73/100" caption="样本量" icon={Gauge} tone="cyan" />
+        <MetricTile label="LLM 月度成本" value="$24.30" caption="预算 $80" icon={WalletCards} tone="violet" />
       </div>
     </div>
-  );
-}
-
-function StatCard({
-  label,
-  value,
-  trend,
-  subtext,
-}: {
-  label: string;
-  value: string;
-  trend?: string;
-  subtext?: string;
-}) {
-  return (
-    <Card variant="flat">
-      <div className="text-caption text-text-muted uppercase tracking-wider mb-2">{label}</div>
-      <div className="text-display font-mono text-text-primary tabular-nums leading-none">{value}</div>
-      <div className="flex items-center gap-2 mt-2">
-        {trend && (
-          <span className={cn("text-xs font-mono", trend.startsWith("+") ? "text-data-up" : "text-data-down")}>
-            {trend}
-          </span>
-        )}
-        {subtext && <span className="text-caption text-text-muted">{subtext}</span>}
-      </div>
-    </Card>
   );
 }

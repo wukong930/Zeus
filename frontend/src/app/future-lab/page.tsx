@@ -417,20 +417,20 @@ function ProbabilityFan({ report, basePrice }: { report: ScenarioReport | null; 
   const y95 = yFor(distribution.p95);
 
   return (
-    <div className="h-80 relative">
+    <div className="relative h-80 overflow-hidden rounded-sm border border-border-subtle bg-bg-base zeus-grid-surface">
       <svg viewBox="0 0 800 320" className="w-full h-full" preserveAspectRatio="none">
         <defs>
           <linearGradient id="fanGrad95" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#F97316" stopOpacity="0.15" />
-            <stop offset="100%" stopColor="#F97316" stopOpacity="0.05" />
+            <stop offset="0%" stopColor="#F97316" stopOpacity="0.24" />
+            <stop offset="100%" stopColor="#F97316" stopOpacity="0.04" />
           </linearGradient>
           <linearGradient id="fanGrad75" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#10B981" stopOpacity="0.3" />
-            <stop offset="100%" stopColor="#10B981" stopOpacity="0.15" />
+            <stop offset="0%" stopColor="#10B981" stopOpacity="0.34" />
+            <stop offset="100%" stopColor="#10B981" stopOpacity="0.08" />
           </linearGradient>
         </defs>
         {[80, 160, 240].map((y) => (
-          <line key={y} x1="0" y1={y} x2="800" y2={y} stroke="#1A1A1A" strokeWidth="0.5" />
+          <line key={y} x1="0" y1={y} x2="800" y2={y} stroke="#1F241F" strokeWidth="0.75" />
         ))}
         <line
           x1="300"
@@ -445,11 +445,12 @@ function ProbabilityFan({ report, basePrice }: { report: ScenarioReport | null; 
           d={`M 0 ${baseY + 28} L 60 ${baseY + 20} L 120 ${baseY + 24} L 180 ${baseY + 8} L 240 ${baseY + 4} L 300 ${baseY}`}
           fill="none"
           stroke="#A3A3A3"
-          strokeWidth="1.5"
+          strokeWidth="1.6"
+          opacity="0.8"
         />
         <path d={`M 300 ${baseY} L 800 ${y95} L 800 ${y5} L 300 ${baseY} Z`} fill="url(#fanGrad95)" />
         <path d={`M 300 ${baseY} L 800 ${y75} L 800 ${y25} L 300 ${baseY} Z`} fill="url(#fanGrad75)" />
-        <path d={`M 300 ${baseY} L 800 ${y50}`} fill="none" stroke="#10B981" strokeWidth="2" />
+        <path d={`M 300 ${baseY} L 800 ${y50}`} fill="none" stroke="#10B981" strokeWidth="2.4" className="zeus-data-line" />
         <circle cx="300" cy={baseY} r="5" fill="#F97316" />
         <circle cx="300" cy={baseY} r="10" fill="#F97316" fillOpacity="0.3" />
         <text x="780" y={Math.max(18, y95 + 5)} textAnchor="end" className="text-[10px] fill-data-up font-mono">
@@ -462,6 +463,9 @@ function ProbabilityFan({ report, basePrice }: { report: ScenarioReport | null; 
           P5 {price(distribution.p5)}
         </text>
       </svg>
+      <div className="absolute left-3 top-3 rounded-xs border border-brand-orange/30 bg-bg-surface-overlay px-2 py-1 font-mono text-caption text-brand-orange">
+        base {price(basePrice)}
+      </div>
     </div>
   );
 }

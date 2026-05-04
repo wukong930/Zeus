@@ -3,6 +3,11 @@
 import { useEffect, useState } from "react";
 import { Card, CardHeader, CardTitle, CardSubtitle } from "@/components/Card";
 import { Badge } from "@/components/Badge";
+import { MetricTile } from "@/components/MetricTile";
+import { ChartFrame } from "@/components/charts/ChartFrame";
+import { DistributionBars } from "@/components/charts/DistributionBars";
+import { DriftSparkline } from "@/components/charts/DriftSparkline";
+import { ReliabilityCurve } from "@/components/charts/ReliabilityCurve";
 import {
   fetchAttributionReport,
   fetchLearningHypotheses,
@@ -118,31 +123,27 @@ function AttributionTab() {
       </Card>
 
       <div className="grid grid-cols-2 gap-5">
-        <Card variant="flat">
-          <CardHeader>
-            <div>
-              <CardTitle>Stop Loss 评估</CardTitle>
-              <CardSubtitle>MAE 分布看止损是太紧还是太松</CardSubtitle>
-            </div>
-          </CardHeader>
+        <ChartFrame
+          title="Stop Loss 评估"
+          subtitle="MAE 分布看止损是太紧还是太松"
+          metric={`P80 ${p80Mae.toFixed(2)}`}
+        >
           <MAEDistribution />
           <div className="text-sm text-text-secondary leading-relaxed mt-3">
             <strong className="text-text-primary">P80 MAE</strong>：{p80Mae.toFixed(2)}。归因只出报表，不自动改止损。
           </div>
-        </Card>
+        </ChartFrame>
 
-        <Card variant="flat">
-          <CardHeader>
-            <div>
-              <CardTitle>Take Profit 评估</CardTitle>
-              <CardSubtitle>MFE 分布看止盈是否过早</CardSubtitle>
-            </div>
-          </CardHeader>
+        <ChartFrame
+          title="Take Profit 评估"
+          subtitle="MFE 分布看止盈是否过早"
+          metric={`P80 ${p80Mfe.toFixed(2)}`}
+        >
           <MFEDistribution />
           <div className="text-sm text-text-secondary leading-relaxed mt-3">
             <strong className="text-text-primary">P80 MFE</strong>：{p80Mfe.toFixed(2)}。止盈参数仍需人工评审。
           </div>
-        </Card>
+        </ChartFrame>
       </div>
     </div>
   );
@@ -265,19 +266,13 @@ function CalibrationTab() {
         </table>
       </Card>
 
-      <Card variant="flat">
-        <CardHeader>
-          <div>
-            <CardTitle>Reliability Diagram</CardTitle>
-            <CardSubtitle>
-              ECE {formatNullablePercent(report?.expected_calibration_error)} → {formatNullablePercent(report?.projected_calibration_error)}
-              {" "}· Δ {formatNullablePercent(report?.calibration_error_improvement)}
-            </CardSubtitle>
-          </div>
-          {report?.review_required ? <Badge variant="orange">review required</Badge> : <Badge variant="emerald">stable</Badge>}
-        </CardHeader>
+      <ChartFrame
+        title="Reliability Diagram"
+        subtitle={`ECE ${formatNullablePercent(report?.expected_calibration_error)} -> ${formatNullablePercent(report?.projected_calibration_error)} · Δ ${formatNullablePercent(report?.calibration_error_improvement)}`}
+        action={report?.review_required ? <Badge variant="orange">review required</Badge> : <Badge variant="emerald">stable</Badge>}
+      >
         <ReliabilityDiagram report={report} />
-      </Card>
+      </ChartFrame>
     </div>
   );
 }
@@ -327,12 +322,9 @@ function DriftTab() {
           </div>
         </Card>
 
-        <Card variant="flat">
-          <CardHeader>
-            <CardTitle>历史 Drift 趋势</CardTitle>
-          </CardHeader>
+        <ChartFrame title="历史 Drift 趋势" subtitle="PSI rolling 14d · warning line 0.25">
           <DriftTrend />
-        </Card>
+        </ChartFrame>
       </div>
     </div>
   );
@@ -428,11 +420,12 @@ function statusVariant(status: string): "neutral" | "emerald" | "orange" | "low"
 
 function Stat({ label, value, trend, trendNegative }: { label: string; value: string; trend: string; trendNegative?: boolean }) {
   return (
-    <Card variant="flat">
-      <div className="text-caption text-text-muted uppercase">{label}</div>
-      <div className="text-display font-mono mt-2 leading-none tabular-nums text-text-primary">{value}</div>
-      <div className={cn("text-xs font-mono mt-2", trendNegative ? "text-data-down" : "text-data-up")}>{trend}</div>
-    </Card>
+    <MetricTile
+      label={label}
+      value={value}
+      trend={trend}
+      tone={trendNegative ? "down" : "up"}
+    />
   );
 }
 
@@ -470,24 +463,12 @@ function SliceTable({
 
 function MAEDistribution() {
   const buckets = [12, 18, 24, 30, 22, 12, 8, 4, 2, 1];
-  return (
-    <div className="flex items-end gap-1 h-32">
-      {buckets.map((b, i) => (
-        <div key={i} className="flex-1 bg-data-down/30 hover:bg-data-down/50 transition-colors rounded-t-xs" style={{ height: `${b * 3}px` }} />
-      ))}
-    </div>
-  );
+  return <DistributionBars buckets={buckets} tone="down" markerIndex={4} />;
 }
 
 function MFEDistribution() {
   const buckets = [3, 8, 15, 22, 28, 24, 18, 12, 8, 4];
-  return (
-    <div className="flex items-end gap-1 h-32">
-      {buckets.map((b, i) => (
-        <div key={i} className="flex-1 bg-data-up/30 hover:bg-data-up/50 transition-colors rounded-t-xs" style={{ height: `${b * 3}px` }} />
-      ))}
-    </div>
-  );
+  return <DistributionBars buckets={buckets} tone="up" markerIndex={5} />;
 }
 
 function ReliabilityDiagram({ report }: { report: ThresholdCalibrationReport | null }) {
@@ -507,36 +488,8 @@ function ReliabilityDiagram({ report }: { report: ThresholdCalibrationReport | n
       .filter((bin) => bin.samples > 0 && bin.avg_confidence !== null && bin.hit_rate !== null)
       .map((bin) => ({ x: bin.avg_confidence as number, y: bin.hit_rate as number })) ?? [];
   const renderedPoints = points.length >= 2 ? points : fallback;
-  const path = renderedPoints
-    .map((point, index) => `${index === 0 ? "M" : "L"} ${point.x * 400} ${(1 - point.y) * 240}`)
-    .join(" ");
-  return (
-    <div className="h-64 relative">
-      <svg viewBox="0 0 400 240" className="w-full h-full">
-        {/* Grid */}
-        {[0, 1, 2, 3, 4].map((i) => (
-          <g key={i}>
-            <line x1={i * 100} y1="0" x2={i * 100} y2="240" stroke="#1A1A1A" strokeWidth="0.5" />
-            <line x1="0" y1={i * 60} x2="400" y2={i * 60} stroke="#1A1A1A" strokeWidth="0.5" />
-          </g>
-        ))}
-        {/* Ideal line (diagonal) */}
-        <line x1="0" y1="240" x2="400" y2="0" stroke="#404040" strokeWidth="1" strokeDasharray="3 2" />
-        {renderedPoints.map((p, i) => (
-          <circle key={i} cx={p.x * 400} cy={(1 - p.y) * 240} r="4" fill="#10B981" stroke="#000" strokeWidth="1" />
-        ))}
-        <path
-          d={path}
-          fill="none"
-          stroke="#10B981"
-          strokeWidth="1.5"
-        />
-        <text x="200" y="20" textAnchor="middle" className="text-[11px] fill-text-muted">
-          {report && report.samples > 0 ? `${report.samples} resolved signals` : "waiting for resolved signals"}
-        </text>
-      </svg>
-    </div>
-  );
+  const label = report && report.samples > 0 ? `${report.samples} resolved signals` : "waiting for resolved signals";
+  return <ReliabilityCurve points={renderedPoints} label={label} />;
 }
 
 function formatNullablePercent(value: number | null | undefined) {
@@ -548,21 +501,5 @@ function formatNullableNumber(value: number | null | undefined) {
 }
 
 function DriftTrend() {
-  return (
-    <div className="h-48">
-      <svg viewBox="0 0 400 180" className="w-full h-full">
-        {[0, 1, 2, 3].map((i) => (
-          <line key={i} x1="0" y1={i * 60} x2="400" y2={i * 60} stroke="#1A1A1A" strokeWidth="0.5" />
-        ))}
-        <line x1="0" y1="60" x2="400" y2="60" stroke="#F59E0B" strokeWidth="1" strokeDasharray="3 2" opacity="0.4" />
-        <text x="396" y="55" textAnchor="end" className="text-[10px] fill-severity-high-fg font-mono">PSI 0.25</text>
-        <path
-          d="M 0 130 L 30 125 L 60 120 L 90 115 L 120 130 L 150 125 L 180 110 L 210 100 L 240 105 L 270 115 L 300 125 L 330 135 L 360 130 L 400 125"
-          fill="none"
-          stroke="#10B981"
-          strokeWidth="1.5"
-        />
-      </svg>
-    </div>
-  );
+  return <DriftSparkline values={[0.08, 0.09, 0.1, 0.11, 0.08, 0.09, 0.13, 0.15, 0.14, 0.11, 0.09, 0.07, 0.08, 0.09]} />;
 }

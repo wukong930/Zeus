@@ -538,17 +538,24 @@ function CostQuantileChart({ model }: { model: CostModel }) {
 
   return (
     <div className="space-y-3 py-2">
-      <div className="relative h-36 bg-bg-base rounded-sm overflow-hidden">
+      <div className="relative h-36 overflow-hidden rounded-sm border border-border-subtle bg-bg-base zeus-grid-surface">
         <svg viewBox="0 0 200 100" className="w-full h-full" preserveAspectRatio="none">
+          <defs>
+            <linearGradient id="costQuantileFill" x1="0" x2="0" y1="0" y2="1">
+              <stop offset="0%" stopColor="#10B981" stopOpacity="0.28" />
+              <stop offset="100%" stopColor="#10B981" stopOpacity="0.03" />
+            </linearGradient>
+          </defs>
           <path
             d="M 0 88 C 34 86 54 78 82 64 C 112 48 142 30 200 12 L 200 100 L 0 100 Z"
-            fill="rgba(16,185,129,0.18)"
+            fill="url(#costQuantileFill)"
           />
           <path
             d="M 0 88 C 34 86 54 78 82 64 C 112 48 142 30 200 12"
             fill="none"
             stroke="#10B981"
-            strokeWidth="1.5"
+            strokeWidth="1.8"
+            className="zeus-data-line"
           />
           <line
             x1={norm(current) * 2}
@@ -782,10 +789,17 @@ function ProfitTrend({ history, model }: { history: CostSnapshot[]; model: CostM
 
   return (
     <div className="space-y-3">
-      <div className="h-36 bg-bg-base rounded-sm p-2">
+      <div className="h-36 overflow-hidden rounded-sm border border-border-subtle bg-bg-base p-2 zeus-grid-surface">
         <svg viewBox="0 0 100 100" className="w-full h-full" preserveAspectRatio="none">
+          <defs>
+            <linearGradient id="profitTrendFill" x1="0" x2="0" y1="0" y2="1">
+              <stop offset="0%" stopColor={latest >= 0 ? "#10B981" : "#EF4444"} stopOpacity="0.24" />
+              <stop offset="100%" stopColor={latest >= 0 ? "#10B981" : "#EF4444"} stopOpacity="0.02" />
+            </linearGradient>
+          </defs>
           <line x1="0" y1={y(0)} x2="100" y2={y(0)} stroke="rgba(148,163,184,0.35)" strokeDasharray="3 2" />
-          <path d={path} fill="none" stroke={latest >= 0 ? "#22C55E" : "#EF4444"} strokeWidth="1.8" />
+          <path d={`${path} L 100 100 L 0 100 Z`} fill="url(#profitTrendFill)" />
+          <path d={path} fill="none" stroke={latest >= 0 ? "#10B981" : "#EF4444"} strokeWidth="2" className="zeus-data-line" />
         </svg>
       </div>
       <div className="flex items-center justify-between">
