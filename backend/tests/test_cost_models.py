@@ -28,6 +28,7 @@ from app.services.cost_models.snapshots import (
     current_prices_for_symbols,
     latest_cost_snapshots,
     write_cost_snapshot,
+    write_cost_snapshots,
 )
 from app.services.pipeline.handlers import trigger_context_from_payload
 from app.services.sectors.ferrous import calculate_blast_furnace_margin
@@ -192,6 +193,28 @@ async def test_current_prices_for_symbols_uses_single_batch_query() -> None:
 
     assert prices == {"RB": 3200.0, "I": 850.0, "NR": None}
     assert session.execute_count == 1
+
+
+async def test_write_cost_snapshots_prefetches_existing_rows_once() -> None:
+    existing = cost_snapshot_row("RB", date(2026, 5, 3))
+    session = FakeSession(scalar_rows=[existing])
+    results = [
+        calculate_symbol_cost("RB", current_prices={"RB": 3200}),
+        calculate_symbol_cost("HC", current_prices={"HC": 3300}),
+    ]
+
+    rows = await write_cost_snapshots(
+        session,  # type: ignore[arg-type]
+        results,
+        snapshot_date=date(2026, 5, 3),
+    )
+
+    assert [row.symbol for row in rows] == ["RB", "HC"]
+    assert rows[0] is existing
+    assert rows[0].current_price == 3200
+    assert rows[1] in session.rows
+    assert session.scalars_count == 1
+    assert session.flush_count == 1
 
 
 async def test_latest_cost_snapshots_uses_single_batch_query() -> None:

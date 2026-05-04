@@ -123,29 +123,53 @@ async def write_cost_snapshot(
     *,
     snapshot_date: date | None = None,
 ) -> CostSnapshot:
+    rows = await write_cost_snapshots(session, [result], snapshot_date=snapshot_date)
+    return rows[0]
+
+
+async def write_cost_snapshots(
+    session: AsyncSession,
+    results: list[CostModelResult],
+    *,
+    snapshot_date: date | None = None,
+) -> list[CostSnapshot]:
+    if not results:
+        return []
+
     effective_date = snapshot_date or datetime.now(timezone.utc).date()
-    row = (
-        await session.scalars(
-            select(CostSnapshot)
-            .where(
-                CostSnapshot.symbol == result.symbol,
-                CostSnapshot.snapshot_date == effective_date,
+    symbols = tuple(dict.fromkeys(result.symbol.upper() for result in results))
+    existing_rows = list(
+        (
+            await session.scalars(
+                select(CostSnapshot).where(
+                    CostSnapshot.symbol.in_(symbols),
+                    CostSnapshot.snapshot_date == effective_date,
+                )
             )
-            .limit(1)
         )
-    ).first()
-    payload = result.to_snapshot_payload()
-    if row is None:
-        row = CostSnapshot(
-            snapshot_date=effective_date,
-            **payload,
-        )
-        session.add(row)
-    else:
-        for key, value in payload.items():
-            setattr(row, key, value)
+        .all()
+    )
+    rows_by_symbol = {row.symbol.upper(): row for row in existing_rows}
+    rows: list[CostSnapshot] = []
+
+    for result in results:
+        payload = result.to_snapshot_payload()
+        symbol = result.symbol.upper()
+        row = rows_by_symbol.get(symbol)
+        if row is None:
+            row = CostSnapshot(
+                snapshot_date=effective_date,
+                **payload,
+            )
+            session.add(row)
+            rows_by_symbol[symbol] = row
+        else:
+            for key, value in payload.items():
+                setattr(row, key, value)
+        rows.append(row)
+
     await session.flush()
-    return row
+    return rows
 
 
 async def snapshot_ferrous_costs(
@@ -196,16 +220,11 @@ async def snapshot_costs(
         inputs_by_symbol=inputs_by_symbol,
         current_prices=current_prices,
     )
-    rows: list[CostSnapshot] = []
-    for symbol in symbols:
-        rows.append(
-            await write_cost_snapshot(
-                session,
-                chain.results[symbol],
-                snapshot_date=snapshot_date,
-            )
-        )
-    return rows
+    return await write_cost_snapshots(
+        session,
+        [chain.results[symbol] for symbol in symbols],
+        snapshot_date=snapshot_date,
+    )
 
 
 def cost_snapshot_context_payload(row: CostSnapshot) -> dict[str, Any]:
