@@ -11,7 +11,7 @@ from app.core.config import Settings, get_settings
 from app.models.llm_config import LLMConfig as LLMConfigModel
 from app.services.llm.anthropic import AnthropicProvider
 from app.services.llm.deepseek import DeepSeekProvider
-from app.services.llm.openai import OpenAIProvider
+from app.services.llm.openai import OpenAIProvider, XAIProvider
 from app.services.llm.types import (
     DEFAULT_MODELS,
     LLMCompletionOptions,
@@ -32,6 +32,10 @@ def _create_openai(config: LLMProviderConfig, client: httpx.AsyncClient | None) 
     return OpenAIProvider(config, client=client)
 
 
+def _create_xai(config: LLMProviderConfig, client: httpx.AsyncClient | None) -> LLMProvider:
+    return XAIProvider(config, client=client)
+
+
 def _create_anthropic(config: LLMProviderConfig, client: httpx.AsyncClient | None) -> LLMProvider:
     return AnthropicProvider(config, client=client)
 
@@ -42,6 +46,7 @@ def _create_deepseek(config: LLMProviderConfig, client: httpx.AsyncClient | None
 
 PROVIDER_FACTORIES: dict[LLMProviderName, ProviderFactory] = {
     "openai": _create_openai,
+    "xai": _create_xai,
     "anthropic": _create_anthropic,
     "deepseek": _create_deepseek,
 }
@@ -123,6 +128,15 @@ def get_env_llm_config(settings: Settings) -> LLMProviderConfig | None:
             api_key=api_key,
             model=settings.llm_model or DEFAULT_MODELS["openai"][0],
             base_url=settings.openai_base_url,
+            timeout_seconds=settings.llm_timeout_seconds,
+        )
+
+    if api_key := _clean_secret(settings.xai_api_key):
+        return LLMProviderConfig(
+            provider="xai",
+            api_key=api_key,
+            model=settings.llm_model or DEFAULT_MODELS["xai"][0],
+            base_url=settings.xai_base_url,
             timeout_seconds=settings.llm_timeout_seconds,
         )
 

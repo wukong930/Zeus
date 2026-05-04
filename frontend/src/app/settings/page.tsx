@@ -20,7 +20,7 @@ export default function SettingsPage() {
       </div>
 
       <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-4">
-        <MetricTile label={text("LLM 供应商")} value="3" caption="active providers" icon={BrainCircuit} tone="violet" />
+        <MetricTile label={text("LLM 供应商")} value="4" caption="active providers" icon={BrainCircuit} tone="violet" />
         <MetricTile label={text("通知渠道")} value="2/4" caption="realtime enabled" icon={RadioTower} tone="cyan" />
         <MetricTile label={text("预警去重设置")} value="12h" caption="symbol direction" icon={ShieldCheck} tone="up" />
         <MetricTile label={text("每日预警上限")} value="50" caption="daily cap" icon={Bell} tone="warning" />
@@ -35,7 +35,8 @@ export default function SettingsPage() {
         </CardHeader>
         <div className="space-y-3">
           {[
-            { name: "Anthropic Claude", model: "claude-sonnet-4-6", status: "active", usage: "$18.20 / $50" },
+            { name: "xAI Grok", model: "grok-4.3", status: "active", usage: "$0.00 / $30" },
+            { name: "Anthropic Claude", model: "claude-sonnet-4-6", status: "configured", usage: "$18.20 / $50" },
             { name: "OpenAI", model: "gpt-4o", status: "configured", usage: "$6.10 / $30" },
             { name: "DeepSeek", model: "deepseek-chat", status: "configured", usage: "$0.05 / $5" },
           ].map((p) => (

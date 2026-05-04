@@ -3,11 +3,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Literal, Protocol, Sequence
 
-LLMProviderName = Literal["openai", "anthropic", "deepseek"]
+LLMProviderName = Literal["openai", "xai", "anthropic", "deepseek"]
 LLMRole = Literal["system", "user", "assistant"]
 
 DEFAULT_MODELS: dict[LLMProviderName, tuple[str, ...]] = {
     "openai": ("gpt-4o", "gpt-4o-mini", "o3", "o3-mini", "o1", "o1-mini"),
+    "xai": ("grok-4.3",),
     "anthropic": (
         "claude-opus-4-20250918",
         "claude-sonnet-4-20250514",

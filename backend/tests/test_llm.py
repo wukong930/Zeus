@@ -6,7 +6,7 @@ import pytest
 from app.core.config import Settings
 from app.services.llm.anthropic import AnthropicProvider
 from app.services.llm.deepseek import DeepSeekProvider
-from app.services.llm.openai import OpenAIProvider
+from app.services.llm.openai import OpenAIProvider, XAIProvider
 from app.services.llm.registry import create_provider, get_env_llm_config
 from app.services.llm.types import (
     LLMCompletionOptions,
@@ -91,6 +91,37 @@ async def test_openai_provider_extracts_text_from_output_items() -> None:
         )
 
     assert result.content == "hello world"
+
+
+@pytest.mark.asyncio
+async def test_xai_provider_uses_responses_api() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        assert request.url.path == "/v1/responses"
+        assert request.headers["authorization"] == "Bearer xai-test"
+        assert body["model"] == "grok-4.3"
+        return httpx.Response(
+            200,
+            json={
+                "model": "grok-4.3",
+                "output_text": "ok",
+                "usage": {"input_tokens": 9, "output_tokens": 2},
+            },
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        provider = XAIProvider(
+            LLMProviderConfig(provider="xai", api_key="xai-test", model="grok-4.3"),
+            client=client,
+        )
+        result = await provider.complete(
+            LLMCompletionOptions(messages=[LLMMessage(role="user", content="Ping")])
+        )
+
+    assert result.content == "ok"
+    assert result.usage is not None
+    assert result.usage.input_tokens == 9
+    assert result.usage.output_tokens == 2
 
 
 @pytest.mark.asyncio
@@ -181,6 +212,20 @@ def test_registry_prefers_env_provider_order() -> None:
     assert config is not None
     assert config.provider == "openai"
     assert config.model == "gpt-test"
+
+
+def test_registry_reads_xai_env_config() -> None:
+    settings = Settings(
+        xai_api_key="xai-test",
+        _env_file=None,
+    )
+
+    config = get_env_llm_config(settings)
+
+    assert config is not None
+    assert config.provider == "xai"
+    assert config.model == "grok-4.3"
+    assert config.base_url == "https://api.x.ai/v1"
 
 
 def test_registry_rejects_missing_api_key() -> None:

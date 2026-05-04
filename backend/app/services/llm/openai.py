@@ -17,6 +17,8 @@ from app.services.llm.types import (
 
 class OpenAIProvider:
     name = "openai"
+    provider_label = "OpenAI"
+    default_base_url = "https://api.openai.com/v1"
 
     def __init__(
         self,
@@ -25,7 +27,7 @@ class OpenAIProvider:
         client: httpx.AsyncClient | None = None,
     ) -> None:
         self.config = config
-        self.base_url = (config.base_url or "https://api.openai.com/v1").rstrip("/")
+        self.base_url = (config.base_url or self.default_base_url).rstrip("/")
         self.client = client or httpx.AsyncClient()
 
     async def complete(self, options: LLMCompletionOptions) -> LLMCompletionResult:
@@ -63,7 +65,9 @@ class OpenAIProvider:
             timeout=self.config.timeout_seconds,
         )
         if response.status_code >= 400:
-            raise LLMProviderError(f"OpenAI API error {response.status_code}: {response.text}")
+            raise LLMProviderError(
+                f"{self.provider_label} API error {response.status_code}: {response.text}"
+            )
 
         data = response.json()
         return LLMCompletionResult(
@@ -113,3 +117,9 @@ def _extract_usage(data: dict[str, Any]) -> LLMUsage | None:
         input_tokens=usage.get("input_tokens") or usage.get("prompt_tokens"),
         output_tokens=usage.get("output_tokens") or usage.get("completion_tokens"),
     )
+
+
+class XAIProvider(OpenAIProvider):
+    name = "xai"
+    provider_label = "xAI"
+    default_base_url = "https://api.x.ai/v1"
