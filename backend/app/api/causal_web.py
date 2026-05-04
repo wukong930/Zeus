@@ -412,6 +412,27 @@ def _build_edges(
                 node_ids,
             )
 
+    for item in news:
+        emitted = 0
+        for metric in metrics:
+            if not _news_matches_metric(item, metric):
+                continue
+            _append_edge(
+                edges,
+                f"edge-news-metric-{item.id}-{metric.node_id}",
+                f"news-{item.id}",
+                metric.node_id,
+                min(0.82, max(0.42, item.llm_confidence)),
+                item.time_horizon or "same day",
+                0.5,
+                _direction(item.direction),
+                not item.requires_manual_confirmation,
+                node_ids,
+            )
+            emitted += 1
+            if emitted >= 2:
+                break
+
     for counter in counters:
         alert = alerts_by_id.get(counter.alert_id)
         if alert is None:
@@ -481,6 +502,14 @@ def _build_edges(
                 )
                 break
     return edges[:24]
+
+
+def _news_matches_metric(item: NewsEvent, metric: MetricContext) -> bool:
+    symbols = {str(symbol).upper() for symbol in item.affected_symbols}
+    if metric.symbol.upper() in symbols:
+        return True
+    category = _category_from_symbols(list(symbols))
+    return category != "unknown" and category == metric.category
 
 
 def _unique_by_id(rows: list[Alert]) -> list[Alert]:

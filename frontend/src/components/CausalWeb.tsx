@@ -351,8 +351,14 @@ function CausalWebCanvas({
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
   const [selectedEventIds, setSelectedEventIds] = useState<Set<string>>(new Set());
   const isFull = variant === "full";
-  const graphNodes = runtimeNodes?.length ? runtimeNodes : FALLBACK_CAUSAL_NODES;
-  const graphEdges = runtimeEdges?.length ? runtimeEdges : FALLBACK_CAUSAL_EDGES;
+  const rawGraphNodes = runtimeNodes?.length ? runtimeNodes : FALLBACK_CAUSAL_NODES;
+  const rawGraphEdges = runtimeEdges?.length ? runtimeEdges : FALLBACK_CAUSAL_EDGES;
+  const normalizedGraph = useMemo(
+    () => normalizeEventGraph(rawGraphNodes, rawGraphEdges),
+    [rawGraphEdges, rawGraphNodes]
+  );
+  const graphNodes = normalizedGraph.nodes;
+  const graphEdges = normalizedGraph.edges;
   const metaByNodeId = useMemo(
     () => new Map(graphNodes.map((node) => [node.id, semanticMetaForNode(node)])),
     [graphNodes]
@@ -399,7 +405,7 @@ function CausalWebCanvas({
     setSelectedEventIds((current) => {
       const valid = new Set([...current].filter((id) => availableIds.has(id)));
       if (valid.size > 0) return valid;
-      return new Set(eventNodes.slice(0, Math.min(3, eventNodes.length)).map((node) => node.id));
+      return new Set(eventNodes.slice(0, Math.min(2, eventNodes.length)).map((node) => node.id));
     });
   }, [eventNodes, isFull]);
 
@@ -609,7 +615,7 @@ function CausalWebCanvas({
         </div>
       )}
 
-      <div className={cn("min-h-0 flex-1", showEventPool ? "grid grid-cols-[300px_minmax(0,1fr)]" : "relative")}>
+      <div className={cn("min-h-0 flex-1", showEventPool ? "grid grid-cols-[276px_minmax(0,1fr)]" : "relative")}>
         {showEventPool && (
           <EventPoolPanel
             events={eventNodes}
@@ -686,14 +692,16 @@ function CausalWebCanvas({
                   fitViewOptions={fitViewOptions}
                 />
 
-                <MiniMap
-                  position="bottom-right"
-                  pannable
-                  zoomable
-                  nodeColor={(node) => NODE_COLORS[(node.data as CausalFlowNodeData).causal.type]}
-                  nodeStrokeWidth={2}
-                  className="causal-minimap !bottom-16 !right-4 !h-24 !w-40 !rounded-sm !border !border-border-default !bg-bg-surface-overlay"
-                />
+                {!showEventPool && (
+                  <MiniMap
+                    position="bottom-right"
+                    pannable
+                    zoomable
+                    nodeColor={(node) => NODE_COLORS[(node.data as CausalFlowNodeData).causal.type]}
+                    nodeStrokeWidth={2}
+                    className="causal-minimap !bottom-16 !right-4 !h-20 !w-32 !rounded-sm !border !border-border-default !bg-bg-surface-overlay"
+                  />
+                )}
               </>
             )}
           </ReactFlow>
@@ -861,12 +869,12 @@ function EventPoolPanel({
   const { lang, text } = useI18n();
 
   return (
-    <aside className="z-[20] m-3 mr-0 flex min-h-0 flex-col overflow-hidden rounded-sm border border-border-default bg-[linear-gradient(180deg,rgba(18,20,19,0.96),rgba(3,5,4,0.98))] shadow-data-panel">
+    <aside className="z-[20] m-3 mr-0 flex min-h-0 w-[252px] min-w-0 max-w-[252px] flex-col overflow-hidden rounded-sm border border-border-default bg-[linear-gradient(180deg,rgba(18,20,19,0.96),rgba(3,5,4,0.98))] shadow-data-panel">
       <div className="shrink-0 border-b border-border-subtle px-3 py-2 shadow-inner-panel">
         <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2 text-sm font-semibold text-text-primary">
+          <div className="flex min-w-0 items-center gap-2 text-sm font-semibold text-text-primary">
             <Layers className="h-4 w-4 text-brand-cyan" />
-            {text("事件池")}
+            <span className="truncate">{text("事件池")}</span>
           </div>
           <div className="font-mono text-caption text-text-muted">
             {selectedIds.size}/{events.length}
@@ -901,10 +909,15 @@ function EventPoolPanel({
               </span>
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-xs font-medium">{nodeLabel(event, lang, text)}</span>
-                <span className="mt-1 flex items-center gap-2 text-caption text-text-muted">
+                <span className="mt-1 flex min-w-0 items-center gap-2 text-caption text-text-muted">
                   {index < 3 && <span className="text-brand-orange">Top {index + 1}</span>}
                   <span className="font-mono">{Math.round(event.freshness * 100)}%</span>
                   <span>I{event.influence}</span>
+                  {event.aggregateCount && event.aggregateCount > 1 && (
+                    <span className="ml-auto shrink-0 rounded-xs border border-border-subtle px-1 font-mono">
+                      {event.aggregateCount} {text("源")}
+                    </span>
+                  )}
                 </span>
               </span>
             </button>
@@ -1152,6 +1165,11 @@ function CausalNodeCard({ data, selected }: NodeProps<CausalFlowNode>) {
             <span className="truncate text-sm font-semibold text-text-primary">{nodeLabel(node, lang, text)}</span>
             {node.active && (
               <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-brand-emerald-bright" />
+            )}
+            {node.aggregateCount && node.aggregateCount > 1 && (
+              <span className="shrink-0 rounded-xs border border-border-subtle px-1 font-mono text-[10px] leading-4 text-text-secondary">
+                {node.aggregateCount} {text("源")}
+              </span>
             )}
           </div>
           <div className="mt-1 flex items-center gap-2 text-caption text-text-muted">
@@ -1621,6 +1639,118 @@ interface DisplayGraph {
   hiddenCount: number;
   visibleRealCount: number;
   height: number;
+}
+
+function normalizeEventGraph(nodes: CausalNode[], edges: CausalEdge[]) {
+  const eventGroups = new Map<string, CausalNode[]>();
+  for (const node of nodes) {
+    if (node.type !== "event") continue;
+    const key = eventDisplayKey(node);
+    eventGroups.set(key, [...(eventGroups.get(key) ?? []), node]);
+  }
+
+  if (![...eventGroups.values()].some((group) => group.length > 1)) {
+    return { nodes, edges };
+  }
+
+  const representativeByEventId = new Map<string, string>();
+  const mergedByKey = new Map<string, CausalNode>();
+  for (const [key, group] of eventGroups) {
+    const merged = mergeEventGroup(group);
+    mergedByKey.set(key, merged);
+    for (const node of group) {
+      representativeByEventId.set(node.id, merged.id);
+    }
+  }
+
+  const emittedEventKeys = new Set<string>();
+  const normalizedNodes: CausalNode[] = [];
+  for (const node of nodes) {
+    if (node.type !== "event") {
+      normalizedNodes.push(node);
+      continue;
+    }
+    const key = eventDisplayKey(node);
+    if (emittedEventKeys.has(key)) continue;
+    emittedEventKeys.add(key);
+    normalizedNodes.push(mergedByKey.get(key) ?? node);
+  }
+
+  const normalizedEdges = new Map<string, CausalEdge>();
+  for (const edge of edges) {
+    const source = representativeByEventId.get(edge.source) ?? edge.source;
+    const target = representativeByEventId.get(edge.target) ?? edge.target;
+    if (source === target) continue;
+
+    const mergeKey = `${source}->${target}`;
+    const current = normalizedEdges.get(mergeKey);
+    const candidate: CausalEdge = {
+      ...edge,
+      id: current?.id ?? (source === edge.source && target === edge.target ? edge.id : `edge-event-merged-${source}-${target}`),
+      source,
+      target,
+    };
+    if (!current) {
+      normalizedEdges.set(mergeKey, candidate);
+      continue;
+    }
+    normalizedEdges.set(mergeKey, {
+      ...candidate,
+      id: current.id,
+      confidence: Math.max(current.confidence, candidate.confidence),
+      hitRate: Math.max(current.hitRate, candidate.hitRate),
+      verified: current.verified || candidate.verified,
+      direction: current.confidence >= candidate.confidence ? current.direction : candidate.direction,
+      lag: current.confidence >= candidate.confidence ? current.lag : candidate.lag,
+    });
+  }
+
+  return {
+    nodes: normalizedNodes,
+    edges: [...normalizedEdges.values()],
+  };
+}
+
+function mergeEventGroup(group: CausalNode[]): CausalNode {
+  const representative = [...group].sort((a, b) => {
+    if (Number(b.active) !== Number(a.active)) return Number(b.active) - Number(a.active);
+    if (b.influence !== a.influence) return b.influence - a.influence;
+    return b.freshness - a.freshness;
+  })[0];
+  const tags = uniqueStrings(group.flatMap((node) => node.tags ?? [])).slice(0, 6);
+  const tagsZh = uniqueStrings(group.flatMap((node) => node.tagsZh ?? [])).slice(0, 6);
+  const tagsEn = uniqueStrings(group.flatMap((node) => node.tagsEn ?? [])).slice(0, 6);
+  const narrativeZh = representative.narrativeZh ?? representative.narrative;
+  const narrativeEn = representative.narrativeEn ?? representative.narrative;
+
+  return {
+    ...representative,
+    freshness: Math.max(...group.map((node) => node.freshness)),
+    influence: Math.max(...group.map((node) => node.influence)) as CausalNode["influence"],
+    active: group.some((node) => node.active),
+    tags,
+    tagsZh,
+    tagsEn,
+    narrativeZh: group.length > 1 && narrativeZh ? `已合并 ${group.length} 条同类事件源。${narrativeZh}` : narrativeZh,
+    narrativeEn: group.length > 1 && narrativeEn ? `Merged ${group.length} related event sources. ${narrativeEn}` : narrativeEn,
+    portfolioLinked: group.some((node) => node.portfolioLinked),
+    alertLinked: group.some((node) => node.alertLinked),
+    aggregateCount: group.length,
+  };
+}
+
+function uniqueStrings(items: string[]) {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const item of items) {
+    const trimmed = item.trim();
+    if (!trimmed) continue;
+    const key = trimmed.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(trimmed);
+  }
+  return result;
 }
 
 function buildDisplayGraph({

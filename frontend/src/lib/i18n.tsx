@@ -189,6 +189,7 @@ const EN: Record<string, string> = {
   "下游": "downstream",
   "聚合": "Cluster",
   "更多节点": "more nodes",
+  "源": "sources",
   "点击展开": "Click to expand",
   "事件池": "Event Pool",
   "默认展示优先级最高的事件，可手动加入图谱。":
