@@ -31,6 +31,7 @@ const EN: Record<string, string> = {
   "笔记本": "Notebook",
   "分析": "Analytics",
   "设置": "Settings",
+  "交易胜于未始": "Trades are won before they begin",
   "跳转": "Navigation",
   "品种": "Symbols",
   "操作": "Actions",
@@ -469,6 +470,7 @@ const REVERSE_EN = Object.fromEntries(
 const ZH: Record<string, string> = {
   ...REVERSE_EN,
   "Causal Web": "因果网络",
+  "Trades are won before they begin": "交易胜于未始",
   "Futures Intel": "期货智能",
   "prototype": "原型",
   "Data": "数据",

@@ -42,6 +42,7 @@ const NAV_ITEMS = [
 export function Sidebar() {
   const pathname = usePathname();
   const { text } = useI18n();
+  const brandTagline = text("Trades are won before they begin");
 
   return (
     <aside className="flex h-full w-[188px] shrink-0 flex-col border-r border-border-subtle bg-[linear-gradient(180deg,rgba(15,17,16,0.98),rgba(0,0,0,0.98))] shadow-inner-panel">
@@ -49,7 +50,9 @@ export function Sidebar() {
         <Logo />
         <div className="flex flex-col leading-none">
           <span className="text-sm font-bold tracking-wider text-text-primary">ZEUS</span>
-          <span className="text-caption text-text-muted">{text("Futures Intel")}</span>
+          <span className="max-w-[132px] text-[9px] font-medium leading-[1.08] text-text-muted" title={brandTagline}>
+            {brandTagline}
+          </span>
         </div>
       </div>
       <nav className="flex-1 overflow-y-auto px-2 py-2">
