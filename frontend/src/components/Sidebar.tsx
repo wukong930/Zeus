@@ -18,28 +18,31 @@ import {
   Newspaper,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/lib/i18n";
 
 const NAV_ITEMS = [
-  { href: "/", label: "Command Center", icon: LayoutDashboard },
-  { href: "/alerts", label: "Alerts", icon: Bell, badge: 12 },
-  { href: "/trade-plans", label: "Trade Plans", icon: Plane },
-  { href: "/portfolio", label: "Portfolio Map", icon: MapIcon },
+  { href: "/", label: "命令中心", icon: LayoutDashboard },
+  { href: "/alerts", label: "预警", icon: Bell, badge: 12 },
+  { href: "/trade-plans", label: "交易计划", icon: Plane },
+  { href: "/portfolio", label: "持仓地图", icon: MapIcon },
   { divider: true } as const,
-  { href: "/causal-web", label: "Causal Web", icon: Network },
-  { href: "/news", label: "News Events", icon: Newspaper },
-  { href: "/industry", label: "Industry Lens", icon: Factory },
-  { href: "/sectors", label: "Sectors", icon: Layers },
-  { href: "/future-lab", label: "Future Lab", icon: Beaker },
+  { href: "/causal-web", label: "因果网络", icon: Network },
+  { href: "/news", label: "新闻事件", icon: Newspaper },
+  { href: "/industry", label: "产业透镜", icon: Factory },
+  { href: "/sectors", label: "板块", icon: Layers },
+  { href: "/future-lab", label: "未来实验室", icon: Beaker },
   { divider: true } as const,
-  { href: "/forge", label: "Strategy Forge", icon: Wrench },
-  { href: "/notebook", label: "Notebook", icon: NotebookPen },
-  { href: "/analytics", label: "Analytics", icon: BarChart3 },
+  { href: "/forge", label: "策略锻造", icon: Wrench },
+  { href: "/notebook", label: "笔记本", icon: NotebookPen },
+  { href: "/analytics", label: "分析", icon: BarChart3 },
   { divider: true } as const,
-  { href: "/settings", label: "Settings", icon: Settings },
+  { href: "/settings", label: "设置", icon: Settings },
 ];
 
 export function Sidebar() {
   const pathname = usePathname();
+  const { text } = useI18n();
+
   return (
     <aside className="flex h-full w-[188px] shrink-0 flex-col border-r border-border-subtle bg-[linear-gradient(180deg,rgba(15,17,16,0.98),rgba(0,0,0,0.98))] shadow-inner-panel">
       <div className="flex h-12 select-none items-center gap-2.5 border-b border-border-subtle px-3">
@@ -80,7 +83,7 @@ export function Sidebar() {
               >
                 <Icon className="h-3 w-3" strokeWidth={1.75} />
               </span>
-              <span className="min-w-0 flex-1 truncate">{item.label}</span>
+              <span className="min-w-0 flex-1 truncate">{text(item.label)}</span>
               {"badge" in item && item.badge && (
                 <span className="inline-flex h-4 items-center rounded-xs bg-brand-orange px-1.5 text-caption font-semibold text-white shadow-glow-orange">
                   {item.badge}

@@ -4,10 +4,12 @@ import type { ComponentType } from "react";
 import { Activity, CheckCircle2, Network } from "lucide-react";
 import { CausalWeb } from "@/components/CausalWeb";
 import { CAUSAL_EDGES, CAUSAL_NODES } from "@/data/mock";
+import { useI18n } from "@/lib/i18n";
 
 export default function CausalWebPage() {
   const activeCount = CAUSAL_NODES.filter((node) => node.active).length;
   const verifiedCount = CAUSAL_EDGES.filter((edge) => edge.verified).length;
+  const { text } = useI18n();
 
   return (
     <div className="flex h-full flex-col">
@@ -15,13 +17,13 @@ export default function CausalWebPage() {
         <div className="flex min-w-0 items-baseline gap-3">
           <h1 className="text-h2 text-text-primary">Causal Web</h1>
           <p className="hidden truncate text-xs text-text-secondary md:block">
-            实时观察事件间的因果传导。点击节点追溯上游 / 预测下游。
+            {text("实时观察事件间的因果传导。点击节点追溯上游 / 预测下游。")}
           </p>
         </div>
         <div className="flex min-w-0 flex-wrap items-center gap-2">
-          <HeaderMetric icon={Network} label="Nodes" value={`${CAUSAL_NODES.length}`} />
-          <HeaderMetric icon={Activity} label="Active" value={`${activeCount}/${CAUSAL_NODES.length}`} tone="emerald" />
-          <HeaderMetric icon={CheckCircle2} label="Verified" value={`${verifiedCount}/${CAUSAL_EDGES.length}`} tone="cyan" />
+          <HeaderMetric icon={Network} label={text("Nodes")} value={`${CAUSAL_NODES.length}`} />
+          <HeaderMetric icon={Activity} label={text("Active")} value={`${activeCount}/${CAUSAL_NODES.length}`} tone="emerald" />
+          <HeaderMetric icon={CheckCircle2} label={text("Verified")} value={`${verifiedCount}/${CAUSAL_EDGES.length}`} tone="cyan" />
         </div>
       </div>
       <div className="relative flex-1">

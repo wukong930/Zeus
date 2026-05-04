@@ -2,8 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { useI18n } from "@/lib/i18n";
 
 export function BootSequence({ children }: { children: React.ReactNode }) {
+  const { lang } = useI18n();
   const [phase, setPhase] = useState<"booting" | "done">("booting");
   const [text, setText] = useState("");
   const target = "ZEUS";
@@ -84,7 +86,7 @@ export function BootSequence({ children }: { children: React.ReactNode }) {
                 <span className="inline-block w-[2px] h-6 bg-brand-emerald-bright ml-1 animate-heartbeat" />
               </div>
               <div className="mt-3 text-caption text-text-muted tracking-wider">
-                FUTURES INTELLIGENCE PLATFORM
+                {lang === "en" ? "FUTURES INTELLIGENCE PLATFORM" : "商品期货智能决策平台"}
               </div>
               <motion.div
                 className="mt-6 text-sm italic text-brand-emerald-bright tracking-wide"

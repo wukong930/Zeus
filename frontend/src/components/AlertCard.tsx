@@ -10,6 +10,7 @@ import { ConfidenceHalo } from "./ConfidenceHalo";
 import { timeAgo } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import { submitAlertFeedback, submitHumanDecision } from "@/lib/api";
+import { useI18n } from "@/lib/i18n";
 
 interface AlertCardProps {
   alert: Alert;
@@ -29,6 +30,7 @@ export function AlertCard({ alert, onClick, glow }: AlertCardProps) {
   const [decisionState, setDecisionState] = useState<"idle" | "sent" | "error" | "loading">(
     "idle"
   );
+  const { text } = useI18n();
 
   async function sendFeedback(
     event: React.MouseEvent<HTMLButtonElement>,
@@ -92,34 +94,34 @@ export function AlertCard({ alert, onClick, glow }: AlertCardProps) {
               {timeAgo(alert.triggeredAt)}
             </span>
           </div>
-          <h3 className="text-h3 text-text-primary mb-1">{alert.title}</h3>
-          <p className="text-sm text-text-secondary mb-3 leading-relaxed">{alert.narrative}</p>
+          <h3 className="text-h3 text-text-primary mb-1">{text(alert.title)}</h3>
+          <p className="text-sm text-text-secondary mb-3 leading-relaxed">{text(alert.narrative)}</p>
 
           {alert.humanActionRequired && (
             <div className="mb-3 flex flex-wrap items-center gap-2 rounded-sm border border-brand-orange/30 bg-brand-orange/10 px-3 py-2 shadow-inner-panel">
               <span className="text-caption text-brand-orange flex items-center gap-1">
                 <AlertTriangle className="w-3 h-3" />
-                待人工确认
+                {text("待人工确认")}
               </span>
               <DecisionButton
                 disabled={decisionState === "loading" || decisionState === "sent"}
                 onClick={(event) => sendDecision(event, "approve")}
               >
                 <CheckCircle2 className="w-3 h-3" />
-                通过
+                {text("通过")}
               </DecisionButton>
               <DecisionButton
                 disabled={decisionState === "loading" || decisionState === "sent"}
                 onClick={(event) => sendDecision(event, "reject")}
               >
                 <XCircle className="w-3 h-3" />
-                拒绝
+                {text("拒绝")}
               </DecisionButton>
               {decisionState === "sent" && (
-                <span className="text-caption text-brand-emerald-bright">已提交</span>
+                <span className="text-caption text-brand-emerald-bright">{text("已提交")}</span>
               )}
               {decisionState === "error" && (
-                <span className="text-caption text-brand-orange">提交失败</span>
+                <span className="text-caption text-brand-orange">{text("提交失败")}</span>
               )}
             </div>
           )}
@@ -132,7 +134,7 @@ export function AlertCard({ alert, onClick, glow }: AlertCardProps) {
             )}
             {alert.counterEvidence.length > 0 && (
               <span className="text-data-down flex items-center gap-1">
-                ✕ {alert.counterEvidence.length} 反证
+                ✕ {alert.counterEvidence.length} {text("反证")}
               </span>
             )}
             <span className="text-text-muted">samples · {alert.sampleSize}</span>
@@ -142,17 +144,17 @@ export function AlertCard({ alert, onClick, glow }: AlertCardProps) {
                 onClick={(event) => event.stopPropagation()}
                 className="text-brand-emerald-bright hover:text-brand-emerald flex items-center gap-1"
               >
-                触发新闻
+                {text("触发新闻")}
               </Link>
             )}
           </div>
           <div className="mt-3 flex flex-wrap items-center gap-2 text-caption">
-            <span className="text-text-muted">反馈</span>
-            <FeedbackButton onClick={(event) => sendFeedback(event, "agree")}>同意</FeedbackButton>
-            <FeedbackButton onClick={(event) => sendFeedback(event, "uncertain")}>不确定</FeedbackButton>
-            <FeedbackButton onClick={(event) => sendFeedback(event, "disagree")}>不同意</FeedbackButton>
-            {feedbackState === "sent" && <span className="text-brand-emerald-bright">已记录</span>}
-            {feedbackState === "error" && <span className="text-brand-orange">稍后重试</span>}
+            <span className="text-text-muted">{text("反馈")}</span>
+            <FeedbackButton onClick={(event) => sendFeedback(event, "agree")}>{text("同意")}</FeedbackButton>
+            <FeedbackButton onClick={(event) => sendFeedback(event, "uncertain")}>{text("不确定")}</FeedbackButton>
+            <FeedbackButton onClick={(event) => sendFeedback(event, "disagree")}>{text("不同意")}</FeedbackButton>
+            {feedbackState === "sent" && <span className="text-brand-emerald-bright">{text("已记录")}</span>}
+            {feedbackState === "error" && <span className="text-brand-orange">{text("稍后重试")}</span>}
           </div>
         </div>
 

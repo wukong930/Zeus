@@ -7,27 +7,30 @@ import { Button } from "@/components/Button";
 import { MetricTile } from "@/components/MetricTile";
 import { cn } from "@/lib/utils";
 import { Bell, BrainCircuit, RadioTower, ShieldCheck } from "lucide-react";
+import { useI18n } from "@/lib/i18n";
 
 export default function SettingsPage() {
+  const { text } = useI18n();
+
   return (
     <div className="px-8 py-6 space-y-6 max-w-5xl animate-fade-in">
       <div>
-        <h1 className="text-h1 text-text-primary">Settings</h1>
-        <p className="text-sm text-text-secondary mt-1">系统配置 · LLM 供应商 · 通知渠道</p>
+        <h1 className="text-h1 text-text-primary">{text("设置")}</h1>
+        <p className="text-sm text-text-secondary mt-1">{text("系统配置 · LLM 供应商 · 通知渠道")}</p>
       </div>
 
       <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-4">
-        <MetricTile label="LLM Routes" value="3" caption="active providers" icon={BrainCircuit} tone="violet" />
-        <MetricTile label="Push Channels" value="2/4" caption="realtime enabled" icon={RadioTower} tone="cyan" />
-        <MetricTile label="Dedup Window" value="12h" caption="symbol direction" icon={ShieldCheck} tone="up" />
-        <MetricTile label="Alert Budget" value="50" caption="daily cap" icon={Bell} tone="warning" />
+        <MetricTile label={text("LLM 供应商")} value="3" caption="active providers" icon={BrainCircuit} tone="violet" />
+        <MetricTile label={text("通知渠道")} value="2/4" caption="realtime enabled" icon={RadioTower} tone="cyan" />
+        <MetricTile label={text("预警去重设置")} value="12h" caption="symbol direction" icon={ShieldCheck} tone="up" />
+        <MetricTile label={text("每日预警上限")} value="50" caption="daily cap" icon={Bell} tone="warning" />
       </div>
 
       <Card variant="data">
         <CardHeader>
           <div>
-            <CardTitle>LLM 供应商</CardTitle>
-            <CardSubtitle>多供应商支持，按场景路由</CardSubtitle>
+            <CardTitle>{text("LLM 供应商")}</CardTitle>
+            <CardSubtitle>{text("多供应商支持，按场景路由")}</CardSubtitle>
           </div>
         </CardHeader>
         <div className="space-y-3">
@@ -40,15 +43,15 @@ export default function SettingsPage() {
               <div className="flex-1">
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-medium">{p.name}</span>
-                  {p.status === "active" && <Badge variant="emerald">主力</Badge>}
+                  {p.status === "active" && <Badge variant="emerald">{text("主力")}</Badge>}
                 </div>
                 <div className="text-caption text-text-muted font-mono">{p.model}</div>
               </div>
               <div className="text-right text-sm">
                 <div className="text-text-secondary font-mono tabular-nums">{p.usage}</div>
-                <div className="text-caption text-text-muted">本月成本 / 预算</div>
+                <div className="text-caption text-text-muted">{text("本月成本 / 预算")}</div>
               </div>
-              <Button variant="secondary" size="sm">配置</Button>
+              <Button variant="secondary" size="sm">{text("配置")}</Button>
             </div>
           ))}
         </div>
@@ -58,8 +61,8 @@ export default function SettingsPage() {
         <Card variant="data">
           <CardHeader>
             <div>
-              <CardTitle>通知渠道</CardTitle>
-              <CardSubtitle>前端实时推送与外部 Webhook</CardSubtitle>
+              <CardTitle>{text("通知渠道")}</CardTitle>
+              <CardSubtitle>{text("前端实时推送与外部 Webhook")}</CardSubtitle>
             </div>
           </CardHeader>
           <div className="space-y-3 text-sm">
@@ -73,8 +76,8 @@ export default function SettingsPage() {
         <Card variant="data">
           <CardHeader>
             <div>
-              <CardTitle>预警去重设置</CardTitle>
-              <CardSubtitle>控制重复预警与升级重发</CardSubtitle>
+              <CardTitle>{text("预警去重设置")}</CardTitle>
+              <CardSubtitle>{text("控制重复预警与升级重发")}</CardSubtitle>
             </div>
           </CardHeader>
           <div className="space-y-3 text-sm">
@@ -89,12 +92,12 @@ export default function SettingsPage() {
       <Card variant="data" className="border-l-[3px] border-l-brand-emerald">
         <div className="flex items-start justify-between gap-5">
           <div>
-            <div className="text-h3 mb-1">关于 Zeus</div>
+            <div className="text-h3 mb-1">{text("关于 Zeus")}</div>
             <p className="italic text-brand-emerald-bright text-sm mb-3">
               Trades are won before they begin.
             </p>
             <p className="text-sm text-text-secondary">
-              v0.1.0 — Prototype Demo. 这个版本是纯前端原型，所有数据为模拟。后端 Python 服务（事件总线、信号检测、校准循环、对抗引擎、Alert Agent）将在 Phase 1 开始构建。
+              v0.1.0 — Prototype Demo. {text("这个版本是纯前端原型，所有数据为模拟。后端 Python 服务（事件总线、信号检测、校准循环、对抗引擎、Alert Agent）将在 Phase 1 开始构建。")}
             </p>
           </div>
           <div className="hidden rounded-sm border border-brand-emerald/30 bg-brand-emerald/10 px-3 py-2 font-mono text-caption text-brand-emerald-bright md:block">
@@ -113,13 +116,14 @@ export default function SettingsPage() {
 
 function Toggle({ label, enabled = false }: { label: string; enabled?: boolean }) {
   const [checked, setChecked] = useState(enabled);
+  const { text } = useI18n();
 
   return (
     <div className="flex min-h-10 items-center justify-between rounded-sm border border-border-subtle bg-bg-base px-3 py-2 shadow-inner-panel">
-      <span className="text-text-secondary">{label}</span>
+      <span className="text-text-secondary">{text(label)}</span>
       <SwitchControl
         checked={checked}
-        label={label}
+        label={text(label)}
         onToggle={() => setChecked((current) => !current)}
       />
     </div>
@@ -178,10 +182,12 @@ function SwitchControl({
 }
 
 function SettingRow({ label, value }: { label: string; value: string }) {
+  const { text } = useI18n();
+
   return (
     <div className="flex items-center justify-between rounded-sm border border-border-subtle bg-bg-base px-3 py-2 shadow-inner-panel">
-      <span className="text-text-secondary">{label}</span>
-      <span className="font-mono text-text-primary">{value}</span>
+      <span className="text-text-secondary">{text(label)}</span>
+      <span className="font-mono text-text-primary">{text(value)}</span>
     </div>
   );
 }

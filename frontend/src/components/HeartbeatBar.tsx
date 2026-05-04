@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { HEARTBEAT_STATE, REGIME_LABEL } from "@/data/mock";
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/lib/i18n";
 
 const dot = (status: "healthy" | "warning" | "alert") =>
   status === "healthy"
@@ -13,6 +14,7 @@ const dot = (status: "healthy" | "warning" | "alert") =>
 
 export function HeartbeatBar() {
   const s = HEARTBEAT_STATE;
+  const { text } = useI18n();
   const [clock, setClock] = useState("--:--:--");
   const [mounted, setMounted] = useState(false);
 
@@ -28,19 +30,19 @@ export function HeartbeatBar() {
 
   return (
     <div className="h-8 w-full bg-bg-base border-b border-border-subtle flex items-center gap-5 px-5 text-caption text-text-muted overflow-x-auto">
-      <Item dotClass={dot("healthy")} label="Data" value={`${s.dataAge} ago`} />
-      <Item dotClass={dot("healthy")} label="Active" value={`${s.activeSignals} signals`} />
+      <Item dotClass={dot("healthy")} label={text("数据")} value={`${s.dataAge} ago`} />
+      <Item dotClass={dot("healthy")} label={text("活跃")} value={`${s.activeSignals} signals`} />
       <Item
         dotClass={dot(s.driftStatus)}
-        label="Drift"
-        value={s.drift}
+        label={text("漂移")}
+        value={text(s.drift)}
       />
       <Item
         dotClass={dot("healthy")}
-        label="Calibration"
+        label={text("校准")}
         value={`${s.calibrationProgress}/${s.calibrationTarget}`}
       />
-      <Item dotClass={dot("healthy")} label="Regime" value={REGIME_LABEL[s.regime] ?? s.regime} />
+      <Item dotClass={dot("healthy")} label={text("状态")} value={text(REGIME_LABEL[s.regime] ?? s.regime)} />
       <div className="ml-auto text-text-muted">
         <span suppressHydrationWarning className="font-mono tabular-nums">
           {mounted ? clock : "--:--:--"}

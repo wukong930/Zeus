@@ -1,4 +1,7 @@
+"use client";
+
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/lib/i18n";
 import { forwardRef, type ButtonHTMLAttributes } from "react";
 
 type Variant = "primary" | "action" | "secondary" | "ghost" | "destructive";
@@ -30,6 +33,8 @@ const sizeStyles: Record<Size, string> = {
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
   ({ className, variant = "primary", size = "md", children, ...props }, ref) => {
+    const { text } = useI18n();
+
     return (
       <button
         ref={ref}
@@ -42,7 +47,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
         )}
         {...props}
       >
-        {children}
+        {typeof children === "string" ? text(children) : children}
       </button>
     );
   }

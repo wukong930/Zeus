@@ -46,6 +46,7 @@ import {
 } from "lucide-react";
 import { CAUSAL_EDGES, CAUSAL_NODES, type CausalEdge, type CausalNode } from "@/data/mock";
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/lib/i18n";
 
 type Mode = "live" | "replay" | "explorer";
 type View = "all" | "portfolio" | "counter" | "alerts";
@@ -543,6 +544,8 @@ function ModeToolbar({
   onChange: (mode: Mode) => void;
   onFit: () => void;
 }) {
+  const { text } = useI18n();
+
   return (
     <div className="flex items-center gap-1 rounded-sm border border-border-default bg-[linear-gradient(180deg,rgba(15,17,16,0.98),rgba(0,0,0,0.98))] p-1 shadow-inner-panel">
       {(Object.keys(MODE_META) as Mode[]).map((item) => {
@@ -552,8 +555,8 @@ function ModeToolbar({
           <button
             key={item}
             type="button"
-            title={meta.label}
-            aria-label={meta.label}
+            title={text(meta.label)}
+            aria-label={text(meta.label)}
             onClick={() => onChange(item)}
             className={cn(
               "flex h-7 items-center gap-1.5 rounded-xs border px-2.5 text-xs font-medium transition-colors",
@@ -563,14 +566,14 @@ function ModeToolbar({
             )}
           >
             <Icon className="h-3 w-3" />
-            <span className="hidden xl:inline">{meta.label}</span>
+            <span className="hidden xl:inline">{text(meta.label)}</span>
           </button>
         );
       })}
       <button
         type="button"
-        title="Fit view"
-        aria-label="Fit view"
+        title={text("Fit view")}
+        aria-label={text("Fit view")}
         onClick={onFit}
         className="flex h-7 w-7 items-center justify-center rounded-xs border border-transparent text-text-secondary transition-colors hover:border-border-subtle hover:bg-bg-surface-raised hover:text-text-primary"
       >
@@ -581,6 +584,8 @@ function ModeToolbar({
 }
 
 function ViewToolbar({ view, onChange }: { view: View; onChange: (view: View) => void }) {
+  const { text } = useI18n();
+
   return (
     <div className="flex items-center gap-1 rounded-sm border border-border-default bg-[linear-gradient(180deg,rgba(15,17,16,0.98),rgba(0,0,0,0.98))] p-1 shadow-inner-panel">
       {VIEW_ORDER.map((item) => {
@@ -590,8 +595,8 @@ function ViewToolbar({ view, onChange }: { view: View; onChange: (view: View) =>
           <button
             key={item}
             type="button"
-            title={meta.brief}
-            aria-label={meta.label}
+            title={text(meta.brief)}
+            aria-label={text(meta.label)}
             onClick={() => onChange(item)}
             className={cn(
               "flex h-7 items-center gap-1.5 rounded-xs border px-2 text-xs font-medium transition-colors",
@@ -601,7 +606,7 @@ function ViewToolbar({ view, onChange }: { view: View; onChange: (view: View) =>
             )}
           >
             <Icon className="h-3 w-3" />
-            <span className="hidden xl:inline">{meta.label}</span>
+            <span className="hidden xl:inline">{text(meta.label)}</span>
           </button>
         );
       })}
@@ -610,6 +615,7 @@ function ViewToolbar({ view, onChange }: { view: View; onChange: (view: View) =>
 }
 
 function SemanticBackdrop({ viewNodeIds }: { viewNodeIds: Set<string> }) {
+  const { text } = useI18n();
   const visibleStages = new Set(
     CAUSAL_NODES.filter((node) => viewNodeIds.has(node.id)).map(
       (node) => NODE_META[node.id].stage
@@ -640,7 +646,7 @@ function SemanticBackdrop({ viewNodeIds }: { viewNodeIds: Set<string> }) {
                 className="absolute left-3 top-14 rounded-xs border bg-black/70 px-2 py-1 text-caption font-medium shadow-inner-panel"
                 style={{ borderColor: `${meta.color}42`, color: meta.color }}
               >
-                {meta.label}
+                {text(meta.label)}
               </div>
             </div>
           );
@@ -651,6 +657,7 @@ function SemanticBackdrop({ viewNodeIds }: { viewNodeIds: Set<string> }) {
 }
 
 function StageRail({ viewNodeIds }: { viewNodeIds: Set<string> }) {
+  const { text } = useI18n();
   const activeStages = new Set(
     CAUSAL_NODES.filter((node) => viewNodeIds.has(node.id)).map(
       (node) => NODE_META[node.id].stage
@@ -670,9 +677,9 @@ function StageRail({ viewNodeIds }: { viewNodeIds: Set<string> }) {
                 active ? "opacity-100" : "opacity-35"
               )}
               style={{ borderColor: `${meta.color}55`, color: meta.color }}
-              title={meta.description}
+              title={text(meta.description)}
             >
-              {meta.label}
+              {text(meta.label)}
             </div>
             {index < STAGE_ORDER.length - 1 && (
               <Route className="h-3 w-3 text-text-disabled" />
@@ -693,6 +700,7 @@ function ViewBrief({
   focusId: string | null;
   visibleCount: number;
 }) {
+  const { text } = useI18n();
   const meta = VIEW_META[view];
   const Icon = meta.icon;
   const focusNode = focusId ? CAUSAL_NODES.find((node) => node.id === focusId) : null;
@@ -702,23 +710,24 @@ function ViewBrief({
     <div className="min-w-0 flex-1 rounded-sm border border-border-default bg-[linear-gradient(180deg,rgba(15,17,16,0.98),rgba(0,0,0,0.98))] px-3 py-2 shadow-inner-panel xl:max-w-[620px]">
       <div className="flex items-center gap-2 text-caption text-text-muted">
         <Icon className="h-3.5 w-3.5" />
-        <span className="text-text-secondary">{meta.label}</span>
+        <span className="text-text-secondary">{text(meta.label)}</span>
         <span className="font-mono">{visibleCount}/{CAUSAL_NODES.length}</span>
         {focusNode && (
           <>
             <span className="text-text-disabled">·</span>
-            <span className="truncate text-text-primary">{focusNode.label}</span>
+            <span className="truncate text-text-primary">{text(focusNode.label)}</span>
           </>
         )}
       </div>
       <div className="mt-1 line-clamp-1 text-xs text-text-secondary">
-        {focusMeta?.narrative ?? meta.brief}
+        {text(focusMeta?.narrative ?? meta.brief)}
       </div>
     </div>
   );
 }
 
 function CausalNodeCard({ data, selected }: NodeProps<CausalFlowNode>) {
+  const { text } = useI18n();
   const node = data.causal;
   const meta = data.meta;
   const stage = STAGE_META[meta.stage];
@@ -787,13 +796,13 @@ function CausalNodeCard({ data, selected }: NodeProps<CausalFlowNode>) {
 
         <div className="min-w-0">
           <div className="flex items-center gap-2">
-            <span className="truncate text-sm font-semibold text-text-primary">{node.label}</span>
+            <span className="truncate text-sm font-semibold text-text-primary">{text(node.label)}</span>
             {node.active && (
               <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-brand-emerald-bright" />
             )}
           </div>
           <div className="mt-1 flex items-center gap-2 text-caption text-text-muted">
-            <span style={{ color }}>{NODE_LABELS[node.type]}</span>
+            <span style={{ color }}>{text(NODE_LABELS[node.type])}</span>
             <span className="font-mono">{Math.round(node.freshness * 100)}%</span>
             {!compact && <span className="font-mono">I{node.influence}</span>}
           </div>
@@ -803,24 +812,24 @@ function CausalNodeCard({ data, selected }: NodeProps<CausalFlowNode>) {
                 className="rounded-xs border px-1.5 py-0.5 text-[10px] leading-none"
                 style={{ borderColor: `${stage.color}55`, color: stage.color }}
               >
-                {stage.label}
+                {text(stage.label)}
               </span>
               <span
                 className="rounded-xs border px-1.5 py-0.5 text-[10px] leading-none"
                 style={{ borderColor: `${sector.color}55`, color: sector.color }}
               >
-                {sector.label}
+                {text(sector.label)}
               </span>
               {meta.portfolioLinked && (
                 <span className="inline-flex items-center gap-1 rounded-xs border border-brand-emerald/40 px-1.5 py-0.5 text-[10px] leading-none text-brand-emerald-bright">
                   <Briefcase className="h-2.5 w-2.5" />
-                  Position
+                  {text("Position")}
                 </span>
               )}
               {meta.alertLinked && (
                 <span className="inline-flex items-center gap-1 rounded-xs border border-brand-orange/40 px-1.5 py-0.5 text-[10px] leading-none text-brand-orange">
                   <Target className="h-2.5 w-2.5" />
-                  Alert
+                  {text("Alert")}
                 </span>
               )}
             </div>
@@ -833,10 +842,10 @@ function CausalNodeCard({ data, selected }: NodeProps<CausalFlowNode>) {
           <div className="flex items-center gap-1.5 text-text-muted">
             <GitBranch className="h-3 w-3" />
             <span className="font-mono">{data.upstream}</span>
-            <span>上游</span>
+            <span>{text("上游")}</span>
           </div>
           <div className="flex items-center justify-end gap-1.5 text-text-muted">
-            <span>下游</span>
+            <span>{text("下游")}</span>
             <span className="font-mono">{data.downstream}</span>
             <Network className="h-3 w-3" />
           </div>
@@ -930,6 +939,7 @@ function GraphStats({
   view: View;
   visibleCount: number;
 }) {
+  const { text } = useI18n();
   const activeNodes = CAUSAL_NODES.filter((node) => node.active).length;
   const verifiedEdges = CAUSAL_EDGES.filter((edge) => edge.verified).length;
   const ModeIcon = mode === "live" ? Activity : mode === "replay" ? RotateCcw : Search;
@@ -937,16 +947,16 @@ function GraphStats({
 
   return (
     <div className="flex flex-wrap items-stretch gap-1.5 rounded-sm border border-border-default bg-[linear-gradient(180deg,rgba(15,17,16,0.98),rgba(0,0,0,0.98))] p-1 shadow-inner-panel">
-      <StatCell icon={ModeIcon} label="Mode" value={mode} />
-      <StatCell icon={ViewIcon} label="View" value={VIEW_META[view].label} />
-      <StatCell icon={CircleDot} label="Active" value={`${activeNodes}/${CAUSAL_NODES.length}`} />
-      <StatCell icon={CheckCircle2} label="Verified" value={`${verifiedEdges}/${CAUSAL_EDGES.length}`} />
+      <StatCell icon={ModeIcon} label={text("Mode")} value={text(mode)} />
+      <StatCell icon={ViewIcon} label={text("View")} value={text(VIEW_META[view].label)} />
+      <StatCell icon={CircleDot} label={text("Active")} value={`${activeNodes}/${CAUSAL_NODES.length}`} />
+      <StatCell icon={CheckCircle2} label={text("Verified")} value={`${verifiedEdges}/${CAUSAL_EDGES.length}`} />
       <div className="min-w-[108px] rounded-xs border border-border-subtle bg-bg-base px-2 py-1 text-caption text-text-muted shadow-inner-panel">
-        <span>Visible</span>
+        <span>{text("Visible")}</span>
         <span className="ml-2 font-mono text-xs text-text-primary">{visibleCount}/{CAUSAL_NODES.length}</span>
         {focusId && (
           <div className="mt-1 max-w-40 truncate text-text-secondary">
-            {CAUSAL_NODES.find((node) => node.id === focusId)?.label}
+            {text(CAUSAL_NODES.find((node) => node.id === focusId)?.label ?? "")}
           </div>
         )}
       </div>
@@ -975,6 +985,7 @@ function StatCell({
 }
 
 function NodeDetails({ node, onClose }: { node: CausalNode; onClose: () => void }) {
+  const { text } = useI18n();
   const upstream = CAUSAL_EDGES.filter((edge) => edge.target === node.id);
   const downstream = CAUSAL_EDGES.filter((edge) => edge.source === node.id);
   const meta = NODE_META[node.id];
@@ -995,16 +1006,16 @@ function NodeDetails({ node, onClose }: { node: CausalNode; onClose: () => void 
               <Icon className="h-4 w-4" />
             </div>
             <div>
-              <div className="text-h3 text-text-primary">{node.label}</div>
+              <div className="text-h3 text-text-primary">{text(node.label)}</div>
               <div className="mt-1 text-caption" style={{ color }}>
-                {NODE_LABELS[node.type]}
+                {text(NODE_LABELS[node.type])}
               </div>
             </div>
           </div>
           <button
             type="button"
-            title="Close"
-            aria-label="Close node details"
+            title={text("Close")}
+            aria-label={text("Close node details")}
             onClick={onClose}
             className="flex h-7 w-7 items-center justify-center rounded-xs border border-transparent text-text-muted transition-colors hover:border-border-subtle hover:bg-bg-surface-raised hover:text-text-primary"
           >
@@ -1015,7 +1026,7 @@ function NodeDetails({ node, onClose }: { node: CausalNode; onClose: () => void 
 
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4">
         <div className="rounded-xs border border-border-subtle bg-bg-base p-3 text-sm text-text-secondary shadow-inner-panel">
-          {meta.narrative}
+          {text(meta.narrative)}
         </div>
 
         <div className="mt-3 flex flex-wrap gap-1.5">
@@ -1023,44 +1034,44 @@ function NodeDetails({ node, onClose }: { node: CausalNode; onClose: () => void 
             className="rounded-xs border px-2 py-1 text-caption"
             style={{ borderColor: `${stage.color}55`, color: stage.color }}
           >
-            {stage.label}
+            {text(stage.label)}
           </span>
           <span
             className="rounded-xs border px-2 py-1 text-caption"
             style={{ borderColor: `${sector.color}55`, color: sector.color }}
           >
-            {sector.label}
+            {text(sector.label)}
           </span>
           {meta.tags.map((tag) => (
             <span key={tag} className="rounded-xs border border-border-subtle px-2 py-1 text-caption text-text-muted">
-              {tag}
+              {text(tag)}
             </span>
           ))}
           {meta.portfolioLinked && (
             <span className="inline-flex items-center gap-1 rounded-xs border border-brand-emerald/40 px-2 py-1 text-caption text-brand-emerald-bright">
               <Briefcase className="h-3 w-3" />
-              Position
+              {text("Position")}
             </span>
           )}
           {meta.alertLinked && (
             <span className="inline-flex items-center gap-1 rounded-xs border border-brand-orange/40 px-2 py-1 text-caption text-brand-orange">
               <Target className="h-3 w-3" />
-              Alert
+              {text("Alert")}
             </span>
           )}
         </div>
 
         <div className="mt-4 grid grid-cols-3 gap-2">
-          <DetailMetric label="Fresh" value={`${Math.round(node.freshness * 100)}%`} />
-          <DetailMetric label="Impact" value={`${node.influence}/4`} />
-          <DetailMetric label="State" value={node.active ? "Active" : "Quiet"} />
+          <DetailMetric label={text("Fresh")} value={`${Math.round(node.freshness * 100)}%`} />
+          <DetailMetric label={text("Impact")} value={`${node.influence}/4`} />
+          <DetailMetric label={text("State")} value={node.active ? text("Active") : text("Quiet")} />
         </div>
 
         <div className="mt-3 rounded-xs border border-border-subtle bg-bg-base p-3 shadow-inner-panel">
           <div className="mb-2 flex items-center justify-between text-caption text-text-muted">
-            <span>Propagation</span>
+            <span>{text("Propagation")}</span>
             <span className="font-mono text-text-secondary">
-              {upstream.length} upstream / {downstream.length} downstream
+              {upstream.length} {text("upstream")} / {downstream.length} {text("downstream")}
             </span>
           </div>
           <div className="flex items-center gap-1.5">
@@ -1095,11 +1106,12 @@ function EdgeList({
   edges: CausalEdge[];
   side: "source" | "target";
 }) {
+  const { text } = useI18n();
   if (edges.length === 0) return null;
   return (
     <div className="mt-4">
       <div className="mb-2 text-caption uppercase tracking-wide text-text-muted">
-        {title} {edges.length}
+        {text(title)} {edges.length}
       </div>
       <div className="space-y-2">
         {edges.map((edge) => {
@@ -1108,7 +1120,7 @@ function EdgeList({
           return (
             <div key={edge.id} className="rounded-xs border border-border-subtle bg-bg-base p-2 shadow-inner-panel">
               <div className="flex items-center justify-between gap-2">
-                <span className="truncate text-sm text-text-secondary">{peer?.label}</span>
+                <span className="truncate text-sm text-text-secondary">{text(peer?.label ?? "")}</span>
                 <span className="font-mono text-caption" style={{ color }}>
                   {Math.round(edge.confidence * 100)}%
                 </span>
@@ -1121,10 +1133,10 @@ function EdgeList({
                 <span className="font-mono">hit {Math.round(edge.hitRate * 100)}%</span>
               </div>
               <div className="mt-1 flex items-center justify-between text-caption text-text-muted">
-                <span style={{ color }}>{edge.direction}</span>
+                <span style={{ color }}>{text(edge.direction)}</span>
                 <span className={cn("inline-flex items-center gap-1", edge.verified ? "text-brand-emerald-bright" : "text-text-muted")}>
                   <CheckCircle2 className="h-3 w-3" />
-                  {edge.verified ? "verified" : "unverified"}
+                  {edge.verified ? text("verified") : text("unverified")}
                 </span>
               </div>
             </div>
@@ -1136,11 +1148,13 @@ function EdgeList({
 }
 
 function Legend() {
+  const { text } = useI18n();
+
   return (
     <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5 rounded-sm border border-border-default bg-[linear-gradient(180deg,rgba(15,17,16,0.98),rgba(0,0,0,0.98))] px-3 py-2 shadow-inner-panel">
       <div className="flex items-center gap-2 text-caption font-medium text-text-secondary">
         <Network className="h-3.5 w-3.5" />
-        Causal Layers
+        {text("Causal Layers")}
       </div>
       {(Object.keys(NODE_LABELS) as CausalNode["type"][]).map((type) => {
         const Icon = nodeIcon(type);
@@ -1152,14 +1166,14 @@ function Legend() {
             >
               <Icon className="h-2.5 w-2.5" />
             </span>
-            {NODE_LABELS[type]}
+            {text(NODE_LABELS[type])}
           </div>
         );
       })}
       <div className="hidden h-5 w-px bg-border-subtle xl:block" />
       <div className="flex items-center gap-2 text-caption font-medium text-text-secondary">
         <Layers className="h-3.5 w-3.5" />
-        Semantic Stages
+        {text("Semantic Stages")}
       </div>
       {STAGE_ORDER.map((stage) => {
         const meta = STAGE_META[stage];
@@ -1169,7 +1183,7 @@ function Legend() {
               className="h-1.5 w-5 rounded-full"
               style={{ backgroundColor: meta.color }}
             />
-            {meta.label}
+            {text(meta.label)}
           </div>
         );
       })}

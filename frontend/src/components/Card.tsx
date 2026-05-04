@@ -1,4 +1,7 @@
+"use client";
+
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/lib/i18n";
 import type { HTMLAttributes } from "react";
 
 interface CardProps extends HTMLAttributes<HTMLDivElement> {
@@ -54,10 +57,20 @@ export function CardHeader({ className, ...props }: HTMLAttributes<HTMLDivElemen
   );
 }
 
-export function CardTitle({ className, ...props }: HTMLAttributes<HTMLHeadingElement>) {
-  return <h3 className={cn("text-h3 text-text-primary tracking-normal", className)} {...props} />;
+export function CardTitle({ className, children, ...props }: HTMLAttributes<HTMLHeadingElement>) {
+  const { text } = useI18n();
+  return (
+    <h3 className={cn("text-h3 text-text-primary tracking-normal", className)} {...props}>
+      {typeof children === "string" ? text(children) : children}
+    </h3>
+  );
 }
 
-export function CardSubtitle({ className, ...props }: HTMLAttributes<HTMLParagraphElement>) {
-  return <p className={cn("text-xs text-text-muted", className)} {...props} />;
+export function CardSubtitle({ className, children, ...props }: HTMLAttributes<HTMLParagraphElement>) {
+  const { text } = useI18n();
+  return (
+    <p className={cn("text-xs text-text-muted", className)} {...props}>
+      {typeof children === "string" ? text(children) : children}
+    </p>
+  );
 }

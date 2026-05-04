@@ -19,6 +19,7 @@ import {
   TrendingUp,
 } from "lucide-react";
 import { SECTORS } from "@/data/mock";
+import { useI18n } from "@/lib/i18n";
 
 interface CommandItem {
   id: string;
@@ -32,6 +33,7 @@ interface CommandItem {
 export function CommandPalette() {
   const [open, setOpen] = useState(false);
   const router = useRouter();
+  const { text } = useI18n();
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -51,20 +53,20 @@ export function CommandPalette() {
   };
 
   const items: CommandItem[] = [
-    { id: "nav-cc", group: "跳转", label: "Command Center", icon: LayoutDashboard, action: () => go("/") },
-    { id: "nav-al", group: "跳转", label: "Alerts", icon: Bell, action: () => go("/alerts") },
-    { id: "nav-tp", group: "跳转", label: "Trade Plans", icon: Plane, action: () => go("/trade-plans") },
-    { id: "nav-cw", group: "跳转", label: "Causal Web", icon: Network, action: () => go("/causal-web") },
-    { id: "nav-il", group: "跳转", label: "Industry Lens", icon: Factory, action: () => go("/industry") },
-    { id: "nav-sec", group: "跳转", label: "Sectors", icon: Layers, action: () => go("/sectors") },
-    { id: "nav-fl", group: "跳转", label: "Future Lab", icon: Beaker, action: () => go("/future-lab") },
-    { id: "nav-nb", group: "跳转", label: "Notebook", icon: NotebookPen, action: () => go("/notebook") },
-    { id: "nav-an", group: "跳转", label: "Analytics", icon: BarChart3, action: () => go("/analytics") },
+    { id: "nav-cc", group: "跳转", label: "命令中心", icon: LayoutDashboard, action: () => go("/") },
+    { id: "nav-al", group: "跳转", label: "预警", icon: Bell, action: () => go("/alerts") },
+    { id: "nav-tp", group: "跳转", label: "交易计划", icon: Plane, action: () => go("/trade-plans") },
+    { id: "nav-cw", group: "跳转", label: "因果网络", icon: Network, action: () => go("/causal-web") },
+    { id: "nav-il", group: "跳转", label: "产业透镜", icon: Factory, action: () => go("/industry") },
+    { id: "nav-sec", group: "跳转", label: "板块", icon: Layers, action: () => go("/sectors") },
+    { id: "nav-fl", group: "跳转", label: "未来实验室", icon: Beaker, action: () => go("/future-lab") },
+    { id: "nav-nb", group: "跳转", label: "笔记本", icon: NotebookPen, action: () => go("/notebook") },
+    { id: "nav-an", group: "跳转", label: "分析", icon: BarChart3, action: () => go("/analytics") },
     ...SECTORS.flatMap((sec) =>
       sec.symbols.map((sym) => ({
         id: `sym-${sym.code}`,
         group: "品种",
-        label: `${sym.code}  ${sym.name}`,
+        label: `${sym.code}  ${text(sym.name)}`,
         icon: TrendingUp,
         action: () => go("/causal-web"),
       }))
@@ -92,7 +94,7 @@ export function CommandPalette() {
               <Search className="h-4 w-4" />
             </div>
             <Command.Input
-              placeholder="搜索品种 / 跳转 / 执行..."
+              placeholder={text("搜索品种 / 跳转 / 执行...")}
               className="flex-1 bg-transparent text-sm text-text-primary placeholder:text-text-muted focus:outline-none"
             />
             <kbd className="rounded-xs border border-border-default bg-bg-base px-1.5 py-0.5 text-caption text-text-muted shadow-inner-panel">
@@ -101,10 +103,10 @@ export function CommandPalette() {
           </div>
           <Command.List className="max-h-[60vh] overflow-y-auto p-3">
             <Command.Empty className="py-8 text-center text-sm text-text-muted">
-              没找到匹配项
+              {text("没找到匹配项")}
             </Command.Empty>
             {["跳转", "品种", "操作"].map((g) => (
-              <Command.Group key={g} heading={g} className="px-1 py-2 text-caption uppercase tracking-wider text-text-muted">
+              <Command.Group key={g} heading={text(g)} className="px-1 py-2 text-caption uppercase tracking-wider text-text-muted">
                 {items
                   .filter((i) => i.group === g)
                   .map((item) => {
@@ -118,7 +120,7 @@ export function CommandPalette() {
                         <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-xs border border-border-subtle bg-bg-base text-text-muted">
                           <Icon className="h-3.5 w-3.5" />
                         </span>
-                        <span className="flex-1">{item.label}</span>
+                        <span className="flex-1">{text(item.label)}</span>
                         {item.shortcut && (
                           <kbd className="rounded-xs border border-border-subtle bg-bg-base px-1.5 py-0.5 text-caption text-text-muted">
                             {item.shortcut}

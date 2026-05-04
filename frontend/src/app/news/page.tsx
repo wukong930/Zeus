@@ -15,6 +15,7 @@ import { Card, CardHeader, CardSubtitle, CardTitle } from "@/components/Card";
 import { MetricTile } from "@/components/MetricTile";
 import { fetchNewsEventsFromApi, type NewsEvent } from "@/lib/api";
 import { cn, timeAgo } from "@/lib/utils";
+import { useI18n } from "@/lib/i18n";
 
 const MOCK_NEWS_EVENTS: NewsEvent[] = [
   {
@@ -131,6 +132,7 @@ export default function NewsEventsPage() {
     verified: events.filter((event) => event.verificationStatus === "cross_verified").length,
     manual: events.filter((event) => event.requiresManualConfirmation).length,
   };
+  const { text } = useI18n();
 
   return (
     <div className="flex h-full">
@@ -148,9 +150,9 @@ export default function NewsEventsPage() {
         </div>
 
         <div className="grid grid-cols-1 gap-3">
-          <MetricTile label="总数" value={String(stats.total)} caption="events" icon={Newspaper} tone="cyan" />
-          <MetricTile label="交叉验证" value={String(stats.verified)} caption="source quorum" icon={ShieldCheck} tone="up" />
-          <MetricTile label="人工确认" value={String(stats.manual)} caption="manual gate" icon={AlertTriangle} tone={stats.manual > 0 ? "warning" : "neutral"} />
+          <MetricTile label={text("总数")} value={String(stats.total)} caption="events" icon={Newspaper} tone="cyan" />
+          <MetricTile label={text("交叉验证")} value={String(stats.verified)} caption="source quorum" icon={ShieldCheck} tone="up" />
+          <MetricTile label={text("人工确认")} value={String(stats.manual)} caption="manual gate" icon={AlertTriangle} tone={stats.manual > 0 ? "warning" : "neutral"} />
         </div>
 
         <div className="relative">
@@ -158,7 +160,7 @@ export default function NewsEventsPage() {
           <input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="品种 / 标题 / 摘要"
+            placeholder={text("品种 / 标题 / 摘要")}
             className="w-full rounded-sm border border-border-default bg-bg-base pl-9 pr-3 h-9 text-sm focus:border-brand-emerald focus:outline-none focus:shadow-focus-ring"
           />
         </div>
@@ -189,8 +191,8 @@ export default function NewsEventsPage() {
                 <span className="flex-1" />
                 <span className="text-caption text-text-muted">{timeAgo(event.publishedAt)}</span>
               </div>
-              <div className="text-h3 text-text-primary mb-1">{event.title}</div>
-              <p className="text-sm text-text-secondary line-clamp-2">{event.summary}</p>
+              <div className="text-h3 text-text-primary mb-1">{text(event.title)}</div>
+              <p className="text-sm text-text-secondary line-clamp-2">{text(event.summary)}</p>
               <div className="flex flex-wrap gap-1.5 mt-3">
                 {event.affectedSymbols.map((symbol) => (
                   <span
@@ -205,7 +207,7 @@ export default function NewsEventsPage() {
           ))}
           {filtered.length === 0 && (
             <Card variant="flat" className="py-10 text-center text-text-muted">
-              {source === "loading" ? "新闻事件加载中" : "没有匹配的新闻事件"}
+              {source === "loading" ? text("新闻事件加载中") : text("没有匹配的新闻事件")}
             </Card>
           )}
         </section>
@@ -219,6 +221,8 @@ export default function NewsEventsPage() {
 }
 
 function NewsEventDetail({ event }: { event: NewsEvent }) {
+  const { text } = useI18n();
+
   return (
     <div className="space-y-5 animate-fade-in">
       <div>
@@ -229,21 +233,21 @@ function NewsEventDetail({ event }: { event: NewsEvent }) {
             {event.verificationStatus}
           </Badge>
         </div>
-        <h2 className="text-h1 text-text-primary">{event.title}</h2>
-        <p className="text-sm text-text-secondary mt-2 leading-relaxed">{event.summary}</p>
+        <h2 className="text-h1 text-text-primary">{text(event.title)}</h2>
+        <p className="text-sm text-text-secondary mt-2 leading-relaxed">{text(event.summary)}</p>
       </div>
 
       <div className="grid grid-cols-4 gap-3">
-        <Info label="类型" value={event.eventType} />
-        <Info label="时效" value={event.timeHorizon} />
-        <Info label="来源数" value={String(event.sourceCount)} />
-        <Info label="置信度" value={`${Math.round(event.confidence * 100)}%`} />
+        <Info label={text("类型")} value={text(event.eventType)} />
+        <Info label={text("时效")} value={text(event.timeHorizon)} />
+        <Info label={text("来源数")} value={String(event.sourceCount)} />
+        <Info label={text("置信度")} value={`${Math.round(event.confidence * 100)}%`} />
       </div>
 
       <Card variant="data">
         <CardHeader>
           <div>
-            <CardTitle>影响品种</CardTitle>
+            <CardTitle>{text("影响品种")}</CardTitle>
             <CardSubtitle>{event.publishedAt.slice(0, 19).replace("T", " ")}</CardSubtitle>
           </div>
           <Radio className="w-4 h-4 text-brand-emerald-bright" />
@@ -263,7 +267,7 @@ function NewsEventDetail({ event }: { event: NewsEvent }) {
       <Card variant="data">
         <CardHeader>
           <div>
-            <CardTitle>质量门槛</CardTitle>
+            <CardTitle>{text("质量门槛")}</CardTitle>
             <CardSubtitle>source quorum / severity gate / manual gate</CardSubtitle>
           </div>
           {event.requiresManualConfirmation ? (
@@ -273,9 +277,9 @@ function NewsEventDetail({ event }: { event: NewsEvent }) {
           )}
         </CardHeader>
         <div className="grid grid-cols-3 gap-3">
-          <Gate active={event.severity >= 3} label="严重度 ≥ 3" />
-          <Gate active={event.sourceCount >= 2} label="跨源验证" />
-          <Gate active={!event.requiresManualConfirmation} label="无需确认" />
+          <Gate active={event.severity >= 3} label={text("严重度 ≥ 3")} />
+          <Gate active={event.sourceCount >= 2} label={text("跨源验证")} />
+          <Gate active={!event.requiresManualConfirmation} label={text("无需确认")} />
         </div>
       </Card>
 
@@ -287,7 +291,7 @@ function NewsEventDetail({ event }: { event: NewsEvent }) {
           className="inline-flex items-center gap-2 text-sm text-brand-emerald-bright hover:text-brand-emerald"
         >
           <ExternalLink className="w-4 h-4" />
-          原文链接
+          {text("原文链接")}
         </a>
       )}
     </div>
@@ -303,6 +307,8 @@ function Segmented({
   values: string[];
   onChange: (value: string) => void;
 }) {
+  const { text } = useI18n();
+
   return (
     <div className="grid grid-cols-2 gap-1">
       {values.map((item) => (
@@ -316,7 +322,7 @@ function Segmented({
               : "border-border-subtle text-text-secondary hover:bg-bg-surface-raised"
           )}
         >
-          {item}
+          {text(item)}
         </button>
       ))}
     </div>

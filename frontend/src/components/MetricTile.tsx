@@ -1,5 +1,8 @@
+"use client";
+
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/lib/i18n";
 
 type MetricTone = "neutral" | "up" | "down" | "warning" | "cyan" | "violet";
 
@@ -31,6 +34,8 @@ export function MetricTile({
   tone = "neutral",
   className,
 }: MetricTileProps) {
+  const { text } = useI18n();
+
   return (
     <div
       className={cn(
@@ -41,7 +46,7 @@ export function MetricTile({
     >
       <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-white/5" />
       <div className="flex items-center justify-between gap-3">
-        <div className="text-caption uppercase tracking-wide text-text-muted">{label}</div>
+        <div className="text-caption uppercase tracking-wide text-text-muted">{text(label)}</div>
         {Icon && (
           <div className={cn("flex h-7 w-7 items-center justify-center rounded-xs border bg-bg-base", toneStyles[tone])}>
             <Icon className="h-3.5 w-3.5" />
@@ -54,7 +59,7 @@ export function MetricTile({
       {(trend || caption) && (
         <div className="mt-2 flex items-center gap-2 text-caption">
           {trend && <span className={cn("font-mono tabular-nums", toneStyles[tone])}>{trend}</span>}
-          {caption && <span className="truncate text-text-muted">{caption}</span>}
+          {caption && <span className="truncate text-text-muted">{text(caption)}</span>}
         </div>
       )}
     </div>

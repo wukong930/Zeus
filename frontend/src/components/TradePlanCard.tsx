@@ -7,6 +7,7 @@ import { Button } from "./Button";
 import { ConfidenceHalo } from "./ConfidenceHalo";
 import { type TradePlan } from "@/data/mock";
 import { cn, formatNumber, formatPercent } from "@/lib/utils";
+import { useI18n } from "@/lib/i18n";
 
 interface TradePlanCardProps {
   plan: TradePlan;
@@ -14,6 +15,7 @@ interface TradePlanCardProps {
 
 export function TradePlanCard({ plan }: TradePlanCardProps) {
   const isLong = plan.direction === "long";
+  const { text } = useI18n();
   // Normalize prices to 0..1 range for visualization
   const lo = Math.min(plan.entryPrice, plan.stopLoss, plan.takeProfit, plan.currentPrice);
   const hi = Math.max(plan.entryPrice, plan.stopLoss, plan.takeProfit, plan.currentPrice);
@@ -28,10 +30,10 @@ export function TradePlanCard({ plan }: TradePlanCardProps) {
             <span className="text-h3 font-mono">{plan.symbol}</span>
             <Badge variant={isLong ? "up" : "down"}>
               {isLong ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />}
-              {isLong ? "做多" : "做空"} {plan.size} 手
+              {isLong ? text("做多") : text("做空")} {plan.size} {text("手")}
             </Badge>
           </div>
-          <div className="text-caption text-text-muted">{plan.symbolName}</div>
+          <div className="text-caption text-text-muted">{text(plan.symbolName)}</div>
         </div>
         <ConfidenceHalo confidence={plan.confidence} sampleSize={47} size={48} />
       </div>
@@ -88,19 +90,19 @@ export function TradePlanCard({ plan }: TradePlanCardProps) {
         </div>
         <div className="grid grid-cols-4 gap-2 text-xs font-mono tabular-nums">
           <div>
-            <div className="text-text-muted text-caption">止损</div>
+            <div className="text-text-muted text-caption">{text("止损")}</div>
             <div className="text-data-down">{formatNumber(plan.stopLoss, { decimals: 0 })}</div>
           </div>
           <div>
-            <div className="text-text-muted text-caption">入场</div>
+            <div className="text-text-muted text-caption">{text("入场")}</div>
             <div className="text-text-primary">{formatNumber(plan.entryPrice, { decimals: 0 })}</div>
           </div>
           <div>
-            <div className="text-text-muted text-caption">当前</div>
+            <div className="text-text-muted text-caption">{text("当前")}</div>
             <div className="text-brand-orange">{formatNumber(plan.currentPrice, { decimals: 0 })}</div>
           </div>
           <div>
-            <div className="text-text-muted text-caption">目标</div>
+            <div className="text-text-muted text-caption">{text("目标")}</div>
             <div className="text-data-up">{formatNumber(plan.takeProfit, { decimals: 0 })}</div>
           </div>
         </div>
@@ -113,23 +115,23 @@ export function TradePlanCard({ plan }: TradePlanCardProps) {
       </div>
 
       <div className="grid grid-cols-2 gap-3">
-        <ProgressBar label="保证金占用" value={plan.marginUsage} max={50} />
-        <ProgressBar label="组合风险" value={plan.portfolioRisk} max={20} status={plan.portfolioRisk < 10 ? "healthy" : "warning"} />
+        <ProgressBar label={text("保证金占用")} value={plan.marginUsage} max={50} />
+        <ProgressBar label={text("组合风险")} value={plan.portfolioRisk} max={20} status={plan.portfolioRisk < 10 ? "healthy" : "warning"} />
       </div>
 
       <div className="text-xs text-text-secondary leading-relaxed border-t border-border-subtle pt-3">
-        <span className="text-text-muted">信号摘要 ·</span> {plan.signalSummary}
+        <span className="text-text-muted">{text("信号摘要")} ·</span> {text(plan.signalSummary)}
       </div>
 
       <div className="flex gap-2">
         <Button variant="action" size="md" className="flex-1">
-          采纳建议
+          {text("采纳建议")}
         </Button>
         <Button variant="secondary" size="md">
-          修改
+          {text("修改")}
         </Button>
         <Button variant="ghost" size="md">
-          拒绝
+          {text("拒绝")}
         </Button>
       </div>
     </Card>

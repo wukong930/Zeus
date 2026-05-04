@@ -3,14 +3,17 @@
 import { SECTORS } from "@/data/mock";
 import { cn } from "@/lib/utils";
 import { formatPercent } from "@/lib/utils";
+import { useI18n } from "@/lib/i18n";
 
 export function SectorHeatmap() {
+  const { text } = useI18n();
+
   return (
     <div className="space-y-2.5">
       {SECTORS.map((sector) => (
         <div key={sector.id} className="grid grid-cols-[64px_minmax(0,1fr)_82px] items-center gap-3">
           <div className="min-w-0">
-            <div className="truncate text-xs font-medium text-text-secondary">{sector.name}</div>
+            <div className="truncate text-xs font-medium text-text-secondary">{text(sector.name)}</div>
             <div className="mt-1 h-px bg-border-subtle" />
           </div>
           <div className="grid min-w-0 flex-1 grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-5">
@@ -31,14 +34,14 @@ export function SectorHeatmap() {
                     sym.signalActive && "shadow-glow-orange"
                   )}
                   style={{ background, borderColor }}
-                  title={`${sym.code} · ${sym.name} · ${formatPercent(sym.change)}`}
+                  title={`${sym.code} · ${text(sym.name)} · ${formatPercent(sym.change)}`}
                 >
                   <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-white/10" />
                   {sym.signalActive && (
                     <div className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-brand-orange shadow-glow-orange animate-heartbeat" />
                   )}
                   <div className="pr-3 text-xs font-semibold text-text-primary">{sym.code}</div>
-                  <div className="mt-0.5 truncate text-[10px] leading-tight text-text-muted">{sym.name}</div>
+                  <div className="mt-0.5 truncate text-[10px] leading-tight text-text-muted">{text(sym.name)}</div>
                   <div className={cn("mt-1 font-mono text-sm leading-none tabular-nums", isUp ? "text-data-up" : "text-data-down")}>
                     {formatPercent(sym.change)}
                   </div>

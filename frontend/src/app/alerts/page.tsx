@@ -9,6 +9,7 @@ import { MetricTile } from "@/components/MetricTile";
 import { fetchAlertsFromApi } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { AlertTriangle, RadioTower, Search, ShieldCheck } from "lucide-react";
+import { useI18n } from "@/lib/i18n";
 
 const SECTORS = ["ferrous", "rubber", "energy", "metals", "agri", "precious"];
 
@@ -57,6 +58,7 @@ export default function AlertsPage() {
   const criticalCount = alerts.filter((alert) => alert.severity === "critical").length;
   const manualCount = alerts.filter((alert) => alert.humanActionRequired).length;
   const verifiedCount = alerts.filter((alert) => alert.adversarialPassed).length;
+  const { text } = useI18n();
 
   return (
     <div className="flex h-full">
@@ -75,21 +77,21 @@ export default function AlertsPage() {
         </div>
 
         <div className="grid grid-cols-1 gap-3">
-          <MetricTile label="当前可见" value={String(filtered.length)} caption={`${alerts.length} total`} icon={RadioTower} tone="cyan" />
+          <MetricTile label={text("当前可见")} value={String(filtered.length)} caption={`${alerts.length} total`} icon={RadioTower} tone="cyan" />
           <MetricTile label="Critical" value={String(criticalCount)} caption="requires focus" icon={AlertTriangle} tone={criticalCount > 0 ? "down" : "neutral"} />
-          <MetricTile label="已验证" value={String(verifiedCount)} caption={`${manualCount} manual gates`} icon={ShieldCheck} tone="up" />
+          <MetricTile label={text("已验证")} value={String(verifiedCount)} caption={`${manualCount} manual gates`} icon={ShieldCheck} tone="up" />
         </div>
 
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
           <input
-            placeholder="搜索预警..."
+            placeholder={text("搜索预警...")}
             className="w-full rounded-sm border border-border-default bg-bg-base pl-9 pr-3 h-9 text-sm focus:border-brand-emerald focus:outline-none focus:shadow-focus-ring"
           />
         </div>
 
         <div>
-          <div className="text-caption text-text-muted uppercase tracking-wider mb-2">严重度</div>
+          <div className="text-caption text-text-muted uppercase tracking-wider mb-2">{text("严重度")}</div>
           <div className="space-y-1">
             {severities.map((s) => (
               <FilterChip
@@ -112,7 +114,7 @@ export default function AlertsPage() {
         </div>
 
         <div>
-          <div className="text-caption text-text-muted uppercase tracking-wider mb-2">板块</div>
+          <div className="text-caption text-text-muted uppercase tracking-wider mb-2">{text("板块")}</div>
           <div className="space-y-1">
             {SECTORS.map((sec) => (
               <FilterChip
@@ -123,7 +125,7 @@ export default function AlertsPage() {
                   next.has(sec) ? next.delete(sec) : next.add(sec);
                   setEnabledSectors(next);
                 }}
-                label={sec}
+                label={text(sec)}
                 count={alerts.filter((a) => a.sector === sec).length}
               />
             ))}
@@ -135,8 +137,8 @@ export default function AlertsPage() {
       <div className="flex-1 overflow-y-auto p-6 space-y-3">
         <div className="mb-4 flex items-center justify-between rounded-sm border border-border-subtle bg-bg-surface px-4 py-3 shadow-inner-panel">
           <div>
-            <div className="text-h3 text-text-primary">预警流</div>
-            <div className="mt-1 text-caption text-text-muted">按严重度、板块和人工确认状态扫描当前事件。</div>
+            <div className="text-h3 text-text-primary">{text("预警流")}</div>
+            <div className="mt-1 text-caption text-text-muted">{text("按严重度、板块和人工确认状态扫描当前事件。")}</div>
           </div>
           <Badge variant={source === "mock" ? "orange" : "emerald"}>
             {source === "loading" ? "SYNC" : source.toUpperCase()}
@@ -144,7 +146,7 @@ export default function AlertsPage() {
         </div>
         {filtered.length === 0 ? (
           <Card variant="flat" className="py-10 text-center text-text-muted">
-            {source === "loading" ? "预警加载中" : "没有匹配的预警"}
+            {source === "loading" ? text("预警加载中") : text("没有匹配的预警")}
           </Card>
         ) : (
           filtered.map((alert, i) => (

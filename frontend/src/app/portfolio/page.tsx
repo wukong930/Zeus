@@ -20,6 +20,7 @@ import {
   WalletCards,
 } from "lucide-react";
 import { cn, formatPercent } from "@/lib/utils";
+import { useI18n } from "@/lib/i18n";
 
 export default function PortfolioPage() {
   const [snapshot, setSnapshot] = useState<PortfolioSnapshot | null>(null);
@@ -61,6 +62,7 @@ export default function PortfolioPage() {
       ) ?? 0,
     [snapshot]
   );
+  const { text } = useI18n();
 
   return (
     <div className="px-8 py-6 space-y-6 animate-fade-in">
@@ -68,7 +70,7 @@ export default function PortfolioPage() {
         <div>
           <h1 className="text-h1 text-text-primary">Portfolio Map</h1>
           <p className="text-sm text-text-secondary mt-1">
-            可视化展示持仓在传导图中的位置 + 组合风险
+            {text("可视化展示持仓在传导图中的位置 + 组合风险")}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -77,7 +79,7 @@ export default function PortfolioPage() {
           </Badge>
           <Button variant="action">
             <Plus className="w-4 h-4" />
-            添加持仓
+            {text("添加持仓")}
           </Button>
         </div>
       </div>
@@ -85,30 +87,30 @@ export default function PortfolioPage() {
       {/* Risk dashboard */}
       <div className="grid grid-cols-4 gap-5">
         <MetricTile
-          label="组合 P&L"
+          label={text("组合 P&L")}
           value={`${totalPnL >= 0 ? "+" : ""}¥${totalPnL.toLocaleString()}`}
-          caption="当日浮动"
+          caption={text("当日浮动")}
           icon={Activity}
           tone={totalPnL >= 0 ? "up" : "down"}
         />
         <MetricTile
           label="VaR 95%"
           value={`¥${formatCurrency(snapshot?.varResult?.var95 ?? 0)}`}
-          caption={`${snapshot?.varResult?.horizon ?? 1} 日 95% 置信`}
+          caption={`${snapshot?.varResult?.horizon ?? 1} ${text("日 95% 置信")}`}
           icon={ShieldAlert}
           tone="warning"
         />
         <MetricTile
-          label="保证金占用"
+          label={text("保证金占用")}
           value={`${usage.toFixed(1)}%`}
           caption={`¥${totalMargin.toLocaleString()} / ¥${totalEquity.toLocaleString()}`}
           icon={WalletCards}
           tone={usage > 50 ? "warning" : "cyan"}
         />
         <MetricTile
-          label="压力损失"
+          label={text("压力损失")}
           value={`¥${formatCurrency(worstStress)}`}
-          caption={`${snapshot?.stressResults.length ?? 0} 个场景`}
+          caption={`${snapshot?.stressResults.length ?? 0} ${text("个场景")}`}
           icon={Gauge}
           tone={worstStress < 0 ? "down" : "neutral"}
         />
@@ -118,24 +120,24 @@ export default function PortfolioPage() {
       <Card variant="data">
         <CardHeader>
           <div>
-            <CardTitle>持仓列表</CardTitle>
-            <CardSubtitle>{positions.length} 笔持仓 · 包含传导图激活范围</CardSubtitle>
+            <CardTitle>{text("持仓列表")}</CardTitle>
+            <CardSubtitle>{positions.length} {text("笔持仓")} · {text("包含传导图激活范围")}</CardSubtitle>
           </div>
         </CardHeader>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="text-caption text-text-muted border-b border-border-subtle">
-                <th className="text-left py-2 px-3 font-medium">品种</th>
-                <th className="text-left py-2 px-3 font-medium">方向</th>
-                <th className="text-right py-2 px-3 font-medium">手数</th>
-                <th className="text-right py-2 px-3 font-medium">入场均价</th>
-                <th className="text-right py-2 px-3 font-medium">现价</th>
-                <th className="text-right py-2 px-3 font-medium">浮动盈亏</th>
-                <th className="text-right py-2 px-3 font-medium">收益率</th>
-                <th className="text-left py-2 px-3 font-medium">数据版本</th>
-                <th className="text-left py-2 px-3 font-medium">开仓日期</th>
-                <th className="text-right py-2 px-3 font-medium">操作</th>
+                <th className="text-left py-2 px-3 font-medium">{text("品种")}</th>
+                <th className="text-left py-2 px-3 font-medium">{text("方向")}</th>
+                <th className="text-right py-2 px-3 font-medium">{text("手数")}</th>
+                <th className="text-right py-2 px-3 font-medium">{text("入场均价")}</th>
+                <th className="text-right py-2 px-3 font-medium">{text("现价")}</th>
+                <th className="text-right py-2 px-3 font-medium">{text("浮动盈亏")}</th>
+                <th className="text-right py-2 px-3 font-medium">{text("收益率")}</th>
+                <th className="text-left py-2 px-3 font-medium">{text("数据版本")}</th>
+                <th className="text-left py-2 px-3 font-medium">{text("开仓日期")}</th>
+                <th className="text-right py-2 px-3 font-medium">{text("操作")}</th>
               </tr>
             </thead>
             <tbody>
@@ -146,12 +148,12 @@ export default function PortfolioPage() {
                     <td className="py-3 px-3">
                       <div>
                         <div className="font-mono">{pos.symbol}</div>
-                        <div className="text-caption text-text-muted">{pos.symbolName}</div>
+                        <div className="text-caption text-text-muted">{text(pos.symbolName)}</div>
                       </div>
                     </td>
                     <td className="py-3 px-3">
                       <Badge variant={pos.direction === "long" ? "up" : "down"}>
-                        {pos.direction === "long" ? "做多" : "做空"}
+                        {pos.direction === "long" ? text("做多") : text("做空")}
                       </Badge>
                     </td>
                     <td className="py-3 px-3 text-right font-mono tabular-nums">{pos.lots}</td>
@@ -171,8 +173,8 @@ export default function PortfolioPage() {
                     </td>
                     <td className="py-3 px-3 text-text-muted">{pos.openDate}</td>
                     <td className="py-3 px-3 text-right space-x-1">
-                      <Button variant="ghost" size="sm">减半</Button>
-                      <Button variant="ghost" size="sm">平仓</Button>
+                      <Button variant="ghost" size="sm">{text("减半")}</Button>
+                      <Button variant="ghost" size="sm">{text("平仓")}</Button>
                     </td>
                   </tr>
                 );
@@ -183,10 +185,10 @@ export default function PortfolioPage() {
                     {source === "loading" ? (
                       <span className="inline-flex items-center gap-2">
                         <RefreshCw className="w-4 h-4 animate-spin" />
-                        持仓加载中
+                        {text("持仓加载中")}
                       </span>
                     ) : (
-                      "当前没有开放持仓"
+                      text("当前没有开放持仓")
                     )}
                   </td>
                 </tr>
@@ -200,8 +202,8 @@ export default function PortfolioPage() {
       <Card variant="data">
         <CardHeader>
           <div>
-            <CardTitle>传导图激活范围</CardTitle>
-            <CardSubtitle>持仓自动激活的关联品种监控</CardSubtitle>
+            <CardTitle>{text("传导图激活范围")}</CardTitle>
+            <CardSubtitle>{text("持仓自动激活的关联品种监控")}</CardSubtitle>
           </div>
         </CardHeader>
         <div className="grid grid-cols-2 gap-5">
@@ -209,14 +211,14 @@ export default function PortfolioPage() {
             positions.slice(0, 2).map((position) => (
               <PropagationGroup
                 key={position.id}
-                anchor={`${position.symbol} (持仓)`}
+                anchor={`${position.symbol} (${text("持仓")})`}
                 sector={position.sector}
                 related={relatedForSector(position.sector)}
               />
             ))
           ) : (
             <div className="col-span-2 text-sm text-text-muted py-4">
-              暂无开放持仓，传导图保持待机。
+              {text("暂无开放持仓，传导图保持待机。")}
             </div>
           )}
         </div>
@@ -227,9 +229,9 @@ export default function PortfolioPage() {
         <div className="flex items-start gap-3">
           <AlertTriangle className="w-5 h-5 text-severity-high-fg shrink-0 mt-0.5" />
           <div>
-            <div className="text-h3 text-text-primary">板块集中度提示</div>
+            <div className="text-h3 text-text-primary">{text("板块集中度提示")}</div>
             <p className="text-sm text-text-secondary mt-1">
-              当前保证金占用 {usage.toFixed(1)}%。高相关或高占用持仓会在建议生成时降级。
+              {text("当前保证金占用")} {usage.toFixed(1)}%。{text("高相关或高占用持仓会在建议生成时降级。")}
             </p>
           </div>
         </div>
@@ -284,6 +286,8 @@ function PropagationGroup({
   sector: string;
   related: { symbol: string; name: string; reason: string; lag: string }[];
 }) {
+  const { text } = useI18n();
+
   return (
     <div className="rounded-sm border border-border-subtle bg-bg-base p-4 shadow-inner-panel">
       <div className="flex items-center gap-2 mb-3">
@@ -291,16 +295,16 @@ function PropagationGroup({
         <span className="font-mono text-sm">{anchor}</span>
         <Badge variant="emerald">{sector}</Badge>
       </div>
-      <div className="text-caption text-text-muted mb-2">激活监控品种 ({related.length})</div>
+      <div className="text-caption text-text-muted mb-2">{text("激活监控品种")} ({related.length})</div>
       <div className="space-y-1.5">
         {related.map((r) => (
           <div key={r.symbol} className="flex items-center justify-between rounded-xs border border-border-subtle bg-bg-surface px-2 py-1 text-xs">
             <div className="flex items-center gap-2">
               <span className="font-mono text-text-primary">{r.symbol}</span>
-              <span className="text-text-muted">{r.name}</span>
+              <span className="text-text-muted">{text(r.name)}</span>
             </div>
             <div className="flex items-center gap-2">
-              <span className="text-text-muted">{r.reason}</span>
+              <span className="text-text-muted">{text(r.reason)}</span>
               <span className="text-text-muted font-mono">{r.lag}</span>
             </div>
           </div>

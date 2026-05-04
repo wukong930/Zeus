@@ -10,23 +10,28 @@ import { ALERTS, POSITIONS, PERSONAL_GREETING } from "@/data/mock";
 import { Activity, ArrowRight, Gauge, Network, TrendingUp, TrendingDown, WalletCards } from "lucide-react";
 import Link from "next/link";
 import { cn, formatPercent } from "@/lib/utils";
+import { useI18n } from "@/lib/i18n";
 
 export default function CommandCenterPage() {
   const g = PERSONAL_GREETING;
   const recentAlerts = ALERTS.slice(0, 3);
+  const { text } = useI18n();
 
   return (
     <div className="px-8 py-6 space-y-6 animate-fade-in">
       {/* Personalized greeting bar */}
       <div className="bg-gradient-to-r from-brand-emerald/10 via-bg-surface to-bg-surface border border-brand-emerald/20 rounded-sm px-5 py-4">
         <div className="text-h2 text-text-primary">
-          {g.greeting}，<span className="text-brand-emerald-bright">{g.username}</span>。
+          {text(g.greeting)}
+          {text("，")}
+          <span className="text-brand-emerald-bright">{g.username}</span>
+          {text("。")}
         </div>
         <div className="text-sm text-text-secondary mt-1">
-          距上次访问 {g.hoursSinceLastVisit} 小时。期间发生：
-          <span className="text-text-primary mx-1 font-mono">{g.alertsSinceLastVisit}</span> 条预警 ·
-          其中 <span className="text-brand-orange mx-1 font-mono">{g.alertsRelevantToPosition}</span> 与你持仓相关 ·
-          重点：<span className="text-text-primary">{g.highlight}</span>
+          {text("距上次访问")} {g.hoursSinceLastVisit} {text("小时。期间发生：")}
+          <span className="text-text-primary mx-1 font-mono">{g.alertsSinceLastVisit}</span> {text("条预警")} ·
+          {text("其中")} <span className="text-brand-orange mx-1 font-mono">{g.alertsRelevantToPosition}</span> {text("与你持仓相关")} ·
+          {text("重点：")} <span className="text-text-primary">{text(g.highlight)}</span>
         </div>
       </div>
 
@@ -42,7 +47,7 @@ export default function CommandCenterPage() {
               href="/causal-web"
               className="flex items-center gap-1 text-caption text-text-muted hover:text-text-primary transition-colors"
             >
-              展开全图
+              {text("展开全图")}
               <ArrowRight className="w-3 h-3" />
             </Link>
           </div>
@@ -50,7 +55,7 @@ export default function CommandCenterPage() {
             <div className="flex items-center gap-2">
               <Network className="w-4 h-4 text-brand-emerald-bright" />
               <span className="text-h3">Causal Web</span>
-              <span className="text-caption text-text-muted">实时活跃因果链</span>
+              <span className="text-caption text-text-muted">{text("实时活跃因果链")}</span>
             </div>
           </div>
           <CausalWeb variant="preview" className="absolute inset-0 top-12" />
@@ -58,9 +63,9 @@ export default function CommandCenterPage() {
 
         <div className="col-span-4 space-y-3">
           <div className="flex items-center justify-between mb-2">
-            <h2 className="text-h3 text-text-primary">当日预警流</h2>
+            <h2 className="text-h3 text-text-primary">{text("当日预警流")}</h2>
             <Link href="/alerts" className="text-caption text-text-muted hover:text-text-primary">
-              查看全部 →
+              {text("查看全部")} →
             </Link>
           </div>
           {recentAlerts.map((alert) => (
@@ -79,7 +84,7 @@ export default function CommandCenterPage() {
                 <Badge variant={alert.severity}>{alert.severity}</Badge>
                 <span className="text-caption text-text-muted font-mono">{alert.symbol}</span>
               </div>
-              <div className="text-sm text-text-primary line-clamp-2">{alert.title}</div>
+              <div className="text-sm text-text-primary line-clamp-2">{text(alert.title)}</div>
             </Card>
           ))}
         </div>
@@ -90,11 +95,13 @@ export default function CommandCenterPage() {
         <Card variant="flat" className="col-span-5">
           <CardHeader>
             <div>
-              <CardTitle>持仓概览</CardTitle>
-              <CardSubtitle>{POSITIONS.length} 个持仓 · 总浮动盈亏 +¥8,300</CardSubtitle>
+              <CardTitle>{text("持仓概览")}</CardTitle>
+              <CardSubtitle>
+                {POSITIONS.length} {text("个持仓")} · {text("总浮动盈亏")} +¥8,300
+              </CardSubtitle>
             </div>
             <Link href="/portfolio" className="text-caption text-text-muted hover:text-text-primary">
-              详情 →
+              {text("详情")} →
             </Link>
           </CardHeader>
           <div className="space-y-3">
@@ -109,10 +116,10 @@ export default function CommandCenterPage() {
                     <div className="flex items-center gap-2">
                       <span className="font-mono text-sm">{pos.symbol}</span>
                       <Badge variant={pos.direction === "long" ? "up" : "down"}>
-                        {pos.direction === "long" ? "多" : "空"} {pos.lots} 手
+                        {pos.direction === "long" ? text("多") : text("空")} {pos.lots} {text("手")}
                       </Badge>
                     </div>
-                    <div className="text-caption text-text-muted mt-0.5">{pos.symbolName}</div>
+                    <div className="text-caption text-text-muted mt-0.5">{text(pos.symbolName)}</div>
                   </div>
                   <div className="text-right">
                     <div className={cn("font-mono text-sm font-semibold tabular-nums flex items-center gap-1 justify-end", isUp ? "text-data-up" : "text-data-down")}>
@@ -132,16 +139,16 @@ export default function CommandCenterPage() {
         <Card variant="flat" className="col-span-7">
           <CardHeader>
             <div>
-              <CardTitle>板块热力图</CardTitle>
+              <CardTitle>{text("板块热力图")}</CardTitle>
               <CardSubtitle>
                 <span className="inline-flex items-center gap-1">
                   <span className="w-1.5 h-1.5 rounded-full bg-brand-orange animate-heartbeat" />
-                  橙点 = 信号活跃
+                  {text("橙点 = 信号活跃")}
                 </span>
               </CardSubtitle>
             </div>
             <Link href="/sectors" className="text-caption text-text-muted hover:text-text-primary">
-              详情 →
+              {text("详情")} →
             </Link>
           </CardHeader>
           <SectorHeatmap />
@@ -150,10 +157,10 @@ export default function CommandCenterPage() {
 
       {/* Bottom: Quick stats */}
       <div className="grid grid-cols-4 gap-5">
-        <MetricTile label="活跃信号" value="17" trend="+3" caption="过去 24h" icon={Activity} tone="up" />
-        <MetricTile label="本月预警" value="142" trend="+8.2%" caption="vs 上月" icon={TrendingUp} tone="warning" />
-        <MetricTile label="校准进度" value="73/100" caption="样本量" icon={Gauge} tone="cyan" />
-        <MetricTile label="LLM 月度成本" value="$24.30" caption="预算 $80" icon={WalletCards} tone="violet" />
+        <MetricTile label={text("活跃信号")} value="17" trend="+3" caption={text("过去 24h")} icon={Activity} tone="up" />
+        <MetricTile label={text("本月预警")} value="142" trend="+8.2%" caption={text("vs 上月")} icon={TrendingUp} tone="warning" />
+        <MetricTile label={text("校准进度")} value="73/100" caption={text("样本量")} icon={Gauge} tone="cyan" />
+        <MetricTile label={text("LLM 月度成本")} value="$24.30" caption={`${text("预算")} $80`} icon={WalletCards} tone="violet" />
       </div>
     </div>
   );
