@@ -394,8 +394,17 @@ def _build_edges(
     node_ids: set[str],
 ) -> list[CausalWebEdge]:
     edges: list[CausalWebEdge] = []
+    edge_keys: set[tuple[str, str]] = set()
+    news_contexts = []
+    for item in news:
+        symbols = {str(symbol).upper() for symbol in item.affected_symbols}
+        news_contexts.append((item, symbols, _category_from_symbols(list(symbols))))
     signal_by_alert = {row.alert_id: row for row in signals if row.alert_id is not None}
     alerts_by_id = {row.id: row for row in alerts}
+    alert_symbols_by_id = {
+        row.id: {str(asset).upper() for asset in row.related_assets}
+        for row in alerts
+    }
     for alert in alerts:
         signal = signal_by_alert.get(alert.id)
         if signal is not None:
@@ -410,12 +419,13 @@ def _build_edges(
                 _direction_from_text(f"{alert.title} {alert.summary}"),
                 True,
                 node_ids,
+                edge_keys=edge_keys,
             )
 
-    for item in news:
+    for item, symbols, category in news_contexts:
         emitted = 0
         for metric in metrics:
-            if not _news_matches_metric(item, metric):
+            if not _news_matches_metric(symbols, category, metric):
                 continue
             _append_edge(
                 edges,
@@ -428,6 +438,7 @@ def _build_edges(
                 _direction(item.direction),
                 not item.requires_manual_confirmation,
                 node_ids,
+                edge_keys=edge_keys,
             )
             emitted += 1
             if emitted >= 2:
@@ -448,6 +459,7 @@ def _build_edges(
             "bearish",
             True,
             node_ids,
+            edge_keys=edge_keys,
         )
 
     for signal in signals[:8]:
@@ -464,11 +476,11 @@ def _build_edges(
                     "neutral",
                     True,
                     node_ids,
+                    edge_keys=edge_keys,
                 )
                 break
-        for item in news:
-            symbols = [str(symbol).upper() for symbol in item.affected_symbols]
-            if _category_from_symbols(symbols) == signal.category:
+        for item, _, category in news_contexts:
+            if category == signal.category:
                 _append_edge(
                     edges,
                     f"edge-news-signal-{item.id}-{signal.id}",
@@ -480,14 +492,13 @@ def _build_edges(
                     _direction(item.direction),
                     not item.requires_manual_confirmation,
                     node_ids,
+                    edge_keys=edge_keys,
                 )
                 break
 
-    for item in news:
+    for item, symbols, _ in news_contexts:
         for alert in alerts:
-            if set(str(symbol).upper() for symbol in item.affected_symbols) & set(
-                str(asset).upper() for asset in alert.related_assets
-            ):
+            if symbols & alert_symbols_by_id[alert.id]:
                 _append_edge(
                     edges,
                     f"edge-news-alert-{item.id}-{alert.id}",
@@ -499,16 +510,15 @@ def _build_edges(
                     _direction(item.direction),
                     not item.requires_manual_confirmation,
                     node_ids,
+                    edge_keys=edge_keys,
                 )
                 break
     return edges[:24]
 
 
-def _news_matches_metric(item: NewsEvent, metric: MetricContext) -> bool:
-    symbols = {str(symbol).upper() for symbol in item.affected_symbols}
+def _news_matches_metric(symbols: set[str], category: str, metric: MetricContext) -> bool:
     if metric.symbol.upper() in symbols:
         return True
-    category = _category_from_symbols(list(symbols))
     return category != "unknown" and category == metric.category
 
 
@@ -593,11 +603,19 @@ def _append_edge(
     direction: EdgeDirection,
     verified: bool,
     node_ids: set[str],
+    *,
+    edge_keys: set[tuple[str, str]] | None = None,
 ) -> None:
     if source not in node_ids or target not in node_ids or source == target:
         return
-    if any(edge.source == source and edge.target == target for edge in edges):
-        return
+    edge_key = (source, target)
+    if edge_keys is not None:
+        if edge_key in edge_keys:
+            return
+        edge_keys.add(edge_key)
+    else:
+        if any(edge.source == source and edge.target == target for edge in edges):
+            return
     edges.append(
         CausalWebEdge(
             id=edge_id,

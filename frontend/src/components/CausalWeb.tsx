@@ -361,6 +361,10 @@ function CausalWebCanvas({
   );
   const graphNodes = normalizedGraph.nodes;
   const graphEdges = normalizedGraph.edges;
+  const graphNodeById = useMemo(
+    () => new Map(graphNodes.map((node) => [node.id, node])),
+    [graphNodes]
+  );
   const metaByNodeId = useMemo(
     () => new Map(graphNodes.map((node) => [node.id, semanticMetaForNode(node)])),
     [graphNodes]
@@ -471,6 +475,10 @@ function CausalWebCanvas({
     [density, graphEdges, graphNodes, highlightedNodeIds, isFull, metaByNodeId, relationCounts, scopedBaseNodeIds, variant]
   );
   const eventScopeEmpty = eventScopeActive && displayGraph.visibleRealCount === 0;
+  const displayNodeById = useMemo(
+    () => new Map(displayGraph.nodes.map((node) => [node.id, node])),
+    [displayGraph.nodes]
+  );
   const viewNodeIds = displayGraph.nodeIds;
   const displayFitNodeIds = useMemo(
     () => [...displayGraph.nodeIds].sort(),
@@ -533,8 +541,7 @@ function CausalWebCanvas({
         const live =
           mode === "live" &&
           inView &&
-          (displayGraph.nodes.find((node) => node.id === edge.source)?.active ||
-            displayGraph.nodes.find((node) => node.id === edge.target)?.active);
+          (displayNodeById.get(edge.source)?.active || displayNodeById.get(edge.target)?.active);
         const color = EDGE_COLORS[edge.direction];
         return {
           id: edge.id,
@@ -560,12 +567,12 @@ function CausalWebCanvas({
           },
         };
       }),
-    [activeFocusId, density, displayGraph.edges, displayGraph.nodes, highlightedEdgeIds, isFull, mode, view, viewNodeIds]
+    [activeFocusId, density, displayGraph.edges, displayNodeById, highlightedEdgeIds, isFull, mode, view, viewNodeIds]
   );
 
   const selected =
     selectedNode && viewNodeIds.has(selectedNode)
-      ? graphNodes.find((node) => node.id === selectedNode)
+      ? graphNodeById.get(selectedNode)
       : null;
   const showEventPool = isFull && eventNodes.length > 0 && !selected;
 
