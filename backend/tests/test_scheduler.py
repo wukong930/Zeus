@@ -1,5 +1,14 @@
-from app.scheduler.jobs import DEFAULT_JOB_DEFINITIONS, DEFAULT_JOB_HANDLERS, JobDefinition
+import asyncio
+from datetime import datetime, timezone
+
+from app.scheduler.jobs import (
+    DEFAULT_JOB_DEFINITIONS,
+    DEFAULT_JOB_HANDLERS,
+    JobDefinition,
+    collect_news_from_collectors,
+)
 from app.scheduler.manager import SchedulerManager
+from app.services.news.types import RawNewsItem
 
 
 async def _ok_handler() -> dict:
@@ -45,6 +54,57 @@ async def test_scheduler_marks_degraded_after_three_failures() -> None:
 
     assert result["success"] is False
     assert manager.health_summary()["degraded_jobs"] == ["test"]
+
+
+async def test_news_collectors_run_concurrently_and_keep_source_errors() -> None:
+    gate = asyncio.Event()
+    started = asyncio.Event()
+
+    class WaitingCollector:
+        source = "waiting"
+
+        async def collect(self, limit: int = 50) -> list[RawNewsItem]:
+            started.set()
+            await gate.wait()
+            return [
+                RawNewsItem(
+                    source=self.source,
+                    title=f"waiting {limit}",
+                    published_at=datetime(2026, 5, 5, tzinfo=timezone.utc),
+                )
+            ]
+
+    class ReleasingCollector:
+        source = "releasing"
+
+        async def collect(self, limit: int = 50) -> list[RawNewsItem]:
+            await started.wait()
+            gate.set()
+            return [
+                RawNewsItem(
+                    source=self.source,
+                    title=f"releasing {limit}",
+                    published_at=datetime(2026, 5, 5, tzinfo=timezone.utc),
+                )
+            ]
+
+    class FailingCollector:
+        source = "failing"
+
+        async def collect(self, limit: int = 50) -> list[RawNewsItem]:
+            raise RuntimeError(f"failed at {limit}")
+
+    items, errors = await asyncio.wait_for(
+        collect_news_from_collectors(
+            [WaitingCollector(), ReleasingCollector(), FailingCollector()],
+            limit=7,
+        ),
+        timeout=0.2,
+    )
+
+    assert [item.source for item in items] == ["waiting", "releasing"]
+    assert [item.title for item in items] == ["waiting 7", "releasing 7"]
+    assert errors == [{"source": "failing", "error": "failed at 7"}]
 
 
 def test_scheduler_rejects_bad_cron() -> None:

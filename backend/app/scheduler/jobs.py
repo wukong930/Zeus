@@ -1,3 +1,4 @@
+import asyncio
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -29,6 +30,7 @@ from app.services.news.collectors import (
     SinaFuturesCollector,
 )
 from app.services.news.ingest import ingest_news_items
+from app.services.news.types import RawNewsItem
 from app.services.positions.data_freshness import check_position_freshness
 from app.services.signals.watchlist import get_enabled_watchlist
 
@@ -257,18 +259,7 @@ async def news_ingest_job() -> dict[str, Any]:
                 RubberSupplyCollector(),
             ]
         )
-    raw_items = []
-    collector_errors = []
-    for collector in collectors:
-        try:
-            raw_items.extend(await collector.collect(limit=50))
-        except Exception as exc:  # pragma: no cover - defensive scheduler guard
-            collector_errors.append(
-                {
-                    "source": getattr(collector, "source", collector.__class__.__name__),
-                    "error": str(exc),
-                }
-            )
+    raw_items, collector_errors = await collect_news_from_collectors(collectors, limit=50)
 
     async with AsyncSessionLocal() as session:
         result = await ingest_news_items(session, raw_items)
@@ -282,6 +273,32 @@ async def news_ingest_job() -> dict[str, Any]:
         "collector_errors": collector_errors,
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
+
+
+async def collect_news_from_collectors(
+    collectors: list[Any],
+    *,
+    limit: int,
+) -> tuple[list[RawNewsItem], list[dict[str, str]]]:
+    results = await asyncio.gather(
+        *(collector.collect(limit=limit) for collector in collectors),
+        return_exceptions=True,
+    )
+    raw_items: list[RawNewsItem] = []
+    collector_errors: list[dict[str, str]] = []
+    for collector, result in zip(collectors, results, strict=True):
+        if isinstance(result, BaseException):
+            if not isinstance(result, Exception):
+                raise result
+            collector_errors.append(
+                {
+                    "source": getattr(collector, "source", collector.__class__.__name__),
+                    "error": str(result),
+                }
+            )
+            continue
+        raw_items.extend(result)
+    return raw_items, collector_errors
 
 
 async def position_freshness_job() -> dict[str, Any]:
