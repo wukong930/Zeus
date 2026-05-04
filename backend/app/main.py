@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.alerts import router as alerts_router
 from app.api.arbitration import router as arbitration_router
 from app.api.attribution import router as attribution_router
+from app.api.causal_web import router as causal_web_router
 from app.api.contracts import router as contracts_router
 from app.api.cost_models import router as cost_models_router
 from app.api.data_sources import router as data_sources_router
@@ -62,6 +63,7 @@ def create_app() -> FastAPI:
     app.include_router(health_router)
     app.include_router(arbitration_router)
     app.include_router(attribution_router)
+    app.include_router(causal_web_router)
     app.include_router(market_data_router)
     app.include_router(news_events_router)
     app.include_router(industry_data_router)

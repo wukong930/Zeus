@@ -1,21 +1,55 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { Card, CardHeader, CardTitle, CardSubtitle } from "@/components/Card";
 import { CausalWeb } from "@/components/CausalWeb";
 import { SectorHeatmap } from "@/components/SectorHeatmap";
 import { AlertCard } from "@/components/AlertCard";
 import { Badge } from "@/components/Badge";
 import { MetricTile } from "@/components/MetricTile";
-import { ALERTS, POSITIONS, PERSONAL_GREETING } from "@/data/mock";
+import { ALERTS, CAUSAL_EDGES, CAUSAL_NODES, POSITIONS, PERSONAL_GREETING, type Alert, type CausalEdge, type CausalNode, type Position } from "@/data/mock";
 import { Activity, ArrowRight, Gauge, Network, TrendingUp, TrendingDown, WalletCards } from "lucide-react";
 import Link from "next/link";
 import { cn, formatPercent } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n";
+import { fetchAlertsFromApi, fetchCausalWebGraph, fetchPortfolioSnapshot } from "@/lib/api";
 
 export default function CommandCenterPage() {
   const g = PERSONAL_GREETING;
-  const recentAlerts = ALERTS.slice(0, 3);
+  const [recentAlerts, setRecentAlerts] = useState<Alert[]>(ALERTS.slice(0, 3));
+  const [alertTotal, setAlertTotal] = useState(ALERTS.length);
+  const [positions, setPositions] = useState<Position[]>(POSITIONS);
+  const [causalNodes, setCausalNodes] = useState<CausalNode[]>(CAUSAL_NODES);
+  const [causalEdges, setCausalEdges] = useState<CausalEdge[]>(CAUSAL_EDGES);
   const { text } = useI18n();
+  const totalPnl = positions.reduce((sum, position) => sum + position.pnl, 0);
+  const activeSignals = causalNodes.filter((node) => node.type === "signal" && node.active).length;
+
+  useEffect(() => {
+    let mounted = true;
+    fetchAlertsFromApi()
+      .then((alerts) => {
+        if (!mounted || alerts.length === 0) return;
+        setRecentAlerts(alerts.slice(0, 3));
+        setAlertTotal(alerts.length);
+      })
+      .catch(() => undefined);
+    fetchPortfolioSnapshot()
+      .then((snapshot) => {
+        if (mounted && snapshot.positions.length > 0) setPositions(snapshot.positions);
+      })
+      .catch(() => undefined);
+    fetchCausalWebGraph()
+      .then((graph) => {
+        if (!mounted || graph.nodes.length === 0) return;
+        setCausalNodes(graph.nodes);
+        setCausalEdges(graph.edges);
+      })
+      .catch(() => undefined);
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   return (
     <div className="px-8 py-6 space-y-6 animate-fade-in">
@@ -58,7 +92,12 @@ export default function CommandCenterPage() {
               <span className="text-caption text-text-muted">{text("实时活跃因果链")}</span>
             </div>
           </div>
-          <CausalWeb variant="preview" className="absolute inset-0 top-12" />
+          <CausalWeb
+            variant="preview"
+            className="absolute inset-0 top-12"
+            nodes={causalNodes}
+            edges={causalEdges}
+          />
         </Card>
 
         <div className="col-span-4 space-y-3">
@@ -97,7 +136,8 @@ export default function CommandCenterPage() {
             <div>
               <CardTitle>{text("持仓概览")}</CardTitle>
               <CardSubtitle>
-                {POSITIONS.length} {text("个持仓")} · {text("总浮动盈亏")} +¥8,300
+                {positions.length} {text("个持仓")} · {text("总浮动盈亏")}{" "}
+                {totalPnl >= 0 ? "+" : ""}¥{totalPnl.toLocaleString()}
               </CardSubtitle>
             </div>
             <Link href="/portfolio" className="text-caption text-text-muted hover:text-text-primary">
@@ -105,7 +145,7 @@ export default function CommandCenterPage() {
             </Link>
           </CardHeader>
           <div className="space-y-3">
-            {POSITIONS.map((pos) => {
+            {positions.map((pos) => {
               const isUp = pos.pnlPercent >= 0;
               return (
                 <div
@@ -157,8 +197,8 @@ export default function CommandCenterPage() {
 
       {/* Bottom: Quick stats */}
       <div className="grid grid-cols-4 gap-5">
-        <MetricTile label={text("活跃信号")} value="17" trend="+3" caption={text("过去 24h")} icon={Activity} tone="up" />
-        <MetricTile label={text("本月预警")} value="142" trend="+8.2%" caption={text("vs 上月")} icon={TrendingUp} tone="warning" />
+        <MetricTile label={text("活跃信号")} value={String(activeSignals || 0)} trend={text("实时")} caption={text("运行态图谱")} icon={Activity} tone="up" />
+        <MetricTile label={text("最新预警")} value={String(alertTotal)} trend={text("最新")} caption={text("接口返回")} icon={TrendingUp} tone="warning" />
         <MetricTile label={text("校准进度")} value="73/100" caption={text("样本量")} icon={Gauge} tone="cyan" />
         <MetricTile label={text("LLM 月度成本")} value="$24.30" caption={`${text("预算")} $80`} icon={WalletCards} tone="violet" />
       </div>

@@ -83,6 +83,12 @@ export interface CausalNode {
   active: boolean;
   x?: number;
   y?: number;
+  stage?: "source" | "thesis" | "validation" | "impact";
+  sector?: "geo" | "energy" | "rubber" | "ferrous" | "positioning";
+  tags?: string[];
+  narrative?: string;
+  portfolioLinked?: boolean;
+  alertLinked?: boolean;
 }
 
 export interface CausalEdge {

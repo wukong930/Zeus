@@ -1,4 +1,4 @@
-import type { Alert, Position, Sector, Severity } from "@/data/mock";
+import type { Alert, CausalEdge, CausalNode, Position, Sector, Severity } from "@/data/mock";
 
 const SEVERITIES = new Set<Severity>(["critical", "high", "medium", "low"]);
 
@@ -169,6 +169,52 @@ export interface CostQualityReport {
   benchmark_comparisons: CostBenchmarkComparison[];
   signal_cases: CostSignalCase[];
   limitations: string[];
+}
+
+export interface CausalWebGraph {
+  generated_at: string;
+  nodes: CausalNode[];
+  edges: CausalEdge[];
+  source_counts: Record<string, number>;
+}
+
+export interface DataSourceStatus {
+  id: string;
+  name: string;
+  category: string;
+  enabled: boolean;
+  configured: boolean;
+  requires_key: boolean;
+  free_tier: string;
+  status: string;
+  note: string;
+}
+
+export interface SchedulerJobStatus {
+  id: string;
+  name: string;
+  cron: string;
+  enabled: boolean;
+  running: boolean;
+  last_run: string | null;
+  last_result: string | null;
+  last_error: string | null;
+  consecutive_failures: number;
+  status: string;
+}
+
+export interface SchedulerHealth {
+  total_jobs: number;
+  enabled_jobs: number;
+  degraded_jobs: string[];
+  unconfigured_jobs: string[];
+  last_activity: string | null;
+  jobs: Pick<SchedulerJobStatus, "id" | "name" | "status" | "last_run" | "last_error">[];
+}
+
+export interface SchedulerSnapshot {
+  jobs: SchedulerJobStatus[];
+  health: SchedulerHealth;
 }
 
 export interface ScenarioSimulationRequest {
@@ -464,6 +510,18 @@ export async function fetchPortfolioSnapshot(): Promise<PortfolioSnapshot> {
 export async function fetchNewsEventsFromApi(): Promise<NewsEvent[]> {
   const rows = await fetchJson<BackendNewsEvent[]>("/api/news-events?limit=200");
   return rows.map(mapNewsEvent);
+}
+
+export async function fetchCausalWebGraph(): Promise<CausalWebGraph> {
+  return fetchJson<CausalWebGraph>("/api/causal-web?limit=10");
+}
+
+export async function fetchDataSourceStatuses(): Promise<DataSourceStatus[]> {
+  return fetchJson<DataSourceStatus[]>("/api/data-sources");
+}
+
+export async function fetchSchedulerSnapshot(): Promise<SchedulerSnapshot> {
+  return fetchJson<SchedulerSnapshot>("/api/scheduler");
 }
 
 export async function fetchAttributionReport(): Promise<AttributionReport> {

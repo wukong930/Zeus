@@ -44,7 +44,12 @@ import {
   Target,
   X,
 } from "lucide-react";
-import { CAUSAL_EDGES, CAUSAL_NODES, type CausalEdge, type CausalNode } from "@/data/mock";
+import {
+  CAUSAL_EDGES as FALLBACK_CAUSAL_EDGES,
+  CAUSAL_NODES as FALLBACK_CAUSAL_NODES,
+  type CausalEdge,
+  type CausalNode,
+} from "@/data/mock";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n";
 
@@ -57,6 +62,8 @@ type IconComponent = typeof Activity;
 interface CausalWebProps {
   variant?: "full" | "preview";
   className?: string;
+  nodes?: CausalNode[];
+  edges?: CausalEdge[];
 }
 
 interface CausalFlowNodeData extends Record<string, unknown> {
@@ -281,22 +288,39 @@ export function CausalWeb(props: CausalWebProps) {
   );
 }
 
-function CausalWebCanvas({ variant = "full", className }: CausalWebProps) {
+function CausalWebCanvas({
+  variant = "full",
+  className,
+  nodes: runtimeNodes,
+  edges: runtimeEdges,
+}: CausalWebProps) {
   const flow = useReactFlow<CausalFlowNode, CausalFlowEdge>();
   const [mode, setMode] = useState<Mode>("live");
   const [view, setView] = useState<View>("all");
   const [hoveredNode, setHoveredNode] = useState<string | null>(null);
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
   const isFull = variant === "full";
+  const graphNodes = runtimeNodes?.length ? runtimeNodes : FALLBACK_CAUSAL_NODES;
+  const graphEdges = runtimeEdges?.length ? runtimeEdges : FALLBACK_CAUSAL_EDGES;
+  const metaByNodeId = useMemo(
+    () => new Map(graphNodes.map((node) => [node.id, semanticMetaForNode(node)])),
+    [graphNodes]
+  );
 
-  const viewNodeIds = useMemo(() => viewVisibleNodeIds(view), [view]);
+  const viewNodeIds = useMemo(
+    () => viewVisibleNodeIds(view, graphNodes, graphEdges, metaByNodeId),
+    [graphEdges, graphNodes, metaByNodeId, view]
+  );
   const focusId = isFull ? selectedNode ?? hoveredNode : null;
   const activeFocusId = focusId && viewNodeIds.has(focusId) ? focusId : null;
-  const highlightedNodeIds = useMemo(() => causalChainIds(activeFocusId), [activeFocusId]);
+  const highlightedNodeIds = useMemo(
+    () => causalChainIds(activeFocusId, graphEdges),
+    [activeFocusId, graphEdges]
+  );
   const highlightedEdgeIds = useMemo(() => {
     if (!activeFocusId) return new Set<string>();
     return new Set(
-      CAUSAL_EDGES.filter(
+      graphEdges.filter(
         (edge) =>
           viewNodeIds.has(edge.source) &&
           viewNodeIds.has(edge.target) &&
@@ -304,25 +328,25 @@ function CausalWebCanvas({ variant = "full", className }: CausalWebProps) {
           highlightedNodeIds.has(edge.target)
       ).map((edge) => edge.id)
     );
-  }, [activeFocusId, highlightedNodeIds, viewNodeIds]);
+  }, [activeFocusId, graphEdges, highlightedNodeIds, viewNodeIds]);
 
   const relationCounts = useMemo(() => {
     const counts = new Map<string, { upstream: number; downstream: number }>();
-    for (const node of CAUSAL_NODES) {
+    for (const node of graphNodes) {
       counts.set(node.id, { upstream: 0, downstream: 0 });
     }
-    for (const edge of CAUSAL_EDGES) {
+    for (const edge of graphEdges) {
       const source = counts.get(edge.source);
       const target = counts.get(edge.target);
       if (source) source.downstream += 1;
       if (target) target.upstream += 1;
     }
     return counts;
-  }, []);
+  }, [graphEdges, graphNodes]);
 
   const nodes = useMemo<CausalFlowNode[]>(
     () =>
-      CAUSAL_NODES.map((node) => {
+      graphNodes.map((node) => {
         const counts = relationCounts.get(node.id) ?? { upstream: 0, downstream: 0 };
         const inView = viewNodeIds.has(node.id);
         const focused = inView && (activeFocusId === node.id || highlightedNodeIds.has(node.id));
@@ -330,10 +354,10 @@ function CausalWebCanvas({ variant = "full", className }: CausalWebProps) {
         return {
           id: node.id,
           type: "causalNode",
-          position: FLOW_LAYOUT[node.id] ?? { x: 520, y: 320 },
+          position: node.x !== undefined && node.y !== undefined ? { x: node.x, y: node.y } : FLOW_LAYOUT[node.id] ?? { x: 520, y: 320 },
           data: {
             causal: node,
-            meta: NODE_META[node.id],
+            meta: metaByNodeId.get(node.id) ?? semanticMetaForNode(node),
             upstream: counts.upstream,
             downstream: counts.downstream,
             focused,
@@ -345,20 +369,20 @@ function CausalWebCanvas({ variant = "full", className }: CausalWebProps) {
           selectable: isFull,
         };
       }),
-    [activeFocusId, highlightedNodeIds, isFull, mode, relationCounts, variant, viewNodeIds]
+    [activeFocusId, graphNodes, highlightedNodeIds, isFull, metaByNodeId, mode, relationCounts, variant, viewNodeIds]
   );
 
   const edges = useMemo<CausalFlowEdge[]>(
     () =>
-      CAUSAL_EDGES.map((edge) => {
+      graphEdges.map((edge) => {
         const inView = viewNodeIds.has(edge.source) && viewNodeIds.has(edge.target);
         const focused = inView && highlightedEdgeIds.has(edge.id);
         const dimmed = !inView || (Boolean(activeFocusId) && !focused);
         const live =
           mode === "live" &&
           inView &&
-          (CAUSAL_NODES.find((node) => node.id === edge.source)?.active ||
-            CAUSAL_NODES.find((node) => node.id === edge.target)?.active);
+          (graphNodes.find((node) => node.id === edge.source)?.active ||
+            graphNodes.find((node) => node.id === edge.target)?.active);
         const color = EDGE_COLORS[edge.direction];
         return {
           id: edge.id,
@@ -381,12 +405,12 @@ function CausalWebCanvas({ variant = "full", className }: CausalWebProps) {
           },
         };
       }),
-    [activeFocusId, highlightedEdgeIds, isFull, mode, view, viewNodeIds]
+    [activeFocusId, graphEdges, graphNodes, highlightedEdgeIds, isFull, mode, view, viewNodeIds]
   );
 
   const selected =
     selectedNode && viewNodeIds.has(selectedNode)
-      ? CAUSAL_NODES.find((node) => node.id === selectedNode)
+      ? graphNodes.find((node) => node.id === selectedNode)
       : null;
 
   const fitCanvas = useCallback(() => {
@@ -402,14 +426,15 @@ function CausalWebCanvas({ variant = "full", className }: CausalWebProps) {
       setView(nextView);
       setSelectedNode(null);
       setHoveredNode(null);
+      const nextNodeIds = viewVisibleNodeIds(nextView, graphNodes, graphEdges, metaByNodeId);
       window.setTimeout(() => {
         void flow.fitView({
           ...fitViewOptions,
-          nodes: Array.from(viewVisibleNodeIds(nextView)).map((id) => ({ id })),
+          nodes: Array.from(nextNodeIds).map((id) => ({ id })),
         });
       }, 0);
     },
-    [flow]
+    [flow, graphEdges, graphNodes, metaByNodeId]
   );
 
   const onInit = useCallback(
@@ -436,13 +461,15 @@ function CausalWebCanvas({ variant = "full", className }: CausalWebProps) {
               <ModeToolbar mode={mode} onChange={setMode} onFit={fitCanvas} />
               <ViewToolbar view={view} onChange={changeView} />
             </div>
-            <StageRail viewNodeIds={viewNodeIds} />
+            <StageRail viewNodeIds={viewNodeIds} nodes={graphNodes} metaByNodeId={metaByNodeId} />
             <div className="hidden xl:block">
               <GraphStats
                 focusId={activeFocusId}
                 mode={mode}
                 view={view}
                 visibleCount={viewNodeIds.size}
+                nodes={graphNodes}
+                edges={graphEdges}
               />
             </div>
           </div>
@@ -498,7 +525,11 @@ function CausalWebCanvas({ variant = "full", className }: CausalWebProps) {
 
           {isFull && (
             <>
-              <SemanticBackdrop viewNodeIds={viewNodeIds} />
+              <SemanticBackdrop
+                viewNodeIds={viewNodeIds}
+                nodes={graphNodes}
+                metaByNodeId={metaByNodeId}
+              />
 
               <Controls
                 position="bottom-right"
@@ -519,14 +550,26 @@ function CausalWebCanvas({ variant = "full", className }: CausalWebProps) {
         </ReactFlow>
 
         {isFull && selected && (
-          <NodeDetails node={selected} onClose={() => setSelectedNode(null)} />
+          <NodeDetails
+            node={selected}
+            nodes={graphNodes}
+            edges={graphEdges}
+            meta={metaByNodeId.get(selected.id) ?? semanticMetaForNode(selected)}
+            onClose={() => setSelectedNode(null)}
+          />
         )}
       </div>
 
       {isFull && !selected && (
         <div className="shrink-0 border-t border-border-subtle bg-[linear-gradient(180deg,rgba(5,7,6,0.92),rgba(15,17,16,0.98))] px-3 py-2 shadow-inner-panel">
           <div className="flex flex-col gap-2 xl:flex-row xl:items-center xl:justify-between">
-            <ViewBrief view={view} focusId={activeFocusId} visibleCount={viewNodeIds.size} />
+            <ViewBrief
+              view={view}
+              focusId={activeFocusId}
+              visibleCount={viewNodeIds.size}
+              nodes={graphNodes}
+              metaByNodeId={metaByNodeId}
+            />
             <Legend />
           </div>
         </div>
@@ -614,11 +657,19 @@ function ViewToolbar({ view, onChange }: { view: View; onChange: (view: View) =>
   );
 }
 
-function SemanticBackdrop({ viewNodeIds }: { viewNodeIds: Set<string> }) {
+function SemanticBackdrop({
+  viewNodeIds,
+  nodes,
+  metaByNodeId,
+}: {
+  viewNodeIds: Set<string>;
+  nodes: CausalNode[];
+  metaByNodeId: Map<string, NodeSemanticMeta>;
+}) {
   const { text } = useI18n();
   const visibleStages = new Set(
-    CAUSAL_NODES.filter((node) => viewNodeIds.has(node.id)).map(
-      (node) => NODE_META[node.id].stage
+    nodes.filter((node) => viewNodeIds.has(node.id)).map(
+      (node) => (metaByNodeId.get(node.id) ?? semanticMetaForNode(node)).stage
     )
   );
 
@@ -656,11 +707,19 @@ function SemanticBackdrop({ viewNodeIds }: { viewNodeIds: Set<string> }) {
   );
 }
 
-function StageRail({ viewNodeIds }: { viewNodeIds: Set<string> }) {
+function StageRail({
+  viewNodeIds,
+  nodes,
+  metaByNodeId,
+}: {
+  viewNodeIds: Set<string>;
+  nodes: CausalNode[];
+  metaByNodeId: Map<string, NodeSemanticMeta>;
+}) {
   const { text } = useI18n();
   const activeStages = new Set(
-    CAUSAL_NODES.filter((node) => viewNodeIds.has(node.id)).map(
-      (node) => NODE_META[node.id].stage
+    nodes.filter((node) => viewNodeIds.has(node.id)).map(
+      (node) => (metaByNodeId.get(node.id) ?? semanticMetaForNode(node)).stage
     )
   );
 
@@ -695,23 +754,27 @@ function ViewBrief({
   view,
   focusId,
   visibleCount,
+  nodes,
+  metaByNodeId,
 }: {
   view: View;
   focusId: string | null;
   visibleCount: number;
+  nodes: CausalNode[];
+  metaByNodeId: Map<string, NodeSemanticMeta>;
 }) {
   const { text } = useI18n();
   const meta = VIEW_META[view];
   const Icon = meta.icon;
-  const focusNode = focusId ? CAUSAL_NODES.find((node) => node.id === focusId) : null;
-  const focusMeta = focusNode ? NODE_META[focusNode.id] : null;
+  const focusNode = focusId ? nodes.find((node) => node.id === focusId) : null;
+  const focusMeta = focusNode ? metaByNodeId.get(focusNode.id) ?? semanticMetaForNode(focusNode) : null;
 
   return (
     <div className="min-w-0 flex-1 rounded-sm border border-border-default bg-[linear-gradient(180deg,rgba(15,17,16,0.98),rgba(0,0,0,0.98))] px-3 py-2 shadow-inner-panel xl:max-w-[620px]">
       <div className="flex items-center gap-2 text-caption text-text-muted">
         <Icon className="h-3.5 w-3.5" />
         <span className="text-text-secondary">{text(meta.label)}</span>
-        <span className="font-mono">{visibleCount}/{CAUSAL_NODES.length}</span>
+        <span className="font-mono">{visibleCount}/{nodes.length}</span>
         {focusNode && (
           <>
             <span className="text-text-disabled">·</span>
@@ -934,15 +997,19 @@ function GraphStats({
   mode,
   view,
   visibleCount,
+  nodes,
+  edges,
 }: {
   focusId: string | null;
   mode: Mode;
   view: View;
   visibleCount: number;
+  nodes: CausalNode[];
+  edges: CausalEdge[];
 }) {
   const { text } = useI18n();
-  const activeNodes = CAUSAL_NODES.filter((node) => node.active).length;
-  const verifiedEdges = CAUSAL_EDGES.filter((edge) => edge.verified).length;
+  const activeNodes = nodes.filter((node) => node.active).length;
+  const verifiedEdges = edges.filter((edge) => edge.verified).length;
   const ModeIcon = mode === "live" ? Activity : mode === "replay" ? RotateCcw : Search;
   const ViewIcon = VIEW_META[view].icon;
 
@@ -950,14 +1017,14 @@ function GraphStats({
     <div className="flex flex-wrap items-stretch gap-1.5 rounded-sm border border-border-default bg-[linear-gradient(180deg,rgba(15,17,16,0.98),rgba(0,0,0,0.98))] p-1 shadow-inner-panel">
       <StatCell icon={ModeIcon} label={text("Mode")} value={text(mode)} />
       <StatCell icon={ViewIcon} label={text("View")} value={text(VIEW_META[view].label)} />
-      <StatCell icon={CircleDot} label={text("Active")} value={`${activeNodes}/${CAUSAL_NODES.length}`} />
-      <StatCell icon={CheckCircle2} label={text("Verified")} value={`${verifiedEdges}/${CAUSAL_EDGES.length}`} />
+      <StatCell icon={CircleDot} label={text("Active")} value={`${activeNodes}/${nodes.length}`} />
+      <StatCell icon={CheckCircle2} label={text("Verified")} value={`${verifiedEdges}/${edges.length}`} />
       <div className="min-w-[108px] rounded-xs border border-border-subtle bg-bg-base px-2 py-1 text-caption text-text-muted shadow-inner-panel">
         <span>{text("Visible")}</span>
-        <span className="ml-2 font-mono text-xs text-text-primary">{visibleCount}/{CAUSAL_NODES.length}</span>
+        <span className="ml-2 font-mono text-xs text-text-primary">{visibleCount}/{nodes.length}</span>
         {focusId && (
           <div className="mt-1 max-w-40 truncate text-text-secondary">
-            {text(CAUSAL_NODES.find((node) => node.id === focusId)?.label ?? "")}
+            {text(nodes.find((node) => node.id === focusId)?.label ?? "")}
           </div>
         )}
       </div>
@@ -985,11 +1052,22 @@ function StatCell({
   );
 }
 
-function NodeDetails({ node, onClose }: { node: CausalNode; onClose: () => void }) {
+function NodeDetails({
+  node,
+  nodes,
+  edges,
+  meta,
+  onClose,
+}: {
+  node: CausalNode;
+  nodes: CausalNode[];
+  edges: CausalEdge[];
+  meta: NodeSemanticMeta;
+  onClose: () => void;
+}) {
   const { text } = useI18n();
-  const upstream = CAUSAL_EDGES.filter((edge) => edge.target === node.id);
-  const downstream = CAUSAL_EDGES.filter((edge) => edge.source === node.id);
-  const meta = NODE_META[node.id];
+  const upstream = edges.filter((edge) => edge.target === node.id);
+  const downstream = edges.filter((edge) => edge.source === node.id);
   const stage = STAGE_META[meta.stage];
   const sector = SECTOR_META[meta.sector];
   const color = NODE_COLORS[node.type];
@@ -1082,8 +1160,8 @@ function NodeDetails({ node, onClose }: { node: CausalNode; onClose: () => void 
           </div>
         </div>
 
-        <EdgeList title="上游" edges={upstream} side="source" />
-        <EdgeList title="下游" edges={downstream} side="target" />
+        <EdgeList title="上游" edges={upstream} side="source" nodes={nodes} />
+        <EdgeList title="下游" edges={downstream} side="target" nodes={nodes} />
       </div>
     </div>
   );
@@ -1102,10 +1180,12 @@ function EdgeList({
   title,
   edges,
   side,
+  nodes,
 }: {
   title: string;
   edges: CausalEdge[];
   side: "source" | "target";
+  nodes: CausalNode[];
 }) {
   const { text } = useI18n();
   if (edges.length === 0) return null;
@@ -1116,7 +1196,7 @@ function EdgeList({
       </div>
       <div className="space-y-2">
         {edges.map((edge) => {
-          const peer = CAUSAL_NODES.find((node) => node.id === edge[side]);
+          const peer = nodes.find((node) => node.id === edge[side]);
           const color = EDGE_COLORS[edge.direction];
           return (
             <div key={edge.id} className="rounded-xs border border-border-subtle bg-bg-base p-2 shadow-inner-panel">
@@ -1192,11 +1272,16 @@ function Legend() {
   );
 }
 
-function viewVisibleNodeIds(view: View): Set<string> {
-  if (view === "all") return new Set(CAUSAL_NODES.map((node) => node.id));
+function viewVisibleNodeIds(
+  view: View,
+  nodes: CausalNode[],
+  edges: CausalEdge[],
+  metaByNodeId: Map<string, NodeSemanticMeta>
+): Set<string> {
+  if (view === "all") return new Set(nodes.map((node) => node.id));
 
-  const rootIds = CAUSAL_NODES.filter((node) => {
-    const meta = NODE_META[node.id];
+  const rootIds = nodes.filter((node) => {
+    const meta = metaByNodeId.get(node.id) ?? semanticMetaForNode(node);
     if (view === "portfolio") return Boolean(meta.portfolioLinked);
     if (view === "counter") return node.type === "counter";
     return Boolean(meta.alertLinked) || node.type === "alert";
@@ -1204,18 +1289,18 @@ function viewVisibleNodeIds(view: View): Set<string> {
 
   const ids = new Set<string>();
   for (const rootId of rootIds) {
-    for (const id of causalChainIds(rootId)) {
+    for (const id of causalChainIds(rootId, edges)) {
       ids.add(id);
     }
   }
   return ids;
 }
 
-function causalChainIds(focusId: string | null): Set<string> {
+function causalChainIds(focusId: string | null, edges: CausalEdge[]): Set<string> {
   if (!focusId) return new Set<string>();
   const ids = new Set<string>([focusId]);
   const visit = (id: string, direction: "forward" | "backward") => {
-    for (const edge of CAUSAL_EDGES) {
+    for (const edge of edges) {
       if (direction === "forward" && edge.source === id && !ids.has(edge.target)) {
         ids.add(edge.target);
         visit(edge.target, "forward");
@@ -1229,6 +1314,37 @@ function causalChainIds(focusId: string | null): Set<string> {
   visit(focusId, "forward");
   visit(focusId, "backward");
   return ids;
+}
+
+function semanticMetaForNode(node: CausalNode): NodeSemanticMeta {
+  const fallback = NODE_META[node.id];
+  if (fallback && !node.stage && !node.sector && !node.narrative) return fallback;
+  const stage = node.stage ?? fallback?.stage ?? stageForNodeType(node.type);
+  const sector = node.sector ?? fallback?.sector ?? sectorForLabel(node.label);
+  return {
+    stage,
+    sector,
+    tags: node.tags ?? fallback?.tags ?? [],
+    narrative: node.narrative ?? fallback?.narrative ?? "运行态事件链路节点。",
+    portfolioLinked: node.portfolioLinked ?? fallback?.portfolioLinked,
+    alertLinked: node.alertLinked ?? fallback?.alertLinked,
+  };
+}
+
+function stageForNodeType(type: CausalNode["type"]): Stage {
+  if (type === "event") return "source";
+  if (type === "alert") return "impact";
+  if (type === "metric" || type === "counter") return "validation";
+  return "thesis";
+}
+
+function sectorForLabel(label: string): Sector {
+  const value = label.toLowerCase();
+  if (/(sc|原油|pta|pp|energy|eia|fred|oil)/i.test(value)) return "energy";
+  if (/(ru|nr|br|橡胶|rubber|latex)/i.test(value)) return "rubber";
+  if (/(rb|hc|jm|焦|铁|螺纹|ferrous)/i.test(value)) return "ferrous";
+  if (/(position|持仓|cftc)/i.test(value)) return "positioning";
+  return "geo";
 }
 
 function nodeIcon(type: CausalNode["type"]) {

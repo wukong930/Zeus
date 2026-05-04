@@ -1,15 +1,38 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import type { ComponentType } from "react";
 import { Activity, CheckCircle2, Network } from "lucide-react";
 import { CausalWeb } from "@/components/CausalWeb";
 import { CAUSAL_EDGES, CAUSAL_NODES } from "@/data/mock";
+import type { CausalEdge, CausalNode } from "@/data/mock";
+import { fetchCausalWebGraph } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 
 export default function CausalWebPage() {
-  const activeCount = CAUSAL_NODES.filter((node) => node.active).length;
-  const verifiedCount = CAUSAL_EDGES.filter((edge) => edge.verified).length;
+  const [nodes, setNodes] = useState<CausalNode[]>(CAUSAL_NODES);
+  const [edges, setEdges] = useState<CausalEdge[]>(CAUSAL_EDGES);
+  const [source, setSource] = useState<"runtime" | "fallback">("fallback");
   const { text } = useI18n();
+  const activeCount = nodes.filter((node) => node.active).length;
+  const verifiedCount = edges.filter((edge) => edge.verified).length;
+
+  useEffect(() => {
+    let mounted = true;
+    fetchCausalWebGraph()
+      .then((graph) => {
+        if (!mounted || graph.nodes.length === 0) return;
+        setNodes(graph.nodes);
+        setEdges(graph.edges);
+        setSource("runtime");
+      })
+      .catch(() => {
+        if (mounted) setSource("fallback");
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   return (
     <div className="flex h-full flex-col">
@@ -21,13 +44,14 @@ export default function CausalWebPage() {
           </p>
         </div>
         <div className="flex min-w-0 flex-wrap items-center gap-2">
-          <HeaderMetric icon={Network} label={text("Nodes")} value={`${CAUSAL_NODES.length}`} />
-          <HeaderMetric icon={Activity} label={text("Active")} value={`${activeCount}/${CAUSAL_NODES.length}`} tone="emerald" />
-          <HeaderMetric icon={CheckCircle2} label={text("Verified")} value={`${verifiedCount}/${CAUSAL_EDGES.length}`} tone="cyan" />
+          <HeaderMetric icon={Network} label={text("Nodes")} value={`${nodes.length}`} />
+          <HeaderMetric icon={Activity} label={text("Active")} value={`${activeCount}/${nodes.length}`} tone="emerald" />
+          <HeaderMetric icon={CheckCircle2} label={text("Verified")} value={`${verifiedCount}/${edges.length}`} tone="cyan" />
+          <HeaderMetric icon={Activity} label={text("来源")} value={text(source === "runtime" ? "实时" : "回退")} tone={source === "runtime" ? "emerald" : "neutral"} />
         </div>
       </div>
       <div className="relative flex-1">
-        <CausalWeb variant="full" />
+        <CausalWeb variant="full" nodes={nodes} edges={edges} />
       </div>
     </div>
   );
