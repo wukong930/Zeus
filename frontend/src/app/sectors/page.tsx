@@ -3,10 +3,25 @@
 import { Card, CardHeader, CardTitle, CardSubtitle } from "@/components/Card";
 import { SectorHeatmap } from "@/components/SectorHeatmap";
 import { Badge } from "@/components/Badge";
+import { MetricTile } from "@/components/MetricTile";
 import { SECTORS } from "@/data/mock";
 import { cn } from "@/lib/utils";
+import { Activity, Gauge, Layers3, RadioTower } from "lucide-react";
+
+const FACTORS = ["成本", "库存", "季节", "利润"] as const;
+
+function factorValue(sectorId: string, factorIndex: number) {
+  const seed = [...sectorId].reduce((sum, char) => sum + char.charCodeAt(0), 0);
+  return 0.32 + (((seed * (factorIndex + 3)) % 52) / 100);
+}
 
 export default function SectorsPage() {
+  const activeSignals = SECTORS.flatMap((sector) => sector.symbols).filter(
+    (symbol) => symbol.signalActive
+  ).length;
+  const avgConviction =
+    SECTORS.reduce((sum, sector) => sum + sector.conviction, 0) / Math.max(SECTORS.length, 1);
+
   return (
     <div className="px-8 py-6 space-y-6 animate-fade-in">
       <div>
@@ -16,7 +31,14 @@ export default function SectorsPage() {
         </p>
       </div>
 
-      <Card variant="flat">
+      <div className="grid grid-cols-1 gap-5 md:grid-cols-4">
+        <MetricTile label="板块数" value={String(SECTORS.length)} caption="coverage" icon={Layers3} tone="cyan" />
+        <MetricTile label="活跃信号" value={String(activeSignals)} caption="orange pulse" icon={RadioTower} tone="warning" />
+        <MetricTile label="平均 conviction" value={`${avgConviction >= 0 ? "+" : ""}${avgConviction.toFixed(2)}`} caption="cross-sector" icon={Gauge} tone={avgConviction >= 0 ? "up" : "down"} />
+        <MetricTile label="方向状态" value={avgConviction >= 0 ? "Risk-on" : "Defensive"} caption="sector bias" icon={Activity} tone={avgConviction >= 0 ? "up" : "warning"} />
+      </div>
+
+      <Card variant="data">
         <CardHeader>
           <div>
             <CardTitle>板块热力图</CardTitle>
@@ -28,7 +50,7 @@ export default function SectorsPage() {
 
       <div className="grid grid-cols-2 gap-5">
         {SECTORS.map((s) => (
-          <Card key={s.id} variant="flat">
+          <Card key={s.id} variant="data" interactive>
             <CardHeader>
               <div className="flex items-center gap-3">
                 <CardTitle>{s.name}</CardTitle>
@@ -54,19 +76,17 @@ export default function SectorsPage() {
             <div className="border-t border-border-subtle pt-3 mt-3">
               <div className="text-caption text-text-muted mb-2">核心因子（4 维 conviction）</div>
               <div className="grid grid-cols-4 gap-2">
-                {[
-                  { label: "成本", value: 0.4 + Math.random() * 0.4 },
-                  { label: "库存", value: 0.3 + Math.random() * 0.5 },
-                  { label: "季节", value: 0.5 + Math.random() * 0.3 },
-                  { label: "利润", value: 0.4 + Math.random() * 0.4 },
-                ].map((f) => (
-                  <div key={f.label} className="bg-bg-base rounded-xs p-2">
-                    <div className="text-caption text-text-muted mb-1">{f.label}</div>
-                    <div className="h-1 bg-bg-surface-raised rounded-full overflow-hidden">
-                      <div className="h-full bg-brand-emerald" style={{ width: `${f.value * 100}%` }} />
+                {FACTORS.map((label, index) => {
+                  const value = factorValue(s.id, index);
+                  return (
+                    <div key={label} className="rounded-xs border border-border-subtle bg-bg-base p-2">
+                      <div className="text-caption text-text-muted mb-1">{label}</div>
+                      <div className="h-1 bg-bg-surface-raised rounded-full overflow-hidden">
+                        <div className="h-full bg-brand-emerald" style={{ width: `${value * 100}%` }} />
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           </Card>

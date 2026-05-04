@@ -5,9 +5,20 @@ import { Card, CardHeader, CardTitle, CardSubtitle } from "@/components/Card";
 import { Badge } from "@/components/Badge";
 import { Button } from "@/components/Button";
 import { VintageBadge } from "@/components/VintageBadge";
+import { MetricTile } from "@/components/MetricTile";
 import { POSITIONS } from "@/data/mock";
 import { fetchPortfolioSnapshot, type PortfolioSnapshot, type PortfolioPosition } from "@/lib/api";
-import { Plus, TrendingUp, TrendingDown, AlertTriangle, RefreshCw } from "lucide-react";
+import {
+  Activity,
+  AlertTriangle,
+  Gauge,
+  Plus,
+  RefreshCw,
+  ShieldAlert,
+  TrendingDown,
+  TrendingUp,
+  WalletCards,
+} from "lucide-react";
 import { cn, formatPercent } from "@/lib/utils";
 
 export default function PortfolioPage() {
@@ -73,29 +84,38 @@ export default function PortfolioPage() {
 
       {/* Risk dashboard */}
       <div className="grid grid-cols-4 gap-5">
-        <RiskCard
+        <MetricTile
           label="组合 P&L"
           value={`${totalPnL >= 0 ? "+" : ""}¥${totalPnL.toLocaleString()}`}
-          subtext="当日浮动"
-          colorClass={totalPnL >= 0 ? "text-data-up" : "text-data-down"}
+          caption="当日浮动"
+          icon={Activity}
+          tone={totalPnL >= 0 ? "up" : "down"}
         />
-        <RiskCard
+        <MetricTile
           label="VaR 95%"
           value={`¥${formatCurrency(snapshot?.varResult?.var95 ?? 0)}`}
-          subtext={`${snapshot?.varResult?.horizon ?? 1} 日 95% 置信`}
-          colorClass="text-text-primary"
+          caption={`${snapshot?.varResult?.horizon ?? 1} 日 95% 置信`}
+          icon={ShieldAlert}
+          tone="warning"
         />
-        <RiskCard label="保证金占用" value={`${usage.toFixed(1)}%`} subtext={`¥${totalMargin.toLocaleString()} / ¥${totalEquity.toLocaleString()}`} colorClass="text-brand-emerald-bright" />
-        <RiskCard
+        <MetricTile
+          label="保证金占用"
+          value={`${usage.toFixed(1)}%`}
+          caption={`¥${totalMargin.toLocaleString()} / ¥${totalEquity.toLocaleString()}`}
+          icon={WalletCards}
+          tone={usage > 50 ? "warning" : "cyan"}
+        />
+        <MetricTile
           label="压力损失"
           value={`¥${formatCurrency(worstStress)}`}
-          subtext={`${snapshot?.stressResults.length ?? 0} 个场景`}
-          colorClass={worstStress < 0 ? "text-severity-high-fg" : "text-text-primary"}
+          caption={`${snapshot?.stressResults.length ?? 0} 个场景`}
+          icon={Gauge}
+          tone={worstStress < 0 ? "down" : "neutral"}
         />
       </div>
 
       {/* Position list */}
-      <Card variant="flat">
+      <Card variant="data">
         <CardHeader>
           <div>
             <CardTitle>持仓列表</CardTitle>
@@ -177,7 +197,7 @@ export default function PortfolioPage() {
       </Card>
 
       {/* Propagation activation map */}
-      <Card variant="flat">
+      <Card variant="data">
         <CardHeader>
           <div>
             <CardTitle>传导图激活范围</CardTitle>
@@ -255,26 +275,6 @@ function relatedForSector(sector: string) {
   ];
 }
 
-function RiskCard({
-  label,
-  value,
-  subtext,
-  colorClass,
-}: {
-  label: string;
-  value: string;
-  subtext: string;
-  colorClass: string;
-}) {
-  return (
-    <Card variant="flat">
-      <div className="text-caption text-text-muted uppercase tracking-wider">{label}</div>
-      <div className={cn("text-display font-mono mt-2 leading-none tabular-nums", colorClass)}>{value}</div>
-      <div className="text-caption text-text-muted mt-2">{subtext}</div>
-    </Card>
-  );
-}
-
 function PropagationGroup({
   anchor,
   sector,
@@ -285,7 +285,7 @@ function PropagationGroup({
   related: { symbol: string; name: string; reason: string; lag: string }[];
 }) {
   return (
-    <div className="bg-bg-base rounded-sm p-4">
+    <div className="rounded-sm border border-border-subtle bg-bg-base p-4 shadow-inner-panel">
       <div className="flex items-center gap-2 mb-3">
         <span className="w-2 h-2 rounded-full bg-brand-emerald-bright animate-heartbeat" />
         <span className="font-mono text-sm">{anchor}</span>
@@ -294,7 +294,7 @@ function PropagationGroup({
       <div className="text-caption text-text-muted mb-2">激活监控品种 ({related.length})</div>
       <div className="space-y-1.5">
         {related.map((r) => (
-          <div key={r.symbol} className="flex items-center justify-between text-xs py-1 px-2 bg-bg-surface rounded-xs">
+          <div key={r.symbol} className="flex items-center justify-between rounded-xs border border-border-subtle bg-bg-surface px-2 py-1 text-xs">
             <div className="flex items-center gap-2">
               <span className="font-mono text-text-primary">{r.symbol}</span>
               <span className="text-text-muted">{r.name}</span>

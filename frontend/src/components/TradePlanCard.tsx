@@ -21,7 +21,7 @@ export function TradePlanCard({ plan }: TradePlanCardProps) {
   const norm = (v: number) => ((v - lo) / range) * 100;
 
   return (
-    <Card variant="elevated" className="space-y-4">
+    <Card variant="data" className="space-y-4">
       <div className="flex items-start justify-between">
         <div>
           <div className="flex items-center gap-2 mb-1">
@@ -37,53 +37,53 @@ export function TradePlanCard({ plan }: TradePlanCardProps) {
       </div>
 
       {/* Price plan visualization */}
-      <div className="bg-bg-base rounded-sm p-4 space-y-3">
-        <div className="relative h-2 bg-bg-surface-raised rounded-full overflow-hidden">
+      <div className="space-y-3 rounded-sm border border-border-subtle bg-bg-base p-4 shadow-inner-panel zeus-grid-surface">
+        <div className="relative h-3 overflow-hidden rounded-full border border-border-subtle bg-bg-surface-raised">
           {/* Risk zone */}
           {isLong ? (
             <div
-              className="absolute top-0 left-0 h-full bg-data-down/30"
+                className="absolute top-0 left-0 h-full bg-gradient-to-r from-data-down/45 to-data-down/10"
               style={{ width: `${norm(plan.entryPrice)}%` }}
             />
           ) : (
             <div
-              className="absolute top-0 right-0 h-full bg-data-down/30"
+                className="absolute top-0 right-0 h-full bg-gradient-to-l from-data-down/45 to-data-down/10"
               style={{ width: `${100 - norm(plan.entryPrice)}%` }}
             />
           )}
           {/* Reward zone */}
           {isLong ? (
             <div
-              className="absolute top-0 h-full bg-data-up/30"
+                className="absolute top-0 h-full bg-gradient-to-r from-data-up/15 to-data-up/45"
               style={{ left: `${norm(plan.entryPrice)}%`, right: `${100 - norm(plan.takeProfit)}%` }}
             />
           ) : (
             <div
-              className="absolute top-0 h-full bg-data-up/30"
+                className="absolute top-0 h-full bg-gradient-to-l from-data-up/15 to-data-up/45"
               style={{ left: `${norm(plan.takeProfit)}%`, right: `${100 - norm(plan.entryPrice)}%` }}
             />
           )}
           {/* Stop loss marker */}
           <div
-            className="absolute top-0 w-0.5 h-full bg-data-down"
+            className="absolute top-0 h-full w-0.5 bg-data-down"
             style={{ left: `${norm(plan.stopLoss)}%` }}
           />
           {/* Entry marker */}
           <div
-            className="absolute top-0 w-0.5 h-full bg-text-primary"
+            className="absolute top-0 h-full w-0.5 bg-text-primary"
             style={{ left: `${norm(plan.entryPrice)}%` }}
           />
           {/* Take profit marker */}
           <div
-            className="absolute top-0 w-0.5 h-full bg-data-up"
+            className="absolute top-0 h-full w-0.5 bg-data-up"
             style={{ left: `${norm(plan.takeProfit)}%` }}
           />
           {/* Current price marker (animated) */}
           <div
-            className="absolute -top-1 w-3 h-4 -ml-1.5 flex items-center justify-center"
+            className="absolute -top-1.5 -ml-1.5 flex h-5 w-3 items-center justify-center"
             style={{ left: `${norm(plan.currentPrice)}%` }}
           >
-            <div className="w-2 h-2 rounded-full bg-brand-orange animate-heartbeat shadow-glow-orange" />
+            <div className="h-2.5 w-2.5 rounded-full border border-black bg-brand-orange shadow-glow-orange animate-heartbeat" />
           </div>
         </div>
         <div className="grid grid-cols-4 gap-2 text-xs font-mono tabular-nums">
@@ -148,7 +148,7 @@ function Stat({
   icon?: React.ReactNode;
 }) {
   return (
-    <div className="bg-bg-base rounded-sm p-3">
+    <div className="rounded-sm border border-border-subtle bg-bg-base p-3 shadow-inner-panel">
       <div className="text-caption text-text-muted mb-1">{label}</div>
       <div className={cn("font-mono text-sm font-semibold flex items-center gap-1 tabular-nums", colorClass)}>
         {icon}
@@ -178,7 +178,7 @@ function ProgressBar({
           {value}%
         </span>
       </div>
-      <div className="h-1.5 bg-bg-surface-raised rounded-full overflow-hidden">
+      <div className="h-1.5 overflow-hidden rounded-full bg-bg-surface-raised">
         <div
           className={cn("h-full rounded-full", status === "healthy" ? "bg-brand-emerald" : "bg-severity-high-fg")}
           style={{ width: `${pct}%` }}

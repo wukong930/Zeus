@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { Badge } from "@/components/Badge";
 import { Card, CardHeader, CardSubtitle, CardTitle } from "@/components/Card";
+import { MetricTile } from "@/components/MetricTile";
 import { fetchNewsEventsFromApi, type NewsEvent } from "@/lib/api";
 import { cn, timeAgo } from "@/lib/utils";
 
@@ -146,10 +147,10 @@ export default function NewsEventsPage() {
           </div>
         </div>
 
-        <div className="grid grid-cols-3 gap-2">
-          <Metric label="总数" value={stats.total} icon={Newspaper} />
-          <Metric label="验证" value={stats.verified} icon={ShieldCheck} />
-          <Metric label="确认" value={stats.manual} icon={AlertTriangle} />
+        <div className="grid grid-cols-1 gap-3">
+          <MetricTile label="总数" value={String(stats.total)} caption="events" icon={Newspaper} tone="cyan" />
+          <MetricTile label="交叉验证" value={String(stats.verified)} caption="source quorum" icon={ShieldCheck} tone="up" />
+          <MetricTile label="人工确认" value={String(stats.manual)} caption="manual gate" icon={AlertTriangle} tone={stats.manual > 0 ? "warning" : "neutral"} />
         </div>
 
         <div className="relative">
@@ -158,7 +159,7 @@ export default function NewsEventsPage() {
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="品种 / 标题 / 摘要"
-            className="w-full bg-bg-surface border border-border-default rounded-sm pl-9 pr-3 h-9 text-sm focus:border-brand-emerald focus:outline-none"
+            className="w-full rounded-sm border border-border-default bg-bg-base pl-9 pr-3 h-9 text-sm focus:border-brand-emerald focus:outline-none focus:shadow-focus-ring"
           />
         </div>
 
@@ -175,8 +176,8 @@ export default function NewsEventsPage() {
               className={cn(
                 "w-full text-left rounded-sm border p-4 transition-colors",
                 selected?.id === event.id
-                  ? "bg-bg-surface-raised border-brand-emerald/70"
-                  : "bg-bg-surface border-border-subtle hover:bg-bg-surface-raised"
+                  ? "border-brand-emerald/70 bg-brand-emerald/10 shadow-focus-ring"
+                  : "border-border-subtle bg-bg-surface hover:border-border-default hover:bg-bg-surface-raised"
               )}
             >
               <div className="flex items-center gap-2 mb-2">
@@ -239,7 +240,7 @@ function NewsEventDetail({ event }: { event: NewsEvent }) {
         <Info label="置信度" value={`${Math.round(event.confidence * 100)}%`} />
       </div>
 
-      <Card variant="flat">
+      <Card variant="data">
         <CardHeader>
           <div>
             <CardTitle>影响品种</CardTitle>
@@ -251,7 +252,7 @@ function NewsEventDetail({ event }: { event: NewsEvent }) {
           {event.affectedSymbols.map((symbol) => (
             <span
               key={symbol}
-              className="font-mono text-sm px-3 h-8 inline-flex items-center bg-bg-base text-text-primary rounded-sm border border-border-default"
+              className="font-mono text-sm px-3 h-8 inline-flex items-center bg-bg-base text-text-primary rounded-sm border border-border-default shadow-inner-panel"
             >
               {symbol}
             </span>
@@ -259,7 +260,7 @@ function NewsEventDetail({ event }: { event: NewsEvent }) {
         </div>
       </Card>
 
-      <Card variant="flat">
+      <Card variant="data">
         <CardHeader>
           <div>
             <CardTitle>质量门槛</CardTitle>
@@ -289,16 +290,6 @@ function NewsEventDetail({ event }: { event: NewsEvent }) {
           原文链接
         </a>
       )}
-    </div>
-  );
-}
-
-function Metric({ label, value, icon: Icon }: { label: string; value: number; icon: typeof Newspaper }) {
-  return (
-    <div className="bg-bg-surface border border-border-subtle rounded-sm p-3">
-      <Icon className="w-4 h-4 text-text-muted mb-2" />
-      <div className="text-h2 font-mono text-text-primary">{value}</div>
-      <div className="text-caption text-text-muted">{label}</div>
     </div>
   );
 }
@@ -334,7 +325,7 @@ function Segmented({
 
 function Info({ label, value }: { label: string; value: string }) {
   return (
-    <div className="bg-bg-surface border border-border-subtle rounded-sm p-3 min-w-0">
+    <div className="bg-bg-surface border border-border-subtle rounded-sm p-3 min-w-0 shadow-inner-panel">
       <div className="text-caption text-text-muted mb-1">{label}</div>
       <div className="text-sm text-text-primary truncate">{value}</div>
     </div>
@@ -343,7 +334,7 @@ function Info({ label, value }: { label: string; value: string }) {
 
 function Gate({ active, label }: { active: boolean; label: string }) {
   return (
-    <div className="flex items-center gap-2 bg-bg-base border border-border-subtle rounded-sm px-3 h-9">
+    <div className="flex items-center gap-2 bg-bg-base border border-border-subtle rounded-sm px-3 h-9 shadow-inner-panel">
       <span className={cn("w-2 h-2 rounded-full", active ? "bg-brand-emerald" : "bg-brand-orange")} />
       <span className="text-sm text-text-secondary">{label}</span>
     </div>

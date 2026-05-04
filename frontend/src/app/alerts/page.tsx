@@ -5,9 +5,10 @@ import { ALERTS, type Alert, type Severity } from "@/data/mock";
 import { AlertCard } from "@/components/AlertCard";
 import { Badge } from "@/components/Badge";
 import { Card } from "@/components/Card";
+import { MetricTile } from "@/components/MetricTile";
 import { fetchAlertsFromApi } from "@/lib/api";
 import { cn } from "@/lib/utils";
-import { Search } from "lucide-react";
+import { AlertTriangle, RadioTower, Search, ShieldCheck } from "lucide-react";
 
 const SECTORS = ["ferrous", "rubber", "energy", "metals", "agri", "precious"];
 
@@ -53,11 +54,14 @@ export default function AlertsPage() {
   const filtered = alerts.filter(
     (a) => enabledSeverities.has(a.severity) && enabledSectors.has(a.sector)
   );
+  const criticalCount = alerts.filter((alert) => alert.severity === "critical").length;
+  const manualCount = alerts.filter((alert) => alert.humanActionRequired).length;
+  const verifiedCount = alerts.filter((alert) => alert.adversarialPassed).length;
 
   return (
     <div className="flex h-full">
       {/* Filter sidebar */}
-      <aside className="w-72 border-r border-border-subtle p-5 space-y-6 overflow-y-auto">
+      <aside className="w-80 overflow-y-auto border-r border-border-subtle bg-bg-surface/70 p-5 space-y-6">
         <div>
           <h1 className="text-h1 text-text-primary">Alerts</h1>
           <div className="flex items-center gap-2 mt-1">
@@ -70,11 +74,17 @@ export default function AlertsPage() {
           </div>
         </div>
 
+        <div className="grid grid-cols-1 gap-3">
+          <MetricTile label="当前可见" value={String(filtered.length)} caption={`${alerts.length} total`} icon={RadioTower} tone="cyan" />
+          <MetricTile label="Critical" value={String(criticalCount)} caption="requires focus" icon={AlertTriangle} tone={criticalCount > 0 ? "down" : "neutral"} />
+          <MetricTile label="已验证" value={String(verifiedCount)} caption={`${manualCount} manual gates`} icon={ShieldCheck} tone="up" />
+        </div>
+
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
           <input
             placeholder="搜索预警..."
-            className="w-full bg-bg-surface border border-border-default rounded-sm pl-9 pr-3 h-9 text-sm focus:border-brand-emerald focus:outline-none"
+            className="w-full rounded-sm border border-border-default bg-bg-base pl-9 pr-3 h-9 text-sm focus:border-brand-emerald focus:outline-none focus:shadow-focus-ring"
           />
         </div>
 
@@ -123,6 +133,15 @@ export default function AlertsPage() {
 
       {/* Alert stream */}
       <div className="flex-1 overflow-y-auto p-6 space-y-3">
+        <div className="mb-4 flex items-center justify-between rounded-sm border border-border-subtle bg-bg-surface px-4 py-3 shadow-inner-panel">
+          <div>
+            <div className="text-h3 text-text-primary">预警流</div>
+            <div className="mt-1 text-caption text-text-muted">按严重度、板块和人工确认状态扫描当前事件。</div>
+          </div>
+          <Badge variant={source === "mock" ? "orange" : "emerald"}>
+            {source === "loading" ? "SYNC" : source.toUpperCase()}
+          </Badge>
+        </div>
         {filtered.length === 0 ? (
           <Card variant="flat" className="py-10 text-center text-text-muted">
             {source === "loading" ? "预警加载中" : "没有匹配的预警"}
@@ -156,8 +175,10 @@ function FilterChip({
     <button
       onClick={onToggle}
       className={cn(
-        "w-full flex items-center gap-2 px-3 h-8 rounded-sm text-sm transition-colors",
-        checked ? "bg-bg-surface-raised text-text-primary" : "text-text-muted hover:bg-bg-surface-raised"
+        "w-full flex items-center gap-2 px-3 h-8 rounded-sm border text-sm transition-colors",
+        checked
+          ? "border-border-default bg-bg-surface-raised text-text-primary shadow-inner-panel"
+          : "border-transparent text-text-muted hover:border-border-subtle hover:bg-bg-surface-raised"
       )}
     >
       <div

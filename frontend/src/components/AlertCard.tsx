@@ -63,14 +63,16 @@ export function AlertCard({ alert, onClick, glow }: AlertCardProps) {
 
   return (
     <Card
-      variant={glow ? "glow" : "flat"}
+      variant={glow ? "glow" : "data"}
       glowColor={alert.severity === "critical" ? "red" : "orange"}
+      interactive
       className={cn(
-        "border-l-[4px] cursor-pointer transition-all hover:bg-bg-surface-raised",
+        "relative cursor-pointer overflow-hidden border-l-[4px] transition-all",
         severityBorder[alert.severity]
       )}
       onClick={onClick}
     >
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-white/10" />
       <div className="flex items-start gap-4">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-2">
@@ -94,7 +96,7 @@ export function AlertCard({ alert, onClick, glow }: AlertCardProps) {
           <p className="text-sm text-text-secondary mb-3 leading-relaxed">{alert.narrative}</p>
 
           {alert.humanActionRequired && (
-            <div className="mb-3 flex flex-wrap items-center gap-2 border border-border-subtle bg-bg-surface-highlight px-3 py-2">
+            <div className="mb-3 flex flex-wrap items-center gap-2 rounded-sm border border-brand-orange/30 bg-brand-orange/10 px-3 py-2 shadow-inner-panel">
               <span className="text-caption text-brand-orange flex items-center gap-1">
                 <AlertTriangle className="w-3 h-3" />
                 待人工确认
@@ -122,7 +124,7 @@ export function AlertCard({ alert, onClick, glow }: AlertCardProps) {
             </div>
           )}
 
-          <div className="flex items-center gap-3 text-caption">
+          <div className="flex flex-wrap items-center gap-3 text-caption">
             {alert.adversarialPassed && (
               <span className="text-brand-emerald-bright flex items-center gap-1">
                 ✓ Adversarial 3/3
@@ -144,7 +146,7 @@ export function AlertCard({ alert, onClick, glow }: AlertCardProps) {
               </Link>
             )}
           </div>
-          <div className="mt-3 flex items-center gap-2 text-caption">
+          <div className="mt-3 flex flex-wrap items-center gap-2 text-caption">
             <span className="text-text-muted">反馈</span>
             <FeedbackButton onClick={(event) => sendFeedback(event, "agree")}>同意</FeedbackButton>
             <FeedbackButton onClick={(event) => sendFeedback(event, "uncertain")}>不确定</FeedbackButton>
@@ -154,7 +156,7 @@ export function AlertCard({ alert, onClick, glow }: AlertCardProps) {
           </div>
         </div>
 
-        <div className="flex flex-col items-center gap-2 shrink-0">
+        <div className="flex shrink-0 flex-col items-center gap-2 rounded-sm border border-border-subtle bg-bg-base p-3 shadow-inner-panel">
           <ConfidenceHalo confidence={alert.confidence} sampleSize={alert.sampleSize} />
           <button className="text-caption text-text-muted hover:text-brand-emerald-bright flex items-center gap-1 transition-colors">
             <Sparkles className="w-3 h-3" />

@@ -14,11 +14,13 @@ const dot = (status: "healthy" | "warning" | "alert") =>
 export function HeartbeatBar() {
   const s = HEARTBEAT_STATE;
   const [clock, setClock] = useState("--:--:--");
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
     const updateClock = () => {
       setClock(new Date().toLocaleTimeString("en-GB", { timeZone: "Asia/Shanghai" }));
     };
+    setMounted(true);
     updateClock();
     const timer = window.setInterval(updateClock, 1000);
     return () => window.clearInterval(timer);
@@ -40,7 +42,9 @@ export function HeartbeatBar() {
       />
       <Item dotClass={dot("healthy")} label="Regime" value={REGIME_LABEL[s.regime] ?? s.regime} />
       <div className="ml-auto text-text-muted">
-        <span className="font-mono tabular-nums">{clock}</span>
+        <span suppressHydrationWarning className="font-mono tabular-nums">
+          {mounted ? clock : "--:--:--"}
+        </span>
       </div>
     </div>
   );
