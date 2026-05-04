@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Literal
@@ -16,6 +17,7 @@ from app.models.industry_data import IndustryData
 from app.models.market_data import MarketData
 from app.models.news_events import NewsEvent
 from app.models.signal import SignalTrack
+from app.services.data_sources.akshare_futures import COMMODITY_NAMES
 from app.services.data_sources.free_ingest import CATEGORY_BY_SYMBOL
 
 router = APIRouter(prefix="/api/causal-web", tags=["causal-web"])
@@ -64,6 +66,12 @@ class CausalWebNode(BaseModel):
     sector: Sector
     tags: list[str] = Field(default_factory=list)
     narrative: str
+    labelZh: str | None = None
+    labelEn: str | None = None
+    narrativeZh: str | None = None
+    narrativeEn: str | None = None
+    tagsZh: list[str] = Field(default_factory=list)
+    tagsEn: list[str] = Field(default_factory=list)
     portfolioLinked: bool = False
     alertLinked: bool = False
 
@@ -107,6 +115,13 @@ class MetricContext:
     node_id: str
     symbol: str
     category: str
+
+
+@dataclass(frozen=True)
+class CounterContext:
+    node_id: str
+    alert_id: UUID
+    confidence: float
 
 
 @router.get("", response_model=CausalWebGraph)
@@ -166,12 +181,19 @@ async def get_causal_web(
         *[_metric_context_from_industry(row) for row in metrics],
         *[_metric_context_from_market(row) for row in market_metrics],
     ]
+    counter_seeds = [seed for row in alerts for seed in _counter_seeds_from_alert(row)]
+    counter_contexts = [
+        CounterContext(node_id=seed.id, alert_id=seed.ref_id, confidence=seed.confidence)
+        for seed in counter_seeds
+        if seed.ref_id is not None
+    ]
 
     seeds = [
         *[_seed_from_news(row) for row in news],
         *[_seed_from_metric(row) for row in metrics],
         *[_seed_from_market_metric(row) for row in market_metrics],
         *[_seed_from_signal(row) for row in signals],
+        *counter_seeds,
         *[_seed_from_alert(row) for row in alerts],
     ]
     nodes = _layout_nodes(seeds)
@@ -180,6 +202,7 @@ async def get_causal_web(
         metrics=metric_contexts,
         signals=signals,
         alerts=alerts,
+        counters=counter_contexts,
         node_ids={n.id for n in nodes},
     )
     return CausalWebGraph(
@@ -190,6 +213,7 @@ async def get_causal_web(
             "news": len(news),
             "metrics": len(metrics) + len(market_metrics),
             "signals": len(signals),
+            "counters": len(counter_seeds),
             "alerts": len(alerts),
         },
     )
@@ -280,6 +304,42 @@ def _seed_from_alert(row: Alert) -> GraphNodeSeed:
     )
 
 
+def _counter_seeds_from_alert(row: Alert) -> list[GraphNodeSeed]:
+    raw_items: list[object] = [
+        *row.manual_check_items,
+        *row.risk_items,
+    ]
+    if row.invalidation_reason:
+        raw_items.append(row.invalidation_reason)
+    if not row.adversarial_passed:
+        raw_items.append("adversarial validation not passed or not available")
+    if row.human_action_required:
+        raw_items.append("manual confirmation required before execution")
+    if row.confidence < 0.75:
+        raw_items.append("confidence below strong emission threshold")
+
+    items = _unique_counter_items(raw_items)
+    seeds: list[GraphNodeSeed] = []
+    for index, text in enumerate(items[:2], start=1):
+        seeds.append(
+            GraphNodeSeed(
+                id=f"counter-{row.id}-{index}",
+                type="counter",
+                label=text,
+                timestamp=row.triggered_at,
+                category=row.category,
+                confidence=max(0.3, min(0.95, 1 - row.confidence + 0.25)),
+                direction="bearish",
+                tags=tuple(filter(None, ("counter", row.severity, row.type))),
+                narrative=text,
+                portfolio_linked=bool(row.related_assets),
+                alert_linked=True,
+                ref_id=row.id,
+            )
+        )
+    return seeds
+
+
 def _layout_nodes(seeds: list[GraphNodeSeed]) -> list[CausalWebNode]:
     lanes: dict[Stage, int] = {"source": 0, "thesis": 0, "validation": 0, "impact": 0}
     nodes: list[CausalWebNode] = []
@@ -302,6 +362,12 @@ def _layout_nodes(seeds: list[GraphNodeSeed]) -> list[CausalWebNode]:
                 sector=sector,
                 tags=list(seed.tags[:4]),
                 narrative=seed.narrative or seed.label,
+                labelZh=_zh_label(seed.label, seed.type, seed.tags),
+                labelEn=seed.label,
+                narrativeZh=_zh_text(seed.narrative or seed.label),
+                narrativeEn=seed.narrative or seed.label,
+                tagsZh=[_zh_text(tag) for tag in seed.tags[:4]],
+                tagsEn=list(seed.tags[:4]),
                 portfolioLinked=seed.portfolio_linked,
                 alertLinked=seed.alert_linked,
             )
@@ -315,10 +381,12 @@ def _build_edges(
     metrics: list[MetricContext],
     signals: list[SignalTrack],
     alerts: list[Alert],
+    counters: list[CounterContext],
     node_ids: set[str],
 ) -> list[CausalWebEdge]:
     edges: list[CausalWebEdge] = []
     signal_by_alert = {row.alert_id: row for row in signals if row.alert_id is not None}
+    alerts_by_id = {row.id: row for row in alerts}
     for alert in alerts:
         signal = signal_by_alert.get(alert.id)
         if signal is not None:
@@ -334,6 +402,23 @@ def _build_edges(
                 True,
                 node_ids,
             )
+
+    for counter in counters:
+        alert = alerts_by_id.get(counter.alert_id)
+        if alert is None:
+            continue
+        _append_edge(
+            edges,
+            f"edge-counter-alert-{counter.node_id}-{alert.id}",
+            counter.node_id,
+            f"alert-{alert.id}",
+            counter.confidence,
+            "review",
+            counter.confidence,
+            "bearish",
+            True,
+            node_ids,
+        )
 
     for signal in signals[:8]:
         for item in metrics:
@@ -431,6 +516,34 @@ def _metric_context_from_market(row: MarketData) -> MetricContext:
     )
 
 
+def _unique_counter_items(items: list[object]) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for item in items:
+        text = _counter_item_text(item)
+        if not text:
+            continue
+        key = text.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(text)
+    return result
+
+
+def _counter_item_text(item: object) -> str:
+    if isinstance(item, str):
+        return " ".join(item.split())
+    if isinstance(item, dict):
+        for key in ("title", "summary", "reason", "message", "check", "item", "name"):
+            value = item.get(key)
+            if isinstance(value, str) and value.strip():
+                return " ".join(value.split())
+        if item:
+            return _short(" ".join(f"{key}: {value}" for key, value in item.items()), 120)
+    return ""
+
+
 def _append_edge(
     edges: list[CausalWebEdge],
     edge_id: str,
@@ -503,6 +616,93 @@ def _influence(node_type: NodeType, confidence: float) -> Literal[1, 2, 3, 4]:
     if confidence >= 0.45:
         return 2
     return 1
+
+
+_TEXT_ZH_REPLACEMENTS: tuple[tuple[str, str], ...] = (
+    ("Check whether high-cost producers are already cutting operating rates.", "检查高成本生产者是否已经降低开工率。"),
+    ("high-cost producers", "高成本生产者"),
+    ("cutting operating rates", "降低开工率"),
+    ("Check whether", "检查是否"),
+    ("adversarial validation not passed or not available", "对抗校验未通过或暂无结果"),
+    ("manual confirmation required before execution", "执行前需要人工确认"),
+    ("confidence below strong emission threshold", "置信度低于强触发阈值"),
+    ("regime_shift", "状态切换"),
+    ("inventory_shock", "库存冲击"),
+    ("cost_support", "成本支撑"),
+    ("momentum", "动量"),
+    ("price_gap", "价差偏离"),
+    ("weather", "天气"),
+    ("supply", "供应"),
+    ("demand", "需求"),
+    ("inventory", "库存"),
+    ("geopolitical", "地缘"),
+    ("policy", "政策"),
+    ("breaking", "突发"),
+    ("single source", "单一来源"),
+    ("cross verified", "交叉验证"),
+    ("validation", "校验"),
+    ("confidence", "置信度"),
+    ("outcome", "结果"),
+    ("regime", "状态"),
+    ("pending", "待观察"),
+    ("alert", "预警"),
+    ("signal", "信号"),
+    ("source", "来源"),
+    ("close", "收盘"),
+    ("volume", "成交量"),
+    ("latest", "最新"),
+    ("review", "复核"),
+    ("bullish", "偏多"),
+    ("bearish", "偏空"),
+    ("neutral", "中性"),
+)
+
+
+def _zh_label(value: str, node_type: NodeType, tags: tuple[str, ...] = ()) -> str:
+    text = _zh_text(value)
+    if _contains_cjk(text):
+        return text
+    if node_type == "event":
+        event_type = _zh_text(tags[0]) if tags else "外部"
+        symbols = [_zh_text(tag) for tag in tags[2:] if tag]
+        suffix = f"：{' / '.join(symbols)}" if symbols else ""
+        return f"{event_type}事件{suffix}"
+    if node_type == "metric":
+        return f"指标：{text}"
+    if node_type == "signal":
+        return f"信号：{text}"
+    if node_type == "alert":
+        return f"预警：{text}"
+    if node_type == "counter":
+        return f"反证：{text}"
+    return text
+
+
+def _zh_text(value: str) -> str:
+    if not value:
+        return value
+    if _contains_cjk(value):
+        return value
+    result = value.replace("_", " ")
+    for symbol, name in sorted(COMMODITY_NAMES.items(), key=lambda item: len(item[0]), reverse=True):
+        result = _replace_token(result, symbol, name)
+    for source, target in _TEXT_ZH_REPLACEMENTS:
+        result = _replace_phrase(result, source, target)
+    return " ".join(result.split())
+
+
+def _replace_token(value: str, source: str, target: str) -> str:
+    return _replace_phrase(value, source, target, token=True)
+
+
+def _replace_phrase(value: str, source: str, target: str, *, token: bool = False) -> str:
+    escaped = re.escape(source)
+    pattern = rf"\b{escaped}\b" if token else escaped
+    return re.sub(pattern, target, value, flags=re.IGNORECASE)
+
+
+def _contains_cjk(value: str) -> bool:
+    return any("\u4e00" <= char <= "\u9fff" for char in value)
 
 
 def _short(value: str, max_chars: int) -> str:

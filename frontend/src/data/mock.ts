@@ -78,6 +78,8 @@ export interface CausalNode {
   id: string;
   type: "event" | "signal" | "metric" | "alert" | "counter" | "cluster";
   label: string;
+  labelZh?: string | null;
+  labelEn?: string | null;
   freshness: number; // 0-1
   influence: 1 | 2 | 3 | 4;
   active: boolean;
@@ -86,7 +88,11 @@ export interface CausalNode {
   stage?: "source" | "thesis" | "validation" | "impact";
   sector?: "geo" | "energy" | "rubber" | "ferrous" | "positioning";
   tags?: string[];
+  tagsZh?: string[];
+  tagsEn?: string[];
   narrative?: string;
+  narrativeZh?: string | null;
+  narrativeEn?: string | null;
   portfolioLinked?: boolean;
   alertLinked?: boolean;
   aggregateCount?: number;

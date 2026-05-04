@@ -2,10 +2,12 @@ from datetime import datetime, timezone
 from uuid import uuid4
 
 from app.api.causal_web import (
+    CounterContext,
     GraphNodeSeed,
     MetricContext,
     _append_edge,
     _build_edges,
+    _counter_seeds_from_alert,
     _layout_nodes,
 )
 from app.models.alert import Alert
@@ -34,6 +36,7 @@ def test_layout_nodes_includes_runtime_semantics() -> None:
     assert nodes[0].sector == "ferrous"
     assert nodes[0].freshness > 0.9
     assert nodes[0].alertLinked is True
+    assert nodes[0].labelZh is not None
 
 
 def test_append_edge_skips_missing_nodes_and_duplicates() -> None:
@@ -104,6 +107,7 @@ def test_build_edges_links_news_metric_signal_and_alert_contexts() -> None:
         metrics=[MetricContext(node_id=f"metric-{metric_id}", symbol="SC", category="energy")],
         signals=[signal],
         alerts=[alert],
+        counters=[],
         node_ids=node_ids,
     )
 
@@ -111,3 +115,40 @@ def test_build_edges_links_news_metric_signal_and_alert_contexts() -> None:
     assert (f"signal-{signal_id}", f"alert-{alert_id}") in pairs
     assert (f"metric-{metric_id}", f"signal-{signal_id}") in pairs
     assert (f"news-{news_id}", f"signal-{signal_id}") in pairs
+
+
+def test_counter_seeds_from_alert_create_review_nodes_and_edges() -> None:
+    alert_id = uuid4()
+    now = datetime.now(timezone.utc)
+    alert = Alert(
+        id=alert_id,
+        title="NR weather alert",
+        summary="weather needs review",
+        severity="medium",
+        category="rubber",
+        type="weather",
+        status="active",
+        triggered_at=now,
+        confidence=0.68,
+        adversarial_passed=False,
+        related_assets=["NR"],
+        trigger_chain=[],
+        risk_items=["inventory remains high"],
+        manual_check_items=["confirm rainfall source"],
+    )
+
+    counters = _counter_seeds_from_alert(alert)
+    assert counters
+    assert counters[0].type == "counter"
+
+    node_ids = {f"alert-{alert_id}", counters[0].id}
+    edges = _build_edges(
+        news=[],
+        metrics=[],
+        signals=[],
+        alerts=[alert],
+        counters=[CounterContext(node_id=counters[0].id, alert_id=alert_id, confidence=counters[0].confidence)],
+        node_ids=node_ids,
+    )
+
+    assert [(edge.source, edge.target) for edge in edges] == [(counters[0].id, f"alert-{alert_id}")]

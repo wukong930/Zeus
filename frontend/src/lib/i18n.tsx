@@ -190,6 +190,13 @@ const EN: Record<string, string> = {
   "聚合": "Cluster",
   "更多节点": "more nodes",
   "点击展开": "Click to expand",
+  "事件池": "Event Pool",
+  "默认展示优先级最高的事件，可手动加入图谱。":
+    "The highest-priority events are shown by default; add more to the graph manually.",
+  "当前视图暂无节点": "No nodes in this view",
+  "当前样本暂无反证节点，已建议改用证据/反证视图。":
+    "There are no counter-evidence nodes in the current sample. Use the evidence/counter view fallback.",
+  "请调整筛选或选择更多事件。": "Adjust filters or select more events.",
   "全量": "All",
   "，": ", ",
   "。": ".",
