@@ -320,6 +320,8 @@ const FLOW_LAYOUT: Record<string, { x: number; y: number }> = {
 
 const fitViewOptions = { padding: 0.06, duration: 500 };
 const previewFitViewOptions = { padding: 0.08, duration: 500 };
+const FIT_ANCHOR_TOP_ID = "__causal-fit-top";
+const FIT_ANCHOR_BOTTOM_ID = "__causal-fit-bottom";
 
 const FLOW_NODE_TYPES = {
   causalNode: CausalNodeCard,
@@ -450,8 +452,8 @@ function CausalWebCanvas({
     () => [...displayGraph.nodeIds].sort(),
     [displayGraph.nodeIds]
   );
-  const displayNodeSignature = useMemo(
-    () => displayFitNodeIds.join("|"),
+  const fitViewNodeIds = useMemo(
+    () => [...displayFitNodeIds, FIT_ANCHOR_TOP_ID, FIT_ANCHOR_BOTTOM_ID],
     [displayFitNodeIds]
   );
   const highlightedEdgeIds = useMemo(() => {
@@ -464,8 +466,8 @@ function CausalWebCanvas({
   }, [activeFocusId, displayGraph.edges, highlightedNodeIds]);
 
   const nodes = useMemo<CausalFlowNode[]>(
-    () =>
-      displayGraph.nodes.map((node) => {
+    () => {
+      const visibleNodes: CausalFlowNode[] = displayGraph.nodes.map((node): CausalFlowNode => {
         const counts = relationCounts.get(node.id) ?? { upstream: 0, downstream: 0 };
         const inView = viewNodeIds.has(node.id);
         const focused = inView && (activeFocusId === node.id || highlightedNodeIds.has(node.id));
@@ -489,8 +491,13 @@ function CausalWebCanvas({
           draggable: isFull && mode === "explorer" && node.type !== "cluster",
           selectable: isFull,
         };
-      }),
-    [activeFocusId, density, displayGraph.nodes, highlightedNodeIds, isFull, metaByNodeId, mode, relationCounts, variant, viewNodeIds]
+      });
+      return [
+        ...visibleNodes,
+        ...fitAnchorNodes(displayGraph.height, variant),
+      ];
+    },
+    [activeFocusId, density, displayGraph.height, displayGraph.nodes, highlightedNodeIds, isFull, metaByNodeId, mode, relationCounts, variant, viewNodeIds]
   );
 
   const edges = useMemo<CausalFlowEdge[]>(
@@ -542,9 +549,9 @@ function CausalWebCanvas({
     const fitOptions = isFull ? fitViewOptions : previewFitViewOptions;
     void flow.fitView({
       ...fitOptions,
-      nodes: Array.from(viewNodeIds).map((id) => ({ id })),
+      nodes: fitViewNodeIds.map((id) => ({ id })),
     });
-  }, [flow, isFull, viewNodeIds]);
+  }, [fitViewNodeIds, flow, isFull]);
 
   const changeView = useCallback(
     (nextView: View) => {
@@ -593,14 +600,13 @@ function CausalWebCanvas({
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      const fitIds = displayNodeSignature ? displayNodeSignature.split("|") : [];
       void flow.fitView({
         ...(isFull ? fitViewOptions : previewFitViewOptions),
-        nodes: fitIds.map((id) => ({ id })),
+        nodes: fitViewNodeIds.map((id) => ({ id })),
       });
     }, isFull ? 80 : 120);
     return () => window.clearTimeout(timer);
-  }, [displayNodeSignature, flow, isFull]);
+  }, [displayGraph.height, fitViewNodeIds, flow, isFull]);
 
   return (
     <div
@@ -643,7 +649,7 @@ function CausalWebCanvas({
           />
         )}
 
-        <div className="relative min-h-0">
+        <div className="relative h-full min-h-0">
           <ReactFlow
             nodes={nodes}
             edges={edges}
@@ -1766,6 +1772,58 @@ function uniqueStrings(items: string[]) {
     result.push(trimmed);
   }
   return result;
+}
+
+function fitAnchorNodes(height: number, variant: "full" | "preview"): CausalFlowNode[] {
+  const width = variant === "preview" ? 1660 : 1780;
+  const bottom = Math.max(variant === "preview" ? 560 : 760, height + 24);
+  return [
+    fitAnchorNode(FIT_ANCHOR_TOP_ID, { x: -42, y: 0 }),
+    fitAnchorNode(FIT_ANCHOR_BOTTOM_ID, { x: width, y: bottom }),
+  ];
+}
+
+function fitAnchorNode(id: string, position: { x: number; y: number }): CausalFlowNode {
+  const causal: CausalNode = {
+    id,
+    type: "cluster",
+    label: "",
+    freshness: 0,
+    influence: 1,
+    active: false,
+    stage: "source",
+    sector: "geo",
+    tags: [],
+    narrative: "",
+  };
+  return {
+    id,
+    type: "causalNode",
+    position,
+    data: {
+      causal,
+      meta: {
+        stage: "source",
+        sector: "geo",
+        tags: [],
+        narrative: "",
+      },
+      upstream: 0,
+      downstream: 0,
+      focused: false,
+      dimmed: false,
+      viewDimmed: false,
+      variant: "full",
+      density: "curated",
+    },
+    draggable: false,
+    selectable: false,
+    focusable: false,
+    style: {
+      opacity: 0,
+      pointerEvents: "none",
+    },
+  };
 }
 
 function buildDisplayGraph({
