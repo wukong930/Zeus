@@ -83,11 +83,15 @@ body {
 }
 
 .causal-web-flow .react-flow__pane {
-  cursor: grab;
+  cursor: default;
 }
 
 .causal-web-flow .react-flow__pane:active {
-  cursor: grabbing;
+  cursor: default;
+}
+
+.causal-web-flow .react-flow__node {
+  cursor: default;
 }
 
 .causal-web-flow .react-flow__edge-path {

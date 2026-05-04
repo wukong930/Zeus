@@ -446,6 +446,14 @@ function CausalWebCanvas({
     [density, graphEdges, graphNodes, highlightedNodeIds, isFull, metaByNodeId, relationCounts, scopedBaseNodeIds, variant]
   );
   const viewNodeIds = displayGraph.nodeIds;
+  const displayFitNodeIds = useMemo(
+    () => [...displayGraph.nodeIds].sort(),
+    [displayGraph.nodeIds]
+  );
+  const displayNodeSignature = useMemo(
+    () => displayFitNodeIds.join("|"),
+    [displayFitNodeIds]
+  );
   const highlightedEdgeIds = useMemo(() => {
     if (!activeFocusId) return new Set<string>();
     return new Set(
@@ -582,6 +590,17 @@ function CausalWebCanvas({
     },
     [isFull]
   );
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      const fitIds = displayNodeSignature ? displayNodeSignature.split("|") : [];
+      void flow.fitView({
+        ...(isFull ? fitViewOptions : previewFitViewOptions),
+        nodes: fitIds.map((id) => ({ id })),
+      });
+    }, isFull ? 80 : 120);
+    return () => window.clearTimeout(timer);
+  }, [displayNodeSignature, flow, isFull]);
 
   return (
     <div
@@ -977,7 +996,7 @@ function SemanticBackdrop({
               className="causal-stage-band absolute rounded-sm border"
               style={{
                 left: band.x,
-                top: 28,
+                top: 12,
                 width: band.width,
                 height,
                 borderColor: `${meta.color}${active ? "35" : "18"}`,
@@ -986,7 +1005,7 @@ function SemanticBackdrop({
               }}
             >
               <div
-                className="absolute left-3 top-14 rounded-xs border bg-black/70 px-2 py-1 text-caption font-medium shadow-inner-panel"
+                className="absolute left-1/2 top-3 -translate-x-1/2 rounded-xs border bg-black/70 px-2 py-1 text-caption font-medium shadow-inner-panel"
                 style={{ borderColor: `${meta.color}42`, color: meta.color }}
               >
                 {text(meta.label)}
@@ -1129,10 +1148,6 @@ function CausalNodeCard({ data, selected }: NodeProps<CausalFlowNode>) {
 
       {node.active && (
         <>
-          <span
-            className="pointer-events-none absolute -inset-1 rounded-sm border opacity-40 animate-heartbeat"
-            style={{ borderColor: color }}
-          />
           <span
             className="causal-node-scan pointer-events-none absolute left-3 right-3 top-2 h-px opacity-70"
             style={{ background: `linear-gradient(90deg, transparent, ${color}, transparent)` }}
@@ -1831,7 +1846,7 @@ function layoutDisplayNodes(
   variant: "full" | "preview"
 ): CausalNode[] {
   const yStep = nodeYStep(density, variant);
-  const yStart = variant === "preview" ? 72 : 92;
+  const yStart = variant === "preview" ? 58 : 76;
   return STAGE_ORDER.flatMap((stage) => {
     const stageNodes = nodes
       .filter((node) => (metaByNodeId.get(node.id) ?? semanticMetaForNode(node)).stage === stage)

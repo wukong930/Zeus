@@ -94,7 +94,7 @@ export default function CommandCenterPage() {
           </div>
           <CausalWeb
             variant="preview"
-            className="absolute inset-0 top-12"
+            className="absolute inset-x-0 bottom-0 top-12"
             nodes={causalNodes}
             edges={causalEdges}
           />
