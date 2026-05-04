@@ -370,6 +370,10 @@ function CausalWebCanvas({
     () => viewVisibleNodeIds(view, graphNodes, graphEdges, metaByNodeId),
     [graphEdges, graphNodes, metaByNodeId, view]
   );
+  const strictViewNodeIds = useMemo(
+    () => viewVisibleNodeIds(view, graphNodes, graphEdges, metaByNodeId, { allowCounterFallback: false }),
+    [graphEdges, graphNodes, metaByNodeId, view]
+  );
   const relationCounts = useMemo(() => {
     const counts = new Map<string, { upstream: number; downstream: number }>();
     for (const node of graphNodes) {
@@ -411,20 +415,39 @@ function CausalWebCanvas({
     });
   }, [eventNodes, isFull]);
 
-  const scopedBaseNodeIds = useMemo(() => {
-    if (!isFull || view !== "all" || eventNodes.length === 0 || selectedEventIds.size === 0) {
-      return baseViewNodeIds;
-    }
+  const selectedEventChainIds = useMemo(() => {
     const ids = new Set<string>();
     for (const eventId of selectedEventIds) {
-      if (!baseViewNodeIds.has(eventId)) continue;
       for (const id of downstreamChainIds(eventId, graphEdges)) {
-        if (baseViewNodeIds.has(id)) ids.add(id);
+        ids.add(id);
       }
     }
-    if (ids.size <= selectedEventIds.size) return baseViewNodeIds;
-    return ids.size > 0 ? ids : baseViewNodeIds;
-  }, [baseViewNodeIds, eventNodes.length, graphEdges, isFull, selectedEventIds, view]);
+    return ids;
+  }, [graphEdges, selectedEventIds]);
+
+  const eventScopeActive =
+    isFull && view !== "all" && eventNodes.length > 0 && selectedEventIds.size > 0;
+
+  const scopedBaseNodeIds = useMemo(() => {
+    if (!isFull || eventNodes.length === 0 || selectedEventIds.size === 0) {
+      return baseViewNodeIds;
+    }
+
+    if (view === "all") {
+      const ids = new Set<string>();
+      for (const id of selectedEventChainIds) {
+        if (baseViewNodeIds.has(id)) ids.add(id);
+      }
+      if (ids.size <= selectedEventIds.size) return baseViewNodeIds;
+      return ids.size > 0 ? ids : baseViewNodeIds;
+    }
+
+    const scopedViewIds = new Set<string>();
+    for (const id of selectedEventChainIds) {
+      if (strictViewNodeIds.has(id)) scopedViewIds.add(id);
+    }
+    return scopedViewIds;
+  }, [baseViewNodeIds, eventNodes.length, isFull, selectedEventChainIds, selectedEventIds.size, strictViewNodeIds, view]);
 
   const focusId = isFull ? selectedNode ?? hoveredNode : null;
   const activeFocusId = focusId && scopedBaseNodeIds.has(focusId) ? focusId : null;
@@ -447,6 +470,7 @@ function CausalWebCanvas({
       }),
     [density, graphEdges, graphNodes, highlightedNodeIds, isFull, metaByNodeId, relationCounts, scopedBaseNodeIds, variant]
   );
+  const eventScopeEmpty = eventScopeActive && displayGraph.visibleRealCount === 0;
   const viewNodeIds = displayGraph.nodeIds;
   const displayFitNodeIds = useMemo(
     () => [...displayGraph.nodeIds].sort(),
@@ -732,7 +756,7 @@ function CausalWebCanvas({
           </ReactFlow>
 
           {isFull && viewNodeIds.size === 0 && (
-            <EmptyGraphState view={view} />
+            <EmptyGraphState view={view} eventScoped={eventScopeEmpty} />
           )}
         </div>
 
@@ -757,6 +781,7 @@ function CausalWebCanvas({
               hiddenCount={displayGraph.hiddenCount}
               nodes={graphNodes}
               metaByNodeId={metaByNodeId}
+              eventScoped={eventScopeActive}
             />
             <Legend />
           </div>
@@ -953,19 +978,25 @@ function EventPoolPanel({
   );
 }
 
-function EmptyGraphState({ view }: { view: View }) {
+function EmptyGraphState({ view, eventScoped = false }: { view: View; eventScoped?: boolean }) {
   const { text } = useI18n();
   const meta = VIEW_META[view];
   const Icon = meta.icon;
+  const title = eventScoped ? eventScopedEmptyTitle(view) : "当前视图暂无节点";
+  const body = eventScoped
+    ? "此视图现在只显示当前事件源直接或间接传导到的下游节点。"
+    : view === "counter"
+      ? "当前样本暂无反证节点，已建议改用证据/反证视图。"
+      : "请调整筛选或选择更多事件。";
   return (
     <div className="pointer-events-none absolute inset-0 z-[850] flex items-center justify-center p-8">
       <div className="max-w-sm rounded-sm border border-border-default bg-bg-surface-overlay/95 p-5 text-center shadow-data-panel backdrop-blur-sm">
         <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-sm border border-border-subtle bg-bg-base text-text-secondary">
           <Icon className="h-5 w-5" />
         </div>
-        <div className="mt-3 text-sm font-semibold text-text-primary">{text("当前视图暂无节点")}</div>
+        <div className="mt-3 text-sm font-semibold text-text-primary">{text(title)}</div>
         <div className="mt-1 text-xs text-text-secondary">
-          {text(view === "counter" ? "当前样本暂无反证节点，已建议改用证据/反证视图。" : "请调整筛选或选择更多事件。")}
+          {text(body)}
         </div>
       </div>
     </div>
@@ -1074,6 +1105,7 @@ function ViewBrief({
   hiddenCount,
   nodes,
   metaByNodeId,
+  eventScoped,
 }: {
   view: View;
   focusId: string | null;
@@ -1081,6 +1113,7 @@ function ViewBrief({
   hiddenCount: number;
   nodes: CausalNode[];
   metaByNodeId: Map<string, NodeSemanticMeta>;
+  eventScoped: boolean;
 }) {
   const { lang, text } = useI18n();
   const meta = VIEW_META[view];
@@ -1108,7 +1141,9 @@ function ViewBrief({
         )}
       </div>
       <div className="mt-1 line-clamp-1 text-xs text-text-secondary">
-        {focusNode && focusMeta ? nodeNarrative(focusNode, focusMeta, lang, text) : text(meta.brief)}
+        {focusNode && focusMeta
+          ? nodeNarrative(focusNode, focusMeta, lang, text)
+          : text(eventScoped ? "事件源作用域：仅展示当前事件源直接或间接传导到的下游节点。" : meta.brief)}
       </div>
     </div>
   );
@@ -1973,6 +2008,13 @@ function eventDisplayKey(node: CausalNode) {
   return `${node.labelZh || node.label}|${symbols}`;
 }
 
+function eventScopedEmptyTitle(view: View) {
+  if (view === "portfolio") return "当前事件源暂无持仓下游";
+  if (view === "counter") return "当前事件源暂无反证下游";
+  if (view === "alerts") return "当前事件源暂无预警下游";
+  return "当前事件源暂无下游节点";
+}
+
 function nodeLabel(node: CausalNode, lang: Language, text: (source: string) => string) {
   if (lang === "zh") return text(node.labelZh || node.label || "");
   return text(node.labelEn || node.label || "");
@@ -1998,9 +2040,11 @@ function viewVisibleNodeIds(
   view: View,
   nodes: CausalNode[],
   edges: CausalEdge[],
-  metaByNodeId: Map<string, NodeSemanticMeta>
+  metaByNodeId: Map<string, NodeSemanticMeta>,
+  options: { allowCounterFallback?: boolean } = {}
 ): Set<string> {
   if (view === "all") return new Set(nodes.map((node) => node.id));
+  const allowCounterFallback = options.allowCounterFallback ?? true;
 
   const rootIds = nodes.filter((node) => {
     const meta = metaByNodeId.get(node.id) ?? semanticMetaForNode(node);
@@ -2009,7 +2053,7 @@ function viewVisibleNodeIds(
     return Boolean(meta.alertLinked) || node.type === "alert";
   }).map((node) => node.id);
 
-  if (view === "counter" && rootIds.length === 0) {
+  if (view === "counter" && rootIds.length === 0 && allowCounterFallback) {
     return new Set(
       nodes
         .filter((node) => {

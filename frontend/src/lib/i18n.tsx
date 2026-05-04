@@ -195,6 +195,14 @@ const EN: Record<string, string> = {
   "默认展示优先级最高的事件，可手动加入图谱。":
     "The highest-priority events are shown by default; add more to the graph manually.",
   "当前视图暂无节点": "No nodes in this view",
+  "当前事件源暂无持仓下游": "No portfolio downstream for the selected event source",
+  "当前事件源暂无反证下游": "No counter-evidence downstream for the selected event source",
+  "当前事件源暂无预警下游": "No alert downstream for the selected event source",
+  "当前事件源暂无下游节点": "No downstream nodes for the selected event source",
+  "此视图现在只显示当前事件源直接或间接传导到的下游节点。":
+    "This view only shows nodes directly or indirectly downstream of the selected event source.",
+  "事件源作用域：仅展示当前事件源直接或间接传导到的下游节点。":
+    "Event-source scope: only nodes directly or indirectly downstream of the selected event source are shown.",
   "当前样本暂无反证节点，已建议改用证据/反证视图。":
     "There are no counter-evidence nodes in the current sample. Use the evidence/counter view fallback.",
   "请调整筛选或选择更多事件。": "Adjust filters or select more events.",
