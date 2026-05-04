@@ -25,16 +25,25 @@ router = APIRouter(prefix="/api/causal-web", tags=["causal-web"])
 NodeType = Literal["event", "signal", "metric", "alert", "counter"]
 EdgeDirection = Literal["bullish", "bearish", "neutral"]
 Stage = Literal["source", "thesis", "validation", "impact"]
-Sector = Literal["geo", "energy", "rubber", "ferrous", "positioning"]
+Sector = Literal[
+    "geo",
+    "energy",
+    "rubber",
+    "ferrous",
+    "metals",
+    "agri",
+    "precious",
+    "positioning",
+]
 
 SECTOR_BY_CATEGORY = {
     "energy": "energy",
     "chemical": "energy",
     "rubber": "rubber",
     "ferrous": "ferrous",
-    "metals": "ferrous",
-    "precious_metals": "ferrous",
-    "agri": "rubber",
+    "metals": "metals",
+    "precious_metals": "precious",
+    "agri": "agri",
     "unknown": "geo",
 }
 
@@ -225,7 +234,7 @@ def _seed_from_news(row: NewsEvent) -> GraphNodeSeed:
     return GraphNodeSeed(
         id=f"news-{row.id}",
         type="event",
-        label=_short(row.title, 18),
+        label=row.title,
         timestamp=row.published_at,
         category=category,
         confidence=row.llm_confidence,
@@ -242,7 +251,7 @@ def _seed_from_metric(row: IndustryData) -> GraphNodeSeed:
     return GraphNodeSeed(
         id=f"metric-{row.id}",
         type="metric",
-        label=_short(f"{row.symbol} {row.data_type}", 18),
+        label=f"{row.symbol} {row.data_type}",
         timestamp=row.timestamp,
         category=category,
         confidence=0.65,
@@ -257,7 +266,7 @@ def _seed_from_market_metric(row: MarketData) -> GraphNodeSeed:
     return GraphNodeSeed(
         id=f"metric-market-{row.id}",
         type="metric",
-        label=_short(f"{row.symbol} close {row.close:g}", 18),
+        label=f"{row.symbol} close {row.close:g}",
         timestamp=row.timestamp,
         category=category,
         confidence=0.7,
@@ -271,7 +280,7 @@ def _seed_from_signal(row: SignalTrack) -> GraphNodeSeed:
     return GraphNodeSeed(
         id=f"signal-{row.id}",
         type="signal",
-        label=_short(f"{row.signal_type} / {row.category}", 18),
+        label=f"{row.signal_type} / {row.category}",
         timestamp=row.created_at,
         category=row.category,
         confidence=row.confidence,
@@ -291,7 +300,7 @@ def _seed_from_alert(row: Alert) -> GraphNodeSeed:
     return GraphNodeSeed(
         id=f"alert-{row.id}",
         type="alert",
-        label=_short(row.title, 18),
+        label=row.title,
         timestamp=row.triggered_at,
         category=row.category,
         confidence=row.confidence,
@@ -626,6 +635,11 @@ _TEXT_ZH_REPLACEMENTS: tuple[tuple[str, str], ...] = (
     ("adversarial validation not passed or not available", "对抗校验未通过或暂无结果"),
     ("manual confirmation required before execution", "执行前需要人工确认"),
     ("confidence below strong emission threshold", "置信度低于强触发阈值"),
+    ("regime shift", "状态切换"),
+    ("inventory shock", "库存冲击"),
+    ("cost support", "成本支撑"),
+    ("price gap", "价差偏离"),
+    ("precious metals", "贵金属"),
     ("regime_shift", "状态切换"),
     ("inventory_shock", "库存冲击"),
     ("cost_support", "成本支撑"),
@@ -635,6 +649,9 @@ _TEXT_ZH_REPLACEMENTS: tuple[tuple[str, str], ...] = (
     ("supply", "供应"),
     ("demand", "需求"),
     ("inventory", "库存"),
+    ("metals", "有色"),
+    ("agri", "农产"),
+    ("chemical", "能化"),
     ("geopolitical", "地缘"),
     ("policy", "政策"),
     ("breaking", "突发"),
@@ -659,14 +676,14 @@ _TEXT_ZH_REPLACEMENTS: tuple[tuple[str, str], ...] = (
 
 
 def _zh_label(value: str, node_type: NodeType, tags: tuple[str, ...] = ()) -> str:
-    text = _zh_text(value)
-    if _contains_cjk(text):
-        return text
     if node_type == "event":
         event_type = _zh_text(tags[0]) if tags else "外部"
         symbols = [_zh_text(tag) for tag in tags[2:] if tag]
         suffix = f"：{' / '.join(symbols)}" if symbols else ""
         return f"{event_type}事件{suffix}"
+    text = _zh_text(value)
+    if _contains_cjk(text):
+        return text
     if node_type == "metric":
         return f"指标：{text}"
     if node_type == "signal":

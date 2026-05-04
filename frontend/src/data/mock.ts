@@ -86,7 +86,7 @@ export interface CausalNode {
   x?: number;
   y?: number;
   stage?: "source" | "thesis" | "validation" | "impact";
-  sector?: "geo" | "energy" | "rubber" | "ferrous" | "positioning";
+  sector?: "geo" | "energy" | "rubber" | "ferrous" | "metals" | "agri" | "precious" | "positioning";
   tags?: string[];
   tagsZh?: string[];
   tagsEn?: string[];

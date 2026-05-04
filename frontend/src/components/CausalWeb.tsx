@@ -57,7 +57,7 @@ type Mode = "live" | "replay" | "explorer";
 type View = "all" | "portfolio" | "counter" | "alerts";
 type Density = "curated" | "expanded";
 type Stage = "source" | "thesis" | "validation" | "impact";
-type Sector = "geo" | "energy" | "rubber" | "ferrous" | "positioning";
+type Sector = "geo" | "energy" | "rubber" | "ferrous" | "metals" | "agri" | "precious" | "positioning";
 type IconComponent = typeof Activity;
 
 interface CausalWebProps {
@@ -217,6 +217,9 @@ const SECTOR_META: Record<Sector, { label: string; color: string }> = {
   energy: { label: "能化", color: "#F97316" },
   rubber: { label: "橡胶", color: "#10B981" },
   ferrous: { label: "黑色", color: "#C084FC" },
+  metals: { label: "有色", color: "#22D3EE" },
+  agri: { label: "农产", color: "#84CC16" },
+  precious: { label: "贵金属", color: "#FACC15" },
   positioning: { label: "持仓", color: "#EF4444" },
 };
 
@@ -374,10 +377,19 @@ function CausalWebCanvas({
   }, [graphEdges, graphNodes]);
 
   const eventNodes = useMemo(
-    () =>
-      graphNodes
-        .filter((node) => node.type === "event")
-        .sort((a, b) => nodePriority(b, metaByNodeId, relationCounts) - nodePriority(a, metaByNodeId, relationCounts)),
+    () => {
+      const unique = new Map<string, CausalNode>();
+      for (const node of graphNodes.filter((item) => item.type === "event")) {
+        const key = eventDisplayKey(node);
+        const current = unique.get(key);
+        if (!current || nodePriority(node, metaByNodeId, relationCounts) > nodePriority(current, metaByNodeId, relationCounts)) {
+          unique.set(key, node);
+        }
+      }
+      return [...unique.values()].sort(
+        (a, b) => nodePriority(b, metaByNodeId, relationCounts) - nodePriority(a, metaByNodeId, relationCounts)
+      );
+    },
     [graphNodes, metaByNodeId, relationCounts]
   );
 
@@ -402,6 +414,7 @@ function CausalWebCanvas({
         if (baseViewNodeIds.has(id)) ids.add(id);
       }
     }
+    if (ids.size <= selectedEventIds.size) return baseViewNodeIds;
     return ids.size > 0 ? ids : baseViewNodeIds;
   }, [baseViewNodeIds, eventNodes.length, graphEdges, isFull, selectedEventIds, view]);
 
@@ -498,7 +511,7 @@ function CausalWebCanvas({
             showLabel:
               isFull &&
               inView &&
-              (focused || view !== "all" || (mode === "explorer" && density === "expanded" && edge.confidence >= 0.82)),
+              (focused || (mode === "explorer" && density === "expanded" && edge.confidence >= 0.82)),
           },
         };
       }),
@@ -509,6 +522,7 @@ function CausalWebCanvas({
     selectedNode && viewNodeIds.has(selectedNode)
       ? graphNodes.find((node) => node.id === selectedNode)
       : null;
+  const showEventPool = isFull && eventNodes.length > 0 && !selected;
 
   const fitCanvas = useCallback(() => {
     const fitOptions = isFull ? fitViewOptions : previewFitViewOptions;
@@ -595,87 +609,8 @@ function CausalWebCanvas({
         </div>
       )}
 
-      <div className="relative min-h-0 flex-1">
-        <ReactFlow
-          nodes={nodes}
-          edges={edges}
-          nodeTypes={FLOW_NODE_TYPES}
-          edgeTypes={FLOW_EDGE_TYPES}
-          onInit={onInit}
-          onNodeMouseEnter={
-            isFull
-              ? (_, node) => {
-                  if (viewNodeIds.has(node.id) && node.data.causal.type !== "cluster") {
-                    setHoveredNode(node.id);
-                  }
-                }
-              : undefined
-          }
-          onNodeMouseLeave={isFull ? () => setHoveredNode(null) : undefined}
-          onNodeClick={(_, node) => {
-            if (isFull && node.data.causal.type === "cluster") {
-              changeDensity("expanded");
-              return;
-            }
-            if (isFull && viewNodeIds.has(node.id)) {
-              setSelectedNode((current) => (current === node.id ? null : node.id));
-            }
-          }}
-          onPaneClick={() => {
-            setSelectedNode(null);
-            setHoveredNode(null);
-          }}
-          fitView
-          fitViewOptions={isFull ? fitViewOptions : previewFitViewOptions}
-          minZoom={0.28}
-          maxZoom={1.55}
-          nodesDraggable={isFull && mode === "explorer"}
-          nodesConnectable={false}
-          edgesFocusable={isFull}
-          elementsSelectable={isFull}
-          nodesFocusable={isFull}
-          panOnDrag={isFull}
-          zoomOnScroll={isFull}
-          zoomOnPinch={isFull}
-          zoomOnDoubleClick={isFull}
-          preventScrolling={isFull}
-          proOptions={{ hideAttribution: true }}
-        >
-          <Background
-            variant={BackgroundVariant.Dots}
-            gap={30}
-            size={1}
-            color="rgba(115, 115, 115, 0.2)"
-          />
-
-          {isFull && (
-            <>
-              <SemanticBackdrop
-                viewNodeIds={viewNodeIds}
-                nodes={displayGraph.nodes}
-                metaByNodeId={metaByNodeId}
-                height={displayGraph.height}
-              />
-
-              <Controls
-                position="bottom-right"
-                showInteractive={false}
-                fitViewOptions={fitViewOptions}
-              />
-
-              <MiniMap
-                position="bottom-right"
-                pannable
-                zoomable
-                nodeColor={(node) => NODE_COLORS[(node.data as CausalFlowNodeData).causal.type]}
-                nodeStrokeWidth={2}
-                className="causal-minimap !bottom-16 !right-4 !h-24 !w-40 !rounded-sm !border !border-border-default !bg-bg-surface-overlay"
-              />
-            </>
-          )}
-        </ReactFlow>
-
-        {isFull && eventNodes.length > 0 && !selected && (
+      <div className={cn("min-h-0 flex-1", showEventPool ? "grid grid-cols-[300px_minmax(0,1fr)]" : "relative")}>
+        {showEventPool && (
           <EventPoolPanel
             events={eventNodes}
             selectedIds={selectedEventIds}
@@ -683,9 +618,90 @@ function CausalWebCanvas({
           />
         )}
 
-        {isFull && viewNodeIds.size === 0 && (
-          <EmptyGraphState view={view} />
-        )}
+        <div className="relative min-h-0">
+          <ReactFlow
+            nodes={nodes}
+            edges={edges}
+            nodeTypes={FLOW_NODE_TYPES}
+            edgeTypes={FLOW_EDGE_TYPES}
+            onInit={onInit}
+            onNodeMouseEnter={
+              isFull
+                ? (_, node) => {
+                    if (viewNodeIds.has(node.id) && node.data.causal.type !== "cluster") {
+                      setHoveredNode(node.id);
+                    }
+                  }
+                : undefined
+            }
+            onNodeMouseLeave={isFull ? () => setHoveredNode(null) : undefined}
+            onNodeClick={(_, node) => {
+              if (isFull && node.data.causal.type === "cluster") {
+                changeDensity("expanded");
+                return;
+              }
+              if (isFull && viewNodeIds.has(node.id)) {
+                setSelectedNode((current) => (current === node.id ? null : node.id));
+              }
+            }}
+            onPaneClick={() => {
+              setSelectedNode(null);
+              setHoveredNode(null);
+            }}
+            fitView
+            fitViewOptions={isFull ? fitViewOptions : previewFitViewOptions}
+            minZoom={0.28}
+            maxZoom={1.55}
+            nodesDraggable={isFull && mode === "explorer"}
+            nodesConnectable={false}
+            edgesFocusable={isFull}
+            elementsSelectable={isFull}
+            nodesFocusable={isFull}
+            panOnDrag={isFull}
+            zoomOnScroll={isFull}
+            zoomOnPinch={isFull}
+            zoomOnDoubleClick={isFull}
+            preventScrolling={isFull}
+            proOptions={{ hideAttribution: true }}
+          >
+            <Background
+              variant={BackgroundVariant.Dots}
+              gap={30}
+              size={1}
+              color="rgba(115, 115, 115, 0.2)"
+            />
+
+            {isFull && (
+              <>
+                <SemanticBackdrop
+                  viewNodeIds={viewNodeIds}
+                  nodes={displayGraph.nodes}
+                  metaByNodeId={metaByNodeId}
+                  height={displayGraph.height}
+                />
+
+                <Controls
+                  position="bottom-right"
+                  showInteractive={false}
+                  fitViewOptions={fitViewOptions}
+                />
+
+                <MiniMap
+                  position="bottom-right"
+                  pannable
+                  zoomable
+                  nodeColor={(node) => NODE_COLORS[(node.data as CausalFlowNodeData).causal.type]}
+                  nodeStrokeWidth={2}
+                  className="causal-minimap !bottom-16 !right-4 !h-24 !w-40 !rounded-sm !border !border-border-default !bg-bg-surface-overlay"
+                />
+              </>
+            )}
+          </ReactFlow>
+
+          {isFull && viewNodeIds.size === 0 && (
+            <EmptyGraphState view={view} />
+          )}
+        </div>
 
         {isFull && selected && (
           <NodeDetails
@@ -845,7 +861,7 @@ function EventPoolPanel({
   const { lang, text } = useI18n();
 
   return (
-    <div className="absolute left-3 top-3 z-[900] flex max-h-[calc(100%-1.5rem)] w-[286px] flex-col overflow-hidden rounded-sm border border-border-default bg-[linear-gradient(180deg,rgba(18,20,19,0.96),rgba(3,5,4,0.98))] shadow-data-panel backdrop-blur-sm">
+    <aside className="z-[20] m-3 mr-0 flex min-h-0 flex-col overflow-hidden rounded-sm border border-border-default bg-[linear-gradient(180deg,rgba(18,20,19,0.96),rgba(3,5,4,0.98))] shadow-data-panel">
       <div className="shrink-0 border-b border-border-subtle px-3 py-2 shadow-inner-panel">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-2 text-sm font-semibold text-text-primary">
@@ -895,7 +911,7 @@ function EventPoolPanel({
           );
         })}
       </div>
-    </div>
+    </aside>
   );
 }
 
@@ -1749,6 +1765,11 @@ function nodePriority(
   );
 }
 
+function eventDisplayKey(node: CausalNode) {
+  const symbols = (node.tags ?? []).filter((tag) => /^[A-Z]{1,3}$/.test(tag)).join("|");
+  return `${node.labelZh || node.label}|${symbols}`;
+}
+
 function nodeLabel(node: CausalNode, lang: Language, text: (source: string) => string) {
   if (lang === "zh") return text(node.labelZh || node.label || "");
   return text(node.labelEn || node.label || "");
@@ -1869,6 +1890,9 @@ function sectorForLabel(label: string): Sector {
   if (/(sc|原油|pta|pp|energy|eia|fred|oil)/i.test(value)) return "energy";
   if (/(ru|nr|br|橡胶|rubber|latex)/i.test(value)) return "rubber";
   if (/(rb|hc|jm|焦|铁|螺纹|ferrous)/i.test(value)) return "ferrous";
+  if (/(cu|al|zn|ni|铜|铝|锌|镍|metals)/i.test(value)) return "metals";
+  if (/(^|\b)(m|y|p)(\b|$)|豆|棕榈|agri/i.test(value)) return "agri";
+  if (/(au|ag|黄金|白银|precious)/i.test(value)) return "precious";
   if (/(position|持仓|cftc)/i.test(value)) return "positioning";
   return "geo";
 }
