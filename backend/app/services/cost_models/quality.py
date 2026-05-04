@@ -6,8 +6,16 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.cost_snapshot import CostSnapshot
-from app.services.cost_models.cost_chain import FERROUS_CHAIN_ORDER, RUBBER_CHAIN_ORDER
-from app.services.cost_models.snapshots import calculate_cost_snapshot, latest_cost_snapshots
+from app.services.cost_models.cost_chain import (
+    FERROUS_CHAIN_ORDER,
+    RUBBER_CHAIN_ORDER,
+    calculate_cost_chain,
+)
+from app.services.cost_models.snapshots import (
+    calculate_cost_snapshot,
+    current_prices_for_symbols,
+    latest_cost_snapshots,
+)
 from app.services.signals.evaluators.cost_model import (
     CapacityContractionEvaluator,
     MarginalCapacitySqueezeEvaluator,
@@ -247,10 +255,23 @@ async def latest_or_calculated_snapshots(
     symbols: tuple[str, ...] = FERROUS_CHAIN_ORDER,
 ) -> dict[str, CostSnapshot]:
     snapshots = await latest_cost_snapshots(session, symbols)
-    for symbol in symbols:
+    missing_symbols = tuple(symbol.upper() for symbol in symbols if symbol.upper() not in snapshots)
+    if not missing_symbols:
+        return snapshots
+
+    if symbols in {FERROUS_CHAIN_ORDER, RUBBER_CHAIN_ORDER}:
+        current_prices = await current_prices_for_symbols(session, symbols)
+        chain = calculate_cost_chain(symbols=symbols, current_prices=current_prices)
+        snapshot_date = datetime.now(timezone.utc).date()
+        for symbol in missing_symbols:
+            snapshots[symbol] = CostSnapshot(
+                snapshot_date=snapshot_date,
+                **chain.results[symbol].to_snapshot_payload(),
+            )
+        return snapshots
+
+    for symbol in missing_symbols:
         normalized = symbol.upper()
-        if normalized in snapshots:
-            continue
         result = await calculate_cost_snapshot(session, normalized)
         payload = result.to_snapshot_payload()
         snapshots[normalized] = CostSnapshot(

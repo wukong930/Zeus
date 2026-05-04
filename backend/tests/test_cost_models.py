@@ -16,6 +16,7 @@ from app.services.cost_models.quality import (
     compare_public_benchmarks,
     evaluate_historical_signal_cases,
     evaluate_historical_rubber_signal_cases,
+    latest_or_calculated_snapshots,
 )
 from app.services.cost_models.rubber_sources import (
     production_rubber_fallback_inputs,
@@ -254,6 +255,30 @@ async def test_cost_signal_contexts_uses_single_batch_query() -> None:
     assert [context["symbol1"] for context in contexts] == ["RB", "I"]
     assert len(contexts[0]["cost_snapshots"]) == 2
     assert session.scalars_count == 1
+
+
+async def test_latest_or_calculated_snapshots_calculates_known_chain_with_single_price_query() -> None:
+    session = FakeSession(
+        scalar_rows=[],
+        result_rows=[
+            ("JM", 1100),
+            ("J", 1900),
+            ("I", 820),
+            ("RB", 3300),
+            ("HC", 3400),
+        ],
+    )
+
+    snapshots = await latest_or_calculated_snapshots(
+        session,  # type: ignore[arg-type]
+        ("JM", "J", "I", "RB", "HC"),
+    )
+
+    assert set(snapshots) == {"JM", "J", "I", "RB", "HC"}
+    assert snapshots["RB"].current_price == 3300
+    assert snapshots["RB"].breakeven_p90 > snapshots["RB"].breakeven_p50
+    assert session.scalars_count == 1
+    assert session.execute_count == 1
 
 
 def test_build_cost_signal_context_serializes_snapshot_history() -> None:
