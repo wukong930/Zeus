@@ -46,8 +46,14 @@ class Settings(BaseSettings):
     fred_base_url: str = "https://api.stlouisfed.org/fred"
     data_source_eia_enabled: bool = False
     eia_api_key: str | None = None
+    eia_base_url: str = "https://api.eia.gov"
     data_source_tushare_enabled: bool = False
     tushare_token: str | None = None
+    tushare_base_url: str = "http://api.tushare.pro"
+    data_source_tushare_exchanges: str = "SHFE,DCE,CZCE,INE"
+    data_source_tushare_symbols: str = (
+        "RB,HC,I,J,JM,RU,NR,BR,SC,TA,MA,PP,CU,AL,ZN,NI,M,Y,P,AU,AG"
+    )
 
     model_config = SettingsConfigDict(
         env_file=".env",

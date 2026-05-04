@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -13,8 +14,15 @@ from app.services.data_sources.akshare_futures import (
     collect_akshare_market_data,
     parse_akshare_symbols,
 )
+from app.services.data_sources.eia import collect_eia_indicators
 from app.services.data_sources.fred import collect_fred_indicators
 from app.services.data_sources.open_meteo import collect_open_meteo_weather
+from app.services.data_sources.tushare_futures import (
+    DEFAULT_TUSHARE_EXCHANGES,
+    DEFAULT_TUSHARE_SYMBOLS,
+    collect_tushare_market_data,
+    parse_csv_tuple,
+)
 from app.services.etl.writers import append_industry_data, append_market_data
 
 CATEGORY_BY_SYMBOL = {
@@ -78,10 +86,10 @@ async def run_free_data_ingest(
                 limit=current.data_source_akshare_history_limit,
             )
             market_payloads.extend(akshare_result.rows)
-            errors.extend(akshare_result.errors)
+            errors.extend(sanitize_source_errors(akshare_result.errors))
             source_counts["akshare"] = len(akshare_result.rows)
         except Exception as exc:
-            errors.append({"source": "akshare", "error": str(exc)})
+            errors.append({"source": "akshare", "error": safe_error_message(exc)})
 
     if current.data_source_open_meteo_enabled:
         try:
@@ -89,7 +97,7 @@ async def run_free_data_ingest(
             industry_payloads.extend(weather_rows)
             source_counts["open_meteo"] = len(weather_rows)
         except Exception as exc:
-            errors.append({"source": "open_meteo", "error": str(exc)})
+            errors.append({"source": "open_meteo", "error": safe_error_message(exc)})
 
     if current.data_source_fred_enabled and current.fred_api_key:
         try:
@@ -100,7 +108,38 @@ async def run_free_data_ingest(
             industry_payloads.extend(fred_rows)
             source_counts["fred"] = len(fred_rows)
         except Exception as exc:
-            errors.append({"source": "fred", "error": str(exc)})
+            errors.append({"source": "fred", "error": safe_error_message(exc, current.fred_api_key)})
+
+    if current.data_source_eia_enabled and current.eia_api_key:
+        try:
+            eia_rows = await collect_eia_indicators(
+                api_key=current.eia_api_key,
+                base_url=current.eia_base_url,
+            )
+            industry_payloads.extend(eia_rows)
+            source_counts["eia"] = len(eia_rows)
+        except Exception as exc:
+            errors.append({"source": "eia", "error": safe_error_message(exc, current.eia_api_key)})
+
+    if current.data_source_tushare_enabled and current.tushare_token:
+        try:
+            tushare_result = await collect_tushare_market_data(
+                token=current.tushare_token,
+                base_url=current.tushare_base_url,
+                exchanges=parse_csv_tuple(
+                    current.data_source_tushare_exchanges,
+                    DEFAULT_TUSHARE_EXCHANGES,
+                ),
+                symbols=parse_csv_tuple(
+                    current.data_source_tushare_symbols,
+                    DEFAULT_TUSHARE_SYMBOLS,
+                ),
+            )
+            market_payloads.extend(tushare_result.rows)
+            errors.extend(sanitize_source_errors(tushare_result.errors, current.tushare_token))
+            source_counts["tushare"] = len(tushare_result.rows)
+        except Exception as exc:
+            errors.append({"source": "tushare", "error": safe_error_message(exc, current.tushare_token)})
 
     if market_payloads:
         await append_market_data(session, market_payloads)
@@ -151,3 +190,25 @@ def market_context_payloads(rows: list[MarketDataCreate], *, per_symbol_limit: i
 
 def now_utc_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def sanitize_source_errors(
+    errors: list[dict[str, str]],
+    *secrets: str | None,
+) -> list[dict[str, str]]:
+    return [
+        {
+            **error,
+            "error": safe_error_message(error.get("error", ""), *secrets),
+        }
+        for error in errors
+    ]
+
+
+def safe_error_message(error: object, *secrets: str | None) -> str:
+    message = str(error)
+    for secret in secrets:
+        if secret:
+            message = message.replace(secret, "[redacted]")
+    message = re.sub(r"([?&](?:api_key|token)=)[^&\s']+", r"\1[redacted]", message)
+    return message
