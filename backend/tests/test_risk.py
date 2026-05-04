@@ -1,6 +1,8 @@
 from datetime import datetime, timedelta, timezone
 
+from app.models.market_data import MarketData
 from app.services.risk.correlation import build_correlation_matrix
+from app.services.risk.market_data import _risk_market_data_statement, load_risk_market_data
 from app.services.risk.stress import StressScenario, extract_historical_extremes, run_stress_test
 from app.services.risk.types import RiskLeg, RiskMarketPoint, RiskPosition
 from app.services.risk.var import calculate_var
@@ -31,6 +33,26 @@ def _position(*, status: str = "open", legs: tuple[RiskLeg, ...] | None = None) 
     )
 
 
+class FakeScalars:
+    def __init__(self, rows) -> None:
+        self._rows = rows
+
+    def all(self):
+        return list(self._rows)
+
+
+class FakeSession:
+    def __init__(self, rows) -> None:
+        self.rows = rows
+        self.scalars_count = 0
+        self.statement = None
+
+    async def scalars(self, statement):
+        self.scalars_count += 1
+        self.statement = statement
+        return FakeScalars(self.rows)
+
+
 def test_calculate_var_returns_zero_for_empty_positions() -> None:
     result = calculate_var([], {})
 
@@ -38,6 +60,40 @@ def test_calculate_var_returns_zero_for_empty_positions() -> None:
     assert result.var99 == 0
     assert result.cvar95 == 0
     assert result.cvar99 == 0
+
+
+async def test_load_risk_market_data_batches_symbols_and_preserves_empty_keys() -> None:
+    rows = [
+        _market_row("RB2506", close=3500, days=2),
+        _market_row("RB2506", close=3490, days=1),
+        _market_row("HC2506", close=3410, days=2),
+    ]
+    session = FakeSession(rows)
+
+    result = await load_risk_market_data(
+        session,  # type: ignore[arg-type]
+        ["RB2506", "HC2506", "MISSING"],
+        limit=60,
+    )
+
+    assert set(result) == {"RB2506", "HC2506", "MISSING"}
+    assert [point.close for point in result["RB2506"]] == [3500, 3490]
+    assert [point.close for point in result["HC2506"]] == [3410]
+    assert result["MISSING"] == []
+    assert session.scalars_count == 1
+
+
+def test_risk_market_data_statement_limits_rows_per_symbol() -> None:
+    compiled = str(
+        _risk_market_data_statement(requested_symbols=("RB2506", "HC2506"), limit=60).compile(
+            compile_kwargs={"literal_binds": True}
+        )
+    )
+
+    assert "row_number() OVER" in compiled
+    assert "PARTITION BY market_data.symbol, market_data.contract_month, market_data.timestamp" in compiled
+    assert "PARTITION BY market_data.symbol ORDER BY market_data.timestamp DESC" in compiled
+    assert "symbol_rn <= 60" in compiled
 
 
 def test_calculate_var_uses_loss_semantics_for_open_position() -> None:
@@ -114,3 +170,23 @@ def test_correlation_matrix_detects_inverse_relationship() -> None:
     assert result.matrix[1][1] == 1
     assert result.matrix[0][1] < -0.99
     assert result.matrix[1][0] < -0.99
+
+
+def _market_row(symbol: str, *, close: float, days: int) -> MarketData:
+    timestamp = datetime(2026, 1, 1, tzinfo=timezone.utc) + timedelta(days=days)
+    return MarketData(
+        source_key=None,
+        market="CN",
+        exchange="SHFE",
+        commodity=symbol,
+        symbol=symbol,
+        contract_month=symbol[-4:],
+        timestamp=timestamp,
+        open=close - 1,
+        high=close + 2,
+        low=close - 2,
+        close=close,
+        volume=1000,
+        vintage_at=timestamp,
+        ingested_at=timestamp,
+    )

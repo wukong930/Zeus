@@ -5,9 +5,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.position import Position
-from app.services.market_data.pit import get_market_data_pit
 from app.services.risk.correlation import build_correlation_matrix
-from app.services.risk.types import RiskLeg, RiskMarketPoint, RiskPosition
+from app.services.risk.market_data import load_risk_market_data
+from app.services.risk.types import RiskLeg, RiskPosition
 from app.services.risk.var import calculate_var
 
 CONCENTRATION_LIMIT = 0.55
@@ -70,7 +70,7 @@ async def recalculate_position_risk(session: AsyncSession) -> PositionRiskSnapsh
 
     risk_positions = [_position_to_risk_position(row) for row in rows]
     symbols = sorted({leg.asset for position in risk_positions for leg in position.legs if leg.asset})
-    market_data = await _market_data_for_symbols(session, symbols, limit=252)
+    market_data = await load_risk_market_data(session, symbols, limit=252)
     var_result = calculate_var(risk_positions, market_data)
     correlation = build_correlation_matrix(market_data, symbols, window=60)
 
@@ -96,31 +96,6 @@ def position_symbols(position: Position) -> set[str]:
             if value:
                 symbols.add(value)
     return symbols
-
-
-async def _market_data_for_symbols(
-    session: AsyncSession,
-    symbols: list[str],
-    *,
-    limit: int,
-) -> dict[str, list[RiskMarketPoint]]:
-    market_data: dict[str, list[RiskMarketPoint]] = {}
-    for symbol in symbols:
-        rows = await get_market_data_pit(session, symbol=symbol, limit=limit)
-        market_data[symbol] = [
-            RiskMarketPoint(
-                symbol=row.symbol,
-                timestamp=row.timestamp,
-                open=row.open,
-                high=row.high,
-                low=row.low,
-                close=row.close,
-                volume=row.volume,
-                open_interest=row.open_interest,
-            )
-            for row in rows
-        ]
-    return market_data
 
 
 def _position_to_risk_position(position: Position) -> RiskPosition:

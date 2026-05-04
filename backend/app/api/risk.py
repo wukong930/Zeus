@@ -9,10 +9,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.models.position import Position
-from app.services.market_data.pit import get_market_data_pit
 from app.services.risk.correlation import build_correlation_matrix
+from app.services.risk.market_data import load_risk_market_data
 from app.services.risk.stress import STRESS_SCENARIOS, run_stress_test
-from app.services.risk.types import RiskLeg, RiskMarketPoint, RiskPosition, StressScenario
+from app.services.risk.types import RiskLeg, RiskPosition, StressScenario
 from app.services.risk.var import calculate_var
 
 router = APIRouter(prefix="/api/risk", tags=["risk"])
@@ -36,7 +36,7 @@ async def get_portfolio_var(
 ) -> dict[str, Any]:
     positions = await _open_positions(session)
     symbols = _position_symbols(positions)
-    market_data = await _market_data_for_symbols(session, symbols, limit=252)
+    market_data = await load_risk_market_data(session, symbols, limit=252)
     return {"success": True, "data": calculate_var(positions, market_data, horizon=horizon).to_dict()}
 
 
@@ -81,7 +81,7 @@ async def get_correlation_matrix(
     else:
         symbol_list = _position_symbols(await _open_positions(session))
 
-    market_data = await _market_data_for_symbols(session, symbol_list, limit=window + 10)
+    market_data = await load_risk_market_data(session, symbol_list, limit=window + 10)
     matrix = build_correlation_matrix(market_data, symbol_list, window=window)
     return {"success": True, "data": matrix.to_dict()}
 
@@ -95,31 +95,6 @@ async def _open_positions(session: AsyncSession) -> list[RiskPosition]:
         ).all()
     )
     return [_position_to_risk_position(row) for row in rows]
-
-
-async def _market_data_for_symbols(
-    session: AsyncSession,
-    symbols: list[str],
-    *,
-    limit: int,
-) -> dict[str, list[RiskMarketPoint]]:
-    market_data: dict[str, list[RiskMarketPoint]] = {}
-    for symbol in symbols:
-        rows = await get_market_data_pit(session, symbol=symbol, limit=limit)
-        market_data[symbol] = [
-            RiskMarketPoint(
-                symbol=row.symbol,
-                timestamp=row.timestamp,
-                open=row.open,
-                high=row.high,
-                low=row.low,
-                close=row.close,
-                volume=row.volume,
-                open_interest=row.open_interest,
-            )
-            for row in rows
-        ]
-    return market_data
 
 
 def _position_to_risk_position(position: Position) -> RiskPosition:
