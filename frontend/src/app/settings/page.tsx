@@ -117,24 +117,63 @@ function Toggle({ label, enabled = false }: { label: string; enabled?: boolean }
   return (
     <div className="flex min-h-10 items-center justify-between rounded-sm border border-border-subtle bg-bg-base px-3 py-2 shadow-inner-panel">
       <span className="text-text-secondary">{label}</span>
-      <button
-        type="button"
-        aria-pressed={checked}
-        aria-label={label}
-        onClick={() => setChecked((current) => !current)}
+      <SwitchControl
+        checked={checked}
+        label={label}
+        onToggle={() => setChecked((current) => !current)}
+      />
+    </div>
+  );
+}
+
+function SwitchControl({
+  checked,
+  label,
+  onToggle,
+}: {
+  checked: boolean;
+  label: string;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      onClick={onToggle}
+      className={cn(
+        "relative inline-flex h-[28px] w-[54px] shrink-0 items-center rounded-full border p-[3px] transition-all duration-200 focus-visible:shadow-focus-ring focus-visible:outline-none",
+        checked
+          ? "border-brand-emerald/55 bg-brand-emerald/90 shadow-[0_0_22px_rgba(16,185,129,0.28)]"
+          : "border-border-default bg-[linear-gradient(180deg,rgba(31,31,31,0.95),rgba(8,8,8,0.98))]"
+      )}
+    >
+      <span
         className={cn(
-          "relative h-6 w-11 shrink-0 rounded-full border transition-colors focus-visible:shadow-focus-ring focus-visible:outline-none",
-          checked ? "border-brand-emerald/45 bg-brand-emerald shadow-glow-emerald" : "border-border-default bg-bg-surface-raised"
+          "absolute left-[8px] font-mono text-[8px] font-semibold leading-none tracking-wide text-white/80 transition-opacity",
+          checked ? "opacity-100" : "opacity-0"
         )}
       >
-        <span
-          className={cn(
-            "absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform",
-            checked ? "translate-x-5" : "translate-x-0"
-          )}
-        />
-      </button>
-    </div>
+        ON
+      </span>
+      <span
+        className={cn(
+          "absolute right-[6px] font-mono text-[8px] font-semibold leading-none tracking-wide text-text-muted transition-opacity",
+          checked ? "opacity-0" : "opacity-100"
+        )}
+      >
+        OFF
+      </span>
+      <span
+        className={cn(
+          "relative z-10 h-[20px] w-[20px] rounded-full border transition-transform duration-200",
+          checked
+            ? "translate-x-[26px] border-white bg-white shadow-[0_4px_12px_rgba(0,0,0,0.32)]"
+            : "translate-x-0 border-border-strong bg-text-secondary shadow-[0_3px_10px_rgba(0,0,0,0.45)]"
+        )}
+      />
+    </button>
   );
 }
 
