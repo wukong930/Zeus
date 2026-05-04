@@ -5,6 +5,7 @@ from typing import Any
 
 from app.core.database import AsyncSessionLocal
 from app.core.events import publish
+from app.core.config import get_settings
 from app.services.adversarial.null_hypothesis import precompute_all_null_distributions
 from app.services.calibration.regime_batch import detect_and_record_all_regimes
 from app.services.calibration.shadow_tracker import evaluate_pending_signals
@@ -19,9 +20,11 @@ from app.services.cost_models.snapshots import (
 from app.services.learning.drift_monitor import run_drift_monitor
 from app.services.learning.reflection_agent import run_reflection_agent
 from app.services.learning.recommendation_attribution import update_open_recommendation_excursions
+from app.services.data_sources.free_ingest import run_free_data_ingest
 from app.services.news.collectors import (
     CailiansheCollector,
     ExchangeAnnouncementsCollector,
+    GdeltCollector,
     RubberSupplyCollector,
     SinaFuturesCollector,
 )
@@ -67,13 +70,16 @@ DEFAULT_JOB_DEFINITIONS: tuple[JobDefinition, ...] = (
 async def ingest_job() -> dict[str, Any]:
     async with AsyncSessionLocal() as session:
         watchlist = await get_enabled_watchlist(session)
+        ingest_result = await run_free_data_ingest(session)
         event = await publish(
             "market.update",
             {
                 "job_id": "ingest",
                 "triggered_at": datetime.now(timezone.utc).isoformat(),
-                "status": "ready",
+                "status": "completed",
                 "watchlist_count": len(watchlist),
+                "data_sources": ingest_result.to_dict(),
+                "contexts": ingest_result.contexts,
             },
             source="scheduler",
             session=session,
@@ -83,6 +89,7 @@ async def ingest_job() -> dict[str, Any]:
         "status": "published",
         "event_id": str(event.id),
         "channel": event.channel,
+        **ingest_result.to_dict(),
         "timestamp": event.timestamp.isoformat(),
     }
 
@@ -237,12 +244,19 @@ async def adversarial_cache_job() -> dict[str, Any]:
 
 
 async def news_ingest_job() -> dict[str, Any]:
-    collectors = (
+    settings = get_settings()
+    collectors = [
         CailiansheCollector(),
         SinaFuturesCollector(),
         ExchangeAnnouncementsCollector(),
-        RubberSupplyCollector(),
-    )
+    ]
+    if settings.data_source_gdelt_enabled:
+        collectors.extend(
+            [
+                GdeltCollector(query=settings.data_source_gdelt_query),
+                RubberSupplyCollector(),
+            ]
+        )
     raw_items = []
     collector_errors = []
     for collector in collectors:

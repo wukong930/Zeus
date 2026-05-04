@@ -1,5 +1,8 @@
 from datetime import datetime, timezone
 
+import httpx
+
+from app.services.news.collectors.gdelt import GdeltCollector
 from app.models.news_events import NewsEvent
 from app.services.news.collectors.rubber_supply import RubberSupplyCollector
 from app.services.news.dedup import news_dedup_hash, normalize_title
@@ -76,6 +79,24 @@ async def test_rubber_supply_collector_enriches_gdelt_items() -> None:
     assert rows[0].metadata["affected_symbols"] == ["NR", "RU"]
     assert rows[0].metadata["collector_family"] == "rubber_supply"
     assert rows[0].metadata["origin_markets"] == ["Thailand"]
+
+
+async def test_gdelt_collector_treats_rate_limit_as_empty_batch() -> None:
+    async def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(429, text="Too Many Requests")
+
+    rows = await GdeltCollector(transport=httpx.MockTransport(handler)).collect()
+
+    assert rows == []
+
+
+async def test_gdelt_collector_treats_empty_or_invalid_json_as_empty_batch() -> None:
+    async def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, text="")
+
+    rows = await GdeltCollector(transport=httpx.MockTransport(handler)).collect()
+
+    assert rows == []
 
 
 def test_news_extractor_maps_rubber_origin_weather_metadata() -> None:

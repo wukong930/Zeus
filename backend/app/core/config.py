@@ -33,6 +33,22 @@ class Settings(BaseSettings):
     deepseek_api_key: str | None = None
     deepseek_base_url: str = "https://api.deepseek.com/v1"
 
+    data_source_akshare_enabled: bool = False
+    data_source_akshare_symbols: str = (
+        "RB0,HC0,I0,J0,JM0,RU0,NR0,BR0,SC0,TA0,MA0,PP0,CU0,AL0,ZN0,NI0,M0,Y0,P0,AU0,AG0"
+    )
+    data_source_akshare_history_limit: int = 80
+    data_source_gdelt_enabled: bool = False
+    data_source_gdelt_query: str = "commodities futures OR supply chain OR inventory"
+    data_source_open_meteo_enabled: bool = False
+    data_source_fred_enabled: bool = False
+    fred_api_key: str | None = None
+    fred_base_url: str = "https://api.stlouisfed.org/fred"
+    data_source_eia_enabled: bool = False
+    eia_api_key: str | None = None
+    data_source_tushare_enabled: bool = False
+    tushare_token: str | None = None
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
