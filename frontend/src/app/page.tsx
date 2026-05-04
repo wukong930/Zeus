@@ -41,7 +41,7 @@ export default function CommandCenterPage() {
           <div className="absolute top-4 right-4 z-10 flex items-center gap-2">
             <Badge variant="emerald">
               <span className="w-1.5 h-1.5 rounded-full bg-brand-emerald-bright animate-heartbeat" />
-              Live
+              {text("Live")}
             </Badge>
             <Link
               href="/causal-web"
@@ -54,7 +54,7 @@ export default function CommandCenterPage() {
           <div className="px-5 pt-4">
             <div className="flex items-center gap-2">
               <Network className="w-4 h-4 text-brand-emerald-bright" />
-              <span className="text-h3">Causal Web</span>
+              <span className="text-h3">{text("Causal Web")}</span>
               <span className="text-caption text-text-muted">{text("实时活跃因果链")}</span>
             </div>
           </div>

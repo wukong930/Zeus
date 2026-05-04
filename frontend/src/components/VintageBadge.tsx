@@ -12,7 +12,7 @@ export function VintageBadge({ vintageAt }: { vintageAt?: string }) {
 
   return (
     <Badge variant="neutral" className="font-mono">
-      vintage {formatCompactDate(vintageAt, lang)}
+      {text("vintage")} {formatCompactDate(vintageAt, lang)}
     </Badge>
   );
 }

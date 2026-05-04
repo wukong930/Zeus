@@ -149,9 +149,11 @@ function Stat({
   colorClass: string;
   icon?: React.ReactNode;
 }) {
+  const { text } = useI18n();
+
   return (
     <div className="rounded-sm border border-border-subtle bg-bg-base p-3 shadow-inner-panel">
-      <div className="text-caption text-text-muted mb-1">{label}</div>
+      <div className="text-caption text-text-muted mb-1">{text(label)}</div>
       <div className={cn("font-mono text-sm font-semibold flex items-center gap-1 tabular-nums", colorClass)}>
         {icon}
         {value}

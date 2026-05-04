@@ -65,7 +65,7 @@ export default function AlertsPage() {
       {/* Filter sidebar */}
       <aside className="w-80 overflow-y-auto border-r border-border-subtle bg-bg-surface/70 p-5 space-y-6">
         <div>
-          <h1 className="text-h1 text-text-primary">Alerts</h1>
+          <h1 className="text-h1 text-text-primary">{text("Alerts")}</h1>
           <div className="flex items-center gap-2 mt-1">
             <p className="text-caption text-text-muted">
               {filtered.length} / {alerts.length}

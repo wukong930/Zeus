@@ -27,7 +27,7 @@ export default function SectorsPage() {
   return (
     <div className="px-8 py-6 space-y-6 animate-fade-in">
       <div>
-        <h1 className="text-h1 text-text-primary">Sectors</h1>
+        <h1 className="text-h1 text-text-primary">{text("Sectors")}</h1>
         <p className="text-sm text-text-secondary mt-1">
           {text("板块层方向判断 + 各品种活跃度 + conviction 因子")}
         </p>
@@ -37,7 +37,7 @@ export default function SectorsPage() {
         <MetricTile label={text("板块数")} value={String(SECTORS.length)} caption="coverage" icon={Layers3} tone="cyan" />
         <MetricTile label={text("活跃信号")} value={String(activeSignals)} caption="orange pulse" icon={RadioTower} tone="warning" />
         <MetricTile label={text("平均 conviction")} value={`${avgConviction >= 0 ? "+" : ""}${avgConviction.toFixed(2)}`} caption="cross-sector" icon={Gauge} tone={avgConviction >= 0 ? "up" : "down"} />
-        <MetricTile label={text("方向状态")} value={avgConviction >= 0 ? "Risk-on" : "Defensive"} caption="sector bias" icon={Activity} tone={avgConviction >= 0 ? "up" : "warning"} />
+        <MetricTile label={text("方向状态")} value={text(avgConviction >= 0 ? "Risk-on" : "Defensive")} caption="sector bias" icon={Activity} tone={avgConviction >= 0 ? "up" : "warning"} />
       </div>
 
       <Card variant="data">

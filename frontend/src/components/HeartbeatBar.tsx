@@ -14,7 +14,7 @@ const dot = (status: "healthy" | "warning" | "alert") =>
 
 export function HeartbeatBar() {
   const s = HEARTBEAT_STATE;
-  const { text } = useI18n();
+  const { lang, text } = useI18n();
   const [clock, setClock] = useState("--:--:--");
   const [mounted, setMounted] = useState(false);
 
@@ -30,8 +30,8 @@ export function HeartbeatBar() {
 
   return (
     <div className="h-8 w-full bg-bg-base border-b border-border-subtle flex items-center gap-5 px-5 text-caption text-text-muted overflow-x-auto">
-      <Item dotClass={dot("healthy")} label={text("数据")} value={`${s.dataAge} ago`} />
-      <Item dotClass={dot("healthy")} label={text("活跃")} value={`${s.activeSignals} signals`} />
+      <Item dotClass={dot("healthy")} label={text("数据")} value={lang === "zh" ? `${s.dataAge}前` : `${s.dataAge} ago`} />
+      <Item dotClass={dot("healthy")} label={text("活跃")} value={lang === "zh" ? `${s.activeSignals} 个信号` : `${s.activeSignals} signals`} />
       <Item
         dotClass={dot(s.driftStatus)}
         label={text("漂移")}

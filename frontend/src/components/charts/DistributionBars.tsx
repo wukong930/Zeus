@@ -1,4 +1,7 @@
+"use client";
+
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/lib/i18n";
 
 interface DistributionBarsProps {
   buckets: number[];
@@ -19,6 +22,7 @@ export function DistributionBars({
   height = 128,
   markerIndex,
 }: DistributionBarsProps) {
+  const { text } = useI18n();
   const max = Math.max(...buckets, 1);
 
   return (
@@ -40,16 +44,16 @@ export function DistributionBars({
                   active && "ring-1 ring-brand-orange"
                 )}
                 style={{ height: barHeight }}
-                title={`bucket ${index + 1}: ${bucket}`}
+                title={`${text("bucket")} ${index + 1}: ${bucket}`}
               />
             </div>
           );
         })}
       </div>
       <div className="mt-2 flex justify-between font-mono text-caption text-text-muted">
-        <span>low</span>
-        <span>distribution</span>
-        <span>high</span>
+        <span>{text("low")}</span>
+        <span>{text("distribution")}</span>
+        <span>{text("high")}</span>
       </div>
     </div>
   );

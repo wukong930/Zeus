@@ -138,7 +138,7 @@ export default function NewsEventsPage() {
     <div className="flex h-full">
       <aside className="w-80 border-r border-border-subtle p-5 overflow-y-auto space-y-5">
         <div>
-          <h1 className="text-h1 text-text-primary">News Events</h1>
+          <h1 className="text-h1 text-text-primary">{text("News Events")}</h1>
           <div className="flex items-center gap-2 mt-1">
             <p className="text-caption text-text-muted">
               {filtered.length} / {events.length}
@@ -227,7 +227,9 @@ function NewsEventDetail({ event }: { event: NewsEvent }) {
     <div className="space-y-5 animate-fade-in">
       <div>
         <div className="flex items-center gap-2 mb-2">
-          <Badge variant={severityVariant(event.severity)}>Severity {event.severity}</Badge>
+          <Badge variant={severityVariant(event.severity)}>
+            {text("Severity")} {event.severity}
+          </Badge>
           <Badge variant={directionVariant(event.direction)}>{event.direction}</Badge>
           <Badge variant={event.requiresManualConfirmation ? "orange" : "emerald"}>
             {event.verificationStatus}

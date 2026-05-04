@@ -27,6 +27,7 @@ import {
   type CostSnapshot,
 } from "@/lib/api";
 import { cn, formatNumber } from "@/lib/utils";
+import { useI18n } from "@/lib/i18n";
 
 type SectorKey = "ferrous" | "rubber";
 
@@ -159,6 +160,7 @@ interface SimulationInputs {
 }
 
 export default function IndustryLensPage() {
+  const { text } = useI18n();
   const [sector, setSector] = useState<SectorKey>("ferrous");
   const config = SECTOR_CONFIG[sector];
   const fallbackChain = MOCK_CHAINS[sector];
@@ -262,9 +264,9 @@ export default function IndustryLensPage() {
     <div className="px-4 sm:px-6 lg:px-8 py-6 space-y-6 animate-fade-in">
       <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
         <div>
-          <h1 className="text-h1 text-text-primary">Industry Lens</h1>
+          <h1 className="text-h1 text-text-primary">{text("Industry Lens")}</h1>
           <p className="text-sm text-text-secondary mt-1">
-            {config.subtitle}
+            {text(config.subtitle)}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -276,10 +278,10 @@ export default function IndustryLensPage() {
             variant="secondary"
             size="sm"
             onClick={() => window.location.reload()}
-            title="刷新成本模型"
+            title={text("刷新成本模型")}
           >
             <RefreshCw className="w-4 h-4" />
-            刷新
+            {text("刷新")}
           </Button>
         </div>
       </div>
@@ -902,6 +904,7 @@ function RubberSeasonalityPanel({
   const originNames = sourceNames.length
     ? sourceNames
     : ["泰国产区胶价", "青岛保税区升水", "海南/云南收胶成本"];
+  const { text } = useI18n();
 
   return (
     <Card variant="flat">
@@ -930,7 +933,7 @@ function RubberSeasonalityPanel({
                 active.title === item.label ? "border-brand-emerald" : "border-border-subtle"
               )}
             >
-              <div className="text-sm text-text-primary">{item.label}</div>
+              <div className="text-sm text-text-primary">{text(item.label)}</div>
               <div className="mt-1 text-caption text-text-muted">{item.months}</div>
               <div className="mt-3 font-mono text-h3 text-text-primary">{item.value}</div>
             </div>
@@ -938,7 +941,7 @@ function RubberSeasonalityPanel({
         </div>
 
         <div className="rounded-sm bg-bg-base border border-border-subtle p-4">
-          <div className="text-caption text-text-muted uppercase mb-2">Origin Basket</div>
+          <div className="text-caption text-text-muted uppercase mb-2">{text("Origin Basket")}</div>
           <div className="flex flex-wrap gap-2">
             {originNames.map((name) => (
               <Badge key={name} variant="neutral">
@@ -1008,6 +1011,7 @@ function RubberValidationPanel({ model }: { model: CostModel }) {
 }
 
 function QualityReportPanel({ report }: { report: CostQualityReport }) {
+  const { text } = useI18n();
   const recommendation = recommendationLabel(report);
   const bestComparisons = report.benchmark_comparisons.slice(0, 4);
   const bestCases = report.signal_cases.slice(0, 3);
@@ -1045,7 +1049,7 @@ function QualityReportPanel({ report }: { report: CostQualityReport }) {
 
       <div className="grid grid-cols-1 xl:grid-cols-[1.2fr_1fr_1fr] gap-5 mt-5">
         <div className="space-y-2">
-          <div className="text-caption text-text-muted uppercase">Benchmark Drift</div>
+          <div className="text-caption text-text-muted uppercase">{text("Benchmark Drift")}</div>
           {bestComparisons.map((item) => (
             <div
               key={`${item.symbol}-${item.metric}`}
@@ -1064,7 +1068,7 @@ function QualityReportPanel({ report }: { report: CostQualityReport }) {
         </div>
 
         <div className="space-y-2">
-          <div className="text-caption text-text-muted uppercase">Historical Cases</div>
+          <div className="text-caption text-text-muted uppercase">{text("Historical Cases")}</div>
           {bestCases.map((item) => (
             <div
               key={item.case_id}
@@ -1072,7 +1076,7 @@ function QualityReportPanel({ report }: { report: CostQualityReport }) {
             >
               <div className="flex items-center gap-2">
                 <Badge variant={item.passed ? "emerald" : "orange"}>
-                  {item.passed ? "PASS" : "REVIEW"}
+                  {item.passed ? text("PASS") : text("REVIEW")}
                 </Badge>
                 <span className="text-sm text-text-primary truncate">{item.title}</span>
               </div>
@@ -1084,7 +1088,7 @@ function QualityReportPanel({ report }: { report: CostQualityReport }) {
         </div>
 
         <div className="rounded-sm bg-bg-base border border-border-subtle p-4">
-          <div className="text-caption text-text-muted uppercase mb-2">Purchase Decision</div>
+          <div className="text-caption text-text-muted uppercase mb-2">{text("Purchase Decision")}</div>
           <div className="text-h3 text-text-primary">{recommendation.title}</div>
           <p className="text-sm text-text-secondary mt-2 leading-relaxed">
             {recommendation.body}
@@ -1104,16 +1108,19 @@ function QualityReportPanel({ report }: { report: CostQualityReport }) {
 }
 
 function QualityMetric({ label, value, suffix }: { label: string; value: string; suffix: string }) {
+  const { text } = useI18n();
+
   return (
     <div className="rounded-sm bg-bg-base border border-border-subtle p-3">
-      <div className="text-caption text-text-muted uppercase">{label}</div>
+      <div className="text-caption text-text-muted uppercase">{text(label)}</div>
       <div className="mt-2 text-h2 font-mono text-text-primary tabular-nums">{value}</div>
-      <div className="text-caption text-text-muted mt-1">{suffix}</div>
+      <div className="text-caption text-text-muted mt-1">{text(suffix)}</div>
     </div>
   );
 }
 
 function DataSources({ model }: { model: CostModel }) {
+  const { text } = useI18n();
   const inputs = Object.values(model.inputs).slice(0, 8);
   return (
     <div className="space-y-3">
@@ -1123,7 +1130,7 @@ function DataSources({ model }: { model: CostModel }) {
         ))}
       </div>
       <div className="border-t border-border-subtle pt-3">
-        <div className="text-caption text-text-muted uppercase mb-2">Sources</div>
+        <div className="text-caption text-text-muted uppercase mb-2">{text("Sources")}</div>
         <div className="flex flex-wrap gap-2">
           {model.data_sources.map((source) => (
             <Badge key={source.name} variant="neutral">

@@ -8,6 +8,7 @@ import { Card, CardHeader, CardSubtitle, CardTitle } from "@/components/Card";
 import { MetricTile } from "@/components/MetricTile";
 import { runScenarioSimulation, type ScenarioReport } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/lib/i18n";
 
 const SCENARIO_PRESETS = [
   {
@@ -46,6 +47,7 @@ const SCENARIO_PRESETS = [
 ];
 
 export default function FutureLabPage() {
+  const { text } = useI18n();
   const [presetIndex, setPresetIndex] = useState(0);
   const preset = SCENARIO_PRESETS[presetIndex];
   const [shockValues, setShockValues] = useState<Record<string, number>>(
@@ -91,9 +93,9 @@ export default function FutureLabPage() {
   return (
     <div className="px-8 py-6 space-y-6 animate-fade-in">
       <div>
-        <h1 className="text-h1 text-text-primary">Future Lab</h1>
+        <h1 className="text-h1 text-text-primary">{text("Future Lab")}</h1>
         <p className="text-sm text-text-secondary mt-1">
-          Monte Carlo 价格路径模拟 + What-if 假设检验
+          {text("Monte Carlo 价格路径模拟 + What-if 假设检验")}
         </p>
       </div>
 
@@ -104,7 +106,7 @@ export default function FutureLabPage() {
           </CardHeader>
 
           <div>
-            <label className="text-caption text-text-muted block mb-2">目标链条</label>
+            <label className="text-caption text-text-muted block mb-2">{text("目标链条")}</label>
             <select
               value={presetIndex}
               onChange={(event) => updatePreset(Number(event.target.value))}
@@ -112,14 +114,14 @@ export default function FutureLabPage() {
             >
               {SCENARIO_PRESETS.map((item, index) => (
                 <option key={item.targetSymbol} value={index}>
-                  {item.label}
+                  {text(item.label)}
                 </option>
               ))}
             </select>
           </div>
 
           <div>
-            <label className="text-caption text-text-muted block mb-2">假设条件</label>
+            <label className="text-caption text-text-muted block mb-2">{text("假设条件")}</label>
             <div className="space-y-2">
               {preset.shocks.map((shock) => (
                 <ScenarioSlider
@@ -138,7 +140,7 @@ export default function FutureLabPage() {
           </div>
 
           <div>
-            <label className="text-caption text-text-muted block mb-2">模拟参数</label>
+            <label className="text-caption text-text-muted block mb-2">{text("模拟参数")}</label>
             <div className="space-y-2">
               <ScenarioSlider
                 label="模拟次数"
@@ -166,12 +168,12 @@ export default function FutureLabPage() {
             {running ? (
               <>
                 <Sparkles className="w-4 h-4 animate-spin-slow" />
-                正在推演
+                {text("正在推演")}
               </>
             ) : (
               <>
                 <Play className="w-4 h-4" />
-                运行推演
+                {text("运行推演")}
               </>
             )}
           </Button>
@@ -188,10 +190,10 @@ export default function FutureLabPage() {
           <CardHeader>
             <div className="flex items-center gap-3">
               <CardTitle>概率扇</CardTitle>
-              {report && <Badge variant="emerald">推演完成</Badge>}
+              {report && <Badge variant="emerald">{text("推演完成")}</Badge>}
             </div>
             <CardSubtitle>
-              {preset.targetSymbol} 未来 {days} 天价格路径分布（{simulations} 次模拟）
+              {preset.targetSymbol} {text("未来")} {days} {text("天价格路径分布")}（{simulations} {text("次模拟")}）
             </CardSubtitle>
           </CardHeader>
 
@@ -199,7 +201,7 @@ export default function FutureLabPage() {
             <div className="h-80 flex items-center justify-center">
               <div className="text-center space-y-3">
                 <Beaker className="w-12 h-12 text-brand-emerald-bright mx-auto animate-pulse" />
-                <div className="text-text-secondary">正在沿传导图模拟价格路径</div>
+                <div className="text-text-secondary">{text("正在沿传导图模拟价格路径")}</div>
                 <div className="w-48 mx-auto h-1 bg-bg-surface-raised rounded-full overflow-hidden">
                   <div
                     className="h-full bg-brand-emerald animate-shimmer"
@@ -248,7 +250,7 @@ export default function FutureLabPage() {
             <div>
               <CardTitle>情景叙事</CardTitle>
               <CardSubtitle>
-                冲击 {formatPct(report.monte_carlo.applied_shock)}，跌破基准概率{" "}
+                {text("冲击")} {formatPct(report.monte_carlo.applied_shock)}，{text("跌破基准概率")}{" "}
                 {formatPct(report.monte_carlo.downside_probability, false)}
               </CardSubtitle>
             </div>
@@ -258,7 +260,7 @@ export default function FutureLabPage() {
             <PathGraph report={report} />
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <div className="text-caption text-text-muted">关键风险</div>
+                <div className="text-caption text-text-muted">{text("关键风险")}</div>
                 {report.risk_points.map((item) => (
                   <div key={item} className="rounded-sm border border-border-subtle bg-bg-base p-3 shadow-inner-panel">
                     {item}
@@ -266,7 +268,7 @@ export default function FutureLabPage() {
                 ))}
               </div>
               <div className="space-y-2">
-                <div className="text-caption text-text-muted">建议动作</div>
+                <div className="text-caption text-text-muted">{text("建议动作")}</div>
                 {report.suggested_actions.map((item) => (
                   <div key={item} className="rounded-sm border border-border-subtle bg-bg-base p-3 shadow-inner-panel">
                     {item}
@@ -282,12 +284,13 @@ export default function FutureLabPage() {
 }
 
 function PathGraph({ report }: { report: ScenarioReport }) {
+  const { text } = useI18n();
   const paths = report.what_if.key_paths.slice(0, 4);
   if (paths.length === 0) return null;
 
   return (
     <div className="space-y-2">
-      <div className="text-caption text-text-muted">传导路径</div>
+      <div className="text-caption text-text-muted">{text("传导路径")}</div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         {paths.map((path) => (
           <div
@@ -310,7 +313,7 @@ function PathGraph({ report }: { report: ScenarioReport }) {
               </span>
             </div>
             <div className="text-caption text-text-muted mt-2">
-              {path.relationship}，滞后 {path.lag_days} 天
+              {text(path.relationship)}，{text("滞后")} {path.lag_days} {text("天")}
             </div>
           </div>
         ))}
@@ -338,10 +341,12 @@ function ScenarioSlider({
   tone?: "signed" | "neutral";
   onChange: (value: number) => void;
 }) {
+  const { text } = useI18n();
+
   return (
     <div className="rounded-sm border border-border-subtle bg-bg-base p-3 shadow-inner-panel">
       <div className="mb-2 flex items-center justify-between text-caption">
-        <span className="text-text-muted">{label}</span>
+        <span className="text-text-muted">{text(label)}</span>
         <span
           className={cn(
             "font-mono tabular-nums",
@@ -354,7 +359,7 @@ function ScenarioSlider({
         >
           {tone === "signed" && value >= 0 ? "+" : ""}
           {value}
-          {suffix}
+          {text(suffix)}
         </span>
       </div>
       <input
@@ -371,10 +376,12 @@ function ScenarioSlider({
 }
 
 function ProbabilityFan({ report, basePrice }: { report: ScenarioReport | null; basePrice: number }) {
+  const { text } = useI18n();
+
   if (!report) {
     return (
       <div className="h-80 flex items-center justify-center text-sm text-text-muted">
-        配置场景后运行推演
+        {text("配置场景后运行推演")}
       </div>
     );
   }
@@ -446,7 +453,7 @@ function ProbabilityFan({ report, basePrice }: { report: ScenarioReport | null; 
         </text>
       </svg>
       <div className="absolute left-3 top-3 rounded-xs border border-brand-orange/30 bg-bg-surface-overlay px-2 py-1 font-mono text-caption text-brand-orange">
-        base {price(basePrice)}
+        {text("base")} {price(basePrice)}
       </div>
     </div>
   );

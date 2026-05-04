@@ -18,15 +18,17 @@ import {
   type ThresholdCalibrationReport,
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/lib/i18n";
 
 export default function AnalyticsPage() {
   const [tab, setTab] = useState<"attribution" | "calibration" | "hypotheses" | "drift">("attribution");
+  const { text } = useI18n();
 
   return (
     <div className="px-8 py-6 space-y-6 animate-fade-in">
       <div>
-        <h1 className="text-h1 text-text-primary">Analytics</h1>
-        <p className="text-sm text-text-secondary mt-1">系统运行健康度 + 个人交易归因</p>
+        <h1 className="text-h1 text-text-primary">{text("Analytics")}</h1>
+        <p className="text-sm text-text-secondary mt-1">{text("系统运行健康度 + 个人交易归因")}</p>
       </div>
 
       <div className="flex gap-1 border-b border-border-subtle">
@@ -46,8 +48,8 @@ export default function AnalyticsPage() {
                 : "border-transparent text-text-muted hover:text-text-primary"
             )}
           >
-            {t.label}
-            {t.desc && <span className="ml-2 text-caption text-brand-orange">{t.desc}</span>}
+            {text(t.label)}
+            {t.desc && <span className="ml-2 text-caption text-brand-orange">{text(t.desc)}</span>}
           </button>
         ))}
       </div>
@@ -396,9 +398,11 @@ function HypothesesTab() {
 }
 
 function EvidenceList({ title, items }: { title: string; items: string[] }) {
+  const { text } = useI18n();
+
   return (
     <div>
-      <div className="text-caption text-text-muted uppercase mb-2">{title}</div>
+      <div className="text-caption text-text-muted uppercase mb-2">{text(title)}</div>
       <div className="space-y-2">
         {items.slice(0, 3).map((item, index) => (
           <div key={`${title}-${index}`} className="text-text-secondary leading-relaxed">
@@ -436,9 +440,11 @@ function SliceTable({
   title: string;
   data: { label: string; winRate: number; samples: number; expReturn: number }[];
 }) {
+  const { text } = useI18n();
+
   return (
     <div>
-      <div className="text-caption text-text-muted uppercase mb-3">{title}</div>
+      <div className="text-caption text-text-muted uppercase mb-3">{text(title)}</div>
       <div className="space-y-2">
         {data.map((d) => (
           <div key={d.label} className="flex items-center gap-3 text-sm">

@@ -1,4 +1,7 @@
+"use client";
+
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/lib/i18n";
 import type { HTMLAttributes } from "react";
 
 type Variant =
@@ -34,7 +37,9 @@ const variantStyles: Record<Variant, string> = {
   low: "border-data-up/30 bg-[rgba(34,197,94,0.10)] text-severity-low-fg",
 };
 
-export function Badge({ variant = "neutral", className, ...props }: BadgeProps) {
+export function Badge({ variant = "neutral", className, children, ...props }: BadgeProps) {
+  const { text } = useI18n();
+
   return (
     <span
       className={cn(
@@ -43,6 +48,8 @@ export function Badge({ variant = "neutral", className, ...props }: BadgeProps) 
         className
       )}
       {...props}
-    />
+    >
+      {typeof children === "string" ? text(children) : children}
+    </span>
   );
 }

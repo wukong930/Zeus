@@ -6,6 +6,7 @@ import { Badge } from "@/components/Badge";
 import { Button } from "@/components/Button";
 import { cn } from "@/lib/utils";
 import { BookOpen, Clock3, FileText, GitBranch, Plus, Tag } from "lucide-react";
+import { useI18n } from "@/lib/i18n";
 
 const NOTES = [
   {
@@ -45,6 +46,7 @@ const NOTES = [
 export default function NotebookPage() {
   const [active, setActive] = useState("1");
   const note = NOTES.find((n) => n.id === active)!;
+  const { text } = useI18n();
 
   return (
     <div className="flex h-full min-w-0 bg-[radial-gradient(circle_at_50%_-20%,rgba(16,185,129,0.08),transparent_34%)]">
@@ -62,7 +64,7 @@ export default function NotebookPage() {
           {["黑色", "橡胶", "假设库", "交易日志"].map((folder) => (
             <div key={folder} className="mb-3">
               <div className="flex items-center justify-between px-2 py-1 text-caption uppercase tracking-wider text-text-muted">
-                <span>{folder}</span>
+                <span>{text(folder)}</span>
                 <span>{NOTES.filter((n) => n.folder === folder).length}</span>
               </div>
               {NOTES.filter((n) => n.folder === folder).map((n) => (
@@ -78,10 +80,10 @@ export default function NotebookPage() {
                 >
                   <FileText className={cn("w-3.5 h-3.5 shrink-0 mt-0.5", active === n.id ? "text-brand-emerald-bright" : "text-text-muted")} />
                   <div className="flex-1 min-w-0">
-                    <div className="line-clamp-1 font-medium">{n.title}</div>
+                    <div className="line-clamp-1 font-medium">{text(n.title)}</div>
                     <div className="mt-1 flex items-center gap-1 text-caption text-text-muted">
                       <Clock3 className="h-3 w-3" />
-                      {n.updatedAt}
+                      {text(n.updatedAt)}
                     </div>
                   </div>
                 </button>
@@ -96,7 +98,7 @@ export default function NotebookPage() {
         <div className="max-w-3xl mx-auto px-8 py-8 space-y-5">
           <div className="rounded-sm border border-border-default bg-[linear-gradient(180deg,rgba(15,17,16,0.9),rgba(3,5,4,0.72))] p-5 shadow-data-panel">
             <input
-              defaultValue={note.title}
+              defaultValue={text(note.title)}
               className="bg-transparent text-h1 font-semibold text-text-primary w-full focus:outline-none"
             />
             <div className="flex items-center gap-2 mt-3">
@@ -106,37 +108,37 @@ export default function NotebookPage() {
                   {t}
                 </Badge>
               ))}
-              <Badge>+ 添加</Badge>
-              <span className="ml-auto text-caption text-text-muted">{note.updatedAt} · 自动保存</span>
+              <Badge>+ {text("添加")}</Badge>
+              <span className="ml-auto text-caption text-text-muted">{text(note.updatedAt)} · {text("自动保存")}</span>
             </div>
           </div>
 
           <div className="rounded-sm border border-border-subtle bg-bg-base/70 p-5 text-sm text-text-secondary leading-relaxed space-y-3 shadow-inner-panel">
-            <p>{note.preview}</p>
-            <p>系统在 09:42 触发 cost_support_pressure 预警，置信度 0.84，对抗引擎 3/3 通过。我自己的判断是认同（与 1 周前的研究一致），但仓位偏小（3 手），原因是仍担心终端建材采购可能在五一前后回落。</p>
+            <p>{text(note.preview)}</p>
+            <p>{text("系统在 09:42 触发 cost_support_pressure 预警，置信度 0.84，对抗引擎 3/3 通过。我自己的判断是认同（与 1 周前的研究一致），但仓位偏小（3 手），原因是仍担心终端建材采购可能在五一前后回落。")}</p>
             <p>
-              <strong className="text-text-primary">关联</strong>：参见 #hypothesis:jm_to_rb_profit（焦煤→钢厂利润传导假设）。今天的 cost_support_pressure 实际上是这个假设的 18 次历史事件中第 19 次。
+              <strong className="text-text-primary">{text("关联")}</strong>：{text("参见 #hypothesis:jm_to_rb_profit（焦煤→钢厂利润传导假设）。今天的 cost_support_pressure 实际上是这个假设的 18 次历史事件中第 19 次。")}
             </p>
             <p>
-              <strong className="text-text-primary">下一步行动</strong>：
+              <strong className="text-text-primary">{text("下一步行动")}</strong>：
             </p>
             <ul className="list-disc pl-5 space-y-1">
-              <li>明早查看终端建材采购数据（中物联日报）</li>
-              <li>关注焦煤现货价格是否企稳（重要！）</li>
-              <li>如果焦煤反弹 + 钢厂利润修复，考虑加仓至 5 手</li>
+              <li>{text("明早查看终端建材采购数据（中物联日报）")}</li>
+              <li>{text("关注焦煤现货价格是否企稳（重要！）")}</li>
+              <li>{text("如果焦煤反弹 + 钢厂利润修复，考虑加仓至 5 手")}</li>
             </ul>
           </div>
 
           <Card variant="data">
-            <div className="text-caption text-text-muted uppercase mb-2">关联预警 · 关联假设</div>
+            <div className="text-caption text-text-muted uppercase mb-2">{text("关联预警 · 关联假设")}</div>
             <div className="grid grid-cols-2 gap-2">
               <div className="rounded-sm border border-border-subtle bg-bg-base p-3 text-sm shadow-inner-panel">
                 <Badge variant="critical">CRITICAL</Badge>
                 <div className="mt-2 text-text-secondary">RB cost_support_pressure (alt-001)</div>
               </div>
               <div className="rounded-sm border border-border-subtle bg-bg-base p-3 text-sm shadow-inner-panel">
-                <Badge variant="emerald">假设</Badge>
-                <div className="mt-2 text-text-secondary">jm_to_rb_profit · 0.71 命中率</div>
+                <Badge variant="emerald">{text("假设")}</Badge>
+                <div className="mt-2 text-text-secondary">jm_to_rb_profit · 0.71 {text("命中率")}</div>
               </div>
             </div>
           </Card>
@@ -146,20 +148,20 @@ export default function NotebookPage() {
       {/* Right sidebar: backlinks */}
       <aside className="hidden w-80 shrink-0 space-y-4 overflow-y-auto border-l border-border-subtle bg-bg-panel/70 p-5 shadow-inner-panel 2xl:block">
         <div>
-          <div className="text-caption text-text-muted uppercase mb-2">引用此笔记</div>
+          <div className="text-caption text-text-muted uppercase mb-2">{text("引用此笔记")}</div>
           <div className="space-y-1.5">
             <RefItem title="2026-04-30 复盘" type="note" />
             <RefItem title="本月交易归因" type="note" />
           </div>
         </div>
         <div>
-          <div className="text-caption text-text-muted uppercase mb-2">提及的假设</div>
+          <div className="text-caption text-text-muted uppercase mb-2">{text("提及的假设")}</div>
           <div className="space-y-1.5">
             <RefItem title="jm_to_rb_profit" type="hypothesis" />
           </div>
         </div>
         <div>
-          <div className="text-caption text-text-muted uppercase mb-2">提及的预警</div>
+          <div className="text-caption text-text-muted uppercase mb-2">{text("提及的预警")}</div>
           <div className="space-y-1.5">
             <RefItem title="alt-001 RB cost_pressure" type="alert" />
           </div>
@@ -178,10 +180,12 @@ function NotebookStat({
   value: number;
   icon: React.ComponentType<{ className?: string }>;
 }) {
+  const { text } = useI18n();
+
   return (
     <div className="rounded-sm border border-border-subtle bg-bg-base p-2 shadow-inner-panel">
       <div className="flex items-center justify-between text-caption text-text-muted">
-        <span>{label}</span>
+        <span>{text(label)}</span>
         <Icon className="h-3.5 w-3.5" />
       </div>
       <div className="mt-1 font-mono text-lg text-text-primary tabular-nums">{value}</div>
@@ -190,10 +194,11 @@ function NotebookStat({
 }
 
 function RefItem({ title, type }: { title: string; type: "note" | "hypothesis" | "alert" }) {
+  const { text } = useI18n();
   const colorMap = { note: "border-border-subtle text-text-secondary", hypothesis: "border-brand-emerald/30 text-brand-emerald-bright", alert: "border-brand-orange/30 text-brand-orange" };
   return (
     <div className={cn("cursor-pointer rounded-sm border bg-bg-base px-3 py-2 text-sm shadow-inner-panel transition-colors hover:border-border-strong hover:text-text-primary", colorMap[type])}>
-      {title}
+      {text(title)}
     </div>
   );
 }

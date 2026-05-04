@@ -10,7 +10,7 @@ export function StatusBar() {
       <div className="flex items-center gap-4">
         <span>UTC+8 Asia/Shanghai</span>
         <span>•</span>
-        <span>Data: 2026-04-30 22:14</span>
+        <span>{text("Data")}: 2026-04-30 22:14</span>
       </div>
       <div className="flex items-center gap-3">
         <LanguageToggle />

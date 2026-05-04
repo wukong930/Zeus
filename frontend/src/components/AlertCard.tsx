@@ -129,7 +129,7 @@ export function AlertCard({ alert, onClick, glow }: AlertCardProps) {
           <div className="flex flex-wrap items-center gap-3 text-caption">
             {alert.adversarialPassed && (
               <span className="text-brand-emerald-bright flex items-center gap-1">
-                ✓ Adversarial 3/3
+                ✓ {text("Adversarial")} 3/3
               </span>
             )}
             {alert.counterEvidence.length > 0 && (
@@ -137,7 +137,7 @@ export function AlertCard({ alert, onClick, glow }: AlertCardProps) {
                 ✕ {alert.counterEvidence.length} {text("反证")}
               </span>
             )}
-            <span className="text-text-muted">samples · {alert.sampleSize}</span>
+            <span className="text-text-muted">{text("samples")} · {alert.sampleSize}</span>
             {alert.evaluator === "news_event" && (
               <Link
                 href={`/news?symbol=${encodeURIComponent(alert.symbol)}`}
@@ -162,7 +162,7 @@ export function AlertCard({ alert, onClick, glow }: AlertCardProps) {
           <ConfidenceHalo confidence={alert.confidence} sampleSize={alert.sampleSize} />
           <button className="text-caption text-text-muted hover:text-brand-emerald-bright flex items-center gap-1 transition-colors">
             <Sparkles className="w-3 h-3" />
-            ⏪ Time Machine
+            ⏪ {text("Time Machine")}
           </button>
         </div>
 

@@ -15,7 +15,7 @@ export default function CausalWebPage() {
     <div className="flex h-full flex-col">
       <div className="flex shrink-0 flex-col gap-2 border-b border-border-subtle bg-bg-base/80 px-5 py-2 shadow-inner-panel lg:min-h-[48px] lg:flex-row lg:items-center lg:justify-between lg:gap-4">
         <div className="flex min-w-0 items-baseline gap-3">
-          <h1 className="text-h2 text-text-primary">Causal Web</h1>
+          <h1 className="text-h2 text-text-primary">{text("Causal Web")}</h1>
           <p className="hidden truncate text-xs text-text-secondary md:block">
             {text("实时观察事件间的因果传导。点击节点追溯上游 / 预测下游。")}
           </p>

@@ -7,8 +7,10 @@ import { Card, CardHeader, CardSubtitle, CardTitle } from "@/components/Card";
 import { MetricTile } from "@/components/MetricTile";
 import { fetchBacktestQualitySummary, type BacktestQualitySummary } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/lib/i18n";
 
 export default function StrategyForgePage() {
+  const { text } = useI18n();
   const [summary, setSummary] = useState<BacktestQualitySummary | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -29,8 +31,8 @@ export default function StrategyForgePage() {
   return (
     <div className="px-8 py-6 space-y-6 animate-fade-in">
       <div>
-        <h1 className="text-h1 text-text-primary">Strategy Forge</h1>
-        <p className="text-sm text-text-secondary mt-1">策略研究、回测、参数调优 · vectorbt + DoWhy</p>
+        <h1 className="text-h1 text-text-primary">{text("Strategy Forge")}</h1>
+        <p className="text-sm text-text-secondary mt-1">{text("策略研究、回测、参数调优 · vectorbt + DoWhy")}</p>
       </div>
 
       <div className="grid grid-cols-12 gap-5">
@@ -61,8 +63,8 @@ export default function StrategyForgePage() {
         <MetricTile
           className="col-span-12 md:col-span-6 xl:col-span-3"
           label="PIT Universe"
-          value={summary?.universe.valid ? "VALID" : summary ? "BLOCKED" : "-"}
-          caption={summary ? `${summary.universe.active_symbols.length} active symbols` : "loading"}
+          value={summary?.universe.valid ? text("VALID") : summary ? text("BLOCKED") : "-"}
+          caption={summary ? `${summary.universe.active_symbols.length} ${text("active symbols")}` : text("loading")}
           icon={GitBranch}
           tone={summary?.universe.valid ?? true ? "up" : "down"}
         />
@@ -87,9 +89,9 @@ export default function StrategyForgePage() {
             <table className="w-full text-sm">
               <thead className="text-caption text-text-muted">
                 <tr className="border-b border-border-subtle bg-bg-panel">
-                  <th className="text-left px-3 py-2 font-medium">Regime</th>
+                  <th className="text-left px-3 py-2 font-medium">{text("Regime")}</th>
                   <th className="text-right px-3 py-2 font-medium">N</th>
-                  <th className="text-right px-3 py-2 font-medium">Win</th>
+                  <th className="text-right px-3 py-2 font-medium">{text("Win")}</th>
                   <th className="text-right px-3 py-2 font-medium">Sharpe</th>
                   <th className="text-right px-3 py-2 font-medium">MDD</th>
                 </tr>
@@ -126,7 +128,7 @@ export default function StrategyForgePage() {
             <Metric label="P80 MFE" value={summary?.path_metrics.mfe_p80 != null ? pct(summary.path_metrics.mfe_p80) : "-"} up />
           </div>
           <div className="mt-4 rounded-sm border border-border-subtle bg-bg-base px-3 py-2 text-caption text-text-muted shadow-inner-panel">
-            Walk-forward {summary?.walk_forward.training_years ?? 3}y / {summary?.walk_forward.test_months ?? 3}m / {summary?.walk_forward.step_months ?? 1}m
+            {text("Walk-forward")} {summary?.walk_forward.training_years ?? 3}y / {summary?.walk_forward.test_months ?? 3}m / {summary?.walk_forward.step_months ?? 1}m
           </div>
         </Card>
       </div>
@@ -135,9 +137,11 @@ export default function StrategyForgePage() {
 }
 
 function Metric({ label, value, up = false }: { label: string; value: string; up?: boolean }) {
+  const { text } = useI18n();
+
   return (
     <div className="min-h-20 rounded-sm border border-border-subtle bg-bg-base p-3 shadow-inner-panel">
-      <div className="text-caption text-text-muted">{label}</div>
+      <div className="text-caption text-text-muted">{text(label)}</div>
       <div className={cn("text-lg font-mono mt-1 break-words", up ? "text-data-up" : "text-data-down")}>
         {value}
       </div>

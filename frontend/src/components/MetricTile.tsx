@@ -58,7 +58,7 @@ export function MetricTile({
       </div>
       {(trend || caption) && (
         <div className="mt-2 flex items-center gap-2 text-caption">
-          {trend && <span className={cn("font-mono tabular-nums", toneStyles[tone])}>{trend}</span>}
+          {trend && <span className={cn("font-mono tabular-nums", toneStyles[tone])}>{text(trend)}</span>}
           {caption && <span className="truncate text-text-muted">{text(caption)}</span>}
         </div>
       )}

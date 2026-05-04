@@ -49,7 +49,7 @@ export function Sidebar() {
         <Logo />
         <div className="flex flex-col leading-none">
           <span className="text-sm font-bold tracking-wider text-text-primary">ZEUS</span>
-          <span className="text-caption text-text-muted">Futures Intel</span>
+          <span className="text-caption text-text-muted">{text("Futures Intel")}</span>
         </div>
       </div>
       <nav className="flex-1 overflow-y-auto px-2 py-2">
@@ -97,7 +97,7 @@ export function Sidebar() {
         <div className="rounded-sm border border-border-subtle bg-bg-base px-2 py-2 shadow-inner-panel">
           <div className="flex items-center gap-2 text-caption text-text-muted">
             <div className="h-1.5 w-1.5 rounded-full bg-brand-emerald-bright shadow-glow-emerald animate-heartbeat" />
-            <span>v0.1.0 prototype</span>
+            <span>v0.1.0 {text("prototype")}</span>
           </div>
           <div className="mt-2 h-1 overflow-hidden rounded-full bg-bg-surface-raised">
             <div className="h-full w-2/3 rounded-full bg-brand-emerald" />

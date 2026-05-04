@@ -866,6 +866,7 @@ function CausalEdgeLine({
   markerEnd,
   data,
 }: EdgeProps<CausalFlowEdge>) {
+  const { text } = useI18n();
   const edge = data?.causal;
   if (!edge) return null;
 
@@ -918,9 +919,9 @@ function CausalEdgeLine({
           >
             <span className="font-mono text-text-primary">{edge.lag}</span>
             <span className="mx-1 text-text-muted">·</span>
-            <span className="font-mono">{Math.round(edge.hitRate * 100)}% hit</span>
+            <span className="font-mono">{Math.round(edge.hitRate * 100)}% {text("hit")}</span>
             <span className="mx-1 text-text-muted">·</span>
-            <span className="font-mono">{Math.round(edge.confidence * 100)}% conf</span>
+            <span className="font-mono">{Math.round(edge.confidence * 100)}% {text("conf")}</span>
           </div>
         </EdgeLabelRenderer>
       )}
@@ -1130,7 +1131,7 @@ function EdgeList({
                   <Clock className="h-3 w-3" />
                   {edge.lag}
                 </span>
-                <span className="font-mono">hit {Math.round(edge.hitRate * 100)}%</span>
+                <span className="font-mono">{text("hit")} {Math.round(edge.hitRate * 100)}%</span>
               </div>
               <div className="mt-1 flex items-center justify-between text-caption text-text-muted">
                 <span style={{ color }}>{text(edge.direction)}</span>

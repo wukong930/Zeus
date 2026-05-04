@@ -68,7 +68,7 @@ export default function PortfolioPage() {
     <div className="px-8 py-6 space-y-6 animate-fade-in">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-h1 text-text-primary">Portfolio Map</h1>
+          <h1 className="text-h1 text-text-primary">{text("Portfolio Map")}</h1>
           <p className="text-sm text-text-secondary mt-1">
             {text("可视化展示持仓在传导图中的位置 + 组合风险")}
           </p>
