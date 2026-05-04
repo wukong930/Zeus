@@ -76,7 +76,7 @@ export interface SectorData {
 
 export interface CausalNode {
   id: string;
-  type: "event" | "signal" | "metric" | "alert" | "counter";
+  type: "event" | "signal" | "metric" | "alert" | "counter" | "cluster";
   label: string;
   freshness: number; // 0-1
   influence: 1 | 2 | 3 | 4;
@@ -89,6 +89,7 @@ export interface CausalNode {
   narrative?: string;
   portfolioLinked?: boolean;
   alertLinked?: boolean;
+  aggregateCount?: number;
 }
 
 export interface CausalEdge {

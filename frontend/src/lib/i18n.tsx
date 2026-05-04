@@ -179,8 +179,17 @@ const EN: Record<string, string> = {
     "Counter view highlights validation nodes that reduce confidence and prevent false triggers.",
   "预警追踪：只强化能够进入告警或人工审查的关键路径。":
     "Alert trace emphasizes paths entering alerts or manual review.",
+  "核心视图：优先展示影响力、持仓、预警和高连接节点，其余按阶段聚合。":
+    "Core view prioritizes influence, positions, alerts, and connected nodes; the rest are clustered by stage.",
+  "完整视图：展示当前过滤下的所有节点，并按阶段重新排布。":
+    "Expanded view shows every node in the current filter and relayouts them by stage.",
+  "该阶段还有更多节点，切换完整视图后展开。":
+    "This stage has more nodes. Switch to Expanded to reveal them.",
   "上游": "upstream",
   "下游": "downstream",
+  "聚合": "Cluster",
+  "更多节点": "more nodes",
+  "点击展开": "Click to expand",
   "全量": "All",
   "，": ", ",
   "。": ".",
@@ -526,6 +535,8 @@ const ZH: Record<string, string> = {
   "Portfolio": "持仓",
   "Counter": "反证",
   "Alert Trace": "预警追踪",
+  "Core": "核心",
+  "Expanded": "完整",
   "Active": "活跃",
   "Verified": "已验证",
   "Calibration": "校准",
