@@ -637,7 +637,7 @@ function SemanticBackdrop({ viewNodeIds }: { viewNodeIds: Set<string> }) {
               }}
             >
               <div
-                className="absolute left-3 top-3 rounded-xs border bg-black/70 px-2 py-1 text-caption font-medium"
+                className="absolute left-3 top-14 rounded-xs border bg-black/70 px-2 py-1 text-caption font-medium shadow-inner-panel"
                 style={{ borderColor: `${meta.color}42`, color: meta.color }}
               >
                 {meta.label}

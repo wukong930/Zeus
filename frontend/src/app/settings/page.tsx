@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { Card, CardHeader, CardTitle, CardSubtitle } from "@/components/Card";
 import { Badge } from "@/components/Badge";
 import { Button } from "@/components/Button";
@@ -111,22 +112,28 @@ export default function SettingsPage() {
 }
 
 function Toggle({ label, enabled = false }: { label: string; enabled?: boolean }) {
+  const [checked, setChecked] = useState(enabled);
+
   return (
-    <div className="flex items-center justify-between rounded-sm border border-border-subtle bg-bg-base px-3 py-2 shadow-inner-panel">
+    <div className="flex min-h-10 items-center justify-between rounded-sm border border-border-subtle bg-bg-base px-3 py-2 shadow-inner-panel">
       <span className="text-text-secondary">{label}</span>
-      <div
+      <button
+        type="button"
+        aria-pressed={checked}
+        aria-label={label}
+        onClick={() => setChecked((current) => !current)}
         className={cn(
-          "relative h-5 w-9 rounded-full border transition-colors",
-          enabled ? "border-brand-emerald/40 bg-brand-emerald shadow-glow-emerald" : "border-border-default bg-bg-surface-raised"
+          "relative h-6 w-11 shrink-0 rounded-full border transition-colors focus-visible:shadow-focus-ring focus-visible:outline-none",
+          checked ? "border-brand-emerald/45 bg-brand-emerald shadow-glow-emerald" : "border-border-default bg-bg-surface-raised"
         )}
       >
-        <div
+        <span
           className={cn(
-            "absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform",
-            enabled ? "translate-x-[18px]" : "translate-x-0.5"
+            "absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform",
+            checked ? "translate-x-5" : "translate-x-0"
           )}
         />
-      </div>
+      </button>
     </div>
   );
 }
