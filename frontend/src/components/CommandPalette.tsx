@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Command } from "cmdk";
 import { useRouter } from "next/navigation";
 import {
@@ -46,35 +46,50 @@ export function CommandPalette() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  const close = () => setOpen(false);
-  const go = (path: string) => {
+  const close = useCallback(() => setOpen(false), []);
+  const go = useCallback((path: string) => {
     router.push(path);
     close();
-  };
+  }, [close, router]);
 
-  const items: CommandItem[] = [
-    { id: "nav-cc", group: "跳转", label: "命令中心", icon: LayoutDashboard, action: () => go("/") },
-    { id: "nav-al", group: "跳转", label: "预警", icon: Bell, action: () => go("/alerts") },
-    { id: "nav-tp", group: "跳转", label: "交易计划", icon: Plane, action: () => go("/trade-plans") },
-    { id: "nav-cw", group: "跳转", label: "因果网络", icon: Network, action: () => go("/causal-web") },
-    { id: "nav-il", group: "跳转", label: "产业透镜", icon: Factory, action: () => go("/industry") },
-    { id: "nav-sec", group: "跳转", label: "板块", icon: Layers, action: () => go("/sectors") },
-    { id: "nav-fl", group: "跳转", label: "未来实验室", icon: Beaker, action: () => go("/future-lab") },
-    { id: "nav-nb", group: "跳转", label: "笔记本", icon: NotebookPen, action: () => go("/notebook") },
-    { id: "nav-an", group: "跳转", label: "分析", icon: BarChart3, action: () => go("/analytics") },
-    ...SECTORS.flatMap((sec) =>
-      sec.symbols.map((sym) => ({
-        id: `sym-${sym.code}`,
-        group: "品种",
-        label: `${sym.code}  ${text(sym.name)}`,
-        icon: TrendingUp,
-        action: () => go("/causal-web"),
-      }))
-    ),
-    { id: "act-pos", group: "操作", label: "添加持仓", icon: Plus, action: () => go("/portfolio") },
-    { id: "act-ai", group: "操作", label: "询问 AI Companion", icon: Sparkles, action: close },
-    { id: "act-note", group: "操作", label: "创建笔记", icon: NotebookPen, action: () => go("/notebook") },
-  ];
+  const items: CommandItem[] = useMemo(
+    () => [
+      { id: "nav-cc", group: "跳转", label: "命令中心", icon: LayoutDashboard, action: () => go("/") },
+      { id: "nav-al", group: "跳转", label: "预警", icon: Bell, action: () => go("/alerts") },
+      { id: "nav-tp", group: "跳转", label: "交易计划", icon: Plane, action: () => go("/trade-plans") },
+      { id: "nav-cw", group: "跳转", label: "因果网络", icon: Network, action: () => go("/causal-web") },
+      { id: "nav-il", group: "跳转", label: "产业透镜", icon: Factory, action: () => go("/industry") },
+      { id: "nav-sec", group: "跳转", label: "板块", icon: Layers, action: () => go("/sectors") },
+      { id: "nav-fl", group: "跳转", label: "未来实验室", icon: Beaker, action: () => go("/future-lab") },
+      { id: "nav-nb", group: "跳转", label: "笔记本", icon: NotebookPen, action: () => go("/notebook") },
+      { id: "nav-an", group: "跳转", label: "分析", icon: BarChart3, action: () => go("/analytics") },
+      ...SECTORS.flatMap((sec) =>
+        sec.symbols.map((sym) => ({
+          id: `sym-${sym.code}`,
+          group: "品种",
+          label: `${sym.code}  ${text(sym.name)}`,
+          icon: TrendingUp,
+          action: () => go("/causal-web"),
+        }))
+      ),
+      { id: "act-pos", group: "操作", label: "添加持仓", icon: Plus, action: () => go("/portfolio") },
+      { id: "act-ai", group: "操作", label: "询问 AI Companion", icon: Sparkles, action: close },
+      { id: "act-note", group: "操作", label: "创建笔记", icon: NotebookPen, action: () => go("/notebook") },
+    ],
+    [close, go, text]
+  );
+  const itemsByGroup = useMemo(() => {
+    const grouped = new Map<string, CommandItem[]>();
+    for (const item of items) {
+      const bucket = grouped.get(item.group);
+      if (bucket) {
+        bucket.push(item);
+      } else {
+        grouped.set(item.group, [item]);
+      }
+    }
+    return grouped;
+  }, [items]);
 
   if (!open) return null;
 
@@ -107,8 +122,7 @@ export function CommandPalette() {
             </Command.Empty>
             {["跳转", "品种", "操作"].map((g) => (
               <Command.Group key={g} heading={text(g)} className="px-1 py-2 text-caption uppercase tracking-wider text-text-muted">
-                {items
-                  .filter((i) => i.group === g)
+                {(itemsByGroup.get(g) ?? [])
                   .map((item) => {
                     const Icon = item.icon;
                     return (

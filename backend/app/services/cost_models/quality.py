@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.cost_snapshot import CostSnapshot
 from app.services.cost_models.cost_chain import FERROUS_CHAIN_ORDER, RUBBER_CHAIN_ORDER
-from app.services.cost_models.snapshots import calculate_cost_snapshot, latest_cost_snapshot
+from app.services.cost_models.snapshots import calculate_cost_snapshot, latest_cost_snapshots
 from app.services.signals.evaluators.cost_model import (
     CapacityContractionEvaluator,
     MarginalCapacitySqueezeEvaluator,
@@ -239,15 +239,14 @@ async def latest_or_calculated_snapshots(
     session: AsyncSession,
     symbols: tuple[str, ...] = FERROUS_CHAIN_ORDER,
 ) -> dict[str, CostSnapshot]:
-    snapshots: dict[str, CostSnapshot] = {}
+    snapshots = await latest_cost_snapshots(session, symbols)
     for symbol in symbols:
-        row = await latest_cost_snapshot(session, symbol)
-        if row is not None:
-            snapshots[symbol] = row
+        normalized = symbol.upper()
+        if normalized in snapshots:
             continue
-        result = await calculate_cost_snapshot(session, symbol)
+        result = await calculate_cost_snapshot(session, normalized)
         payload = result.to_snapshot_payload()
-        snapshots[symbol] = CostSnapshot(
+        snapshots[normalized] = CostSnapshot(
             snapshot_date=datetime.now(timezone.utc).date(),
             **payload,
         )

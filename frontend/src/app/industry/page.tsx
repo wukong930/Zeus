@@ -258,7 +258,10 @@ export default function IndustryLensPage() {
     () => buildSignalRules(displayModel, selectedHistory),
     [displayModel, selectedHistory]
   );
-  const activeSignals = signalRules.filter((rule) => rule.active).length;
+  const activeSignals = useMemo(
+    () => signalRules.reduce((count, rule) => count + (rule.active ? 1 : 0), 0),
+    [signalRules]
+  );
 
   return (
     <div className="px-4 sm:px-6 lg:px-8 py-6 space-y-6 animate-fade-in">
@@ -861,7 +864,7 @@ function SignalRules({
     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
       {rules.map((rule) => (
         <div
-          key={rule.trigger}
+          key={`${rule.trigger}-${rule.condition}`}
           className={cn(
             "flex items-center gap-3 p-3 rounded-sm border min-h-[76px]",
             rule.active ? "bg-brand-orange/10 border-brand-orange" : "bg-bg-base border-border-subtle"

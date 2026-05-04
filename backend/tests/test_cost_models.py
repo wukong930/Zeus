@@ -24,7 +24,9 @@ from app.services.cost_models.rubber_sources import (
 )
 from app.services.cost_models.snapshots import (
     build_cost_signal_context,
+    cost_signal_contexts,
     current_prices_for_symbols,
+    latest_cost_snapshots,
     write_cost_snapshot,
 )
 from app.services.pipeline.handlers import trigger_context_from_payload
@@ -33,11 +35,14 @@ from app.services.signals.detector import SignalDetector
 
 
 class FakeScalars:
-    def __init__(self, row=None) -> None:
-        self._row = row
+    def __init__(self, row=None, rows=None) -> None:
+        self._rows = rows if rows is not None else ([row] if row is not None else [])
 
     def first(self):
-        return self._row
+        return self._rows[0] if self._rows else None
+
+    def all(self):
+        return list(self._rows)
 
 
 class FakeResult:
@@ -49,14 +54,19 @@ class FakeResult:
 
 
 class FakeSession:
-    def __init__(self, row=None, result_rows=None) -> None:
+    def __init__(self, row=None, result_rows=None, scalar_rows=None) -> None:
         self.row = row
         self.result_rows = result_rows or []
         self.execute_count = 0
+        self.scalar_rows = scalar_rows
+        self.scalars_count = 0
         self.rows: list[object] = []
         self.flush_count = 0
 
     async def scalars(self, _):
+        self.scalars_count += 1
+        if self.scalar_rows is not None:
+            return FakeScalars(rows=self.scalar_rows)
         return FakeScalars(self.row)
 
     async def execute(self, _):
@@ -184,6 +194,42 @@ async def test_current_prices_for_symbols_uses_single_batch_query() -> None:
     assert session.execute_count == 1
 
 
+async def test_latest_cost_snapshots_uses_single_batch_query() -> None:
+    rows = [
+        cost_snapshot_row("RB", date(2026, 5, 3)),
+        cost_snapshot_row("I", date(2026, 5, 3)),
+    ]
+    session = FakeSession(scalar_rows=rows)
+
+    snapshots = await latest_cost_snapshots(
+        session,  # type: ignore[arg-type]
+        ("RB", "I", "HC"),
+    )
+
+    assert set(snapshots) == {"RB", "I"}
+    assert snapshots["RB"].symbol == "RB"
+    assert session.scalars_count == 1
+
+
+async def test_cost_signal_contexts_uses_single_batch_query() -> None:
+    rows = [
+        cost_snapshot_row("RB", date(2026, 5, 4)),
+        cost_snapshot_row("RB", date(2026, 5, 3)),
+        cost_snapshot_row("I", date(2026, 5, 4)),
+    ]
+    session = FakeSession(scalar_rows=rows)
+
+    contexts = await cost_signal_contexts(
+        session,  # type: ignore[arg-type]
+        symbols=("RB", "I", "HC"),
+        limit_per_symbol=2,
+    )
+
+    assert [context["symbol1"] for context in contexts] == ["RB", "I"]
+    assert len(contexts[0]["cost_snapshots"]) == 2
+    assert session.scalars_count == 1
+
+
 def test_build_cost_signal_context_serializes_snapshot_history() -> None:
     rows = [
         CostSnapshot(
@@ -213,6 +259,28 @@ def test_build_cost_signal_context_serializes_snapshot_history() -> None:
     assert context["symbol1"] == "RB"
     assert context["regime"] == "cost_model"
     assert len(context["cost_snapshots"]) == 2
+
+
+def cost_snapshot_row(symbol: str, snapshot_date: date) -> CostSnapshot:
+    return CostSnapshot(
+        symbol=symbol,
+        name=symbol,
+        sector="ferrous",
+        snapshot_date=snapshot_date,
+        current_price=100,
+        total_unit_cost=95,
+        breakeven_p25=90,
+        breakeven_p50=95,
+        breakeven_p75=100,
+        breakeven_p90=105,
+        profit_margin=0.05,
+        cost_breakdown=[],
+        inputs={},
+        data_sources=[],
+        uncertainty_pct=0.05,
+        formula_version="test.v1",
+        created_at=datetime.combine(snapshot_date, datetime.min.time(), timezone.utc),
+    )
 
 
 async def test_rubber_cost_context_triggers_profit_margin_signals() -> None:

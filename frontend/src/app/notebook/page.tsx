@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Card } from "@/components/Card";
 import { Badge } from "@/components/Badge";
 import { Button } from "@/components/Button";
@@ -46,6 +46,18 @@ const NOTES = [
 export default function NotebookPage() {
   const [active, setActive] = useState("1");
   const note = NOTES.find((n) => n.id === active)!;
+  const notesByFolder = useMemo(() => {
+    const grouped = new Map<string, typeof NOTES>();
+    for (const item of NOTES) {
+      const bucket = grouped.get(item.folder);
+      if (bucket) {
+        bucket.push(item);
+      } else {
+        grouped.set(item.folder, [item]);
+      }
+    }
+    return grouped;
+  }, []);
   const { text } = useI18n();
 
   return (
@@ -65,9 +77,9 @@ export default function NotebookPage() {
             <div key={folder} className="mb-3">
               <div className="flex items-center justify-between px-2 py-1 text-caption uppercase tracking-wider text-text-muted">
                 <span>{text(folder)}</span>
-                <span>{NOTES.filter((n) => n.folder === folder).length}</span>
+                <span>{notesByFolder.get(folder)?.length ?? 0}</span>
               </div>
-              {NOTES.filter((n) => n.folder === folder).map((n) => (
+              {(notesByFolder.get(folder) ?? []).map((n) => (
                 <button
                   key={n.id}
                   onClick={() => setActive(n.id)}
