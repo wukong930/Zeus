@@ -22,7 +22,11 @@ from app.services.cost_models.rubber_sources import (
     public_rubber_source_points,
     rubber_seasonal_factor,
 )
-from app.services.cost_models.snapshots import build_cost_signal_context, write_cost_snapshot
+from app.services.cost_models.snapshots import (
+    build_cost_signal_context,
+    current_prices_for_symbols,
+    write_cost_snapshot,
+)
 from app.services.pipeline.handlers import trigger_context_from_payload
 from app.services.sectors.ferrous import calculate_blast_furnace_margin
 from app.services.signals.detector import SignalDetector
@@ -36,14 +40,28 @@ class FakeScalars:
         return self._row
 
 
+class FakeResult:
+    def __init__(self, rows=None) -> None:
+        self._rows = rows or []
+
+    def all(self):
+        return self._rows
+
+
 class FakeSession:
-    def __init__(self, row=None) -> None:
+    def __init__(self, row=None, result_rows=None) -> None:
         self.row = row
+        self.result_rows = result_rows or []
+        self.execute_count = 0
         self.rows: list[object] = []
         self.flush_count = 0
 
     async def scalars(self, _):
         return FakeScalars(self.row)
+
+    async def execute(self, _):
+        self.execute_count += 1
+        return FakeResult(self.result_rows)
 
     def add(self, row: object) -> None:
         self.rows.append(row)
@@ -152,6 +170,18 @@ async def test_write_cost_snapshot_creates_row_from_result() -> None:
     assert row.snapshot_date == date(2026, 5, 3)
     assert row.breakeven_p90 > row.breakeven_p50
     assert session.flush_count == 1
+
+
+async def test_current_prices_for_symbols_uses_single_batch_query() -> None:
+    session = FakeSession(result_rows=[("RB", 3200), ("I", 850)])
+
+    prices = await current_prices_for_symbols(
+        session,  # type: ignore[arg-type]
+        ("RB", "I", "NR"),
+    )
+
+    assert prices == {"RB": 3200.0, "I": 850.0, "NR": None}
+    assert session.execute_count == 1
 
 
 def test_build_cost_signal_context_serializes_snapshot_history() -> None:

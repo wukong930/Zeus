@@ -320,6 +320,7 @@ const FLOW_LAYOUT: Record<string, { x: number; y: number }> = {
 
 const fitViewOptions = { padding: 0.06, duration: 500 };
 const previewFitViewOptions = { padding: 0.08, duration: 500 };
+const flowProOptions = { hideAttribution: true };
 const FIT_ANCHOR_TOP_ID = "__causal-fit-top";
 const FIT_ANCHOR_BOTTOM_ID = "__causal-fit-bottom";
 
@@ -395,7 +396,8 @@ function CausalWebCanvas({
   const eventNodes = useMemo(
     () => {
       const unique = new Map<string, CausalNode>();
-      for (const node of graphNodes.filter((item) => item.type === "event")) {
+      for (const node of graphNodes) {
+        if (node.type !== "event") continue;
         const key = eventDisplayKey(node);
         const current = unique.get(key);
         if (!current || nodePriority(node, metaByNodeId, relationCounts) > nodePriority(current, metaByNodeId, relationCounts)) {
@@ -583,6 +585,8 @@ function CausalWebCanvas({
       nodes: fitViewNodeIds.map((id) => ({ id })),
     });
   }, [fitViewNodeIds, flow, isFull]);
+  const flowNodeTypes = useMemo(() => FLOW_NODE_TYPES, []);
+  const flowEdgeTypes = useMemo(() => FLOW_EDGE_TYPES, []);
 
   const changeView = useCallback(
     (nextView: View) => {
@@ -684,8 +688,8 @@ function CausalWebCanvas({
           <ReactFlow
             nodes={nodes}
             edges={edges}
-            nodeTypes={FLOW_NODE_TYPES}
-            edgeTypes={FLOW_EDGE_TYPES}
+            nodeTypes={flowNodeTypes}
+            edgeTypes={flowEdgeTypes}
             onInit={onInit}
             onNodeMouseEnter={
               isFull
@@ -724,7 +728,7 @@ function CausalWebCanvas({
             zoomOnPinch={isFull}
             zoomOnDoubleClick={isFull}
             preventScrolling={isFull}
-            proOptions={{ hideAttribution: true }}
+            proOptions={flowProOptions}
           >
             <Background
               variant={BackgroundVariant.Dots}
@@ -807,7 +811,7 @@ function ModeToolbar({
   onChange: (mode: Mode) => void;
   onFit: () => void;
 }) {
-  const { lang, text } = useI18n();
+  const { text } = useI18n();
 
   return (
     <div className="flex items-center gap-1 rounded-sm border border-border-default bg-[linear-gradient(180deg,rgba(15,17,16,0.98),rgba(0,0,0,0.98))] p-1 shadow-inner-panel">
@@ -884,7 +888,7 @@ function DensityToolbar({
   density: Density;
   onChange: (density: Density) => void;
 }) {
-  const { lang, text } = useI18n();
+  const { text } = useI18n();
 
   return (
     <div className="flex items-center gap-1 rounded-sm border border-border-default bg-[linear-gradient(180deg,rgba(15,17,16,0.98),rgba(0,0,0,0.98))] p-1 shadow-inner-panel">
@@ -1022,11 +1026,14 @@ function SemanticBackdrop({
   height: number;
 }) {
   const { lang, text } = useI18n();
-  const visibleStages = new Set(
-    nodes.filter((node) => viewNodeIds.has(node.id)).map(
-      (node) => (metaByNodeId.get(node.id) ?? semanticMetaForNode(node)).stage
-    )
-  );
+  const visibleStages = useMemo(() => {
+    const stages = new Set<Stage>();
+    for (const node of nodes) {
+      if (!viewNodeIds.has(node.id)) continue;
+      stages.add((metaByNodeId.get(node.id) ?? semanticMetaForNode(node)).stage);
+    }
+    return stages;
+  }, [metaByNodeId, nodes, viewNodeIds]);
 
   return (
     <ViewportPortal>
@@ -1072,11 +1079,14 @@ function StageRail({
   metaByNodeId: Map<string, NodeSemanticMeta>;
 }) {
   const { lang, text } = useI18n();
-  const activeStages = new Set(
-    nodes.filter((node) => viewNodeIds.has(node.id)).map(
-      (node) => (metaByNodeId.get(node.id) ?? semanticMetaForNode(node)).stage
-    )
-  );
+  const activeStages = useMemo(() => {
+    const stages = new Set<Stage>();
+    for (const node of nodes) {
+      if (!viewNodeIds.has(node.id)) continue;
+      stages.add((metaByNodeId.get(node.id) ?? semanticMetaForNode(node)).stage);
+    }
+    return stages;
+  }, [metaByNodeId, nodes, viewNodeIds]);
 
   return (
     <div className="hidden min-w-[360px] justify-center gap-1 rounded-sm border border-border-default bg-[linear-gradient(180deg,rgba(15,17,16,0.98),rgba(0,0,0,0.98))] px-2 py-1 shadow-inner-panel xl:flex">
@@ -1427,9 +1437,25 @@ function GraphStats({
   edges: CausalEdge[];
 }) {
   const { lang, text } = useI18n();
-  const activeNodes = nodes.filter((node) => node.active).length;
-  const verifiedEdges = edges.filter((edge) => edge.verified).length;
-  const focusNode = focusId ? nodes.find((node) => node.id === focusId) : null;
+  const { activeNodes, focusNode, verifiedEdges } = useMemo(() => {
+    let active = 0;
+    let focused: CausalNode | null = null;
+    let verified = 0;
+
+    for (const node of nodes) {
+      if (node.active) active += 1;
+      if (focusId && node.id === focusId) focused = node;
+    }
+    for (const edge of edges) {
+      if (edge.verified) verified += 1;
+    }
+
+    return {
+      activeNodes: active,
+      focusNode: focused,
+      verifiedEdges: verified,
+    };
+  }, [edges, focusId, nodes]);
   const ModeIcon = mode === "live" ? Activity : mode === "replay" ? RotateCcw : Search;
   const ViewIcon = VIEW_META[view].icon;
 
@@ -1489,8 +1515,18 @@ function NodeDetails({
   onClose: () => void;
 }) {
   const { lang, text } = useI18n();
-  const upstream = edges.filter((edge) => edge.target === node.id);
-  const downstream = edges.filter((edge) => edge.source === node.id);
+  const { downstream, upstream } = useMemo(() => {
+    const nextUpstream: CausalEdge[] = [];
+    const nextDownstream: CausalEdge[] = [];
+    for (const edge of edges) {
+      if (edge.target === node.id) nextUpstream.push(edge);
+      if (edge.source === node.id) nextDownstream.push(edge);
+    }
+    return {
+      downstream: nextDownstream,
+      upstream: nextUpstream,
+    };
+  }, [edges, node.id]);
   const stage = STAGE_META[meta.stage];
   const sector = SECTOR_META[meta.sector];
   const color = NODE_COLORS[node.type];
@@ -1887,7 +1923,16 @@ function buildDisplayGraph({
   variant: "full" | "preview";
   focusNodeIds: Set<string>;
 }): DisplayGraph {
-  const baseNodes = nodes.filter((node) => baseNodeIds.has(node.id));
+  const baseNodes: CausalNode[] = [];
+  const baseNodesByStage = new Map<Stage, CausalNode[]>(
+    STAGE_ORDER.map((stage) => [stage, []])
+  );
+  for (const node of nodes) {
+    if (!baseNodeIds.has(node.id)) continue;
+    baseNodes.push(node);
+    const stage = (metaByNodeId.get(node.id) ?? semanticMetaForNode(node)).stage;
+    baseNodesByStage.get(stage)?.push(node);
+  }
   const limits = variant === "preview" ? PREVIEW_STAGE_LIMITS : CORE_STAGE_LIMITS;
   const selected: CausalNode[] = [];
   let hiddenCount = 0;
@@ -1896,9 +1941,9 @@ function buildDisplayGraph({
     selected.push(...baseNodes);
   } else {
     for (const stage of STAGE_ORDER) {
-      const stageNodes = baseNodes
-        .filter((node) => (metaByNodeId.get(node.id) ?? semanticMetaForNode(node)).stage === stage)
-        .sort((a, b) => nodePriority(b, metaByNodeId, relationCounts) - nodePriority(a, metaByNodeId, relationCounts));
+      const stageNodes = (baseNodesByStage.get(stage) ?? []).sort(
+        (a, b) => nodePriority(b, metaByNodeId, relationCounts) - nodePriority(a, metaByNodeId, relationCounts)
+      );
       const keep = new Map<string, CausalNode>();
       for (const node of stageNodes.slice(0, limits[stage])) {
         keep.set(node.id, node);
@@ -1907,24 +1952,28 @@ function buildDisplayGraph({
         if (focusNodeIds.has(node.id)) keep.set(node.id, node);
       }
       selected.push(...keep.values());
-      const hidden = stageNodes.filter((node) => !keep.has(node.id));
-      hiddenCount += hidden.length;
-      if (hidden.length > 0) {
-        selected.push(clusterNodeForStage(stage, hidden.length));
+      const stageHiddenCount = stageNodes.length - keep.size;
+      hiddenCount += stageHiddenCount;
+      if (stageHiddenCount > 0) {
+        selected.push(clusterNodeForStage(stage, stageHiddenCount));
       }
     }
   }
 
   const laidOutNodes = layoutDisplayNodes(selected, metaByNodeId, relationCounts, density, variant);
-  const nodeIds = new Set(laidOutNodes.map((node) => node.id));
-  const realNodeIds = new Set(laidOutNodes.filter((node) => node.type !== "cluster").map((node) => node.id));
+  const nodeIds = new Set<string>();
+  const realNodeIds = new Set<string>();
+  const laidOutStageCounts = new Map<Stage, number>();
+  for (const node of laidOutNodes) {
+    nodeIds.add(node.id);
+    const stage = (metaByNodeId.get(node.id) ?? semanticMetaForNode(node)).stage;
+    laidOutStageCounts.set(stage, (laidOutStageCounts.get(stage) ?? 0) + 1);
+    if (node.type !== "cluster") realNodeIds.add(node.id);
+  }
   const displayEdges = edges.filter((edge) => realNodeIds.has(edge.source) && realNodeIds.has(edge.target));
   const maxStageCount = Math.max(
     1,
-    ...STAGE_ORDER.map(
-      (stage) =>
-        laidOutNodes.filter((node) => (metaByNodeId.get(node.id) ?? semanticMetaForNode(node)).stage === stage).length
-    )
+    ...STAGE_ORDER.map((stage) => laidOutStageCounts.get(stage) ?? 0)
   );
   const yStep = nodeYStep(density, variant);
 

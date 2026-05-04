@@ -126,12 +126,23 @@ export default function NewsEventsPage() {
     });
   }, [direction, eventType, events, query]);
 
-  const selected = filtered.find((event) => event.id === selectedId) ?? filtered[0] ?? null;
-  const stats = {
-    total: events.length,
-    verified: events.filter((event) => event.verificationStatus === "cross_verified").length,
-    manual: events.filter((event) => event.requiresManualConfirmation).length,
-  };
+  const selected = useMemo(
+    () => filtered.find((event) => event.id === selectedId) ?? filtered[0] ?? null,
+    [filtered, selectedId]
+  );
+  const stats = useMemo(() => {
+    let verified = 0;
+    let manual = 0;
+    for (const event of events) {
+      if (event.verificationStatus === "cross_verified") verified += 1;
+      if (event.requiresManualConfirmation) manual += 1;
+    }
+    return {
+      manual,
+      total: events.length,
+      verified,
+    };
+  }, [events]);
   const { text } = useI18n();
 
   return (

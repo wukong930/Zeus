@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Card, CardHeader, CardTitle, CardSubtitle } from "@/components/Card";
 import { Badge } from "@/components/Badge";
 import { MetricTile } from "@/components/MetricTile";
@@ -349,13 +349,30 @@ function HypothesesTab() {
     };
   }, []);
 
+  const hypothesisStats = useMemo(() => {
+    let proposed = 0;
+    let shadowTesting = 0;
+    let weakEvidence = 0;
+    for (const row of rows) {
+      if (row.status === "proposed") proposed += 1;
+      if (row.status === "shadow_testing") shadowTesting += 1;
+      if (row.evidence_strength === "weak_evidence") weakEvidence += 1;
+    }
+    return {
+      proposed,
+      shadowTesting,
+      total: rows.length,
+      weakEvidence,
+    };
+  }, [rows]);
+
   return (
     <div className="space-y-5 animate-fade-in">
       <div className="grid grid-cols-1 md:grid-cols-4 gap-5">
-        <Stat label="假设总数" value={String(rows.length)} trend="monthly" />
-        <Stat label="待评审" value={String(rows.filter((row) => row.status === "proposed").length)} trend="queue" />
-        <Stat label="Shadow 中" value={String(rows.filter((row) => row.status === "shadow_testing").length)} trend="30d" />
-        <Stat label="弱证据" value={String(rows.filter((row) => row.evidence_strength === "weak_evidence").length)} trend="flagged" />
+        <Stat label="假设总数" value={String(hypothesisStats.total)} trend="monthly" />
+        <Stat label="待评审" value={String(hypothesisStats.proposed)} trend="queue" />
+        <Stat label="Shadow 中" value={String(hypothesisStats.shadowTesting)} trend="30d" />
+        <Stat label="弱证据" value={String(hypothesisStats.weakEvidence)} trend="flagged" />
       </div>
 
       <div className="space-y-3">

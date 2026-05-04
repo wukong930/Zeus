@@ -42,22 +42,45 @@ export default function AlertsPage() {
     };
   }, []);
 
+  const alertStats = useMemo(() => {
+    const severityCounts = new Map<Severity, number>();
+    const sectorCounts = new Map<string, number>();
+    let manual = 0;
+    let verified = 0;
+
+    for (const alert of alerts) {
+      severityCounts.set(alert.severity, (severityCounts.get(alert.severity) ?? 0) + 1);
+      sectorCounts.set(alert.sector, (sectorCounts.get(alert.sector) ?? 0) + 1);
+      if (alert.humanActionRequired) manual += 1;
+      if (alert.adversarialPassed) verified += 1;
+    }
+
+    return {
+      critical: severityCounts.get("critical") ?? 0,
+      manual,
+      sectorCounts,
+      severityCounts,
+      verified,
+    };
+  }, [alerts]);
+
   const severities = useMemo(
     () =>
       (["critical", "high", "medium", "low"] as Severity[]).map((value) => ({
         value,
         label: value[0].toUpperCase() + value.slice(1),
-        count: alerts.filter((alert) => alert.severity === value).length,
+        count: alertStats.severityCounts.get(value) ?? 0,
       })),
-    [alerts]
+    [alertStats]
   );
 
-  const filtered = alerts.filter(
-    (a) => enabledSeverities.has(a.severity) && enabledSectors.has(a.sector)
+  const filtered = useMemo(
+    () =>
+      alerts.filter(
+        (a) => enabledSeverities.has(a.severity) && enabledSectors.has(a.sector)
+      ),
+    [alerts, enabledSectors, enabledSeverities]
   );
-  const criticalCount = alerts.filter((alert) => alert.severity === "critical").length;
-  const manualCount = alerts.filter((alert) => alert.humanActionRequired).length;
-  const verifiedCount = alerts.filter((alert) => alert.adversarialPassed).length;
   const { text } = useI18n();
 
   return (
@@ -78,8 +101,8 @@ export default function AlertsPage() {
 
         <div className="grid grid-cols-1 gap-3">
           <MetricTile label={text("当前可见")} value={String(filtered.length)} caption={`${alerts.length} total`} icon={RadioTower} tone="cyan" />
-          <MetricTile label="Critical" value={String(criticalCount)} caption="requires focus" icon={AlertTriangle} tone={criticalCount > 0 ? "down" : "neutral"} />
-          <MetricTile label={text("已验证")} value={String(verifiedCount)} caption={`${manualCount} manual gates`} icon={ShieldCheck} tone="up" />
+          <MetricTile label="Critical" value={String(alertStats.critical)} caption="requires focus" icon={AlertTriangle} tone={alertStats.critical > 0 ? "down" : "neutral"} />
+          <MetricTile label={text("已验证")} value={String(alertStats.verified)} caption={`${alertStats.manual} manual gates`} icon={ShieldCheck} tone="up" />
         </div>
 
         <div className="relative">
@@ -126,7 +149,7 @@ export default function AlertsPage() {
                   setEnabledSectors(next);
                 }}
                 label={text(sec)}
-                count={alerts.filter((a) => a.sector === sec).length}
+                count={alertStats.sectorCounts.get(sec) ?? 0}
               />
             ))}
           </div>

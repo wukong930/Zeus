@@ -1,7 +1,7 @@
 from datetime import date, datetime, timezone
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.commodity_config import CommodityConfig
@@ -24,22 +24,39 @@ ALL_COST_SYMBOLS = FERROUS_SYMBOLS + RUBBER_SYMBOLS
 
 
 async def latest_market_price(session: AsyncSession, symbol: str) -> float | None:
-    row = (
-        await session.scalars(
-            select(MarketData)
-            .where(MarketData.symbol == symbol.upper())
-            .order_by(MarketData.timestamp.desc(), MarketData.vintage_at.desc())
-            .limit(1)
-        )
-    ).first()
-    return float(row.close) if row is not None else None
+    prices = await current_prices_for_symbols(session, (symbol,))
+    return prices.get(symbol)
 
 
 async def current_prices_for_symbols(
     session: AsyncSession,
     symbols: tuple[str, ...],
 ) -> dict[str, float | None]:
-    return {symbol: await latest_market_price(session, symbol) for symbol in symbols}
+    if not symbols:
+        return {}
+
+    normalized_symbols = tuple(dict.fromkeys(symbol.upper() for symbol in symbols))
+    ranked_prices = (
+        select(
+            MarketData.symbol.label("symbol"),
+            MarketData.close.label("close"),
+            func.row_number()
+            .over(
+                partition_by=MarketData.symbol,
+                order_by=(MarketData.timestamp.desc(), MarketData.vintage_at.desc()),
+            )
+            .label("rn"),
+        )
+        .where(MarketData.symbol.in_(normalized_symbols))
+        .subquery()
+    )
+    rows = (
+        await session.execute(
+            select(ranked_prices.c.symbol, ranked_prices.c.close).where(ranked_prices.c.rn == 1)
+        )
+    ).all()
+    prices_by_symbol = {symbol: float(close) for symbol, close in rows}
+    return {symbol: prices_by_symbol.get(symbol.upper()) for symbol in symbols}
 
 
 async def ensure_commodity_configs(

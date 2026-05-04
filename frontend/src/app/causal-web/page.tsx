@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { ComponentType } from "react";
 import { Activity, CheckCircle2, Network } from "lucide-react";
 import { CausalWeb } from "@/components/CausalWeb";
@@ -14,8 +14,14 @@ export default function CausalWebPage() {
   const [edges, setEdges] = useState<CausalEdge[]>(CAUSAL_EDGES);
   const [source, setSource] = useState<"runtime" | "fallback">("fallback");
   const { text } = useI18n();
-  const activeCount = nodes.filter((node) => node.active).length;
-  const verifiedCount = edges.filter((edge) => edge.verified).length;
+  const activeCount = useMemo(
+    () => nodes.filter((node) => node.active).length,
+    [nodes]
+  );
+  const verifiedCount = useMemo(
+    () => edges.filter((edge) => edge.verified).length,
+    [edges]
+  );
 
   useEffect(() => {
     let mounted = true;

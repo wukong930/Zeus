@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Card, CardHeader, CardTitle, CardSubtitle } from "@/components/Card";
 import { CausalWeb } from "@/components/CausalWeb";
 import { SectorHeatmap } from "@/components/SectorHeatmap";
@@ -22,8 +22,14 @@ export default function CommandCenterPage() {
   const [causalNodes, setCausalNodes] = useState<CausalNode[]>(CAUSAL_NODES);
   const [causalEdges, setCausalEdges] = useState<CausalEdge[]>(CAUSAL_EDGES);
   const { text } = useI18n();
-  const totalPnl = positions.reduce((sum, position) => sum + position.pnl, 0);
-  const activeSignals = causalNodes.filter((node) => node.type === "signal" && node.active).length;
+  const totalPnl = useMemo(
+    () => positions.reduce((sum, position) => sum + position.pnl, 0),
+    [positions]
+  );
+  const activeSignals = useMemo(
+    () => causalNodes.filter((node) => node.type === "signal" && node.active).length,
+    [causalNodes]
+  );
 
   useEffect(() => {
     let mounted = true;
