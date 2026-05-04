@@ -53,7 +53,7 @@ export function AICompanion() {
       <button
         onClick={() => setOpen(true)}
         className={cn(
-          "fixed bottom-5 right-5 z-50 w-12 h-12 rounded-full bg-brand-emerald shadow-glow-emerald",
+          "fixed bottom-5 right-5 z-50 h-12 w-12 rounded-full border border-brand-emerald/40 bg-brand-emerald shadow-glow-emerald",
           "flex items-center justify-center text-white",
           "transition-all duration-200 hover:scale-105 hover:bg-brand-emerald-hover",
           open && "scale-0 opacity-0"
@@ -68,24 +68,29 @@ export function AICompanion() {
           "fixed inset-0 z-40 transition-opacity duration-300",
           open ? "opacity-100" : "opacity-0 pointer-events-none"
         )}
-        style={{ background: "rgba(0,0,0,0.6)" }}
+        style={{ background: "rgba(0,0,0,0.68)", backdropFilter: "blur(4px)" }}
         onClick={() => setOpen(false)}
       />
       <aside
         className={cn(
-          "fixed top-0 right-0 bottom-0 z-50 w-[400px] bg-bg-surface-overlay shadow-lg border-l border-border-default flex flex-col",
+          "fixed bottom-0 right-0 top-0 z-50 flex w-[420px] flex-col border-l border-border-default bg-[linear-gradient(180deg,rgba(31,31,31,0.98),rgba(5,7,6,0.98))] shadow-data-panel",
           "transition-transform duration-400 ease-decelerate",
           open ? "translate-x-0" : "translate-x-full"
         )}
       >
-        <div className="flex items-center justify-between h-14 px-5 border-b border-border-default">
+        <div className="flex h-16 items-center justify-between border-b border-border-default px-5">
           <div className="flex items-center gap-2">
-            <Sparkles className="w-4 h-4 text-brand-emerald-bright" />
-            <span className="text-h3 font-semibold">AI Companion</span>
+            <div className="flex h-8 w-8 items-center justify-center rounded-sm border border-brand-emerald/30 bg-brand-emerald/10 text-brand-emerald-bright">
+              <Sparkles className="h-4 w-4" />
+            </div>
+            <div>
+              <span className="block text-h3 font-semibold">AI Companion</span>
+              <span className="text-caption text-text-muted">Context aware research copilot</span>
+            </div>
           </div>
           <button
             onClick={() => setOpen(false)}
-            className="text-text-muted hover:text-text-primary p-1"
+            className="rounded-sm border border-transparent p-1 text-text-muted transition-colors hover:border-border-subtle hover:bg-bg-surface-raised hover:text-text-primary"
           >
             <X className="w-4 h-4" />
           </button>
@@ -94,7 +99,7 @@ export function AICompanion() {
         <div className="flex-1 overflow-y-auto p-5 space-y-4">
           {messages.length === 0 && (
             <div className="space-y-4">
-              <div className="text-sm text-text-secondary leading-relaxed">
+              <div className="rounded-sm border border-border-subtle bg-bg-base p-4 text-sm leading-relaxed text-text-secondary shadow-inner-panel">
                 我是你的 Zeus 研究伙伴。我知道你当前在哪个页面、看哪个预警，可以帮你解释、对比、追问。
               </div>
               <div className="space-y-2">
@@ -103,7 +108,7 @@ export function AICompanion() {
                   <button
                     key={q}
                     onClick={() => send(q)}
-                    className="w-full text-left text-sm text-text-secondary bg-bg-surface hover:bg-bg-surface-raised border border-border-subtle hover:border-border-default rounded-sm px-3 py-2 transition-colors"
+                    className="w-full rounded-sm border border-border-subtle bg-bg-base px-3 py-2 text-left text-sm text-text-secondary shadow-inner-panel transition-colors hover:border-border-default hover:bg-bg-surface-raised hover:text-text-primary"
                   >
                     {q}
                   </button>
@@ -115,10 +120,10 @@ export function AICompanion() {
             <div
               key={i}
               className={cn(
-                "rounded-sm p-3 text-sm leading-relaxed",
+                "rounded-sm border p-3 text-sm leading-relaxed shadow-inner-panel",
                 m.role === "user"
-                  ? "bg-brand-emerald/15 border border-brand-emerald/30 ml-6"
-                  : "bg-bg-surface border border-border-subtle mr-6"
+                  ? "ml-6 border-brand-emerald/30 bg-brand-emerald/15"
+                  : "mr-6 border-border-subtle bg-bg-base"
               )}
             >
               <div className="text-caption text-text-muted mb-1">
@@ -128,21 +133,21 @@ export function AICompanion() {
             </div>
           ))}
           {loading && (
-            <div className="flex items-center gap-2 text-text-muted text-sm">
+            <div className="flex items-center gap-2 rounded-sm border border-border-subtle bg-bg-base px-3 py-2 text-sm text-text-muted shadow-inner-panel">
               <MessageSquare className="w-4 h-4 animate-pulse" />
               思考中...
             </div>
           )}
         </div>
 
-        <div className="border-t border-border-default p-4">
+        <div className="border-t border-border-default bg-bg-base/60 p-4">
           <div className="flex gap-2">
             <input
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && send(input)}
               placeholder="问点什么..."
-              className="flex-1 bg-bg-surface border border-border-default rounded-sm px-3 h-9 text-sm text-text-primary placeholder:text-text-muted focus:border-brand-emerald focus:outline-none"
+              className="h-9 flex-1 rounded-sm border border-border-default bg-bg-base px-3 text-sm text-text-primary placeholder:text-text-muted shadow-inner-panel focus:border-brand-emerald focus:outline-none focus:shadow-focus-ring"
             />
             <Button onClick={() => send(input)} size="md">
               <Send className="w-4 h-4" />

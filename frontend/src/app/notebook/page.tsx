@@ -5,7 +5,7 @@ import { Card } from "@/components/Card";
 import { Badge } from "@/components/Badge";
 import { Button } from "@/components/Button";
 import { cn } from "@/lib/utils";
-import { FileText, Plus, Tag } from "lucide-react";
+import { BookOpen, Clock3, FileText, GitBranch, Plus, Tag } from "lucide-react";
 
 const NOTES = [
   {
@@ -47,32 +47,42 @@ export default function NotebookPage() {
   const note = NOTES.find((n) => n.id === active)!;
 
   return (
-    <div className="flex h-full">
+    <div className="flex h-full min-w-0 bg-[radial-gradient(circle_at_50%_-20%,rgba(16,185,129,0.08),transparent_34%)]">
       {/* Note tree */}
-      <aside className="w-60 border-r border-border-subtle p-4 space-y-3 overflow-y-auto">
+      <aside className="hidden w-64 shrink-0 space-y-4 overflow-y-auto border-r border-border-subtle bg-bg-panel/70 p-4 shadow-inner-panel xl:block">
         <Button variant="primary" size="sm" className="w-full">
           <Plus className="w-3.5 h-3.5" />
           新建笔记
         </Button>
+        <div className="grid grid-cols-2 gap-2">
+          <NotebookStat label="Notes" value={NOTES.length} icon={BookOpen} />
+          <NotebookStat label="Linked" value={7} icon={GitBranch} />
+        </div>
         <div>
           {["黑色", "橡胶", "假设库", "交易日志"].map((folder) => (
             <div key={folder} className="mb-3">
-              <div className="text-caption text-text-muted uppercase tracking-wider px-2 py-1">{folder}</div>
+              <div className="flex items-center justify-between px-2 py-1 text-caption uppercase tracking-wider text-text-muted">
+                <span>{folder}</span>
+                <span>{NOTES.filter((n) => n.folder === folder).length}</span>
+              </div>
               {NOTES.filter((n) => n.folder === folder).map((n) => (
                 <button
                   key={n.id}
                   onClick={() => setActive(n.id)}
                   className={cn(
-                    "w-full flex items-start gap-2 px-2 py-2 rounded-sm text-left text-sm transition-colors",
+                    "w-full flex items-start gap-2 rounded-sm border px-2 py-2 text-left text-sm transition-all",
                     active === n.id
-                      ? "bg-brand-emerald/15 text-text-primary"
-                      : "text-text-secondary hover:bg-bg-surface-raised"
+                      ? "border-brand-emerald/35 bg-brand-emerald/12 text-text-primary shadow-data-panel"
+                      : "border-transparent text-text-secondary hover:border-border-subtle hover:bg-bg-surface-raised"
                   )}
                 >
-                  <FileText className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                  <FileText className={cn("w-3.5 h-3.5 shrink-0 mt-0.5", active === n.id ? "text-brand-emerald-bright" : "text-text-muted")} />
                   <div className="flex-1 min-w-0">
-                    <div className="line-clamp-1">{n.title}</div>
-                    <div className="text-caption text-text-muted">{n.updatedAt}</div>
+                    <div className="line-clamp-1 font-medium">{n.title}</div>
+                    <div className="mt-1 flex items-center gap-1 text-caption text-text-muted">
+                      <Clock3 className="h-3 w-3" />
+                      {n.updatedAt}
+                    </div>
                   </div>
                 </button>
               ))}
@@ -82,9 +92,9 @@ export default function NotebookPage() {
       </aside>
 
       {/* Editor */}
-      <div className="flex-1 overflow-y-auto">
+      <div className="min-w-0 flex-1 overflow-y-auto">
         <div className="max-w-3xl mx-auto px-8 py-8 space-y-5">
-          <div>
+          <div className="rounded-sm border border-border-default bg-[linear-gradient(180deg,rgba(15,17,16,0.9),rgba(3,5,4,0.72))] p-5 shadow-data-panel">
             <input
               defaultValue={note.title}
               className="bg-transparent text-h1 font-semibold text-text-primary w-full focus:outline-none"
@@ -101,7 +111,7 @@ export default function NotebookPage() {
             </div>
           </div>
 
-          <div className="text-sm text-text-secondary leading-relaxed space-y-3">
+          <div className="rounded-sm border border-border-subtle bg-bg-base/70 p-5 text-sm text-text-secondary leading-relaxed space-y-3 shadow-inner-panel">
             <p>{note.preview}</p>
             <p>系统在 09:42 触发 cost_support_pressure 预警，置信度 0.84，对抗引擎 3/3 通过。我自己的判断是认同（与 1 周前的研究一致），但仓位偏小（3 手），原因是仍担心终端建材采购可能在五一前后回落。</p>
             <p>
@@ -117,16 +127,16 @@ export default function NotebookPage() {
             </ul>
           </div>
 
-          <Card variant="elevated">
+          <Card variant="data">
             <div className="text-caption text-text-muted uppercase mb-2">关联预警 · 关联假设</div>
             <div className="grid grid-cols-2 gap-2">
-              <div className="text-sm">
+              <div className="rounded-sm border border-border-subtle bg-bg-base p-3 text-sm shadow-inner-panel">
                 <Badge variant="critical">CRITICAL</Badge>
-                <span className="ml-2 text-text-secondary">RB cost_support_pressure (alt-001)</span>
+                <div className="mt-2 text-text-secondary">RB cost_support_pressure (alt-001)</div>
               </div>
-              <div className="text-sm">
+              <div className="rounded-sm border border-border-subtle bg-bg-base p-3 text-sm shadow-inner-panel">
                 <Badge variant="emerald">假设</Badge>
-                <span className="ml-2 text-text-secondary">jm_to_rb_profit · 0.71 命中率</span>
+                <div className="mt-2 text-text-secondary">jm_to_rb_profit · 0.71 命中率</div>
               </div>
             </div>
           </Card>
@@ -134,7 +144,7 @@ export default function NotebookPage() {
       </div>
 
       {/* Right sidebar: backlinks */}
-      <aside className="w-72 border-l border-border-subtle p-5 space-y-4 overflow-y-auto">
+      <aside className="hidden w-80 shrink-0 space-y-4 overflow-y-auto border-l border-border-subtle bg-bg-panel/70 p-5 shadow-inner-panel 2xl:block">
         <div>
           <div className="text-caption text-text-muted uppercase mb-2">引用此笔记</div>
           <div className="space-y-1.5">
@@ -159,11 +169,31 @@ export default function NotebookPage() {
   );
 }
 
-function RefItem({ title, type }: { title: string; type: "note" | "hypothesis" | "alert" }) {
-  const colorMap = { note: "text-text-secondary", hypothesis: "text-brand-emerald-bright", alert: "text-brand-orange" };
+function NotebookStat({
+  label,
+  value,
+  icon: Icon,
+}: {
+  label: string;
+  value: number;
+  icon: React.ComponentType<{ className?: string }>;
+}) {
   return (
-    <div className={cn("text-sm hover:text-text-primary cursor-pointer transition-colors", colorMap[type])}>
-      ◇ {title}
+    <div className="rounded-sm border border-border-subtle bg-bg-base p-2 shadow-inner-panel">
+      <div className="flex items-center justify-between text-caption text-text-muted">
+        <span>{label}</span>
+        <Icon className="h-3.5 w-3.5" />
+      </div>
+      <div className="mt-1 font-mono text-lg text-text-primary tabular-nums">{value}</div>
+    </div>
+  );
+}
+
+function RefItem({ title, type }: { title: string; type: "note" | "hypothesis" | "alert" }) {
+  const colorMap = { note: "border-border-subtle text-text-secondary", hypothesis: "border-brand-emerald/30 text-brand-emerald-bright", alert: "border-brand-orange/30 text-brand-orange" };
+  return (
+    <div className={cn("cursor-pointer rounded-sm border bg-bg-base px-3 py-2 text-sm shadow-inner-panel transition-colors hover:border-border-strong hover:text-text-primary", colorMap[type])}>
+      {title}
     </div>
   );
 }

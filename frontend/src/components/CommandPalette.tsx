@@ -79,30 +79,32 @@ export function CommandPalette() {
   return (
     <div className="fixed inset-0 z-[100]">
       <div
-        className="absolute inset-0 bg-black/70 animate-fade-in"
+        className="absolute inset-0 bg-black/78 backdrop-blur-sm animate-fade-in"
         onClick={close}
       />
-      <div className="relative max-w-2xl mx-auto mt-[10vh] mx-4 animate-fade-in">
+      <div className="relative mx-auto mt-[10vh] w-[min(720px,calc(100vw-32px))] animate-fade-in">
         <Command
           label="Command Palette"
-          className="bg-bg-surface-overlay border border-border-default rounded-md shadow-lg overflow-hidden"
+          className="overflow-hidden rounded-md border border-border-default bg-[linear-gradient(180deg,rgba(31,31,31,0.98),rgba(5,7,6,0.98))] shadow-data-panel"
         >
-          <div className="flex items-center gap-3 px-4 h-12 border-b border-border-default">
-            <Search className="w-4 h-4 text-text-muted shrink-0" />
+          <div className="flex h-14 items-center gap-3 border-b border-border-default px-4">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-sm border border-brand-emerald/30 bg-brand-emerald/10 text-brand-emerald-bright">
+              <Search className="h-4 w-4" />
+            </div>
             <Command.Input
               placeholder="搜索品种 / 跳转 / 执行..."
-              className="flex-1 bg-transparent text-text-primary placeholder:text-text-muted text-sm focus:outline-none"
+              className="flex-1 bg-transparent text-sm text-text-primary placeholder:text-text-muted focus:outline-none"
             />
-            <kbd className="text-caption text-text-muted bg-bg-surface px-1.5 py-0.5 rounded-xs border border-border-default">
+            <kbd className="rounded-xs border border-border-default bg-bg-base px-1.5 py-0.5 text-caption text-text-muted shadow-inner-panel">
               ESC
             </kbd>
           </div>
-          <Command.List className="max-h-[60vh] overflow-y-auto p-2">
+          <Command.List className="max-h-[60vh] overflow-y-auto p-3">
             <Command.Empty className="py-8 text-center text-sm text-text-muted">
               没找到匹配项
             </Command.Empty>
             {["跳转", "品种", "操作"].map((g) => (
-              <Command.Group key={g} heading={g} className="text-caption text-text-muted uppercase tracking-wider px-2 py-2">
+              <Command.Group key={g} heading={g} className="px-1 py-2 text-caption uppercase tracking-wider text-text-muted">
                 {items
                   .filter((i) => i.group === g)
                   .map((item) => {
@@ -111,10 +113,17 @@ export function CommandPalette() {
                       <Command.Item
                         key={item.id}
                         onSelect={item.action}
-                        className="flex items-center gap-3 px-3 h-9 rounded-sm cursor-pointer text-sm text-text-secondary aria-selected:bg-brand-emerald/15 aria-selected:text-text-primary"
+                        className="flex h-10 cursor-pointer items-center gap-3 rounded-sm border border-transparent px-3 text-sm text-text-secondary transition-colors aria-selected:border-brand-emerald/35 aria-selected:bg-brand-emerald/12 aria-selected:text-text-primary"
                       >
-                        <Icon className="w-4 h-4 shrink-0" />
-                        <span>{item.label}</span>
+                        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-xs border border-border-subtle bg-bg-base text-text-muted">
+                          <Icon className="h-3.5 w-3.5" />
+                        </span>
+                        <span className="flex-1">{item.label}</span>
+                        {item.shortcut && (
+                          <kbd className="rounded-xs border border-border-subtle bg-bg-base px-1.5 py-0.5 text-caption text-text-muted">
+                            {item.shortcut}
+                          </kbd>
+                        )}
                       </Command.Item>
                     );
                   })}

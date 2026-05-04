@@ -5,6 +5,7 @@ import { AlertTriangle, Beaker, Play, Sparkles } from "lucide-react";
 import { Badge } from "@/components/Badge";
 import { Button } from "@/components/Button";
 import { Card, CardHeader, CardSubtitle, CardTitle } from "@/components/Card";
+import { MetricTile } from "@/components/MetricTile";
 import { runScenarioSimulation, type ScenarioReport } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
@@ -97,7 +98,7 @@ export default function FutureLabPage() {
       </div>
 
       <div className="grid grid-cols-12 gap-5">
-        <Card variant="flat" className="col-span-12 xl:col-span-4 space-y-4">
+        <Card variant="data" className="col-span-12 xl:col-span-4 space-y-4">
           <CardHeader>
             <CardTitle>场景配置</CardTitle>
           </CardHeader>
@@ -107,7 +108,7 @@ export default function FutureLabPage() {
             <select
               value={presetIndex}
               onChange={(event) => updatePreset(Number(event.target.value))}
-              className="w-full bg-bg-base border border-border-default rounded-sm h-9 px-3 text-sm focus:border-brand-emerald focus:outline-none"
+              className="h-9 w-full rounded-sm border border-border-default bg-bg-base px-3 text-sm shadow-inner-panel focus:border-brand-emerald focus:outline-none focus:shadow-focus-ring"
             >
               {SCENARIO_PRESETS.map((item, index) => (
                 <option key={item.targetSymbol} value={index}>
@@ -183,7 +184,7 @@ export default function FutureLabPage() {
           )}
         </Card>
 
-        <Card variant="flat" className="col-span-12 xl:col-span-8">
+        <Card variant="data" className="col-span-12 xl:col-span-8">
           <CardHeader>
             <div className="flex items-center gap-3">
               <CardTitle>概率扇</CardTitle>
@@ -216,30 +217,33 @@ export default function FutureLabPage() {
           )}
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-5">
-            <ScenarioStat
+            <MetricTile
               label="P5 下行风险"
               value={report ? `< ${price(report.monte_carlo.terminal_distribution.p5)}` : "-"}
-              desc="5% 分位"
-              colorClass="text-data-down"
+              caption="5% 分位"
+              icon={AlertTriangle}
+              tone="down"
             />
-            <ScenarioStat
+            <MetricTile
               label="P50 中位数路径"
               value={report ? price(report.monte_carlo.terminal_distribution.p50) : "-"}
-              desc="预期价格"
-              colorClass="text-text-primary"
+              caption="预期价格"
+              icon={Beaker}
+              tone="cyan"
             />
-            <ScenarioStat
+            <MetricTile
               label="P95 上行"
               value={report ? `> ${price(report.monte_carlo.terminal_distribution.p95)}` : "-"}
-              desc="95% 分位"
-              colorClass="text-data-up"
+              caption="95% 分位"
+              icon={Sparkles}
+              tone="up"
             />
           </div>
         </Card>
       </div>
 
       {report && (
-        <Card variant="flat">
+        <Card variant="data">
           <CardHeader>
             <div>
               <CardTitle>情景叙事</CardTitle>
@@ -256,7 +260,7 @@ export default function FutureLabPage() {
               <div className="space-y-2">
                 <div className="text-caption text-text-muted">关键风险</div>
                 {report.risk_points.map((item) => (
-                  <div key={item} className="bg-bg-base rounded-sm p-3">
+                  <div key={item} className="rounded-sm border border-border-subtle bg-bg-base p-3 shadow-inner-panel">
                     {item}
                   </div>
                 ))}
@@ -264,7 +268,7 @@ export default function FutureLabPage() {
               <div className="space-y-2">
                 <div className="text-caption text-text-muted">建议动作</div>
                 {report.suggested_actions.map((item) => (
-                  <div key={item} className="bg-bg-base rounded-sm p-3">
+                  <div key={item} className="rounded-sm border border-border-subtle bg-bg-base p-3 shadow-inner-panel">
                     {item}
                   </div>
                 ))}
@@ -288,7 +292,7 @@ function PathGraph({ report }: { report: ScenarioReport }) {
         {paths.map((path) => (
           <div
             key={`${path.root_symbol}-${path.source_symbol}-${path.target_symbol}-${path.depth}`}
-            className="bg-bg-base rounded-sm p-3"
+            className="rounded-sm border border-border-subtle bg-bg-base p-3 shadow-inner-panel"
           >
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-2 font-mono text-text-primary">
@@ -335,8 +339,8 @@ function ScenarioSlider({
   onChange: (value: number) => void;
 }) {
   return (
-    <div>
-      <div className="flex items-center justify-between text-caption mb-1">
+    <div className="rounded-sm border border-border-subtle bg-bg-base p-3 shadow-inner-panel">
+      <div className="mb-2 flex items-center justify-between text-caption">
         <span className="text-text-muted">{label}</span>
         <span
           className={cn(
@@ -360,30 +364,8 @@ function ScenarioSlider({
         step={step}
         value={value}
         onChange={(event) => onChange(Number(event.target.value))}
-        className="w-full h-1 bg-bg-surface-raised rounded-full appearance-none cursor-pointer accent-brand-emerald"
+        className="h-1 w-full cursor-pointer appearance-none rounded-full bg-bg-surface-raised accent-brand-emerald"
       />
-    </div>
-  );
-}
-
-function ScenarioStat({
-  label,
-  value,
-  desc,
-  colorClass,
-}: {
-  label: string;
-  value: string;
-  desc: string;
-  colorClass: string;
-}) {
-  return (
-    <div className="bg-bg-base rounded-sm p-3 min-h-24">
-      <div className="text-caption text-text-muted">{label}</div>
-      <div className={cn("text-h2 font-mono tabular-nums mt-1 break-words", colorClass)}>
-        {value}
-      </div>
-      <div className="text-caption text-text-muted mt-1">{desc}</div>
     </div>
   );
 }
