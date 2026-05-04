@@ -261,7 +261,7 @@ const FLOW_LAYOUT: Record<string, { x: number; y: number }> = {
   n12: { x: 1490, y: 760 },
 };
 
-const fitViewOptions = { padding: 0.1, duration: 500 };
+const fitViewOptions = { padding: 0.06, duration: 500 };
 const previewFitViewOptions = { padding: 0.08, duration: 500 };
 
 const FLOW_NODE_TYPES = {
@@ -429,8 +429,8 @@ function CausalWebCanvas({ variant = "full", className }: CausalWebProps) {
       )}
     >
       {isFull && (
-        <div className="shrink-0 overflow-x-auto border-b border-border-subtle bg-bg-surface/80 px-4 py-3">
-          <div className="flex min-w-max items-center gap-4">
+        <div className="shrink-0 overflow-x-auto border-b border-border-subtle bg-bg-surface/80 px-3 py-2">
+          <div className="flex min-w-max items-center gap-3">
             <div className="flex flex-wrap gap-2">
               <ModeToolbar mode={mode} onChange={setMode} onFit={fitCanvas} />
               <ViewToolbar view={view} onChange={changeView} />
@@ -523,8 +523,8 @@ function CausalWebCanvas({ variant = "full", className }: CausalWebProps) {
       </div>
 
       {isFull && !selected && (
-        <div className="shrink-0 border-t border-border-subtle bg-bg-surface/90 px-4 py-3">
-          <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+        <div className="shrink-0 border-t border-border-subtle bg-bg-surface/90 px-3 py-2">
+          <div className="flex flex-col gap-2 xl:flex-row xl:items-center xl:justify-between">
             <ViewBrief view={view} focusId={activeFocusId} visibleCount={viewNodeIds.size} />
             <Legend />
           </div>
@@ -556,13 +556,13 @@ function ModeToolbar({
             aria-label={meta.label}
             onClick={() => onChange(item)}
             className={cn(
-              "flex h-8 items-center gap-2 rounded-xs px-3 text-xs font-medium transition-colors",
+              "flex h-7 items-center gap-1.5 rounded-xs px-2.5 text-xs font-medium transition-colors",
               mode === item
                 ? "bg-brand-emerald text-white"
                 : "text-text-secondary hover:bg-bg-surface-raised hover:text-text-primary"
             )}
           >
-            <Icon className="h-3.5 w-3.5" />
+            <Icon className="h-3 w-3" />
             <span className="hidden xl:inline">{meta.label}</span>
           </button>
         );
@@ -572,9 +572,9 @@ function ModeToolbar({
         title="Fit view"
         aria-label="Fit view"
         onClick={onFit}
-        className="flex h-8 w-8 items-center justify-center rounded-xs text-text-secondary transition-colors hover:bg-bg-surface-raised hover:text-text-primary"
+        className="flex h-7 w-7 items-center justify-center rounded-xs text-text-secondary transition-colors hover:bg-bg-surface-raised hover:text-text-primary"
       >
-        <Maximize2 className="h-3.5 w-3.5" />
+        <Maximize2 className="h-3 w-3" />
       </button>
     </div>
   );
@@ -594,13 +594,13 @@ function ViewToolbar({ view, onChange }: { view: View; onChange: (view: View) =>
             aria-label={meta.label}
             onClick={() => onChange(item)}
             className={cn(
-              "flex h-8 items-center gap-2 rounded-xs px-2.5 text-xs font-medium transition-colors",
+              "flex h-7 items-center gap-1.5 rounded-xs px-2 text-xs font-medium transition-colors",
               view === item
                 ? "bg-bg-surface-highlight text-text-primary"
                 : "text-text-muted hover:bg-bg-surface-raised hover:text-text-primary"
             )}
           >
-            <Icon className="h-3.5 w-3.5" />
+            <Icon className="h-3 w-3" />
             <span className="hidden xl:inline">{meta.label}</span>
           </button>
         );
@@ -658,7 +658,7 @@ function StageRail({ viewNodeIds }: { viewNodeIds: Set<string> }) {
   );
 
   return (
-    <div className="hidden min-w-[360px] justify-center gap-1 rounded-sm border border-border-default bg-bg-base px-2 py-1.5 xl:flex">
+    <div className="hidden min-w-[336px] justify-center gap-1 rounded-sm border border-border-default bg-bg-base px-2 py-1 xl:flex">
       {STAGE_ORDER.map((stage, index) => {
         const meta = STAGE_META[stage];
         const active = activeStages.has(stage);
@@ -666,7 +666,7 @@ function StageRail({ viewNodeIds }: { viewNodeIds: Set<string> }) {
           <div key={stage} className="flex items-center gap-1">
             <div
               className={cn(
-                "rounded-xs border px-2 py-1 text-caption transition-opacity",
+                "rounded-xs border px-1.5 py-0.5 text-caption transition-opacity",
                 active ? "opacity-100" : "opacity-35"
               )}
               style={{ borderColor: `${meta.color}55`, color: meta.color }}
@@ -699,7 +699,7 @@ function ViewBrief({
   const focusMeta = focusNode ? NODE_META[focusNode.id] : null;
 
   return (
-    <div className="min-w-0 flex-1 rounded-sm border border-border-default bg-bg-base px-3 py-2 xl:max-w-[560px]">
+    <div className="min-w-0 flex-1 rounded-sm border border-border-default bg-bg-base px-2.5 py-1.5 xl:max-w-[560px]">
       <div className="flex items-center gap-2 text-caption text-text-muted">
         <Icon className="h-3.5 w-3.5" />
         <span className="text-text-secondary">{meta.label}</span>
@@ -935,14 +935,14 @@ function GraphStats({
   const ViewIcon = VIEW_META[view].icon;
 
   return (
-    <div className="flex flex-wrap items-stretch gap-2 rounded-sm border border-border-default bg-bg-base p-1.5">
+    <div className="flex flex-wrap items-stretch gap-1.5 rounded-sm border border-border-default bg-bg-base p-1">
       <StatCell icon={ModeIcon} label="Mode" value={mode} />
       <StatCell icon={ViewIcon} label="View" value={VIEW_META[view].label} />
       <StatCell icon={CircleDot} label="Active" value={`${activeNodes}/${CAUSAL_NODES.length}`} />
       <StatCell icon={CheckCircle2} label="Verified" value={`${verifiedEdges}/${CAUSAL_EDGES.length}`} />
-      <div className="min-w-[112px] rounded-xs bg-bg-surface-raised px-2.5 py-1.5 text-caption text-text-muted">
+      <div className="min-w-[96px] rounded-xs bg-bg-surface-raised px-2 py-1 text-caption text-text-muted">
         <span>Visible</span>
-        <span className="ml-2 font-mono text-sm text-text-primary">{visibleCount}/{CAUSAL_NODES.length}</span>
+        <span className="ml-2 font-mono text-xs text-text-primary">{visibleCount}/{CAUSAL_NODES.length}</span>
         {focusId && (
           <div className="mt-1 max-w-40 truncate text-text-secondary">
             {CAUSAL_NODES.find((node) => node.id === focusId)?.label}
@@ -963,12 +963,12 @@ function StatCell({
   value: string;
 }) {
   return (
-    <div className="min-w-16 rounded-xs bg-bg-surface-raised px-2.5 py-1.5">
+    <div className="min-w-14 rounded-xs bg-bg-surface-raised px-2 py-1">
       <div className="flex items-center gap-1.5 text-caption text-text-muted">
         <Icon className="h-3 w-3" />
         {label}
       </div>
-      <div className="mt-0.5 max-w-20 truncate font-mono text-sm text-text-primary">{value}</div>
+      <div className="mt-0.5 max-w-16 truncate font-mono text-xs text-text-primary">{value}</div>
     </div>
   );
 }
@@ -1121,7 +1121,7 @@ function EdgeList({
 
 function Legend() {
   return (
-    <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2 rounded-sm border border-border-default bg-bg-base px-3 py-2">
+    <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5 rounded-sm border border-border-default bg-bg-base px-2.5 py-1.5">
       <div className="flex items-center gap-2 text-caption font-medium text-text-secondary">
         <Network className="h-3.5 w-3.5" />
         Causal Layers
