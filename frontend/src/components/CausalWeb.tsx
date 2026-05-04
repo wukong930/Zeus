@@ -423,13 +423,13 @@ function CausalWebCanvas({ variant = "full", className }: CausalWebProps) {
   return (
     <div
       className={cn(
-        "causal-web-flow isolate flex h-full w-full flex-col overflow-hidden bg-bg-base",
+        "causal-web-flow isolate flex h-full w-full flex-col overflow-hidden bg-[linear-gradient(180deg,rgba(5,7,6,0.98),rgba(0,0,0,1))]",
         !isFull && "pointer-events-none",
         className
       )}
     >
       {isFull && (
-        <div className="shrink-0 overflow-x-auto border-b border-border-subtle bg-bg-surface/80 px-3 py-2">
+        <div className="shrink-0 overflow-x-auto border-b border-border-subtle bg-[linear-gradient(180deg,rgba(20,20,20,0.78),rgba(5,7,6,0.96))] px-3 py-2 shadow-inner-panel">
           <div className="flex min-w-max items-center gap-3">
             <div className="flex flex-wrap gap-2">
               <ModeToolbar mode={mode} onChange={setMode} onFit={fitCanvas} />
@@ -523,7 +523,7 @@ function CausalWebCanvas({ variant = "full", className }: CausalWebProps) {
       </div>
 
       {isFull && !selected && (
-        <div className="shrink-0 border-t border-border-subtle bg-bg-surface/90 px-3 py-2">
+        <div className="shrink-0 border-t border-border-subtle bg-[linear-gradient(180deg,rgba(5,7,6,0.92),rgba(15,17,16,0.98))] px-3 py-2 shadow-inner-panel">
           <div className="flex flex-col gap-2 xl:flex-row xl:items-center xl:justify-between">
             <ViewBrief view={view} focusId={activeFocusId} visibleCount={viewNodeIds.size} />
             <Legend />
@@ -544,7 +544,7 @@ function ModeToolbar({
   onFit: () => void;
 }) {
   return (
-    <div className="flex items-center gap-1 rounded-sm border border-border-default bg-bg-base p-1">
+    <div className="flex items-center gap-1 rounded-sm border border-border-default bg-[linear-gradient(180deg,rgba(15,17,16,0.98),rgba(0,0,0,0.98))] p-1 shadow-inner-panel">
       {(Object.keys(MODE_META) as Mode[]).map((item) => {
         const meta = MODE_META[item];
         const Icon = meta.icon;
@@ -556,10 +556,10 @@ function ModeToolbar({
             aria-label={meta.label}
             onClick={() => onChange(item)}
             className={cn(
-              "flex h-7 items-center gap-1.5 rounded-xs px-2.5 text-xs font-medium transition-colors",
+              "flex h-7 items-center gap-1.5 rounded-xs border px-2.5 text-xs font-medium transition-colors",
               mode === item
-                ? "bg-brand-emerald text-white"
-                : "text-text-secondary hover:bg-bg-surface-raised hover:text-text-primary"
+                ? "border-brand-emerald/45 bg-brand-emerald text-white shadow-glow-emerald"
+                : "border-transparent text-text-secondary hover:border-border-subtle hover:bg-bg-surface-raised hover:text-text-primary"
             )}
           >
             <Icon className="h-3 w-3" />
@@ -572,7 +572,7 @@ function ModeToolbar({
         title="Fit view"
         aria-label="Fit view"
         onClick={onFit}
-        className="flex h-7 w-7 items-center justify-center rounded-xs text-text-secondary transition-colors hover:bg-bg-surface-raised hover:text-text-primary"
+        className="flex h-7 w-7 items-center justify-center rounded-xs border border-transparent text-text-secondary transition-colors hover:border-border-subtle hover:bg-bg-surface-raised hover:text-text-primary"
       >
         <Maximize2 className="h-3 w-3" />
       </button>
@@ -582,7 +582,7 @@ function ModeToolbar({
 
 function ViewToolbar({ view, onChange }: { view: View; onChange: (view: View) => void }) {
   return (
-    <div className="flex items-center gap-1 rounded-sm border border-border-default bg-bg-base p-1">
+    <div className="flex items-center gap-1 rounded-sm border border-border-default bg-[linear-gradient(180deg,rgba(15,17,16,0.98),rgba(0,0,0,0.98))] p-1 shadow-inner-panel">
       {VIEW_ORDER.map((item) => {
         const meta = VIEW_META[item];
         const Icon = meta.icon;
@@ -594,10 +594,10 @@ function ViewToolbar({ view, onChange }: { view: View; onChange: (view: View) =>
             aria-label={meta.label}
             onClick={() => onChange(item)}
             className={cn(
-              "flex h-7 items-center gap-1.5 rounded-xs px-2 text-xs font-medium transition-colors",
+              "flex h-7 items-center gap-1.5 rounded-xs border px-2 text-xs font-medium transition-colors",
               view === item
-                ? "bg-bg-surface-highlight text-text-primary"
-                : "text-text-muted hover:bg-bg-surface-raised hover:text-text-primary"
+                ? "border-border-strong bg-bg-surface-highlight text-text-primary shadow-inner-panel"
+                : "border-transparent text-text-muted hover:border-border-subtle hover:bg-bg-surface-raised hover:text-text-primary"
             )}
           >
             <Icon className="h-3 w-3" />
@@ -658,7 +658,7 @@ function StageRail({ viewNodeIds }: { viewNodeIds: Set<string> }) {
   );
 
   return (
-    <div className="hidden min-w-[336px] justify-center gap-1 rounded-sm border border-border-default bg-bg-base px-2 py-1 xl:flex">
+    <div className="hidden min-w-[360px] justify-center gap-1 rounded-sm border border-border-default bg-[linear-gradient(180deg,rgba(15,17,16,0.98),rgba(0,0,0,0.98))] px-2 py-1 shadow-inner-panel xl:flex">
       {STAGE_ORDER.map((stage, index) => {
         const meta = STAGE_META[stage];
         const active = activeStages.has(stage);
@@ -699,7 +699,7 @@ function ViewBrief({
   const focusMeta = focusNode ? NODE_META[focusNode.id] : null;
 
   return (
-    <div className="min-w-0 flex-1 rounded-sm border border-border-default bg-bg-base px-2.5 py-1.5 xl:max-w-[560px]">
+    <div className="min-w-0 flex-1 rounded-sm border border-border-default bg-[linear-gradient(180deg,rgba(15,17,16,0.98),rgba(0,0,0,0.98))] px-3 py-2 shadow-inner-panel xl:max-w-[620px]">
       <div className="flex items-center gap-2 text-caption text-text-muted">
         <Icon className="h-3.5 w-3.5" />
         <span className="text-text-secondary">{meta.label}</span>
@@ -730,7 +730,7 @@ function CausalNodeCard({ data, selected }: NodeProps<CausalFlowNode>) {
   return (
     <div
       className={cn(
-        "group relative rounded-sm border bg-bg-surface-overlay shadow-md transition duration-200",
+        "group relative rounded-sm border bg-[linear-gradient(180deg,rgba(31,31,31,0.94),rgba(8,10,9,0.98))] shadow-data-panel transition duration-200",
         compact ? "w-[148px] px-3 py-2" : "w-[196px] px-3.5 py-3",
         data.viewDimmed ? "scale-[0.96] opacity-20 grayscale" : data.dimmed && "scale-[0.98] opacity-35",
         data.focused && "shadow-lg",
@@ -901,9 +901,10 @@ function CausalEdgeLine({
       {data.showLabel && !data.dimmed && (
         <EdgeLabelRenderer>
           <div
-            className="nodrag nopan absolute rounded-xs border border-border-default bg-bg-surface-overlay px-2 py-1 text-caption text-text-secondary shadow-sm"
+            className="nodrag nopan absolute rounded-xs border border-border-default bg-bg-surface-overlay/95 px-2 py-1 text-caption text-text-secondary shadow-data-panel backdrop-blur-sm"
             style={{
               transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`,
+              borderColor: `${color}55`,
             }}
           >
             <span className="font-mono text-text-primary">{edge.lag}</span>
@@ -935,12 +936,12 @@ function GraphStats({
   const ViewIcon = VIEW_META[view].icon;
 
   return (
-    <div className="flex flex-wrap items-stretch gap-1.5 rounded-sm border border-border-default bg-bg-base p-1">
+    <div className="flex flex-wrap items-stretch gap-1.5 rounded-sm border border-border-default bg-[linear-gradient(180deg,rgba(15,17,16,0.98),rgba(0,0,0,0.98))] p-1 shadow-inner-panel">
       <StatCell icon={ModeIcon} label="Mode" value={mode} />
       <StatCell icon={ViewIcon} label="View" value={VIEW_META[view].label} />
       <StatCell icon={CircleDot} label="Active" value={`${activeNodes}/${CAUSAL_NODES.length}`} />
       <StatCell icon={CheckCircle2} label="Verified" value={`${verifiedEdges}/${CAUSAL_EDGES.length}`} />
-      <div className="min-w-[96px] rounded-xs bg-bg-surface-raised px-2 py-1 text-caption text-text-muted">
+      <div className="min-w-[108px] rounded-xs border border-border-subtle bg-bg-base px-2 py-1 text-caption text-text-muted shadow-inner-panel">
         <span>Visible</span>
         <span className="ml-2 font-mono text-xs text-text-primary">{visibleCount}/{CAUSAL_NODES.length}</span>
         {focusId && (
@@ -963,7 +964,7 @@ function StatCell({
   value: string;
 }) {
   return (
-    <div className="min-w-14 rounded-xs bg-bg-surface-raised px-2 py-1">
+    <div className="min-w-14 rounded-xs border border-border-subtle bg-bg-base px-2 py-1 shadow-inner-panel">
       <div className="flex items-center gap-1.5 text-caption text-text-muted">
         <Icon className="h-3 w-3" />
         {label}
@@ -983,12 +984,12 @@ function NodeDetails({ node, onClose }: { node: CausalNode; onClose: () => void 
   const Icon = nodeIcon(node.type);
 
   return (
-    <div className="absolute inset-x-4 bottom-20 top-4 z-[1100] flex min-h-0 flex-col overflow-hidden rounded-sm border border-border-default bg-bg-surface-overlay shadow-xl animate-fade-in sm:left-auto sm:w-[380px]">
-      <div className="shrink-0 border-b border-border-subtle p-4">
+    <div className="absolute inset-x-4 bottom-4 top-4 z-[1100] flex min-h-0 flex-col overflow-hidden rounded-sm border border-border-default bg-[linear-gradient(180deg,rgba(31,31,31,0.98),rgba(3,5,4,0.98))] shadow-data-panel animate-fade-in sm:left-auto sm:w-[396px]">
+      <div className="shrink-0 border-b border-border-subtle bg-bg-base/40 p-4 shadow-inner-panel">
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-start gap-3">
             <div
-              className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-sm border"
+              className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-sm border shadow-inner-panel"
               style={{ borderColor: color, backgroundColor: `${color}22`, color }}
             >
               <Icon className="h-4 w-4" />
@@ -1003,8 +1004,9 @@ function NodeDetails({ node, onClose }: { node: CausalNode; onClose: () => void 
           <button
             type="button"
             title="Close"
+            aria-label="Close node details"
             onClick={onClose}
-            className="flex h-7 w-7 items-center justify-center rounded-xs text-text-muted transition-colors hover:bg-bg-surface-raised hover:text-text-primary"
+            className="flex h-7 w-7 items-center justify-center rounded-xs border border-transparent text-text-muted transition-colors hover:border-border-subtle hover:bg-bg-surface-raised hover:text-text-primary"
           >
             <X className="h-4 w-4" />
           </button>
@@ -1012,7 +1014,7 @@ function NodeDetails({ node, onClose }: { node: CausalNode; onClose: () => void 
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4">
-        <div className="rounded-xs border border-border-subtle bg-bg-base p-3 text-sm text-text-secondary">
+        <div className="rounded-xs border border-border-subtle bg-bg-base p-3 text-sm text-text-secondary shadow-inner-panel">
           {meta.narrative}
         </div>
 
@@ -1054,6 +1056,20 @@ function NodeDetails({ node, onClose }: { node: CausalNode; onClose: () => void 
           <DetailMetric label="State" value={node.active ? "Active" : "Quiet"} />
         </div>
 
+        <div className="mt-3 rounded-xs border border-border-subtle bg-bg-base p-3 shadow-inner-panel">
+          <div className="mb-2 flex items-center justify-between text-caption text-text-muted">
+            <span>Propagation</span>
+            <span className="font-mono text-text-secondary">
+              {upstream.length} upstream / {downstream.length} downstream
+            </span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <div className="h-1.5 flex-1 rounded-full" style={{ backgroundColor: `${stage.color}CC` }} />
+            <div className="h-1.5 flex-1 rounded-full bg-border-strong" />
+            <div className="h-1.5 flex-1 rounded-full" style={{ backgroundColor: `${sector.color}CC` }} />
+          </div>
+        </div>
+
         <EdgeList title="上游" edges={upstream} side="source" />
         <EdgeList title="下游" edges={downstream} side="target" />
       </div>
@@ -1063,7 +1079,7 @@ function NodeDetails({ node, onClose }: { node: CausalNode; onClose: () => void 
 
 function DetailMetric({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-xs bg-bg-base p-2">
+    <div className="rounded-xs border border-border-subtle bg-bg-base p-2 shadow-inner-panel">
       <div className="text-caption text-text-muted">{label}</div>
       <div className="mt-1 font-mono text-sm text-text-primary">{value}</div>
     </div>
@@ -1090,7 +1106,7 @@ function EdgeList({
           const peer = CAUSAL_NODES.find((node) => node.id === edge[side]);
           const color = EDGE_COLORS[edge.direction];
           return (
-            <div key={edge.id} className="rounded-xs border border-border-subtle bg-bg-base p-2">
+            <div key={edge.id} className="rounded-xs border border-border-subtle bg-bg-base p-2 shadow-inner-panel">
               <div className="flex items-center justify-between gap-2">
                 <span className="truncate text-sm text-text-secondary">{peer?.label}</span>
                 <span className="font-mono text-caption" style={{ color }}>
@@ -1121,7 +1137,7 @@ function EdgeList({
 
 function Legend() {
   return (
-    <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5 rounded-sm border border-border-default bg-bg-base px-2.5 py-1.5">
+    <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5 rounded-sm border border-border-default bg-[linear-gradient(180deg,rgba(15,17,16,0.98),rgba(0,0,0,0.98))] px-3 py-2 shadow-inner-panel">
       <div className="flex items-center gap-2 text-caption font-medium text-text-secondary">
         <Network className="h-3.5 w-3.5" />
         Causal Layers

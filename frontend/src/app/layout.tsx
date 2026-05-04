@@ -39,14 +39,14 @@ export default function RootLayout({
 
 function StatusBar() {
   return (
-    <div className="h-6 px-4 bg-bg-base border-t border-border-subtle flex items-center justify-between text-caption text-text-muted">
+    <div className="flex h-6 items-center justify-between border-t border-border-subtle bg-[linear-gradient(180deg,rgba(5,7,6,0.98),rgba(0,0,0,1))] px-4 text-caption text-text-muted shadow-inner-panel">
       <div className="flex items-center gap-4">
         <span>UTC+8 Asia/Shanghai</span>
         <span>•</span>
         <span>Data: 2026-04-30 22:14</span>
       </div>
       <div className="flex items-center gap-4">
-        <kbd className="bg-bg-surface px-1.5 rounded-xs border border-border-default font-mono">
+        <kbd className="rounded-xs border border-border-default bg-bg-base px-1.5 font-mono shadow-inner-panel">
           ⌘K
         </kbd>
         <span>命令面板</span>
