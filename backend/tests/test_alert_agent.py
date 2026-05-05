@@ -6,10 +6,11 @@ from fastapi import HTTPException
 
 from app.api.arbitration import require_human_decision_targets
 from app.models.alert import Alert
-from app.models.alert_agent import AlertDedupCache
+from app.models.alert_agent import AlertAgentConfig, AlertDedupCache
 from app.models.signal import SignalTrack
 from app.schemas.common import HumanDecisionCreate
 from app.services.alert_agent.classifier import classify_alert
+from app.services.alert_agent.config import ConfidenceThresholds, load_confidence_thresholds
 from app.services.alert_agent.dedup import check_alert_dedup, signal_direction
 from app.services.alert_agent.human_decision import apply_decision_to_alert
 from app.services.alert_agent.router import lacks_history, route_alert
@@ -29,6 +30,22 @@ class FailingSession:
 class EmptyScalarResult:
     def first(self):
         return None
+
+
+class SingleScalarResult:
+    def __init__(self, row) -> None:
+        self.row = row
+
+    def first(self):
+        return self.row
+
+
+class ConfigSession:
+    def __init__(self, value: dict) -> None:
+        self.value = value
+
+    async def scalars(self, _):
+        return SingleScalarResult(AlertAgentConfig(key="confidence_thresholds", value=self.value))
 
 
 class FailingSecondLookupSession:
@@ -121,6 +138,22 @@ async def test_router_requires_confirmation_for_low_confidence() -> None:
     assert decision.confidence_tier == "confirm"
     assert decision.route == "confirm"
     assert decision.human_action_required is True
+
+
+async def test_confidence_threshold_config_ignores_invalid_values() -> None:
+    thresholds = await load_confidence_thresholds(
+        ConfigSession({"auto": "bad", "notify": None})  # type: ignore[arg-type]
+    )
+
+    assert thresholds == ConfidenceThresholds()
+
+
+async def test_confidence_threshold_config_rejects_inverted_values() -> None:
+    thresholds = await load_confidence_thresholds(
+        ConfigSession({"auto": 0.5, "notify": 0.8})  # type: ignore[arg-type]
+    )
+
+    assert thresholds == ConfidenceThresholds()
 
 
 async def test_lacks_history_rolls_back_after_lookup_failure() -> None:

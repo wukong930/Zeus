@@ -31,7 +31,18 @@ async def load_confidence_thresholds(session: AsyncSession | None) -> Confidence
         return ConfidenceThresholds()
 
     value = row.value or {}
-    return ConfidenceThresholds(
-        auto=float(value.get("auto", ConfidenceThresholds.auto)),
-        notify=float(value.get("notify", ConfidenceThresholds.notify)),
-    )
+    auto = _threshold_value(value.get("auto"), ConfidenceThresholds.auto)
+    notify = _threshold_value(value.get("notify"), ConfidenceThresholds.notify)
+    if auto < notify:
+        return ConfidenceThresholds()
+    return ConfidenceThresholds(auto=auto, notify=notify)
+
+
+def _threshold_value(value: object, fallback: float) -> float:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return fallback
+    if parsed < 0 or parsed > 1:
+        return fallback
+    return parsed
