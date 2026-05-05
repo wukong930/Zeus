@@ -5,6 +5,12 @@ import { Sparkles, X, Send, MessageSquare } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "./Button";
 import { useI18n } from "@/lib/i18n";
+import {
+  fetchAlertsFromApi,
+  fetchCausalWebGraph,
+  fetchLLMUsageSummary,
+  fetchPortfolioSnapshot,
+} from "@/lib/api";
 
 const SUGGESTED_QUERIES = [
   "为什么 RB 触发了 cost_support_pressure？",
@@ -13,44 +19,6 @@ const SUGGESTED_QUERIES = [
   "对比上月和本月的命中率变化",
 ];
 
-const MOCK_RESPONSE = `基于当前预警 alt-001 的上下文：
-
-**触发原因**：螺纹现货 4280 已跌破高炉成本曲线 P75 分位（4310），且持续 2 周。这意味着前 25% 高成本钢厂已处于亏损状态。
-
-**关键传导链**（来自 Causal Web）：
-1. 焦煤现货价 → P50 分位
-2. 焦炭利润率连续 5 日 < -3%
-3. 钢厂高炉利润降至 -2.4%
-4. 螺纹现货跌破 4310
-
-**对抗结果**：3/3 通过
-- 零假设 p = 0.018（非随机）
-- 历史组合命中率 0.72（强信号）
-- 结构性反驳：库存低位 + 终端需求未明显回落
-
-**建议**：可参考 Trade Plan tp-001（多 RB2510，R:R 1.85）。
-
-> 数据基于 14s 前的快照，置信度 84%（样本 47）`;
-
-const MOCK_RESPONSE_EN = `Based on the current alert alt-001:
-
-**Trigger**: Rebar spot at 4,280 has broken below the P75 blast-furnace cost curve level (4,310) and stayed there for two weeks. This means the top 25% high-cost mills are under loss pressure.
-
-**Key propagation chain** (from Causal Web):
-1. Coking coal spot -> P50 percentile
-2. Coke margin < -3% for five consecutive days
-3. Mill blast-furnace margin fell to -2.4%
-4. Rebar spot broke below 4,310
-
-**Adversarial result**: 3/3 passed
-- Null hypothesis p = 0.018 (non-random)
-- Historical bundle hit rate 0.72 (strong signal)
-- Structural counterpoint: low inventory + terminal demand not clearly weakening
-
-**Suggestion**: Reference Trade Plan tp-001 (long RB2510, R:R 1.85).
-
-> Snapshot is 14s old, confidence 84% (sample 47)`;
-
 export function AICompanion() {
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState("");
@@ -58,15 +26,29 @@ export function AICompanion() {
   const [loading, setLoading] = useState(false);
   const { text, lang } = useI18n();
 
-  const send = (text: string) => {
-    if (!text.trim()) return;
-    setMessages((m) => [...m, { role: "user", content: text }]);
+  const send = async (text: string) => {
+    const query = text.trim();
+    if (!query || loading) return;
+    setMessages((m) => [...m, { role: "user", content: query }]);
     setInput("");
     setLoading(true);
-    setTimeout(() => {
-      setMessages((m) => [...m, { role: "assistant", content: lang === "en" ? MOCK_RESPONSE_EN : MOCK_RESPONSE }]);
+    try {
+      const response = await buildRuntimeResponse(query, lang);
+      setMessages((m) => [...m, { role: "assistant", content: response }]);
+    } catch {
+      setMessages((m) => [
+        ...m,
+        {
+          role: "assistant",
+          content:
+            lang === "en"
+              ? "I could not sync the backend runtime context, so I did not generate an offline demo answer."
+              : "当前无法同步后端运行态上下文，因此没有生成离线演示回答。",
+        },
+      ]);
+    } finally {
       setLoading(false);
-    }, 900);
+    }
   };
 
   return (
@@ -170,7 +152,7 @@ export function AICompanion() {
               placeholder={text("问点什么...")}
               className="h-9 flex-1 rounded-sm border border-border-default bg-bg-base px-3 text-sm text-text-primary placeholder:text-text-muted shadow-inner-panel focus:border-brand-emerald focus:outline-none focus:shadow-focus-ring"
             />
-            <Button onClick={() => send(input)} size="md">
+            <Button onClick={() => send(input)} size="md" disabled={loading}>
               <Send className="w-4 h-4" />
             </Button>
           </div>
@@ -181,4 +163,71 @@ export function AICompanion() {
       </aside>
     </>
   );
+}
+
+async function buildRuntimeResponse(query: string, lang: string): Promise<string> {
+  const [alertsResult, portfolioResult, causalResult, usageResult] = await Promise.allSettled([
+    fetchAlertsFromApi(),
+    fetchPortfolioSnapshot(),
+    fetchCausalWebGraph(),
+    fetchLLMUsageSummary(),
+  ]);
+  const alerts = settledValue(alertsResult) ?? [];
+  const portfolio = settledValue(portfolioResult);
+  const causal = settledValue(causalResult);
+  const usage = settledValue(usageResult);
+
+  if (!alerts.length && !portfolio && !causal && !usage) {
+    throw new Error("runtime context unavailable");
+  }
+
+  const topAlert = alerts[0];
+  const positions = portfolio?.positions ?? [];
+  const totalPnl = positions.reduce((sum, position) => sum + position.pnl, 0);
+  const activeSignals = causal?.nodes.filter((node) => node.type === "signal" && node.active).length ?? 0;
+  const nodeCount = causal?.nodes.length ?? 0;
+  const edgeCount = causal?.edges.length ?? 0;
+
+  if (lang === "en") {
+    return [
+      "Runtime context summary",
+      `Question: ${query}`,
+      "",
+      topAlert
+        ? `Alerts: ${alerts.length} active rows. Top alert is ${topAlert.symbol} / ${topAlert.title}, confidence ${Math.round(topAlert.confidence * 100)}%.`
+        : "Alerts: no active alert rows returned by the API.",
+      `Portfolio: ${positions.length} open positions, floating PnL ${formatCurrency(totalPnl)}${portfolio?.degraded ? " (partially degraded)" : ""}.`,
+      `Causal Web: ${nodeCount} nodes, ${edgeCount} edges, ${activeSignals} active signal nodes.`,
+      usage
+        ? `LLM usage: ${usage.calls} calls this month, estimated cost $${usage.estimated_cost_usd.toFixed(2)}.`
+        : "LLM usage: unavailable from the backend.",
+      "",
+      "Next step: open the related alert or Causal Web node before making a trading decision; this answer is composed from live runtime context, not a fixed demo script.",
+    ].join("\n");
+  }
+
+  return [
+    "运行态上下文摘要",
+    `问题：${query}`,
+    "",
+    topAlert
+      ? `预警：接口返回 ${alerts.length} 条；最高优先为 ${topAlert.symbol} / ${topAlert.title}，置信度 ${Math.round(topAlert.confidence * 100)}%。`
+      : "预警：接口当前没有返回活跃预警。",
+    `持仓：${positions.length} 个开放持仓，浮动盈亏 ${formatCurrency(totalPnl)}${portfolio?.degraded ? "（部分降级）" : ""}。`,
+    `因果网络：${nodeCount} 个节点、${edgeCount} 条边，其中 ${activeSignals} 个活跃信号节点。`,
+    usage
+      ? `LLM 用量：本月 ${usage.calls} 次调用，估算成本 $${usage.estimated_cost_usd.toFixed(2)}。`
+      : "LLM 用量：后端暂未返回。",
+    "",
+    "下一步：进入相关预警或 Causal Web 节点继续追溯；这条回答来自实时运行态上下文，不是固定演示脚本。",
+  ].join("\n");
+}
+
+function settledValue<T>(result: PromiseSettledResult<T>): T | null {
+  return result.status === "fulfilled" ? result.value : null;
+}
+
+function formatCurrency(value: number): string {
+  const sign = value >= 0 ? "+" : "";
+  return `${sign}¥${value.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
 }
