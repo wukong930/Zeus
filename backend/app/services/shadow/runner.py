@@ -203,17 +203,30 @@ def shadow_threshold_config(config_diff: dict[str, Any] | None) -> ShadowThresho
     if not isinstance(thresholds, dict):
         thresholds = {}
     defaults = ConfidenceThresholds()
-    min_confidence = float(
-        config.get(
-            "min_confidence",
-            thresholds.get("notify", defaults.notify),
-        )
+    min_confidence = _bounded_float(
+        config.get("min_confidence", thresholds.get("notify", defaults.notify)),
+        fallback=defaults.notify,
+        lower=0.0,
+        upper=1.0,
     )
-    min_combined_score = float(config.get("min_combined_score", 60))
+    min_combined_score = _bounded_float(
+        config.get("min_combined_score", 60),
+        fallback=60.0,
+        lower=0.0,
+        upper=100.0,
+    )
     return ShadowThresholdConfig(
-        min_confidence=max(0.0, min(1.0, min_confidence)),
-        min_combined_score=max(0.0, min(100.0, min_combined_score)),
+        min_confidence=min_confidence,
+        min_combined_score=min_combined_score,
     )
+
+
+def _bounded_float(value: Any, *, fallback: float, lower: float, upper: float) -> float:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        parsed = fallback
+    return max(lower, min(upper, parsed))
 
 
 async def _signal_candidates_from_event(

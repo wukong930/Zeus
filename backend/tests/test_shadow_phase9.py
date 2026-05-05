@@ -151,6 +151,15 @@ def test_shadow_threshold_config_clamps_experiment_values() -> None:
     assert config.min_combined_score == 100.0
 
 
+def test_shadow_threshold_config_ignores_invalid_values() -> None:
+    config = shadow_threshold_config(
+        {"confidence_thresholds": {"notify": "bad"}, "min_combined_score": None}
+    )
+
+    assert config.min_confidence == 0.60
+    assert config.min_combined_score == 60.0
+
+
 async def test_shadow_would_emit_uses_effective_confidence() -> None:
     session = FakeSession()
     event = ZeusEvent(
