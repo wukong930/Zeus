@@ -256,9 +256,21 @@ async def _signal_candidates_from_event(
     signal_detector = detector or SignalDetector()
     candidates: list[tuple[dict[str, Any], dict[str, Any], dict[str, Any] | None]] = []
     signal_types = NEWS_EVENT_SIGNAL_TYPES if event.channel == "news.event" else None
-    for raw_context in contexts_payload:
-        shadow_context = shadow_context_payload(raw_context, config_diff)
-        context = trigger_context_from_payload(shadow_context)
+    for index, raw_context in enumerate(contexts_payload):
+        if not isinstance(raw_context, dict):
+            logger.warning("Skipping non-object shadow trigger context %s for %s", index, event.channel)
+            continue
+        try:
+            shadow_context = shadow_context_payload(raw_context, config_diff)
+            context = trigger_context_from_payload(shadow_context)
+        except Exception:
+            logger.warning(
+                "Skipping malformed shadow trigger context %s for %s",
+                index,
+                event.channel,
+                exc_info=True,
+            )
+            continue
         context_payload = jsonable(context)
         if shadow_context.get("regime") is not None:
             context_payload["regime"] = shadow_context["regime"]

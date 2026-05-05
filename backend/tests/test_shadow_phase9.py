@@ -20,6 +20,7 @@ from app.services.shadow.runner import (
     shadow_context_payload,
     shadow_threshold_config,
 )
+from app.services.signals.types import TriggerResult
 
 
 class FakeScalars:
@@ -61,6 +62,56 @@ def _track(confidence: float, outcome: str, signal_type: str = "momentum") -> Si
         outcome=outcome,
         created_at=datetime(2026, 5, 4, tzinfo=timezone.utc),
     )
+
+
+async def test_shadow_event_candidates_skip_malformed_contexts() -> None:
+    class CapturingDetector:
+        def __init__(self) -> None:
+            self.symbols: list[str] = []
+
+        async def detect(self, context, signal_types=None):  # noqa: ANN001
+            self.symbols.append(context.symbol1)
+            return [
+                TriggerResult(
+                    signal_type="momentum",
+                    triggered=True,
+                    severity="medium",
+                    confidence=0.78,
+                    trigger_chain=[],
+                    related_assets=[context.symbol1],
+                    risk_items=[],
+                    manual_check_items=[],
+                    title="Momentum",
+                    summary="Valid shadow context should still be evaluated.",
+                )
+            ]
+
+    event = ZeusEvent(
+        channel="market.update",
+        payload={
+            "contexts": [
+                {"symbol1": "RB", "category": "ferrous", "timestamp": "bad-time"},
+                {
+                    "symbol1": "HC",
+                    "category": "ferrous",
+                    "timestamp": datetime(2026, 5, 4, tzinfo=timezone.utc).isoformat(),
+                },
+            ]
+        },
+        timestamp=datetime(2026, 5, 4, tzinfo=timezone.utc),
+    )
+    detector = CapturingDetector()
+
+    candidates = await shadow_runner._signal_candidates_from_event(
+        event,
+        detector=detector,  # type: ignore[arg-type]
+        config_diff={},
+    )
+
+    assert detector.symbols == ["HC"]
+    assert len(candidates) == 1
+    assert candidates[0][0]["signal_type"] == "momentum"
+    assert candidates[0][1]["symbol1"] == "HC"
 
 
 async def test_shadow_runner_records_scored_signal_without_publishing_alert() -> None:
