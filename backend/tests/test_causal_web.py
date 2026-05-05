@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 from app.api.causal_web import (
@@ -117,6 +117,63 @@ def test_build_edges_links_news_metric_signal_and_alert_contexts() -> None:
     assert (f"signal-{signal_id}", f"alert-{alert_id}") in pairs
     assert (f"metric-{metric_id}", f"signal-{signal_id}") in pairs
     assert (f"news-{news_id}", f"signal-{signal_id}") in pairs
+
+
+def test_build_edges_uses_latest_signal_for_alert_link() -> None:
+    alert_id = uuid4()
+    old_signal_id = uuid4()
+    latest_signal_id = uuid4()
+    now = datetime.now(timezone.utc)
+    alert = Alert(
+        id=alert_id,
+        title="SC 原油上涨预警",
+        summary="原油偏多",
+        severity="high",
+        category="energy",
+        type="momentum",
+        status="active",
+        triggered_at=now,
+        confidence=0.91,
+        related_assets=["SC"],
+        trigger_chain=[],
+        risk_items=[],
+        manual_check_items=[],
+    )
+    latest_signal = SignalTrack(
+        id=latest_signal_id,
+        alert_id=alert_id,
+        signal_type="momentum",
+        category="energy",
+        confidence=0.91,
+        outcome="pending",
+        created_at=now,
+    )
+    old_signal = SignalTrack(
+        id=old_signal_id,
+        alert_id=alert_id,
+        signal_type="momentum",
+        category="energy",
+        confidence=0.52,
+        outcome="pending",
+        created_at=now - timedelta(hours=1),
+    )
+
+    edges = _build_edges(
+        news=[],
+        metrics=[],
+        signals=[latest_signal, old_signal],
+        alerts=[alert],
+        counters=[],
+        node_ids={
+            f"signal-{latest_signal_id}",
+            f"signal-{old_signal_id}",
+            f"alert-{alert_id}",
+        },
+    )
+
+    assert [(edge.source, edge.target, edge.confidence) for edge in edges] == [
+        (f"signal-{latest_signal_id}", f"alert-{alert_id}", 0.91)
+    ]
 
 
 def test_counter_seeds_from_alert_create_review_nodes_and_edges() -> None:

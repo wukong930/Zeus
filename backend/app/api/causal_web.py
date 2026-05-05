@@ -400,7 +400,7 @@ def _build_edges(
     for item in news:
         symbols = {str(symbol).upper() for symbol in item.affected_symbols}
         news_contexts.append((item, symbols, _category_from_symbols(list(symbols))))
-    signal_by_alert = {row.alert_id: row for row in signals if row.alert_id is not None}
+    signal_by_alert = _latest_signal_by_alert(signals)
     alerts_by_id = {row.id: row for row in alerts}
     alert_symbols_by_id = {
         row.id: {str(asset).upper() for asset in row.related_assets}
@@ -515,6 +515,28 @@ def _build_edges(
                 )
                 break
     return edges[:24]
+
+
+def _latest_signal_by_alert(signals: list[SignalTrack]) -> dict[UUID, SignalTrack]:
+    latest: dict[UUID, SignalTrack] = {}
+    for row in signals:
+        if row.alert_id is None:
+            continue
+        current = latest.get(row.alert_id)
+        if current is None or _signal_sort_key(row) > _signal_sort_key(current):
+            latest[row.alert_id] = row
+    return latest
+
+
+def _signal_sort_key(row: SignalTrack) -> tuple[datetime, float]:
+    created_at = row.created_at
+    if created_at is None:
+        created_at = datetime.min.replace(tzinfo=timezone.utc)
+    elif created_at.tzinfo is None:
+        created_at = created_at.replace(tzinfo=timezone.utc)
+    else:
+        created_at = created_at.astimezone(timezone.utc)
+    return (created_at, row.confidence)
 
 
 def _news_matches_metric(symbols: set[str], category: str, metric: MetricContext) -> bool:
