@@ -1,4 +1,14 @@
-import type { Alert, CausalEdge, CausalNode, Position, Sector, SectorData, Severity } from "@/data/mock";
+import type {
+  Alert,
+  CausalEdge,
+  CausalNode,
+  Direction,
+  Position,
+  Sector,
+  SectorData,
+  Severity,
+  TradePlan,
+} from "@/data/mock";
 
 const SEVERITIES = new Set<Severity>(["critical", "high", "medium", "low"]);
 const DEFAULT_API_TIMEOUT_MS = 15_000;
@@ -453,6 +463,28 @@ interface BackendNewsEvent {
   requires_manual_confirmation: boolean;
 }
 
+interface BackendRecommendation {
+  id: string;
+  alert_id?: string | null;
+  status: string;
+  recommended_action: string;
+  legs: BackendLeg[];
+  priority_score: number;
+  portfolio_fit_score: number;
+  margin_efficiency_score: number;
+  margin_required: number;
+  reasoning: string;
+  one_liner?: string | null;
+  risk_items: string[];
+  expires_at: string;
+  created_at: string;
+  position_size_pct?: number | null;
+  risk_reward_ratio?: number | null;
+  entry_price?: number | null;
+  stop_loss?: number | null;
+  take_profit?: number | null;
+}
+
 interface BackendPosition {
   id: string;
   strategy_name?: string | null;
@@ -587,6 +619,23 @@ export async function fetchSectorSnapshot(baseSectors: SectorData[]): Promise<Se
 export async function fetchNewsEventsFromApi(): Promise<NewsEvent[]> {
   const rows = await fetchJson<BackendNewsEvent[]>("/api/news-events?limit=200");
   return rows.map(mapNewsEvent);
+}
+
+export async function fetchTradePlansFromApi(): Promise<TradePlan[]> {
+  const rows = await fetchJson<BackendRecommendation[]>(
+    "/api/recommendations?status_filter=pending&limit=100"
+  );
+  const symbols = Array.from(
+    new Set(
+      rows
+        .map((row) => recommendationSymbol(row))
+        .filter((symbol): symbol is string => symbol !== null)
+    )
+  );
+  const latestRows = await fetchLatestMarketRows(symbols);
+  return rows
+    .map((row) => mapTradePlan(row, latestRows))
+    .filter((plan): plan is TradePlan => plan !== null);
 }
 
 export async function fetchCausalWebGraph(): Promise<CausalWebGraph> {
@@ -832,6 +881,70 @@ function mapNewsEvent(event: BackendNewsEvent): NewsEvent {
   };
 }
 
+function mapTradePlan(
+  recommendation: BackendRecommendation,
+  latestRows: Map<string, BackendMarketData>
+): TradePlan | null {
+  const symbol = recommendationSymbol(recommendation);
+  const direction = recommendationDirection(recommendation);
+  if (symbol === null || direction === null) {
+    return null;
+  }
+
+  const leg = primaryRecommendationLeg(recommendation);
+  const latest = latestRows.get(symbol);
+  const currentPrice = positiveNumber(
+    latest?.close,
+    leg.currentPrice,
+    leg.current_price,
+    leg.price,
+    recommendation.entry_price
+  );
+  const entryPrice =
+    positiveNumber(
+      recommendation.entry_price,
+      leg.entryPrice,
+      leg.entry_price,
+      leg.avgEntry,
+      currentPrice
+    ) ?? 1;
+  const stopLoss =
+    positiveNumber(recommendation.stop_loss) ?? inferredStopLoss(entryPrice, direction);
+  const takeProfit =
+    positiveNumber(recommendation.take_profit) ??
+    inferredTakeProfit(entryPrice, direction, recommendation.risk_reward_ratio);
+  const riskPercent = riskPercentFromPlan(entryPrice, stopLoss, direction);
+  const rewardPercent = rewardPercentFromPlan(entryPrice, takeProfit, direction);
+  const riskReward =
+    recommendation.risk_reward_ratio ??
+    (riskPercent !== 0 ? Math.abs(rewardPercent / riskPercent) : 0);
+
+  return {
+    id: recommendation.id,
+    alertId: recommendation.alert_id ?? recommendation.id,
+    symbol,
+    symbolName: symbol,
+    direction,
+    size: positiveNumber(leg.lots, leg.size, leg.quantity, recommendation.position_size_pct) ?? 1,
+    entryPrice,
+    stopLoss,
+    takeProfit,
+    currentPrice: currentPrice ?? entryPrice,
+    riskPercent,
+    rewardPercent,
+    riskReward,
+    marginUsage: normalizedMarginUsage(recommendation.margin_required),
+    portfolioRisk: normalizedPortfolioRisk(recommendation.portfolio_fit_score),
+    signalSummary:
+      recommendation.one_liner ||
+      recommendation.reasoning ||
+      recommendation.risk_items.join(" · ") ||
+      recommendation.recommended_action,
+    confidence: normalizedScore(recommendation.priority_score),
+    createdAt: recommendation.created_at,
+  };
+}
+
 function mapAlert(alert: BackendAlert): Alert {
   const symbol = alert.related_assets[0] ?? "N/A";
   return {
@@ -911,6 +1024,27 @@ function uniqueSymbols(positions: BackendPosition[]): string[] {
   ).sort();
 }
 
+function recommendationSymbol(recommendation: BackendRecommendation): string | null {
+  const leg = primaryRecommendationLeg(recommendation);
+  const symbol = String(leg.asset || leg.symbol || "").trim();
+  return symbol.length > 0 ? symbol : null;
+}
+
+function primaryRecommendationLeg(recommendation: BackendRecommendation): BackendLeg {
+  return recommendation.legs.find((leg) => leg.direction === "long" || leg.direction === "short") ?? recommendation.legs[0] ?? {};
+}
+
+function recommendationDirection(recommendation: BackendRecommendation): Direction | null {
+  const leg = primaryRecommendationLeg(recommendation);
+  if (leg.direction === "long" || leg.direction === "short") {
+    return leg.direction;
+  }
+  const action = recommendation.recommended_action.toLowerCase();
+  if (action.includes("short") || action.includes("sell")) return "short";
+  if (action.includes("long") || action.includes("buy")) return "long";
+  return null;
+}
+
 function weightedAverage(legs: BackendLeg[], mode: "entry" | "current"): number {
   let numerator = 0;
   let denominator = 0;
@@ -926,6 +1060,57 @@ function weightedAverage(legs: BackendLeg[], mode: "entry" | "current"): number 
     }
   }
   return denominator > 0 ? numerator / denominator : 0;
+}
+
+function positiveNumber(...values: unknown[]): number | null {
+  for (const value of values) {
+    const parsed = numeric(value);
+    if (parsed > 0) return parsed;
+  }
+  return null;
+}
+
+function inferredStopLoss(entryPrice: number | null, direction: Direction): number {
+  const entry = entryPrice ?? 1;
+  return direction === "long" ? entry * 0.97 : entry * 1.03;
+}
+
+function inferredTakeProfit(
+  entryPrice: number | null,
+  direction: Direction,
+  riskRewardRatio?: number | null
+): number {
+  const entry = entryPrice ?? 1;
+  const reward = Math.max(1.5, riskRewardRatio ?? 1.8) * 0.03;
+  return direction === "long" ? entry * (1 + reward) : entry * (1 - reward);
+}
+
+function riskPercentFromPlan(entryPrice: number | null, stopLoss: number, direction: Direction): number {
+  const entry = entryPrice ?? 1;
+  return direction === "long"
+    ? ((stopLoss - entry) / entry) * 100
+    : ((entry - stopLoss) / entry) * 100;
+}
+
+function rewardPercentFromPlan(entryPrice: number | null, takeProfit: number, direction: Direction): number {
+  const entry = entryPrice ?? 1;
+  return direction === "long"
+    ? ((takeProfit - entry) / entry) * 100
+    : ((entry - takeProfit) / entry) * 100;
+}
+
+function normalizedScore(score: number): number {
+  return score > 1 ? clamp(score / 100, 0, 1) : clamp(score, 0, 1);
+}
+
+function normalizedMarginUsage(marginRequired: number): number {
+  if (marginRequired <= 1) return marginRequired * 100;
+  if (marginRequired <= 100) return marginRequired;
+  return clamp((marginRequired / 1_000_000) * 100, 0, 50);
+}
+
+function normalizedPortfolioRisk(portfolioFitScore: number): number {
+  return clamp((100 - portfolioFitScore) / 5, 1, 20);
 }
 
 function toSeverity(value: string): Severity {

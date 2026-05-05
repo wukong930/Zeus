@@ -8,7 +8,19 @@ import { SectorHeatmap } from "@/components/SectorHeatmap";
 import { AlertCard } from "@/components/AlertCard";
 import { Badge } from "@/components/Badge";
 import { MetricTile } from "@/components/MetricTile";
-import { ALERTS, CAUSAL_EDGES, CAUSAL_NODES, POSITIONS, PERSONAL_GREETING, type Alert, type CausalEdge, type CausalNode, type Position } from "@/data/mock";
+import {
+  ALERTS,
+  CAUSAL_EDGES,
+  CAUSAL_NODES,
+  POSITIONS,
+  PERSONAL_GREETING,
+  SECTORS,
+  type Alert,
+  type CausalEdge,
+  type CausalNode,
+  type Position,
+  type SectorData,
+} from "@/data/mock";
 import { Activity, ArrowRight, Gauge, Network, TrendingUp, TrendingDown, WalletCards } from "lucide-react";
 import Link from "next/link";
 import { cn, formatPercent } from "@/lib/utils";
@@ -18,6 +30,7 @@ import {
   fetchCausalWebGraph,
   fetchLLMUsageSummary,
   fetchPortfolioSnapshot,
+  fetchSectorSnapshot,
   type LLMUsageSummary,
 } from "@/lib/api";
 
@@ -28,9 +41,11 @@ export default function CommandCenterPage() {
   const [positions, setPositions] = useState<Position[]>(POSITIONS);
   const [causalNodes, setCausalNodes] = useState<CausalNode[]>(CAUSAL_NODES);
   const [causalEdges, setCausalEdges] = useState<CausalEdge[]>(CAUSAL_EDGES);
+  const [sectors, setSectors] = useState<SectorData[]>(SECTORS);
   const [alertSource, setAlertSource] = useState<DataSourceState>("mock");
   const [portfolioSource, setPortfolioSource] = useState<DataSourceState>("mock");
   const [causalSource, setCausalSource] = useState<DataSourceState>("fallback");
+  const [sectorSource, setSectorSource] = useState<DataSourceState>("loading");
   const [llmUsage, setLlmUsage] = useState<LLMUsageSummary | null>(null);
   const { text } = useI18n();
   const totalPnl = useMemo(
@@ -72,6 +87,17 @@ export default function CommandCenterPage() {
       })
       .catch(() => {
         if (mounted) setCausalSource("fallback");
+      });
+    fetchSectorSnapshot(SECTORS)
+      .then((snapshot) => {
+        if (!mounted) return;
+        setSectors(snapshot.sectors);
+        setSectorSource(snapshot.degraded ? "partial" : "api");
+      })
+      .catch(() => {
+        if (!mounted) return;
+        setSectors(SECTORS);
+        setSectorSource("mock");
       });
     fetchLLMUsageSummary()
       .then((summary) => {
@@ -223,13 +249,13 @@ export default function CommandCenterPage() {
               </CardSubtitle>
             </div>
             <div className="flex items-center gap-2">
-              <DataSourceBadge state="mock" compact />
+              <DataSourceBadge state={sectorSource} compact />
               <Link href="/sectors" className="text-caption text-text-muted hover:text-text-primary">
                 {text("详情")} →
               </Link>
             </div>
           </CardHeader>
-          <SectorHeatmap />
+          <SectorHeatmap sectors={sectors} />
         </Card>
       </div>
 

@@ -19,7 +19,7 @@ export function TradePlanCard({ plan }: TradePlanCardProps) {
   // Normalize prices to 0..1 range for visualization
   const lo = Math.min(plan.entryPrice, plan.stopLoss, plan.takeProfit, plan.currentPrice);
   const hi = Math.max(plan.entryPrice, plan.stopLoss, plan.takeProfit, plan.currentPrice);
-  const range = hi - lo;
+  const range = Math.max(hi - lo, 1);
   const norm = (v: number) => ((v - lo) / range) * 100;
 
   return (
