@@ -176,6 +176,91 @@ def test_build_edges_uses_latest_signal_for_alert_link() -> None:
     ]
 
 
+def test_build_edges_trims_by_causal_explanation_priority() -> None:
+    now = datetime.now(timezone.utc)
+    news = NewsEvent(
+        id=uuid4(),
+        source="gdelt",
+        title="Oil supply disruption",
+        summary="Supply disruption lifts crude.",
+        published_at=now,
+        event_type="supply",
+        affected_symbols=["SC"],
+        direction="bullish",
+        severity=4,
+        time_horizon="short",
+        llm_confidence=0.7,
+        verification_status="cross_verified",
+        requires_manual_confirmation=False,
+        dedup_hash="news-hash",
+    )
+    metric = MetricContext(node_id=f"metric-{uuid4()}", symbol="SC", category="energy")
+    alerts: list[Alert] = []
+    signals: list[SignalTrack] = []
+    counters: list[CounterContext] = []
+    node_ids = {f"news-{news.id}", metric.node_id}
+
+    for index in range(12):
+        alert_id = uuid4()
+        signal_id = uuid4()
+        alerts.append(
+            Alert(
+                id=alert_id,
+                title=f"SC 原油上涨预警 {index}",
+                summary="原油偏多",
+                severity="high",
+                category="energy",
+                type="momentum",
+                status="active",
+                triggered_at=now,
+                confidence=0.74,
+                related_assets=["SC"],
+                trigger_chain=[],
+                risk_items=["review inventory"],
+                manual_check_items=["review source"],
+            )
+        )
+        signals.append(
+            SignalTrack(
+                id=signal_id,
+                alert_id=alert_id,
+                signal_type="momentum",
+                category="energy",
+                confidence=0.74,
+                outcome="pending",
+                created_at=now + timedelta(seconds=index),
+            )
+        )
+        counters.extend(
+            [
+                CounterContext(node_id=f"counter-{alert_id}-1", alert_id=alert_id, confidence=0.51),
+                CounterContext(node_id=f"counter-{alert_id}-2", alert_id=alert_id, confidence=0.51),
+            ]
+        )
+        node_ids.update(
+            {
+                f"alert-{alert_id}",
+                f"signal-{signal_id}",
+                f"counter-{alert_id}-1",
+                f"counter-{alert_id}-2",
+            }
+        )
+
+    edges = _build_edges(
+        news=[news],
+        metrics=[metric],
+        signals=signals,
+        alerts=alerts,
+        counters=counters,
+        node_ids=node_ids,
+    )
+
+    assert len(edges) == 24
+    assert any(edge.id.startswith("edge-news-signal") for edge in edges)
+    assert any(edge.id.startswith("edge-metric-signal") for edge in edges)
+    assert sum(edge.id.startswith("edge-counter-alert") for edge in edges) < len(counters)
+
+
 def test_counter_seeds_from_alert_create_review_nodes_and_edges() -> None:
     alert_id = uuid4()
     now = datetime.now(timezone.utc)

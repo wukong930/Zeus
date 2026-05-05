@@ -53,6 +53,7 @@ STAGE_X: dict[Stage, int] = {
     "validation": 820,
     "impact": 1210,
 }
+MAX_CAUSAL_EDGES = 24
 TYPE_STAGE: dict[NodeType, Stage] = {
     "event": "source",
     "metric": "validation",
@@ -514,7 +515,39 @@ def _build_edges(
                     edge_keys=edge_keys,
                 )
                 break
-    return edges[:24]
+    return _trim_edges(edges, limit=MAX_CAUSAL_EDGES)
+
+
+def _trim_edges(edges: list[CausalWebEdge], *, limit: int) -> list[CausalWebEdge]:
+    if len(edges) <= limit:
+        return edges
+    ranked = sorted(
+        enumerate(edges),
+        key=lambda item: (
+            -_edge_type_priority(item[1]),
+            -int(item[1].verified),
+            -item[1].confidence,
+            -item[1].hitRate,
+            item[0],
+        ),
+    )
+    return [edge for _, edge in ranked[:limit]]
+
+
+def _edge_type_priority(edge: CausalWebEdge) -> int:
+    if edge.id.startswith("edge-signal-alert"):
+        return 100
+    if edge.id.startswith("edge-news-signal"):
+        return 95
+    if edge.id.startswith("edge-metric-signal"):
+        return 90
+    if edge.id.startswith("edge-news-alert"):
+        return 85
+    if edge.id.startswith("edge-news-metric"):
+        return 80
+    if edge.id.startswith("edge-counter-alert"):
+        return 60
+    return 50
 
 
 def _latest_signal_by_alert(signals: list[SignalTrack]) -> dict[UUID, SignalTrack]:
