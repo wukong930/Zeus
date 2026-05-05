@@ -1,6 +1,9 @@
 import asyncio
 from datetime import datetime, timezone
 
+from fastapi.testclient import TestClient
+
+from app.main import create_app
 from app.scheduler.jobs import (
     DEFAULT_JOB_DEFINITIONS,
     DEFAULT_JOB_HANDLERS,
@@ -17,6 +20,36 @@ async def _ok_handler() -> dict:
 
 async def _failing_handler() -> dict:
     raise RuntimeError("boom")
+
+
+class ApiScheduler:
+    def __init__(self, run_result: dict | None = None, *, start_success: bool = True) -> None:
+        self.run_result = run_result or {"success": True, "data": {"ok": True}}
+        self.start_success = start_success
+
+    def list_jobs(self) -> list[dict]:
+        return [{"id": "known", "status": "ok"}]
+
+    def health_summary(self) -> dict:
+        return {"total_jobs": 1}
+
+    def start_all(self) -> None:
+        return None
+
+    def stop_all(self) -> None:
+        return None
+
+    def start_job(self, _job_id: str) -> bool:
+        return self.start_success
+
+    def stop_job(self, _job_id: str) -> bool:
+        return True
+
+    def update_cron(self, _job_id: str, cron: str) -> bool:
+        return cron == "* * * * *"
+
+    async def run_now(self, _job_id: str) -> dict:
+        return self.run_result
 
 
 def test_scheduler_lists_default_jobs() -> None:
@@ -144,3 +177,41 @@ def test_scheduler_reports_missing_handlers_as_unconfigured() -> None:
     assert health["enabled_jobs"] == 0
     assert health["unconfigured_jobs"] == ["planned"]
     assert manager.start_job("planned") is False
+
+
+def scheduler_api_client(monkeypatch, scheduler: ApiScheduler) -> TestClient:
+    monkeypatch.setattr("app.api.scheduler.get_scheduler", lambda: scheduler)
+    return TestClient(create_app())
+
+
+def test_scheduler_api_rejects_unknown_job(monkeypatch) -> None:
+    client = scheduler_api_client(monkeypatch, ApiScheduler())
+
+    response = client.post("/api/scheduler", json={"action": "run", "job_id": "missing"})
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "scheduler job not found"
+
+
+def test_scheduler_api_rejects_invalid_cron(monkeypatch) -> None:
+    client = scheduler_api_client(monkeypatch, ApiScheduler())
+
+    response = client.post(
+        "/api/scheduler",
+        json={"action": "updateCron", "job_id": "known", "cron": "not cron"},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "invalid cron"
+
+
+def test_scheduler_api_rejects_unconfigured_manual_run(monkeypatch) -> None:
+    client = scheduler_api_client(
+        monkeypatch,
+        ApiScheduler(run_result={"success": False, "error": "No handler registered for job known"}),
+    )
+
+    response = client.post("/api/scheduler", json={"action": "run", "job_id": "known"})
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "scheduler job is not configured"

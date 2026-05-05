@@ -36,16 +36,41 @@ async def mutate_scheduler(payload: SchedulerAction) -> dict:
 
     if payload.job_id is None:
         raise HTTPException(status_code=400, detail="job_id is required")
+    if not scheduler_job_exists(scheduler, payload.job_id):
+        raise HTTPException(status_code=404, detail="scheduler job not found")
 
     if payload.action == "start":
-        return {"success": scheduler.start_job(payload.job_id)}
+        if not scheduler.start_job(payload.job_id):
+            raise HTTPException(status_code=409, detail="scheduler job is not configured")
+        return {"success": True}
     if payload.action == "stop":
-        return {"success": scheduler.stop_job(payload.job_id)}
+        if not scheduler.stop_job(payload.job_id):
+            raise HTTPException(status_code=404, detail="scheduler job not found")
+        return {"success": True}
     if payload.action == "run":
-        return await scheduler.run_now(payload.job_id)
+        return scheduler_run_response(await scheduler.run_now(payload.job_id))
     if payload.action == "updateCron":
         if payload.cron is None:
             raise HTTPException(status_code=400, detail="cron is required")
-        return {"success": scheduler.update_cron(payload.job_id, payload.cron)}
+        if not scheduler.update_cron(payload.job_id, payload.cron):
+            raise HTTPException(status_code=400, detail="invalid cron")
+        return {"success": True}
 
     raise HTTPException(status_code=400, detail="Unknown action")
+
+
+def scheduler_job_exists(scheduler, job_id: str) -> bool:
+    return any(job.get("id") == job_id for job in scheduler.list_jobs())
+
+
+def scheduler_run_response(result: dict) -> dict:
+    if result.get("success") is True:
+        return result
+    error = str(result.get("error") or "scheduler run failed")
+    if error == "unknown job":
+        raise HTTPException(status_code=404, detail="scheduler job not found")
+    if error == "busy":
+        raise HTTPException(status_code=409, detail="scheduler job is already running")
+    if error.startswith("No handler registered"):
+        raise HTTPException(status_code=409, detail="scheduler job is not configured")
+    raise HTTPException(status_code=500, detail=error)
