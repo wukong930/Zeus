@@ -26,6 +26,26 @@ class FailingSession:
         self.rollback_count += 1
 
 
+class EmptyScalarResult:
+    def first(self):
+        return None
+
+
+class FailingSecondLookupSession:
+    def __init__(self) -> None:
+        self.scalars_count = 0
+        self.rollback_count = 0
+
+    async def scalars(self, _):
+        self.scalars_count += 1
+        if self.scalars_count == 2:
+            raise RuntimeError("db failed")
+        return EmptyScalarResult()
+
+    async def rollback(self) -> None:
+        self.rollback_count += 1
+
+
 class TargetSession:
     def __init__(
         self,
@@ -127,6 +147,22 @@ async def test_dedup_rolls_back_after_lookup_failure() -> None:
     )
 
     assert decision.suppressed is False
+    assert session.rollback_count == 1
+
+
+async def test_dedup_rolls_back_after_combination_lookup_failure() -> None:
+    session = FailingSecondLookupSession()
+
+    decision = await check_alert_dedup(
+        session,  # type: ignore[arg-type]
+        signal={"signal_type": "momentum", "title": "RB bullish"},
+        context={},
+        score={"combined": 80},
+        signal_combination_hash="combo-hash",
+    )
+
+    assert decision.suppressed is False
+    assert session.scalars_count == 2
     assert session.rollback_count == 1
 
 

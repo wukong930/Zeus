@@ -74,13 +74,17 @@ async def check_alert_dedup(
             )
 
     if signal_combination_hash:
-        same_hash = (
-            await session.scalars(
-                select(AlertDedupCache)
-                .where(AlertDedupCache.signal_combination_hash == signal_combination_hash)
-                .limit(1)
-            )
-        ).first()
+        try:
+            same_hash = (
+                await session.scalars(
+                    select(AlertDedupCache)
+                    .where(AlertDedupCache.signal_combination_hash == signal_combination_hash)
+                    .limit(1)
+                )
+            ).first()
+        except Exception:
+            await rollback_if_possible(session)
+            return AlertDedupDecision(False, symbol=symbol, direction=direction, evaluator=evaluator)
         if same_hash is not None:
             recent_hash = same_hash.last_emitted_at >= effective_at - timedelta(
                 hours=DEFAULT_COMBINATION_WINDOW_HOURS
