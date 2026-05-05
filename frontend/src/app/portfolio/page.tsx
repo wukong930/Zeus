@@ -25,7 +25,7 @@ import { useI18n } from "@/lib/i18n";
 export default function PortfolioPage() {
   const [snapshot, setSnapshot] = useState<PortfolioSnapshot | null>(null);
   const [positions, setPositions] = useState<PortfolioPosition[]>([]);
-  const [source, setSource] = useState<"loading" | "api" | "mock">("loading");
+  const [source, setSource] = useState<"loading" | "api" | "partial" | "mock">("loading");
 
   useEffect(() => {
     let ignore = false;
@@ -34,7 +34,7 @@ export default function PortfolioPage() {
         if (!ignore) {
           setSnapshot(data);
           setPositions(data.positions);
-          setSource("api");
+          setSource(data.degraded ? "partial" : "api");
         }
       })
       .catch(() => {
@@ -74,7 +74,7 @@ export default function PortfolioPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Badge variant={source === "mock" ? "orange" : "emerald"}>
+          <Badge variant={source === "mock" || source === "partial" ? "orange" : "emerald"}>
             {source === "loading" ? "SYNC" : source.toUpperCase()}
           </Badge>
           <Button variant="action">

@@ -38,6 +38,8 @@ export interface PortfolioSnapshot {
   varResult: RiskVarResult | null;
   stressResults: StressTestResult[];
   correlation: CorrelationMatrix | null;
+  degraded?: boolean;
+  unavailableSections?: string[];
 }
 
 export interface AttributionSlice {
@@ -482,28 +484,39 @@ export async function fetchAlertsFromApi(): Promise<Alert[]> {
 }
 
 export async function fetchPortfolioSnapshot(): Promise<PortfolioSnapshot> {
-  const [positions, varEnvelope, stressEnvelope] = await Promise.all([
+  const unavailableSections: string[] = [];
+  const [positionsResult, varResult, stressResult] = await Promise.allSettled([
     fetchJson<BackendPosition[]>("/api/positions?status_filter=open&limit=500"),
     fetchJson<ApiEnvelope<RiskVarResult>>("/api/risk/var"),
     fetchJson<ApiEnvelope<StressTestResult[]>>("/api/risk/stress"),
   ]);
+  if (positionsResult.status === "rejected") {
+    throw positionsResult.reason;
+  }
 
+  const positions = positionsResult.value;
+  const varEnvelope = optionalSettledValue(varResult, null, "var", unavailableSections);
+  const stressEnvelope = optionalSettledValue(stressResult, null, "stress", unavailableSections);
   const symbols = uniqueSymbols(positions);
   const latestRows = await fetchLatestMarketRows(symbols);
   const mappedPositions = positions.map((position) => mapPosition(position, latestRows));
 
   const correlation =
     symbols.length > 0
-      ? await fetchJson<ApiEnvelope<CorrelationMatrix>>(
-          `/api/risk/correlation?symbols=${encodeURIComponent(symbols.join(","))}&window=60`
-        ).then((response) => response.data)
+      ? await fetchOptionalEnvelope<CorrelationMatrix>(
+          `/api/risk/correlation?symbols=${encodeURIComponent(symbols.join(","))}&window=60`,
+          "correlation",
+          unavailableSections
+        )
       : null;
 
   return {
     positions: mappedPositions,
-    varResult: varEnvelope.data,
-    stressResults: stressEnvelope.data,
+    varResult: varEnvelope?.data ?? null,
+    stressResults: stressEnvelope?.data ?? [],
     correlation,
+    degraded: unavailableSections.length > 0,
+    unavailableSections,
   };
 }
 
@@ -616,6 +629,33 @@ async function fetchJson<T>(path: string, init?: RequestInit): Promise<T> {
     throw new Error(`${path} failed with ${response.status}`);
   }
   return response.json() as Promise<T>;
+}
+
+function optionalSettledValue<T>(
+  result: PromiseSettledResult<T>,
+  fallback: T | null,
+  section: string,
+  unavailableSections: string[]
+): T | null {
+  if (result.status === "fulfilled") {
+    return result.value;
+  }
+  unavailableSections.push(section);
+  return fallback;
+}
+
+async function fetchOptionalEnvelope<T>(
+  path: string,
+  section: string,
+  unavailableSections: string[]
+): Promise<T | null> {
+  try {
+    const envelope = await fetchJson<ApiEnvelope<T>>(path);
+    return envelope.data;
+  } catch {
+    unavailableSections.push(section);
+    return null;
+  }
 }
 
 async function fetchLatestMarketRows(symbols: string[]): Promise<Map<string, BackendMarketData>> {
