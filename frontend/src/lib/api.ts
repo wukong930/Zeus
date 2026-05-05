@@ -219,6 +219,17 @@ export interface SchedulerSnapshot {
   health: SchedulerHealth;
 }
 
+export interface LLMUsageSummary {
+  module: string;
+  period_start: string;
+  period_end: string;
+  calls: number;
+  cache_hits: number;
+  estimated_cost_usd: number;
+  input_tokens: number;
+  output_tokens: number;
+}
+
 export interface ScenarioSimulationRequest {
   target_symbol: string;
   shocks: Record<string, number>;
@@ -535,6 +546,11 @@ export async function fetchDataSourceStatuses(): Promise<DataSourceStatus[]> {
 
 export async function fetchSchedulerSnapshot(): Promise<SchedulerSnapshot> {
   return fetchJson<SchedulerSnapshot>("/api/scheduler");
+}
+
+export async function fetchLLMUsageSummary(module = "alert_agent"): Promise<LLMUsageSummary> {
+  const params = new URLSearchParams({ module });
+  return fetchJson<LLMUsageSummary>(`/api/llm/usage?${params.toString()}`);
 }
 
 export async function fetchAttributionReport(): Promise<AttributionReport> {

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Card, CardHeader, CardTitle, CardSubtitle } from "@/components/Card";
+import { DataSourceBadge, type DataSourceState } from "@/components/DataSourceBadge";
 import { Badge } from "@/components/Badge";
 import { Button } from "@/components/Button";
 import { MetricTile } from "@/components/MetricTile";
@@ -10,8 +11,10 @@ import { Bell, BrainCircuit, RadioTower, ShieldCheck } from "lucide-react";
 import { useI18n } from "@/lib/i18n";
 import {
   fetchDataSourceStatuses,
+  fetchLLMUsageSummary,
   fetchSchedulerSnapshot,
   type DataSourceStatus,
+  type LLMUsageSummary,
   type SchedulerSnapshot,
 } from "@/lib/api";
 
@@ -19,9 +22,14 @@ export default function SettingsPage() {
   const { text } = useI18n();
   const [dataSources, setDataSources] = useState<DataSourceStatus[]>([]);
   const [scheduler, setScheduler] = useState<SchedulerSnapshot | null>(null);
+  const [llmUsage, setLlmUsage] = useState<LLMUsageSummary | null>(null);
+  const [llmUsageSource, setLlmUsageSource] = useState<DataSourceState>("loading");
   const readySources = dataSources.filter((source) => source.status === "ready").length;
   const degradedJobs = scheduler?.health.degraded_jobs.length ?? 0;
   const enabledJobs = scheduler?.health.enabled_jobs ?? 0;
+  const llmUsageCaption = llmUsage
+    ? `${llmUsage.calls} ${text("本月调用")}`
+    : text(llmUsageSource === "loading" ? "同步中" : "暂无用量数据");
 
   useEffect(() => {
     let mounted = true;
@@ -35,6 +43,15 @@ export default function SettingsPage() {
         if (mounted) setScheduler(snapshot);
       })
       .catch(() => undefined);
+    fetchLLMUsageSummary()
+      .then((summary) => {
+        if (!mounted) return;
+        setLlmUsage(summary);
+        setLlmUsageSource("api");
+      })
+      .catch(() => {
+        if (mounted) setLlmUsageSource("fallback");
+      });
     return () => {
       mounted = false;
     };
@@ -50,7 +67,13 @@ export default function SettingsPage() {
       <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-4">
         <MetricTile label={text("数据源")} value={`${readySources}/${dataSources.length || 6}`} caption={text("就绪")} icon={RadioTower} tone="cyan" />
         <MetricTile label={text("调度任务")} value={`${enabledJobs}`} caption={degradedJobs ? `${degradedJobs} ${text("异常")}` : text("健康")} icon={ShieldCheck} tone={degradedJobs ? "warning" : "up"} />
-        <MetricTile label={text("LLM 供应商")} value="4" caption={text("活跃供应商")} icon={BrainCircuit} tone="violet" />
+        <MetricTile
+          label={text("LLM 月度成本")}
+          value={formatUsd(llmUsage?.estimated_cost_usd)}
+          caption={llmUsageCaption}
+          icon={BrainCircuit}
+          tone="violet"
+        />
         <MetricTile label={text("每日预警上限")} value="50" caption={text("每日上限")} icon={Bell} tone="warning" />
       </div>
 
@@ -105,13 +128,36 @@ export default function SettingsPage() {
             <CardTitle>{text("LLM 供应商")}</CardTitle>
             <CardSubtitle>{text("多供应商支持，按场景路由")}</CardSubtitle>
           </div>
+          <DataSourceBadge state={llmUsageSource} compact />
         </CardHeader>
         <div className="space-y-3">
+          <div className="rounded-sm border border-border-subtle bg-bg-base p-3 shadow-inner-panel">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="text-sm font-medium text-text-primary">{text("Alert Agent 用量")}</div>
+                <div className="text-caption text-text-muted">
+                  {llmUsage
+                    ? `${llmUsage.period_start} → ${llmUsage.period_end}`
+                    : text("等待后端用量同步")}
+                </div>
+              </div>
+              <div className="text-right">
+                <div className="font-mono text-sm text-text-primary tabular-nums">
+                  {formatUsd(llmUsage?.estimated_cost_usd)}
+                </div>
+                <div className="text-caption text-text-muted">
+                  {llmUsage
+                    ? `${llmUsage.calls} ${text("调用")} · ${llmUsage.cache_hits} ${text("缓存命中")}`
+                    : text("暂无用量数据")}
+                </div>
+              </div>
+            </div>
+          </div>
           {[
-            { name: "xAI Grok", model: "grok-4.3", status: "active", usage: "$0.00 / $30" },
-            { name: "Anthropic Claude", model: "claude-sonnet-4-6", status: "configured", usage: "$18.20 / $50" },
-            { name: "OpenAI", model: "gpt-4o", status: "configured", usage: "$6.10 / $30" },
-            { name: "DeepSeek", model: "deepseek-chat", status: "configured", usage: "$0.05 / $5" },
+            { name: "xAI Grok", model: "grok-4.3", status: "active" },
+            { name: "Anthropic Claude", model: "claude-sonnet-4-6", status: "configured" },
+            { name: "OpenAI", model: "gpt-4o", status: "configured" },
+            { name: "DeepSeek", model: "deepseek-chat", status: "configured" },
           ].map((p) => (
             <div key={p.name} className="flex items-center gap-3 rounded-sm border border-border-subtle bg-bg-base p-3 shadow-inner-panel">
               <div className="flex-1">
@@ -122,8 +168,10 @@ export default function SettingsPage() {
                 <div className="text-caption text-text-muted font-mono">{p.model}</div>
               </div>
               <div className="text-right text-sm">
-                <div className="text-text-secondary font-mono tabular-nums">{p.usage}</div>
-                <div className="text-caption text-text-muted">{text("本月成本 / 预算")}</div>
+                <div className="text-text-secondary font-mono tabular-nums">
+                  {text(p.status === "active" ? "主路由" : "候选")}
+                </div>
+                <div className="text-caption text-text-muted">{text("路由状态")}</div>
               </div>
               <Button variant="secondary" size="sm">{text("配置")}</Button>
             </div>
@@ -186,6 +234,11 @@ export default function SettingsPage() {
       </Card>
     </div>
   );
+}
+
+function formatUsd(value?: number | null): string {
+  if (value == null) return "--";
+  return `$${value.toFixed(2)}`;
 }
 
 function Toggle({ label, enabled = false }: { label: string; enabled?: boolean }) {

@@ -13,7 +13,13 @@ import { Activity, ArrowRight, Gauge, Network, TrendingUp, TrendingDown, WalletC
 import Link from "next/link";
 import { cn, formatPercent } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n";
-import { fetchAlertsFromApi, fetchCausalWebGraph, fetchPortfolioSnapshot } from "@/lib/api";
+import {
+  fetchAlertsFromApi,
+  fetchCausalWebGraph,
+  fetchLLMUsageSummary,
+  fetchPortfolioSnapshot,
+  type LLMUsageSummary,
+} from "@/lib/api";
 
 export default function CommandCenterPage() {
   const g = PERSONAL_GREETING;
@@ -25,6 +31,7 @@ export default function CommandCenterPage() {
   const [alertSource, setAlertSource] = useState<DataSourceState>("mock");
   const [portfolioSource, setPortfolioSource] = useState<DataSourceState>("mock");
   const [causalSource, setCausalSource] = useState<DataSourceState>("fallback");
+  const [llmUsage, setLlmUsage] = useState<LLMUsageSummary | null>(null);
   const { text } = useI18n();
   const totalPnl = useMemo(
     () => positions.reduce((sum, position) => sum + position.pnl, 0),
@@ -66,6 +73,11 @@ export default function CommandCenterPage() {
       .catch(() => {
         if (mounted) setCausalSource("fallback");
       });
+    fetchLLMUsageSummary()
+      .then((summary) => {
+        if (mounted) setLlmUsage(summary);
+      })
+      .catch(() => undefined);
     return () => {
       mounted = false;
     };
@@ -226,8 +238,19 @@ export default function CommandCenterPage() {
         <MetricTile label={text("活跃信号")} value={String(activeSignals || 0)} trend={text("实时")} caption={text("运行态图谱")} icon={Activity} tone="up" />
         <MetricTile label={text("最新预警")} value={String(alertTotal)} trend={text("最新")} caption={text("接口返回")} icon={TrendingUp} tone="warning" />
         <MetricTile label={text("校准进度")} value="73/100" caption={text("样本量")} icon={Gauge} tone="cyan" />
-        <MetricTile label={text("LLM 月度成本")} value="$24.30" caption={`${text("预算")} $80`} icon={WalletCards} tone="violet" />
+        <MetricTile
+          label={text("LLM 月度成本")}
+          value={formatUsd(llmUsage?.estimated_cost_usd)}
+          caption={llmUsage ? `${llmUsage.calls} ${text("本月调用")}` : text("等待同步")}
+          icon={WalletCards}
+          tone="violet"
+        />
       </div>
     </div>
   );
+}
+
+function formatUsd(value?: number | null): string {
+  if (value == null) return "--";
+  return `$${value.toFixed(2)}`;
 }
