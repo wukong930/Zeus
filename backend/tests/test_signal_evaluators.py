@@ -25,6 +25,7 @@ from app.services.signals.types import (
     NewsEventPoint,
     SpreadStatistics,
     TriggerContext,
+    TriggerResult,
 )
 
 
@@ -100,6 +101,44 @@ async def test_signal_detector_runs_evaluators_in_parallel() -> None:
     results = await SignalDetector().detect(context)
 
     assert [result.signal_type for result in results] == ["spread_anomaly", "basis_shift"]
+
+
+@pytest.mark.asyncio
+async def test_signal_detector_keeps_successful_results_when_evaluator_fails() -> None:
+    class FailingEvaluator:
+        signal_type = "failing"
+
+        async def evaluate(self, context: TriggerContext) -> TriggerResult | None:
+            raise RuntimeError(f"failed on {context.symbol1}")
+
+    class PassingEvaluator:
+        signal_type = "passing"
+
+        async def evaluate(self, context: TriggerContext) -> TriggerResult | None:
+            return TriggerResult(
+                signal_type=self.signal_type,
+                triggered=True,
+                severity="medium",
+                confidence=0.8,
+                trigger_chain=[],
+                related_assets=[context.symbol1],
+                risk_items=[],
+                manual_check_items=[],
+                title="Passing signal",
+                summary="A healthy evaluator result should survive peer failures.",
+            )
+
+    context = TriggerContext(
+        symbol1="RB",
+        category="ferrous",
+        timestamp=datetime.now(timezone.utc),
+    )
+
+    results = await SignalDetector(
+        evaluators=(FailingEvaluator(), PassingEvaluator()),
+    ).detect(context)
+
+    assert [result.signal_type for result in results] == ["passing"]
 
 
 @pytest.mark.asyncio

@@ -1,4 +1,5 @@
 import asyncio
+import logging
 
 from app.services.signals.evaluators import (
     BasisShiftEvaluator,
@@ -34,6 +35,8 @@ DEFAULT_EVALUATORS: tuple[TriggerEvaluator, ...] = (
 
 ROLL_WINDOW_DEGRADED_SIGNALS = {"spread_anomaly", "basis_shift"}
 
+logger = logging.getLogger(__name__)
+
 
 class SignalDetector:
     def __init__(self, evaluators: tuple[TriggerEvaluator, ...] = DEFAULT_EVALUATORS) -> None:
@@ -56,5 +59,23 @@ class SignalDetector:
                 for evaluator in evaluators
                 if evaluator.signal_type not in ROLL_WINDOW_DEGRADED_SIGNALS
             ]
-        results = await asyncio.gather(*(evaluator.evaluate(context) for evaluator in evaluators))
-        return [result for result in results if result is not None]
+        results = await asyncio.gather(
+            *(evaluator.evaluate(context) for evaluator in evaluators),
+            return_exceptions=True,
+        )
+        valid_results: list[TriggerResult] = []
+        for evaluator, result in zip(evaluators, results, strict=True):
+            if isinstance(result, BaseException):
+                if not isinstance(result, Exception):
+                    raise result
+                logger.warning(
+                    "Signal evaluator %s failed for %s/%s",
+                    evaluator.signal_type,
+                    context.symbol1,
+                    context.symbol2 or context.category,
+                    exc_info=(type(result), result, result.__traceback__),
+                )
+                continue
+            if result is not None:
+                valid_results.append(result)
+        return valid_results
