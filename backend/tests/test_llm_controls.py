@@ -1,9 +1,13 @@
 from datetime import date, datetime, timedelta, timezone
 
+from fastapi.testclient import TestClient
+
+from app.core.database import get_db
+from app.main import create_app
 from app.models.llm_cache import LLMCache
 from app.services.llm.budget_guard import month_bounds
 from app.services.llm.cache import get_cached_completion, llm_cache_key, store_cached_completion
-from app.services.llm.cost_tracker import estimate_cost_usd
+from app.services.llm.cost_tracker import LLMUsageSummary, estimate_cost_usd
 from app.services.llm.types import LLMCompletionResult, LLMUsage
 
 
@@ -163,3 +167,61 @@ def test_month_bounds_returns_next_month_exclusive_end() -> None:
 def test_cost_estimate_is_zero_for_unknown_usage() -> None:
     assert estimate_cost_usd("gpt-test", 0, 0) == 0.0
     assert estimate_cost_usd("gpt-test", 1000, 1000) > 0
+
+
+def test_llm_usage_api_returns_requested_month_summary(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    async def fake_db():
+        yield object()
+
+    async def fake_monthly_usage_summary(
+        session,
+        *,
+        module: str,
+        period_start: date,
+        period_end: date,
+    ) -> LLMUsageSummary:
+        captured.update(
+            {
+                "session": session,
+                "module": module,
+                "period_start": period_start,
+                "period_end": period_end,
+            }
+        )
+        return LLMUsageSummary(
+            module=module,
+            period_start=period_start,
+            period_end=period_end,
+            calls=7,
+            cache_hits=3,
+            estimated_cost_usd=1.2345,
+            input_tokens=1200,
+            output_tokens=450,
+        )
+
+    monkeypatch.setattr(
+        "app.api.llm_usage.monthly_usage_summary",
+        fake_monthly_usage_summary,
+    )
+    app = create_app()
+    app.dependency_overrides[get_db] = fake_db
+    client = TestClient(app)
+
+    response = client.get("/api/llm/usage?module=news&month=2026-05-16")
+
+    assert response.status_code == 200
+    assert captured["module"] == "news"
+    assert captured["period_start"] == date(2026, 5, 1)
+    assert captured["period_end"] == date(2026, 6, 1)
+    assert response.json() == {
+        "module": "news",
+        "period_start": "2026-05-01",
+        "period_end": "2026-06-01",
+        "calls": 7,
+        "cache_hits": 3,
+        "estimated_cost_usd": 1.2345,
+        "input_tokens": 1200,
+        "output_tokens": 450,
+    }
