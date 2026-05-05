@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Card, CardHeader, CardTitle, CardSubtitle } from "@/components/Card";
 import { Badge } from "@/components/Badge";
+import { DataSourceBadge, type DataSourceState } from "@/components/DataSourceBadge";
 import { MetricTile } from "@/components/MetricTile";
 import { ChartFrame } from "@/components/charts/ChartFrame";
 import { DistributionBars } from "@/components/charts/DistributionBars";
@@ -64,45 +65,66 @@ export default function AnalyticsPage() {
 
 function AttributionTab() {
   const [report, setReport] = useState<AttributionReport | null>(null);
+  const [source, setSource] = useState<DataSourceState>("loading");
+  const { text } = useI18n();
 
   useEffect(() => {
     let mounted = true;
     fetchAttributionReport()
       .then((data) => {
-        if (mounted) setReport(data);
+        if (!mounted) return;
+        setReport(data);
+        setSource("api");
       })
       .catch(() => {
-        if (mounted) setReport(null);
+        if (!mounted) return;
+        setReport(null);
+        setSource("fallback");
       });
     return () => {
       mounted = false;
     };
   }, []);
 
-  const signalSlices = toSliceData(report?.slices.signal_type, [
-    { label: "cost_support_pressure", winRate: 0.78, samples: 9, expReturn: 3.2 },
-    { label: "spread_anomaly", winRate: 0.71, samples: 7, expReturn: 2.1 },
-    { label: "news_event", winRate: 0.60, samples: 5, expReturn: 1.8 },
-    { label: "momentum", winRate: 0.50, samples: 4, expReturn: 0.9 },
-    { label: "regime_shift", winRate: 0.43, samples: 7, expReturn: -0.3 },
-  ]);
-  const categorySlices = toSliceData(report?.slices.category, [
-    { label: "trend_up_low_vol", winRate: 0.74, samples: 12, expReturn: 2.6 },
-    { label: "range_high_vol", winRate: 0.62, samples: 8, expReturn: 1.4 },
-    { label: "trend_down_low_vol", winRate: 0.55, samples: 6, expReturn: 0.7 },
-    { label: "range_low_vol", winRate: 0.40, samples: 5, expReturn: -0.2 },
-  ]);
-  const p80Mae = report?.risk_assessment.stop_loss?.p80_mae ?? 3.5;
-  const p80Mfe = report?.risk_assessment.take_profit?.p80_mfe ?? 3;
+  if (!report) {
+    return (
+      <div className="space-y-5 animate-fade-in">
+        <div className="flex justify-end">
+          <DataSourceBadge state={source} />
+        </div>
+        <Card variant="flat" className="py-12 text-center">
+          <div className="text-sm text-text-secondary">
+            {text(source === "loading" ? "归因报告加载中" : "归因报告暂不可用")}
+          </div>
+        </Card>
+      </div>
+    );
+  }
+
+  const signalSlices = toSliceData(report.slices.signal_type);
+  const categorySlices = toSliceData(report.slices.category);
+  const p80Mae = report.risk_assessment.stop_loss?.p80_mae ?? null;
+  const p80Mfe = report.risk_assessment.take_profit?.p80_mfe ?? null;
+  const closedRate =
+    report.total_recommendations > 0
+      ? report.closed_recommendations / report.total_recommendations
+      : 0;
 
   return (
     <div className="space-y-5 animate-fade-in">
+      <div className="flex justify-end">
+        <DataSourceBadge state={source} />
+      </div>
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-5">
-        <Stat label="本月推荐数" value={String(report?.total_recommendations ?? 8)} trend="live" />
-        <Stat label="已归因笔数" value={String(report?.closed_recommendations ?? 8)} trend="closed" />
-        <Stat label="本月胜率" value={`${(((report?.win_rate ?? 0.625) * 100)).toFixed(1)}%`} trend="+12pt" />
-        <Stat label="期望 PnL" value={formatPnl(report?.expected_pnl ?? 2.3)} trend="+0.4" />
-        <Stat label="平均 R:R" value="1.78" trend="-0.1" trendNegative />
+        <Stat label="本月推荐数" value={String(report.total_recommendations)} trend="live" />
+        <Stat label="已归因笔数" value={String(report.closed_recommendations)} trend="closed" />
+        <Stat label="本月胜率" value={`${(report.win_rate * 100).toFixed(1)}%`} trend="runtime" />
+        <Stat label="期望 PnL" value={formatPnl(report.expected_pnl)} trend="attributed" />
+        <Stat
+          label="闭环率"
+          value={`${(closedRate * 100).toFixed(1)}%`}
+          trend={`${report.closed_recommendations}/${report.total_recommendations}`}
+        />
       </div>
 
       <Card variant="flat">
@@ -112,38 +134,46 @@ function AttributionTab() {
             <CardSubtitle>按维度看哪些场景下系统表现最好</CardSubtitle>
           </div>
         </CardHeader>
-        <div className="grid grid-cols-2 gap-5">
-          <SliceTable
-            title="按信号类型"
-            data={signalSlices}
-          />
-          <SliceTable
-            title="按板块"
-            data={categorySlices}
-          />
-        </div>
+        {signalSlices.length || categorySlices.length ? (
+          <div className="grid grid-cols-2 gap-5">
+            <SliceTable
+              title="按信号类型"
+              data={signalSlices}
+            />
+            <SliceTable
+              title="按板块"
+              data={categorySlices}
+            />
+          </div>
+        ) : (
+          <div className="py-8 text-center text-sm text-text-secondary">
+            {text("暂无足够样本生成切片")}
+          </div>
+        )}
       </Card>
 
       <div className="grid grid-cols-2 gap-5">
         <ChartFrame
           title="Stop Loss 评估"
           subtitle="MAE 分布看止损是太紧还是太松"
-          metric={`P80 ${p80Mae.toFixed(2)}`}
+          metric={p80Mae === null ? "P80 --" : `P80 ${p80Mae.toFixed(2)}`}
         >
-          <MAEDistribution />
+          {p80Mae === null ? <EmptyChartState label="暂无 MAE 样本" /> : <MAEDistribution />}
           <div className="text-sm text-text-secondary leading-relaxed mt-3">
-            <strong className="text-text-primary">P80 MAE</strong>：{p80Mae.toFixed(2)}。归因只出报表，不自动改止损。
+            <strong className="text-text-primary">P80 MAE</strong>：
+            {p80Mae === null ? "--" : p80Mae.toFixed(2)}。归因只出报表，不自动改止损。
           </div>
         </ChartFrame>
 
         <ChartFrame
           title="Take Profit 评估"
           subtitle="MFE 分布看止盈是否过早"
-          metric={`P80 ${p80Mfe.toFixed(2)}`}
+          metric={p80Mfe === null ? "P80 --" : `P80 ${p80Mfe.toFixed(2)}`}
         >
-          <MFEDistribution />
+          {p80Mfe === null ? <EmptyChartState label="暂无 MFE 样本" /> : <MFEDistribution />}
           <div className="text-sm text-text-secondary leading-relaxed mt-3">
-            <strong className="text-text-primary">P80 MFE</strong>：{p80Mfe.toFixed(2)}。止盈参数仍需人工评审。
+            <strong className="text-text-primary">P80 MFE</strong>：
+            {p80Mfe === null ? "--" : p80Mfe.toFixed(2)}。止盈参数仍需人工评审。
           </div>
         </ChartFrame>
       </div>
@@ -152,16 +182,24 @@ function AttributionTab() {
 }
 
 function toSliceData(
-  slices: AttributionSlice[] | undefined,
-  fallback: { label: string; winRate: number; samples: number; expReturn: number }[]
+  slices: AttributionSlice[] | undefined
 ) {
-  if (!slices || slices.length === 0) return fallback;
+  if (!slices || slices.length === 0) return [];
   return slices.map((slice) => ({
     label: slice.label,
     winRate: slice.win_rate,
     samples: slice.samples,
     expReturn: slice.expected_pnl,
   }));
+}
+
+function EmptyChartState({ label }: { label: string }) {
+  const { text } = useI18n();
+  return (
+    <div className="flex h-32 items-center justify-center rounded-sm border border-border-subtle bg-bg-base text-sm text-text-secondary">
+      {text(label)}
+    </div>
+  );
 }
 
 function formatPnl(value: number) {
