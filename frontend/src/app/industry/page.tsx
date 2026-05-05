@@ -146,7 +146,7 @@ const MOCK_QUALITY: CostQualityReport = {
   limitations: ["Public reference pack is a bootstrap, not a licensed paid feed."],
 };
 
-type SourceState = "loading" | "api" | "mock";
+type SourceState = "loading" | "api" | "partial" | "mock";
 
 interface SimulationInputs {
   ironOreIndex: number;
@@ -186,24 +186,30 @@ export default function IndustryLensPage() {
         setHistories({});
         setQualityReport(MOCK_QUALITY);
         const nextChain = await fetchCostChain(nextSelected);
-        const [historyEntries, nextQuality] = await Promise.all([
+        const [historyResults, qualityResult] = await Promise.all([
           Promise.all(
             config.symbols.map(async (symbol) => {
               try {
-                return [symbol, await fetchCostHistory(symbol, 30)] as const;
+                return { ok: true, symbol, rows: await fetchCostHistory(symbol, 30) } as const;
               } catch {
-                return [symbol, []] as const;
+                return { ok: false, symbol, rows: [] as CostSnapshot[] } as const;
               }
             })
           ),
-          fetchCostQualityReport(config.quality).catch(() => MOCK_QUALITY),
+          fetchCostQualityReport(config.quality)
+            .then((report) => ({ ok: true, report }) as const)
+            .catch(() => ({ ok: false, report: MOCK_QUALITY }) as const),
         ]);
 
         if (!ignore) {
           setChain(nextChain);
-          setHistories(Object.fromEntries(historyEntries));
-          setQualityReport(nextQuality);
-          setSource("api");
+          setHistories(
+            Object.fromEntries(historyResults.map((result) => [result.symbol, result.rows]))
+          );
+          setQualityReport(qualityResult.report);
+          setSource(
+            historyResults.every((result) => result.ok) && qualityResult.ok ? "api" : "partial"
+          );
         }
       } catch {
         if (!ignore) {
@@ -274,7 +280,7 @@ export default function IndustryLensPage() {
         </div>
         <div className="flex items-center gap-2">
           <SectorToggle value={sector} onChange={setSector} />
-          <Badge variant={source === "mock" ? "orange" : "emerald"}>
+          <Badge variant={source === "mock" || source === "partial" ? "orange" : "emerald"}>
             {source === "loading" ? "SYNC" : source.toUpperCase()}
           </Badge>
           <Button
