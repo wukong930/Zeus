@@ -1,6 +1,7 @@
 "use client";
 
 import { Card, CardHeader, CardTitle, CardSubtitle } from "@/components/Card";
+import { DataSourceBadge } from "@/components/DataSourceBadge";
 import { SectorHeatmap } from "@/components/SectorHeatmap";
 import { Badge } from "@/components/Badge";
 import { MetricTile } from "@/components/MetricTile";
@@ -26,11 +27,14 @@ export default function SectorsPage() {
 
   return (
     <div className="px-8 py-6 space-y-6 animate-fade-in">
-      <div>
-        <h1 className="text-h1 text-text-primary">{text("Sectors")}</h1>
-        <p className="text-sm text-text-secondary mt-1">
-          {text("板块层方向判断 + 各品种活跃度 + conviction 因子")}
-        </p>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h1 className="text-h1 text-text-primary">{text("Sectors")}</h1>
+          <p className="text-sm text-text-secondary mt-1">
+            {text("板块层方向判断 + 各品种活跃度 + conviction 因子")}
+          </p>
+        </div>
+        <DataSourceBadge state="mock" />
       </div>
 
       <div className="grid grid-cols-1 gap-5 md:grid-cols-4">
@@ -46,6 +50,7 @@ export default function SectorsPage() {
             <CardTitle>{text("板块热力图")}</CardTitle>
             <CardSubtitle>{text("橙色脉动 = 信号活跃 · 颜色亮度 = 涨跌幅")}</CardSubtitle>
           </div>
+          <DataSourceBadge state="mock" compact />
         </CardHeader>
         <SectorHeatmap />
       </Card>

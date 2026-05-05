@@ -210,9 +210,12 @@ export default function CommandCenterPage() {
                 </span>
               </CardSubtitle>
             </div>
-            <Link href="/sectors" className="text-caption text-text-muted hover:text-text-primary">
-              {text("详情")} →
-            </Link>
+            <div className="flex items-center gap-2">
+              <DataSourceBadge state="mock" compact />
+              <Link href="/sectors" className="text-caption text-text-muted hover:text-text-primary">
+                {text("详情")} →
+              </Link>
+            </div>
           </CardHeader>
           <SectorHeatmap />
         </Card>

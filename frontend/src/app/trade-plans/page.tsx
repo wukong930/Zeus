@@ -1,6 +1,7 @@
 "use client";
 
 import { TRADE_PLANS } from "@/data/mock";
+import { DataSourceBadge } from "@/components/DataSourceBadge";
 import { TradePlanCard } from "@/components/TradePlanCard";
 import { MetricTile } from "@/components/MetricTile";
 import { Activity, Gauge, Target, WalletCards } from "lucide-react";
@@ -17,11 +18,14 @@ export default function TradePlansPage() {
 
   return (
     <div className="px-8 py-6 max-w-5xl space-y-5 animate-fade-in">
-      <div>
-        <h1 className="text-h1 text-text-primary">{text("Trade Plans")}</h1>
-        <p className="text-sm text-text-secondary mt-1">
-          {text("每条建议是一份完整的飞行计划——入场、止损、目标、保证金、组合风险一目了然。")}
-        </p>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h1 className="text-h1 text-text-primary">{text("Trade Plans")}</h1>
+          <p className="text-sm text-text-secondary mt-1">
+            {text("每条建议是一份完整的飞行计划——入场、止损、目标、保证金、组合风险一目了然。")}
+          </p>
+        </div>
+        <DataSourceBadge state="mock" />
       </div>
 
       <div className="grid grid-cols-1 gap-5 md:grid-cols-4">
