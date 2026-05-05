@@ -98,7 +98,7 @@ async def close_position(
     payload: PositionCloseRequest,
     session: AsyncSession = Depends(get_db),
 ) -> Position:
-    row = await require_position(session, position_id)
+    row = await require_open_position(session, position_id)
     closed_at = payload.closed_at or datetime.now(timezone.utc)
     row.status = "closed"
     row.closed_at = closed_at
@@ -119,7 +119,7 @@ async def add_position_size(
     payload: PositionResizeRequest,
     session: AsyncSession = Depends(get_db),
 ) -> Position:
-    row = await require_position(session, position_id)
+    row = await require_open_position(session, position_id)
     delta = payload.lots or 1
     row.legs = resize_legs(row.legs, delta=delta)
     row.last_updated_at = datetime.now(timezone.utc)
@@ -136,7 +136,7 @@ async def reduce_position_size(
     payload: PositionResizeRequest,
     session: AsyncSession = Depends(get_db),
 ) -> Position:
-    row = await require_position(session, position_id)
+    row = await require_open_position(session, position_id)
     row.legs = resize_legs(row.legs, fraction=payload.fraction or 0.5, reduce=True)
     row.last_updated_at = datetime.now(timezone.utc)
     await session.commit()
@@ -155,6 +155,13 @@ async def require_position(session: AsyncSession, position_id: UUID) -> Position
     row = await session.get(Position, position_id)
     if row is None:
         raise HTTPException(status_code=404, detail="Position not found")
+    return row
+
+
+async def require_open_position(session: AsyncSession, position_id: UUID) -> Position:
+    row = await require_position(session, position_id)
+    if row.status != "open":
+        raise HTTPException(status_code=409, detail="Position is not open")
     return row
 
 

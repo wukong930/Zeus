@@ -1,6 +1,10 @@
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
+import pytest
+from fastapi import HTTPException
+
+from app.api.positions import require_open_position
 from app.models.position import Position
 from app.models.recommendation import Recommendation
 from app.services.learning.recommendation_attribution import (
@@ -163,3 +167,13 @@ async def test_position_freshness_marks_stale_and_degrades_old_positions() -> No
 
 def test_phase6_symbol_category_fallback_covers_rubber() -> None:
     assert infer_category_from_symbol("RU") == "rubber"
+
+
+async def test_closed_positions_cannot_be_resized_or_closed_again() -> None:
+    closed_position = _position(status="closed")
+    session = FakeSession(recommendation=closed_position)
+
+    with pytest.raises(HTTPException) as exc_info:
+        await require_open_position(session, closed_position.id)  # type: ignore[arg-type]
+
+    assert exc_info.value.status_code == 409
