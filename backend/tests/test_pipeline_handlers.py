@@ -81,6 +81,21 @@ async def test_market_update_handler_publishes_detected_signals() -> None:
     assert publisher.calls[0]["event"].payload["context"]["regime"] == "range_low_vol"
 
 
+async def test_market_update_handler_skips_malformed_contexts() -> None:
+    event = _market_update_event()
+    valid_context = event.payload["contexts"][0]
+    event.payload["contexts"] = [
+        {"symbol1": "RB", "category": "ferrous", "timestamp": "not-a-date"},
+        valid_context,
+    ]
+    publisher = CapturingPublisher()
+
+    published = await handle_market_update(event, publisher=publisher)
+
+    assert [item.channel for item in published] == ["signal.detected", "signal.detected"]
+    assert all(call["event"].payload["context"]["symbol1"] == "RB" for call in publisher.calls)
+
+
 async def test_news_event_handler_publishes_news_signal() -> None:
     event = ZeusEvent(
         channel="news.event",
@@ -137,6 +152,48 @@ async def test_news_event_handler_publishes_news_signal() -> None:
     assert [item.channel for item in published] == ["signal.detected"]
     assert publisher.calls[0]["event"].payload["signal"]["signal_type"] == "news_event"
     assert publisher.calls[0]["event"].payload["context"]["news_events"][0]["id"] == "evt-1"
+
+
+async def test_news_event_handler_skips_malformed_contexts() -> None:
+    event_payload = {
+        "id": "evt-1",
+        "source": "cailianshe",
+        "title": "OPEC+ extends production cuts",
+        "summary": "OPEC+ extends production cuts, bullish for crude oil.",
+        "published_at": datetime(2026, 5, 3, tzinfo=timezone.utc).isoformat(),
+        "event_type": "supply",
+        "affected_symbols": ["SC"],
+        "direction": "bullish",
+        "severity": 5,
+        "time_horizon": "medium",
+        "llm_confidence": 0.82,
+        "source_count": 2,
+        "verification_status": "cross_verified",
+        "requires_manual_confirmation": False,
+    }
+    event = ZeusEvent(
+        channel="news.event",
+        payload={
+            "news_event": event_payload,
+            "contexts": [
+                {"symbol1": "SC", "category": "energy", "timestamp": "bad-time"},
+                {
+                    "symbol1": "SC",
+                    "category": "energy",
+                    "regime": "news",
+                    "timestamp": event_payload["published_at"],
+                    "news_events": [event_payload],
+                },
+            ],
+        },
+        source="test",
+    )
+    publisher = CapturingPublisher()
+
+    published = await handle_news_event(event, publisher=publisher)
+
+    assert [item.channel for item in published] == ["signal.detected"]
+    assert publisher.calls[0]["event"].payload["signal"]["signal_type"] == "news_event"
 
 
 async def test_news_event_handler_publishes_rubber_supply_signal() -> None:

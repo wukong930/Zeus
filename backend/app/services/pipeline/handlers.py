@@ -1,3 +1,4 @@
+import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import asdict, is_dataclass
 from datetime import datetime, timedelta, timezone
@@ -47,6 +48,8 @@ EventPublisher = Callable[..., Awaitable[ZeusEvent]]
 DEFAULT_ACCOUNT_NET_VALUE = 1_000_000.0
 DEFAULT_MARGIN_REQUIRED = 100_000.0
 NEWS_EVENT_SIGNAL_TYPES = {"news_event", "rubber_supply_shock"}
+
+logger = logging.getLogger(__name__)
 
 
 def jsonable(value: Any) -> Any:
@@ -181,6 +184,23 @@ def trigger_context_payloads(event: ZeusEvent) -> list[dict[str, Any]]:
     return []
 
 
+def parse_trigger_contexts(
+    raw_contexts: list[dict[str, Any]],
+    *,
+    channel: str,
+) -> list[tuple[dict[str, Any], TriggerContext]]:
+    parsed: list[tuple[dict[str, Any], TriggerContext]] = []
+    for index, raw_context in enumerate(raw_contexts):
+        if not isinstance(raw_context, dict):
+            logger.warning("Skipping non-object trigger context %s for %s", index, channel)
+            continue
+        try:
+            parsed.append((raw_context, trigger_context_from_payload(raw_context)))
+        except Exception:
+            logger.warning("Skipping malformed trigger context %s for %s", index, channel, exc_info=True)
+    return parsed
+
+
 async def handle_news_event(
     event: ZeusEvent,
     session: AsyncSession | None = None,
@@ -206,8 +226,7 @@ async def handle_news_event(
 
     signal_detector = detector or SignalDetector()
     published: list[ZeusEvent] = []
-    for raw_context in contexts_payload:
-        context = trigger_context_from_payload(raw_context)
+    for raw_context, context in parse_trigger_contexts(contexts_payload, channel=event.channel):
         results = await signal_detector.detect(context, signal_types=NEWS_EVENT_SIGNAL_TYPES)
         context_payload = jsonable(context)
         if raw_context.get("regime") is not None:
@@ -236,13 +255,13 @@ async def handle_market_update(
     publisher: EventPublisher = publish,
 ) -> list[ZeusEvent]:
     raw_contexts = trigger_context_payloads(event)
-    contexts = [trigger_context_from_payload(raw) for raw in raw_contexts]
+    contexts = parse_trigger_contexts(raw_contexts, channel=event.channel)
     if not contexts:
         return []
 
     signal_detector = detector or SignalDetector()
     published: list[ZeusEvent] = []
-    for raw_context, context in zip(raw_contexts, contexts, strict=False):
+    for raw_context, context in contexts:
         results = await signal_detector.detect(context)
         context_payload = jsonable(context)
         if raw_context.get("regime") is not None:
