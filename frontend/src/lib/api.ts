@@ -1,4 +1,4 @@
-import type { Alert, CausalEdge, CausalNode, Position, Sector, Severity } from "@/data/mock";
+import type { Alert, CausalEdge, CausalNode, Position, Sector, SectorData, Severity } from "@/data/mock";
 
 const SEVERITIES = new Set<Severity>(["critical", "high", "medium", "low"]);
 const DEFAULT_API_TIMEOUT_MS = 15_000;
@@ -41,6 +41,12 @@ export interface PortfolioSnapshot {
   correlation: CorrelationMatrix | null;
   degraded?: boolean;
   unavailableSections?: string[];
+}
+
+export interface SectorSnapshot {
+  sectors: SectorData[];
+  degraded: boolean;
+  unavailableSections: string[];
 }
 
 export interface AttributionSlice {
@@ -532,6 +538,52 @@ export async function fetchPortfolioSnapshot(): Promise<PortfolioSnapshot> {
   };
 }
 
+export async function fetchSectorSnapshot(baseSectors: SectorData[]): Promise<SectorSnapshot> {
+  const unavailableSections: string[] = [];
+  const [alertsResult, marketResult] = await Promise.allSettled([
+    fetchAlertsFromApi(),
+    fetchSectorMarketChanges(baseSectors),
+  ]);
+  const alerts = optionalSettledValue(alertsResult, null, "alerts", unavailableSections);
+  const market = optionalSettledValue(marketResult, null, "market", unavailableSections);
+
+  if (alerts === null && market === null) {
+    throw new Error("sector snapshot sources unavailable");
+  }
+
+  if (market?.missingSymbols.length) {
+    unavailableSections.push(`market:${market.missingSymbols.join(",")}`);
+  }
+
+  const activeSymbols = alerts
+    ? new Set(alerts.flatMap((alert) => rootSymbols([alert.symbol, ...alert.signalChain])))
+    : null;
+
+  const sectors = baseSectors.map((sector) => {
+    const symbols = sector.symbols.map((symbol) => {
+      const change = market?.changes.get(symbol.code) ?? symbol.change;
+      return {
+        ...symbol,
+        change,
+        signalActive: activeSymbols ? activeSymbols.has(symbol.code) : symbol.signalActive,
+      };
+    });
+    const avgChange =
+      symbols.reduce((total, symbol) => total + symbol.change, 0) / Math.max(symbols.length, 1);
+    return {
+      ...sector,
+      conviction: market ? clamp(avgChange / 2.5, -1, 1) : sector.conviction,
+      symbols,
+    };
+  });
+
+  return {
+    sectors,
+    degraded: unavailableSections.length > 0,
+    unavailableSections,
+  };
+}
+
 export async function fetchNewsEventsFromApi(): Promise<NewsEvent[]> {
   const rows = await fetchJson<BackendNewsEvent[]>("/api/news-events?limit=200");
   return rows.map(mapNewsEvent);
@@ -721,6 +773,45 @@ async function fetchLatestMarketRows(symbols: string[]): Promise<Map<string, Bac
   return new Map(entries.filter((entry): entry is readonly [string, BackendMarketData] => entry[1] !== null));
 }
 
+async function fetchSectorMarketChanges(baseSectors: SectorData[]): Promise<{
+  changes: Map<string, number>;
+  missingSymbols: string[];
+}> {
+  const symbols = baseSectors.flatMap((sector) => sector.symbols.map((symbol) => symbol.code));
+  const entries = await Promise.all(
+    symbols.map(async (symbol) => {
+      try {
+        const rows = await fetchJson<BackendMarketData[]>(
+          `/api/market-data?symbol=${encodeURIComponent(symbol)}&limit=5`
+        );
+        return [symbol, marketChangePct(rows)] as const;
+      } catch {
+        return [symbol, null] as const;
+      }
+    })
+  );
+  const changes = new Map<string, number>();
+  const missingSymbols: string[] = [];
+  for (const [symbol, change] of entries) {
+    if (change === null) {
+      missingSymbols.push(symbol);
+    } else {
+      changes.set(symbol, change);
+    }
+  }
+  return { changes, missingSymbols };
+}
+
+function marketChangePct(rows: BackendMarketData[]): number | null {
+  const latest = rows[0];
+  if (!latest) return null;
+  const previous =
+    rows.find((row) => row.timestamp !== latest.timestamp && row.close > 0) ??
+    rows.find((row) => row.close > 0 && row.close !== latest.close);
+  if (!previous || previous.close === 0) return null;
+  return ((latest.close - previous.close) / previous.close) * 100;
+}
+
 function mapNewsEvent(event: BackendNewsEvent): NewsEvent {
   return {
     id: event.id,
@@ -858,6 +949,16 @@ function guessSector(symbol: string): Sector {
   if (["CU", "AL", "ZN", "NI", "SN", "PB"].includes(prefix)) return "metals";
   if (["M", "Y", "P", "C", "A"].includes(prefix)) return "agri";
   return "precious";
+}
+
+function rootSymbols(values: string[]): string[] {
+  return values
+    .map((value) => value.replace(/\d+/g, "").replace(/[^A-Za-z]/g, "").toUpperCase())
+    .filter((value) => value.length > 0);
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
 }
 
 function numeric(...values: unknown[]): number {

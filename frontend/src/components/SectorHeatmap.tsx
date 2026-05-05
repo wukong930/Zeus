@@ -1,16 +1,17 @@
 "use client";
 
 import { SECTORS } from "@/data/mock";
+import type { SectorData } from "@/data/mock";
 import { cn } from "@/lib/utils";
 import { formatPercent } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n";
 
-export function SectorHeatmap() {
+export function SectorHeatmap({ sectors = SECTORS }: { sectors?: SectorData[] }) {
   const { text } = useI18n();
 
   return (
     <div className="space-y-2.5">
-      {SECTORS.map((sector) => (
+      {sectors.map((sector) => (
         <div key={sector.id} className="grid grid-cols-[64px_minmax(0,1fr)_82px] items-center gap-3">
           <div className="min-w-0">
             <div className="truncate text-xs font-medium text-text-secondary">{text(sector.name)}</div>
