@@ -5,7 +5,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.models.alert import Alert
 from app.models.alert_agent import HumanDecision
+from app.models.signal import SignalTrack
 from app.schemas.common import HumanDecisionCreate, HumanDecisionRead
 from app.services.alert_agent.human_decision import record_human_decision
 
@@ -29,9 +31,23 @@ async def create_human_decision(
     payload: HumanDecisionCreate,
     session: AsyncSession = Depends(get_db),
 ) -> HumanDecision:
-    if payload.alert_id is None and payload.signal_track_id is None:
-        raise HTTPException(status_code=400, detail="alert_id or signal_track_id is required")
+    await require_human_decision_targets(session, payload)
     row = await record_human_decision(session, **payload.model_dump())
     await session.commit()
     await session.refresh(row)
     return row
+
+
+async def require_human_decision_targets(
+    session: AsyncSession,
+    payload: HumanDecisionCreate,
+) -> None:
+    if payload.alert_id is None and payload.signal_track_id is None:
+        raise HTTPException(status_code=400, detail="alert_id or signal_track_id is required")
+    if payload.alert_id is not None and await session.get(Alert, payload.alert_id) is None:
+        raise HTTPException(status_code=404, detail="Alert not found")
+    if (
+        payload.signal_track_id is not None
+        and await session.get(SignalTrack, payload.signal_track_id) is None
+    ):
+        raise HTTPException(status_code=404, detail="Signal track not found")

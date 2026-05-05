@@ -1,7 +1,14 @@
 from datetime import datetime, timezone
+from uuid import uuid4
 
+import pytest
+from fastapi import HTTPException
+
+from app.api.arbitration import require_human_decision_targets
 from app.models.alert import Alert
 from app.models.alert_agent import AlertDedupCache
+from app.models.signal import SignalTrack
+from app.schemas.common import HumanDecisionCreate
 from app.services.alert_agent.classifier import classify_alert
 from app.services.alert_agent.dedup import check_alert_dedup, signal_direction
 from app.services.alert_agent.human_decision import apply_decision_to_alert
@@ -17,6 +24,30 @@ class FailingSession:
 
     async def rollback(self) -> None:
         self.rollback_count += 1
+
+
+class TargetSession:
+    def __init__(
+        self,
+        *,
+        alert: Alert | None = None,
+        signal_track: SignalTrack | None = None,
+    ) -> None:
+        self.alert = alert
+        self.signal_track = signal_track
+
+    async def get(self, model, _):
+        if model is Alert:
+            return self.alert
+        if model is SignalTrack:
+            return self.signal_track
+        return None
+
+
+def _decision_payload(**overrides) -> HumanDecisionCreate:
+    values = {"decision": "approve"}
+    values.update(overrides)
+    return HumanDecisionCreate(**values)
 
 
 def test_classifier_marks_spread_signal_as_l3() -> None:
@@ -126,6 +157,50 @@ def test_human_decision_updates_alert_without_weight_changes() -> None:
     assert alert.status == "active"
     assert alert.confidence == 0.72
     assert alert.human_action_required is False
+
+
+async def test_human_decision_target_validation_requires_a_target() -> None:
+    with pytest.raises(HTTPException) as exc_info:
+        await require_human_decision_targets(TargetSession(), _decision_payload())
+
+    assert exc_info.value.status_code == 400
+
+
+async def test_human_decision_target_validation_rejects_missing_alert() -> None:
+    with pytest.raises(HTTPException) as exc_info:
+        await require_human_decision_targets(
+            TargetSession(),
+            _decision_payload(alert_id=uuid4()),
+        )
+
+    assert exc_info.value.status_code == 404
+    assert exc_info.value.detail == "Alert not found"
+
+
+async def test_human_decision_target_validation_rejects_missing_signal_track() -> None:
+    with pytest.raises(HTTPException) as exc_info:
+        await require_human_decision_targets(
+            TargetSession(),
+            _decision_payload(signal_track_id=uuid4()),
+        )
+
+    assert exc_info.value.status_code == 404
+    assert exc_info.value.detail == "Signal track not found"
+
+
+async def test_human_decision_target_validation_accepts_existing_signal_track() -> None:
+    signal_track = SignalTrack(
+        id=uuid4(),
+        signal_type="momentum",
+        category="ferrous",
+        confidence=0.7,
+        outcome="pending",
+    )
+
+    await require_human_decision_targets(
+        TargetSession(signal_track=signal_track),
+        _decision_payload(signal_track_id=signal_track.id),
+    )
 
 
 def test_alert_dedup_cache_model_keeps_symbol_direction_key() -> None:
