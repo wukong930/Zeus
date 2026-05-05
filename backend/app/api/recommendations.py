@@ -55,11 +55,9 @@ async def adopt_recommendation(
     payload: RecommendationAdoptRequest,
     session: AsyncSession = Depends(get_db),
 ) -> Position:
-    recommendation = await session.get(Recommendation, recommendation_id)
-    if recommendation is None:
-        raise HTTPException(status_code=404, detail="Recommendation not found")
-
-    opened_at = payload.opened_at or datetime.now(timezone.utc)
+    now = datetime.now(timezone.utc)
+    recommendation = await require_adoptable_recommendation(session, recommendation_id, as_of=now)
+    opened_at = payload.opened_at or now
     actual_entry = payload.actual_entry or recommendation.entry_price or inferred_entry_price(recommendation)
     recommendation.status = "accepted"
     recommendation.actual_entry = actual_entry
@@ -95,6 +93,23 @@ async def adopt_recommendation(
     return position
 
 
+async def require_adoptable_recommendation(
+    session: AsyncSession,
+    recommendation_id: UUID,
+    *,
+    as_of: datetime | None = None,
+) -> Recommendation:
+    recommendation = await session.get(Recommendation, recommendation_id)
+    if recommendation is None:
+        raise HTTPException(status_code=404, detail="Recommendation not found")
+    if recommendation.status != "pending":
+        raise HTTPException(status_code=409, detail="Recommendation is not pending")
+    effective_at = _aware_utc(as_of or datetime.now(timezone.utc))
+    if _aware_utc(recommendation.expires_at) <= effective_at:
+        raise HTTPException(status_code=409, detail="Recommendation has expired")
+    return recommendation
+
+
 def position_legs_from_recommendation(
     recommendation: Recommendation,
     *,
@@ -120,3 +135,9 @@ def inferred_entry_price(recommendation: Recommendation) -> float:
             if value is not None:
                 return float(value)
     return 0.0
+
+
+def _aware_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
