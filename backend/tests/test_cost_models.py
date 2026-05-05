@@ -436,6 +436,33 @@ async def test_quality_evaluator_helper_runs_independent_evaluators_concurrently
     assert [result.signal_type for result in results] == ["waiting", "releasing"]
 
 
+async def test_quality_evaluator_helper_keeps_successful_results_when_peer_fails() -> None:
+    context = TriggerContext(
+        symbol1="RB",
+        category="ferrous",
+        timestamp=datetime(2026, 5, 3, tzinfo=timezone.utc),
+    )
+
+    class FailingEvaluator:
+        signal_type = "failing"
+
+        async def evaluate(self, _context):
+            raise RuntimeError("quality evaluator failed")
+
+    class PassingEvaluator:
+        signal_type = "passing"
+
+        async def evaluate(self, _context):
+            return trigger_result(self.signal_type)
+
+    results = await _evaluate_trigger_results(
+        context,
+        (FailingEvaluator(), PassingEvaluator()),  # type: ignore[arg-type]
+    )
+
+    assert [result.signal_type for result in results] == ["passing"]
+
+
 async def test_quality_report_recommends_deferring_paid_feed_when_checks_pass() -> None:
     chain = calculate_cost_chain()
     snapshots = {

@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -33,6 +34,8 @@ from app.services.signals.types import (
 
 ACCEPTABLE_BENCHMARK_ERROR_PCT = 5.0
 MIN_SIGNAL_CASE_HIT_RATE = 0.75
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -470,8 +473,26 @@ async def _evaluate_trigger_results(
     context: TriggerContext,
     evaluators: tuple[TriggerEvaluator, ...],
 ) -> list[TriggerResult]:
-    results = await asyncio.gather(*(evaluator.evaluate(context) for evaluator in evaluators))
-    return [result for result in results if result is not None]
+    results = await asyncio.gather(
+        *(evaluator.evaluate(context) for evaluator in evaluators),
+        return_exceptions=True,
+    )
+    valid_results: list[TriggerResult] = []
+    for evaluator, result in zip(evaluators, results, strict=True):
+        if isinstance(result, BaseException):
+            if not isinstance(result, Exception):
+                raise result
+            logger.warning(
+                "Cost quality evaluator %s failed for %s/%s",
+                evaluator.signal_type,
+                context.symbol1,
+                context.symbol2 or context.category,
+                exc_info=(type(result), result, result.__traceback__),
+            )
+            continue
+        if result is not None:
+            valid_results.append(result)
+    return valid_results
 
 
 def synthetic_cost_snapshot(
