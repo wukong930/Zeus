@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { ComponentType } from "react";
 import { Activity, CheckCircle2, Network } from "lucide-react";
 import { CausalWeb } from "@/components/CausalWeb";
+import { DataSourceBadge } from "@/components/DataSourceBadge";
 import { CAUSAL_EDGES, CAUSAL_NODES } from "@/data/mock";
 import type { CausalEdge, CausalNode } from "@/data/mock";
 import { fetchCausalWebGraph } from "@/lib/api";
@@ -53,7 +54,7 @@ export default function CausalWebPage() {
           <HeaderMetric icon={Network} label={text("Nodes")} value={`${nodes.length}`} />
           <HeaderMetric icon={Activity} label={text("Active")} value={`${activeCount}/${nodes.length}`} tone="emerald" />
           <HeaderMetric icon={CheckCircle2} label={text("Verified")} value={`${verifiedCount}/${edges.length}`} tone="cyan" />
-          <HeaderMetric icon={Activity} label={text("来源")} value={text(source === "runtime" ? "实时" : "回退")} tone={source === "runtime" ? "emerald" : "neutral"} />
+          <DataSourceBadge state={source} compact />
         </div>
       </div>
       <div className="relative flex-1">

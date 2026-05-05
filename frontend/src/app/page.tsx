@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Card, CardHeader, CardTitle, CardSubtitle } from "@/components/Card";
 import { CausalWeb } from "@/components/CausalWeb";
+import { DataSourceBadge, type DataSourceState } from "@/components/DataSourceBadge";
 import { SectorHeatmap } from "@/components/SectorHeatmap";
 import { AlertCard } from "@/components/AlertCard";
 import { Badge } from "@/components/Badge";
@@ -21,6 +22,9 @@ export default function CommandCenterPage() {
   const [positions, setPositions] = useState<Position[]>(POSITIONS);
   const [causalNodes, setCausalNodes] = useState<CausalNode[]>(CAUSAL_NODES);
   const [causalEdges, setCausalEdges] = useState<CausalEdge[]>(CAUSAL_EDGES);
+  const [alertSource, setAlertSource] = useState<DataSourceState>("mock");
+  const [portfolioSource, setPortfolioSource] = useState<DataSourceState>("mock");
+  const [causalSource, setCausalSource] = useState<DataSourceState>("fallback");
   const { text } = useI18n();
   const totalPnl = useMemo(
     () => positions.reduce((sum, position) => sum + position.pnl, 0),
@@ -38,20 +42,30 @@ export default function CommandCenterPage() {
         if (!mounted || alerts.length === 0) return;
         setRecentAlerts(alerts.slice(0, 3));
         setAlertTotal(alerts.length);
+        setAlertSource("api");
       })
-      .catch(() => undefined);
+      .catch(() => {
+        if (mounted) setAlertSource("mock");
+      });
     fetchPortfolioSnapshot()
       .then((snapshot) => {
-        if (mounted && snapshot.positions.length > 0) setPositions(snapshot.positions);
+        if (!mounted) return;
+        if (snapshot.positions.length > 0) setPositions(snapshot.positions);
+        setPortfolioSource(snapshot.degraded ? "partial" : "api");
       })
-      .catch(() => undefined);
+      .catch(() => {
+        if (mounted) setPortfolioSource("mock");
+      });
     fetchCausalWebGraph()
       .then((graph) => {
         if (!mounted || graph.nodes.length === 0) return;
         setCausalNodes(graph.nodes);
         setCausalEdges(graph.edges);
+        setCausalSource("runtime");
       })
-      .catch(() => undefined);
+      .catch(() => {
+        if (mounted) setCausalSource("fallback");
+      });
     return () => {
       mounted = false;
     };
@@ -79,10 +93,7 @@ export default function CommandCenterPage() {
       <div className="grid grid-cols-12 gap-5">
         <Card variant="flat" className="col-span-8 p-0 overflow-hidden h-[440px] relative">
           <div className="absolute top-4 right-4 z-10 flex items-center gap-2">
-            <Badge variant="emerald">
-              <span className="w-1.5 h-1.5 rounded-full bg-brand-emerald-bright animate-heartbeat" />
-              {text("Live")}
-            </Badge>
+            <DataSourceBadge state={causalSource} compact />
             <Link
               href="/causal-web"
               className="flex items-center gap-1 text-caption text-text-muted hover:text-text-primary transition-colors"
@@ -108,7 +119,10 @@ export default function CommandCenterPage() {
 
         <div className="col-span-4 space-y-3">
           <div className="flex items-center justify-between mb-2">
-            <h2 className="text-h3 text-text-primary">{text("当日预警流")}</h2>
+            <div className="flex items-center gap-2">
+              <h2 className="text-h3 text-text-primary">{text("当日预警流")}</h2>
+              <DataSourceBadge state={alertSource} compact />
+            </div>
             <Link href="/alerts" className="text-caption text-text-muted hover:text-text-primary">
               {text("查看全部")} →
             </Link>
@@ -146,9 +160,12 @@ export default function CommandCenterPage() {
                 {totalPnl >= 0 ? "+" : ""}¥{totalPnl.toLocaleString()}
               </CardSubtitle>
             </div>
-            <Link href="/portfolio" className="text-caption text-text-muted hover:text-text-primary">
-              {text("详情")} →
-            </Link>
+            <div className="flex items-center gap-2">
+              <DataSourceBadge state={portfolioSource} compact />
+              <Link href="/portfolio" className="text-caption text-text-muted hover:text-text-primary">
+                {text("详情")} →
+              </Link>
+            </div>
           </CardHeader>
           <div className="space-y-3">
             {positions.map((pos) => {

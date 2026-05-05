@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Card, CardHeader, CardTitle, CardSubtitle } from "@/components/Card";
 import { Badge } from "@/components/Badge";
 import { Button } from "@/components/Button";
+import { DataSourceBadge } from "@/components/DataSourceBadge";
 import { VintageBadge } from "@/components/VintageBadge";
 import { MetricTile } from "@/components/MetricTile";
 import { POSITIONS } from "@/data/mock";
@@ -74,9 +75,7 @@ export default function PortfolioPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Badge variant={source === "mock" || source === "partial" ? "orange" : "emerald"}>
-            {source === "loading" ? "SYNC" : source.toUpperCase()}
-          </Badge>
+          <DataSourceBadge state={source} />
           <Button variant="action">
             <Plus className="w-4 h-4" />
             {text("添加持仓")}

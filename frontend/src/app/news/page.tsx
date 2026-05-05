@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { Badge } from "@/components/Badge";
 import { Card, CardHeader, CardSubtitle, CardTitle } from "@/components/Card";
+import { DataSourceBadge } from "@/components/DataSourceBadge";
 import { MetricTile } from "@/components/MetricTile";
 import { fetchNewsEventsFromApi, type NewsEvent } from "@/lib/api";
 import { cn, timeAgo } from "@/lib/utils";
@@ -154,9 +155,7 @@ export default function NewsEventsPage() {
             <p className="text-caption text-text-muted">
               {filtered.length} / {events.length}
             </p>
-            <Badge variant={source === "mock" ? "orange" : "emerald"}>
-              {source === "loading" ? "SYNC" : source.toUpperCase()}
-            </Badge>
+            <DataSourceBadge state={source} compact />
           </div>
         </div>
 

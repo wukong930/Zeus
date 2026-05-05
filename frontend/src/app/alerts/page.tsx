@@ -5,6 +5,7 @@ import { ALERTS, type Alert, type Severity } from "@/data/mock";
 import { AlertCard } from "@/components/AlertCard";
 import { Badge } from "@/components/Badge";
 import { Card } from "@/components/Card";
+import { DataSourceBadge } from "@/components/DataSourceBadge";
 import { MetricTile } from "@/components/MetricTile";
 import { fetchAlertsFromApi } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -93,9 +94,7 @@ export default function AlertsPage() {
             <p className="text-caption text-text-muted">
               {filtered.length} / {alerts.length}
             </p>
-            <Badge variant={source === "mock" ? "orange" : "emerald"}>
-              {source === "loading" ? "SYNC" : source.toUpperCase()}
-            </Badge>
+            <DataSourceBadge state={source} compact />
           </div>
         </div>
 
@@ -163,9 +162,7 @@ export default function AlertsPage() {
             <div className="text-h3 text-text-primary">{text("预警流")}</div>
             <div className="mt-1 text-caption text-text-muted">{text("按严重度、板块和人工确认状态扫描当前事件。")}</div>
           </div>
-          <Badge variant={source === "mock" ? "orange" : "emerald"}>
-            {source === "loading" ? "SYNC" : source.toUpperCase()}
-          </Badge>
+          <DataSourceBadge state={source} />
         </div>
         {filtered.length === 0 ? (
           <Card variant="flat" className="py-10 text-center text-text-muted">

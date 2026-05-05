@@ -14,6 +14,7 @@ import {
 import { Badge } from "@/components/Badge";
 import { Button } from "@/components/Button";
 import { Card, CardHeader, CardSubtitle, CardTitle } from "@/components/Card";
+import { DataSourceBadge } from "@/components/DataSourceBadge";
 import {
   fetchCostChain,
   fetchCostHistory,
@@ -280,9 +281,7 @@ export default function IndustryLensPage() {
         </div>
         <div className="flex items-center gap-2">
           <SectorToggle value={sector} onChange={setSector} />
-          <Badge variant={source === "mock" || source === "partial" ? "orange" : "emerald"}>
-            {source === "loading" ? "SYNC" : source.toUpperCase()}
-          </Badge>
+          <DataSourceBadge state={source} />
           <Button
             variant="secondary"
             size="sm"
