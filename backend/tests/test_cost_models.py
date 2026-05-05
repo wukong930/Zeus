@@ -11,6 +11,8 @@ from app.services.cost_models.framework import cost_curve_percentiles
 from app.services.cost_models.news_extractor import extract_cost_data_points
 from app.services.cost_models.quality import (
     PUBLIC_RUBBER_BENCHMARKS,
+    SignalCaseResult,
+    _evaluate_signal_cases,
     _evaluate_trigger_results,
     build_quality_report,
     compare_public_benchmarks,
@@ -461,6 +463,35 @@ async def test_quality_evaluator_helper_keeps_successful_results_when_peer_fails
     )
 
     assert [result.signal_type for result in results] == ["passing"]
+
+
+async def test_quality_signal_case_helper_converts_case_errors_to_failed_results() -> None:
+    async def passing_case():
+        return SignalCaseResult(
+            case_id="passing-case",
+            title="Passing case",
+            expected_signals=["passing"],
+            triggered_signals=["passing"],
+            passed=True,
+            note="ok",
+        )
+
+    async def failing_case():
+        raise RuntimeError("case failed")
+
+    results = await _evaluate_signal_cases(
+        (
+            ("passing-case", "Passing case", passing_case()),
+            ("failing-case", "Failing case", failing_case()),
+        )
+    )
+
+    assert [result.case_id for result in results] == ["passing-case", "failing-case"]
+    assert results[0].passed is True
+    assert results[1].passed is False
+    assert results[1].expected_signals == ["case_evaluation"]
+    assert results[1].triggered_signals == []
+    assert results[1].note == "Case evaluation failed: case failed"
 
 
 async def test_quality_report_recommends_deferring_paid_feed_when_checks_pass() -> None:
