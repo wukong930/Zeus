@@ -2,14 +2,17 @@ import json
 
 import httpx
 import pandas as pd
+from fastapi.testclient import TestClient
 
 from app.core.config import Settings
+from app.main import create_app
 from app.services.data_sources.akshare_futures import _rows_from_frame, parse_akshare_symbols
 from app.services.data_sources.eia import EiaSeries, collect_eia_indicators, row_from_eia_payload
 from app.services.data_sources.fred import FredSeries, collect_fred_indicators, row_from_fred_payload
 from app.services.data_sources.free_ingest import market_context_payloads, safe_error_message
 from app.services.data_sources.open_meteo import WeatherLocation, rows_from_weather_payload
 from app.services.data_sources.registry import data_source_statuses
+from app.services.data_sources.types import DataSourceStatus
 from app.services.data_sources.tushare_futures import (
     collect_tushare_market_data,
     dedupe_active_contracts,
@@ -306,6 +309,65 @@ def test_data_source_registry_marks_keyed_sources() -> None:
     assert statuses["eia"].status == "missing_key"
     assert statuses["tushare"].status == "ready"
     assert statuses["open_meteo"].free_tier == "free_no_key"
+
+
+def test_data_sources_api_returns_registry_statuses(monkeypatch) -> None:
+    def fake_statuses() -> list[DataSourceStatus]:
+        return [
+            DataSourceStatus(
+                id="fred",
+                name="FRED",
+                category="macro_data",
+                enabled=True,
+                configured=True,
+                requires_key=True,
+                free_tier="free_registration",
+                status="ready",
+                note="ok",
+            ),
+            DataSourceStatus(
+                id="eia",
+                name="EIA Open Data",
+                category="energy_fundamentals",
+                enabled=True,
+                configured=False,
+                requires_key=True,
+                free_tier="free_registration",
+                status="missing_key",
+                note="key required",
+            ),
+        ]
+
+    monkeypatch.setattr("app.api.data_sources.data_source_statuses", fake_statuses)
+
+    client = TestClient(create_app())
+    response = client.get("/api/data-sources")
+
+    assert response.status_code == 200
+    assert response.json() == [
+        {
+            "id": "fred",
+            "name": "FRED",
+            "category": "macro_data",
+            "enabled": True,
+            "configured": True,
+            "requires_key": True,
+            "free_tier": "free_registration",
+            "status": "ready",
+            "note": "ok",
+        },
+        {
+            "id": "eia",
+            "name": "EIA Open Data",
+            "category": "energy_fundamentals",
+            "enabled": True,
+            "configured": False,
+            "requires_key": True,
+            "free_tier": "free_registration",
+            "status": "missing_key",
+            "note": "key required",
+        },
+    ]
 
 
 def json_from_request(request: httpx.Request) -> dict[str, object]:
