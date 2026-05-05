@@ -1,6 +1,7 @@
 import type { Alert, CausalEdge, CausalNode, Position, Sector, Severity } from "@/data/mock";
 
 const SEVERITIES = new Set<Severity>(["critical", "high", "medium", "low"]);
+const DEFAULT_API_TIMEOUT_MS = 15_000;
 
 export interface PortfolioPosition extends Position {
   marginUsed: number;
@@ -639,12 +640,41 @@ export async function submitHumanDecision(
   });
 }
 
-async function fetchJson<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(path, { cache: "no-store", ...init });
-  if (!response.ok) {
-    throw new Error(`${path} failed with ${response.status}`);
+async function fetchJson<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const controller = new AbortController();
+  const signal = init.signal ?? controller.signal;
+  const timeoutId = init.signal
+    ? null
+    : window.setTimeout(() => controller.abort(), DEFAULT_API_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(path, { cache: "no-store", ...init, signal });
+    if (!response.ok) {
+      throw new Error(await apiErrorMessage(path, response));
+    }
+    return response.json() as Promise<T>;
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new Error(`${path} timed out after ${DEFAULT_API_TIMEOUT_MS / 1000}s`);
+    }
+    throw error;
+  } finally {
+    if (timeoutId !== null) {
+      window.clearTimeout(timeoutId);
+    }
   }
-  return response.json() as Promise<T>;
+}
+
+async function apiErrorMessage(path: string, response: Response): Promise<string> {
+  try {
+    const payload = (await response.clone().json()) as { detail?: unknown };
+    if (typeof payload.detail === "string") {
+      return `${path} failed with ${response.status}: ${payload.detail}`;
+    }
+  } catch {
+    // Keep the generic status message when the backend did not return JSON.
+  }
+  return `${path} failed with ${response.status}`;
 }
 
 function optionalSettledValue<T>(
