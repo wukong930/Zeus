@@ -183,6 +183,8 @@ const EN: Record<string, string> = {
     "Syncing public benchmark drift, historical scenario hits, and paid-source decisions.",
   "成本链仍可查看，但本次没有质量评估结果；页面不再使用模拟质量报告。":
     "The cost chain is still visible, but no quality assessment is available; this page no longer uses a mock quality report.",
+  "暂无真实历史成本快照": "No real historical cost snapshots yet",
+  "最新利润率": "Latest Margin",
   "实时观察事件间的因果传导。点击节点追溯上游 / 预测下游。":
     "Observe causal propagation between events in realtime. Click nodes to trace upstream and forecast downstream.",
   "事件": "Event",

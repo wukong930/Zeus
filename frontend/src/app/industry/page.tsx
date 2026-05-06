@@ -303,7 +303,7 @@ export default function IndustryLensPage() {
               <CardSubtitle>{selectedHistory.length} 个成本快照</CardSubtitle>
             </div>
           </CardHeader>
-          <ProfitTrend history={selectedHistory} model={displayModel} />
+          <ProfitTrend history={selectedHistory} />
         </Card>
 
         <Card variant="flat" className="xl:col-span-3">
@@ -753,8 +753,24 @@ function RangeControl({
   );
 }
 
-function ProfitTrend({ history, model }: { history: CostSnapshot[]; model: CostModel }) {
-  const points = history.length > 0 ? history.slice().reverse() : syntheticHistory(model);
+function ProfitTrend({ history }: { history: CostSnapshot[] }) {
+  const points = history.slice().reverse();
+  const { text } = useI18n();
+
+  if (points.length === 0) {
+    return (
+      <div className="space-y-3">
+        <div className="flex h-36 items-center justify-center rounded-sm border border-dashed border-border-subtle bg-bg-base p-4 text-center text-sm text-text-secondary">
+          {text("暂无真实历史成本快照")}
+        </div>
+        <div className="flex items-center justify-between">
+          <span className="text-sm text-text-secondary">{text("最新利润率")}</span>
+          <Badge variant="neutral">--</Badge>
+        </div>
+      </div>
+    );
+  }
+
   const margins = points.map((row) => costSnapshotMargin(row) * 100);
   const min = Math.min(...margins, -1);
   const max = Math.max(...margins, 1);
@@ -779,7 +795,7 @@ function ProfitTrend({ history, model }: { history: CostSnapshot[]; model: CostM
         </svg>
       </div>
       <div className="flex items-center justify-between">
-        <span className="text-sm text-text-secondary">最新利润率</span>
+        <span className="text-sm text-text-secondary">{text("最新利润率")}</span>
         <Badge variant={latest >= 0 ? "up" : "down"}>
           {formatNumber(latest, { decimals: 2, signed: true })}%
         </Badge>
@@ -1259,29 +1275,6 @@ function buildSignalRules(model: CostModel, history: CostSnapshot[]) {
       severity: "medium" as const,
     },
   ];
-}
-
-function syntheticHistory(model: CostModel): CostSnapshot[] {
-  return Array.from({ length: 8 }, (_, idx) => {
-    const drift = (idx - 6) * 0.006;
-    return {
-      id: `mock-${idx}`,
-      symbol: model.symbol,
-      name: model.name,
-      sector: model.sector,
-      snapshot_date: `2026-05-${String(idx + 1).padStart(2, "0")}`,
-      current_price: model.current_price,
-      total_unit_cost: model.total_unit_cost,
-      breakeven_p25: model.breakevens.p25,
-      breakeven_p50: model.breakevens.p50,
-      breakeven_p75: model.breakevens.p75,
-      breakeven_p90: model.breakevens.p90,
-      profit_margin: (model.profit_margin ?? 0) + drift,
-      uncertainty_pct: model.uncertainty_pct,
-      formula_version: model.formula_version,
-      created_at: new Date().toISOString(),
-    };
-  });
 }
 
 function costSnapshotMargin(row: CostSnapshot): number {
