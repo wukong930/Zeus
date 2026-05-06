@@ -14,7 +14,7 @@ import {
 import { Badge } from "@/components/Badge";
 import { Button } from "@/components/Button";
 import { Card, CardHeader, CardSubtitle, CardTitle } from "@/components/Card";
-import { DataSourceBadge } from "@/components/DataSourceBadge";
+import { DataSourceBadge, type DataSourceState } from "@/components/DataSourceBadge";
 import {
   fetchCostChain,
   fetchCostHistory,
@@ -74,80 +74,7 @@ const SYMBOL_META: Record<string, { label: string; role: string }> = {
   NR: { label: "天然胶现货", role: "产区成本锚" },
 };
 
-const MOCK_CHAIN: CostChain = {
-  sector: "ferrous",
-  symbols: ["JM", "J", "I", "RB", "HC"],
-  results: {
-    JM: makeMockModel("JM", "Coking Coal", 1620, 1170, 1029.6, 1111.5, 1228.5, 1333.8),
-    J: makeMockModel("J", "Coke", 2050, 1917.8, 1726.02, 1860.266, 2032.868, 2205.47),
-    I: makeMockModel("I", "Iron Ore", 820, 880, 721.6, 827.2, 950.4, 1056),
-    RB: makeMockModel("RB", "Rebar", 3200, 3196.9, 3100.993, 3100.993, 3356.745, 3612.497),
-    HC: makeMockModel("HC", "Hot Coil", 3500, 3486.9, 3417.162, 3417.162, 3661.245, 3905.328),
-  },
-};
-
-const MOCK_RUBBER_CHAIN: CostChain = {
-  sector: "rubber",
-  symbols: ["NR", "RU"],
-  results: {
-    NR: makeMockRubberModel("NR", "Natural Rubber", null, 13260, 12729.6, 12729.6, 14055.6, 15646.8),
-    RU: makeMockRubberModel("RU", "SHFE Rubber", 15400, 15327.8, 14867.966, 14867.966, 16094.19, 17473.692),
-  },
-};
-
-const MOCK_CHAINS: Record<SectorKey, CostChain> = {
-  ferrous: MOCK_CHAIN,
-  rubber: MOCK_RUBBER_CHAIN,
-};
-
-const MOCK_QUALITY: CostQualityReport = {
-  sector: "ferrous",
-  generated_at: new Date().toISOString(),
-  benchmark_error_avg_pct: 1.1,
-  benchmark_error_max_pct: 2.4,
-  benchmark_pass_rate: 1,
-  signal_case_hit_rate: 1,
-  data_quality_score: 90,
-  paid_data_recommendation: "defer_paid_purchase_monitor_weekly",
-  preferred_vendor: null,
-  benchmark_comparisons: [
-    {
-      symbol: "RB",
-      metric: "breakeven_p75",
-      model_value: 3357,
-      public_value: 3400,
-      error_pct: 1.3,
-      within_tolerance: true,
-      source: "phase7a_public_reference_pack",
-      observed_at: new Date().toISOString(),
-      note: "Public bootstrap reference for high-cost mills.",
-    },
-    {
-      symbol: "J",
-      metric: "breakeven_p75",
-      model_value: 2033,
-      public_value: 2050,
-      error_pct: 0.8,
-      within_tolerance: true,
-      source: "phase7a_public_reference_pack",
-      observed_at: new Date().toISOString(),
-      note: "Public bootstrap reference for coke full-cost estimate.",
-    },
-  ],
-  signal_cases: [
-    {
-      case_id: "ferrous-2021-production-curb",
-      title: "2021 production curb cost pressure",
-      expected_signals: ["capacity_contraction", "median_pressure"],
-      triggered_signals: ["capacity_contraction", "median_pressure", "marginal_capacity_squeeze"],
-      passed: true,
-      note: "Two-week negative margin should surface capacity pressure.",
-    },
-  ],
-  limitations: ["Public reference pack is a bootstrap, not a licensed paid feed."],
-};
-
-type SourceState = "loading" | "api" | "partial" | "mock";
+type SourceState = Extract<DataSourceState, "loading" | "api" | "partial" | "fallback">;
 
 interface SimulationInputs {
   ironOreIndex: number;
@@ -164,15 +91,12 @@ export default function IndustryLensPage() {
   const { text } = useI18n();
   const [sector, setSector] = useState<SectorKey>("ferrous");
   const config = SECTOR_CONFIG[sector];
-  const fallbackChain = MOCK_CHAINS[sector];
   const [selected, setSelected] = useState<string>(SECTOR_CONFIG.ferrous.defaultSymbol);
-  const [chain, setChain] = useState<CostChain>(MOCK_CHAIN);
+  const [chain, setChain] = useState<CostChain | null>(null);
   const [histories, setHistories] = useState<Record<string, CostSnapshot[]>>({});
-  const [qualityReport, setQualityReport] = useState<CostQualityReport>(MOCK_QUALITY);
+  const [qualityReport, setQualityReport] = useState<CostQualityReport | null>(null);
   const [source, setSource] = useState<SourceState>("loading");
-  const [simInputs, setSimInputs] = useState<SimulationInputs>(() =>
-    defaultSimulationInputs(MOCK_CHAIN.results.RB)
-  );
+  const [simInputs, setSimInputs] = useState<SimulationInputs>(() => emptySimulationInputs());
   const [simulated, setSimulated] = useState<CostModel | null>(null);
 
   useEffect(() => {
@@ -183,9 +107,9 @@ export default function IndustryLensPage() {
       try {
         setSource("loading");
         setSelected(nextSelected);
-        setChain(fallbackChain);
+        setChain(null);
         setHistories({});
-        setQualityReport(MOCK_QUALITY);
+        setQualityReport(null);
         const nextChain = await fetchCostChain(nextSelected);
         const [historyResults, qualityResult] = await Promise.all([
           Promise.all(
@@ -199,7 +123,7 @@ export default function IndustryLensPage() {
           ),
           fetchCostQualityReport(config.quality)
             .then((report) => ({ ok: true, report }) as const)
-            .catch(() => ({ ok: false, report: MOCK_QUALITY }) as const),
+            .catch(() => ({ ok: false, report: null }) as const),
         ]);
 
         if (!ignore) {
@@ -215,10 +139,11 @@ export default function IndustryLensPage() {
       } catch {
         if (!ignore) {
           setSelected(nextSelected);
-          setChain(fallbackChain);
+          setChain(null);
           setHistories({});
-          setQualityReport(MOCK_QUALITY);
-          setSource("mock");
+          setQualityReport(null);
+          setSimulated(null);
+          setSource("fallback");
         }
       }
     }
@@ -227,18 +152,18 @@ export default function IndustryLensPage() {
     return () => {
       ignore = true;
     };
-  }, [config.defaultSymbol, config.quality, config.symbols, fallbackChain]);
+  }, [config.defaultSymbol, config.quality, config.symbols]);
 
   const activeSymbol = config.symbols.includes(selected) ? selected : config.defaultSymbol;
-  const selectedModel = chain.results[activeSymbol] ?? fallbackChain.results[config.defaultSymbol];
+  const selectedModel = chain?.results[activeSymbol] ?? chain?.results[config.defaultSymbol] ?? null;
 
   useEffect(() => {
-    setSimInputs(defaultSimulationInputs(selectedModel));
+    setSimInputs(selectedModel ? defaultSimulationInputs(selectedModel) : emptySimulationInputs());
     setSimulated(null);
   }, [activeSymbol, selectedModel]);
 
   useEffect(() => {
-    if (source !== "api") return;
+    if ((source !== "api" && source !== "partial") || !selectedModel) return;
     let ignore = false;
     const timer = window.setTimeout(() => {
       simulateCostModel(activeSymbol, {
@@ -257,12 +182,12 @@ export default function IndustryLensPage() {
       ignore = true;
       window.clearTimeout(timer);
     };
-  }, [activeSymbol, sector, simInputs, source]);
+  }, [activeSymbol, sector, simInputs, source, selectedModel]);
 
-  const displayModel = simulated ?? selectedModel;
+  const displayModel = selectedModel ? simulated ?? selectedModel : null;
   const selectedHistory = histories[activeSymbol] ?? [];
   const signalRules = useMemo(
-    () => buildSignalRules(displayModel, selectedHistory),
+    () => (displayModel ? buildSignalRules(displayModel, selectedHistory) : []),
     [displayModel, selectedHistory]
   );
   const activeSignals = useMemo(
@@ -299,13 +224,17 @@ export default function IndustryLensPage() {
           <CommodityButton
             key={symbol}
             symbol={symbol}
-            model={chain.results[symbol]}
+            model={chain?.results[symbol]}
             active={activeSymbol === symbol}
             onClick={() => setSelected(symbol)}
           />
         ))}
       </div>
 
+      {!displayModel || !chain ? (
+        <IndustryEmptyState source={source} sectorLabel={config.label} />
+      ) : (
+        <>
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-5">
         <Card variant="flat" className="xl:col-span-7">
           <CardHeader>
@@ -357,11 +286,11 @@ export default function IndustryLensPage() {
           </CardHeader>
           <SimulationControls
             sector={sector}
-            model={selectedModel}
+            model={displayModel}
             values={simInputs}
             onChange={setSimInputs}
             onReset={() => {
-              setSimInputs(defaultSimulationInputs(selectedModel));
+              setSimInputs(defaultSimulationInputs(displayModel));
               setSimulated(null);
             }}
           />
@@ -418,9 +347,46 @@ export default function IndustryLensPage() {
         </Card>
       </div>
 
-      <QualityReportPanel report={qualityReport} />
+      {qualityReport ? (
+        <QualityReportPanel report={qualityReport} />
+      ) : (
+        <QualityReportUnavailablePanel source={source} />
+      )}
       {sector === "rubber" ? <RubberValidationPanel model={displayModel} /> : null}
+        </>
+      )}
     </div>
+  );
+}
+
+function IndustryEmptyState({
+  source,
+  sectorLabel,
+}: {
+  source: SourceState;
+  sectorLabel: string;
+}) {
+  const { text } = useI18n();
+  const loading = source === "loading";
+
+  return (
+    <Card variant="flat" className="py-14 text-center">
+      <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-sm border border-border-subtle bg-bg-base text-text-secondary">
+        {loading ? <RefreshCw className="h-5 w-5 animate-spin" /> : <Database className="h-5 w-5" />}
+      </div>
+      <div className="mt-4 text-h3 text-text-primary">
+        {text(loading ? "成本链加载中" : "成本链接口暂不可用")}
+      </div>
+      <p className="mx-auto mt-2 max-w-xl text-sm leading-relaxed text-text-secondary">
+        {text(loading
+          ? "正在同步产业成本链、历史快照和质量评估。"
+          : "当前不再展示模拟成本链，请等待后端成本模型恢复后再查看分位成本、信号触发和调价模拟。")}
+      </p>
+      <div className="mt-4 inline-flex items-center gap-2 rounded-sm border border-border-subtle bg-bg-base px-3 py-2 text-caption text-text-muted">
+        <span>{text("当前板块")}</span>
+        <span className="text-text-primary">{text(sectorLabel)}</span>
+      </div>
+    </Card>
   );
 }
 
@@ -1115,6 +1081,34 @@ function QualityReportPanel({ report }: { report: CostQualityReport }) {
   );
 }
 
+function QualityReportUnavailablePanel({ source }: { source: SourceState }) {
+  const { text } = useI18n();
+  const loading = source === "loading";
+
+  return (
+    <Card variant="flat">
+      <CardHeader>
+        <div>
+          <CardTitle>{text("数据质量评估")}</CardTitle>
+          <CardSubtitle>
+            {text(loading ? "质量评估加载中" : "质量评估接口暂不可用")}
+          </CardSubtitle>
+        </div>
+        {loading ? (
+          <RefreshCw className="w-4 h-4 animate-spin text-text-muted" />
+        ) : (
+          <ShieldCheck className="w-4 h-4 text-text-muted" />
+        )}
+      </CardHeader>
+      <div className="rounded-sm border border-dashed border-border-subtle bg-bg-base/60 px-4 py-8 text-center text-sm text-text-secondary">
+        {text(loading
+          ? "正在同步公开基准误差、历史场景触发和付费数据源决策。"
+          : "成本链仍可查看，但本次没有质量评估结果；页面不再使用模拟质量报告。")}
+      </div>
+    </Card>
+  );
+}
+
 function QualityMetric({ label, value, suffix }: { label: string; value: string; suffix: string }) {
   const { text } = useI18n();
 
@@ -1178,6 +1172,19 @@ function defaultSimulationInputs(model: CostModel): SimulationInputs {
     ruProcessingFee: inputValue(model.inputs, "ru_processing_fee", 950),
     rawRubberRatio: inputValue(model.inputs, "raw_rubber_ratio", 1.03),
     currentPrice: Math.round(model.current_price ?? model.total_unit_cost),
+  };
+}
+
+function emptySimulationInputs(): SimulationInputs {
+  return {
+    ironOreIndex: 0,
+    cokeProcessing: 0,
+    conversionFee: 0,
+    thaiFieldLatex: 0,
+    seasonalFactorPct: 0,
+    ruProcessingFee: 0,
+    rawRubberRatio: 1,
+    currentPrice: 0,
   };
 }
 
@@ -1288,104 +1295,6 @@ function profitBadge(model: CostModel): { label: string; variant: "up" | "down" 
   return {
     label: `利润率 ${formatNumber(model.profit_margin * 100, { decimals: 2, signed: true })}%`,
     variant: model.profit_margin >= 0 ? "up" : "down",
-  };
-}
-
-function makeMockModel(
-  symbol: string,
-  name: string,
-  currentPrice: number,
-  unitCost: number,
-  p25: number,
-  p50: number,
-  p75: number,
-  p90: number
-): CostModel {
-  const profitMargin = currentPrice > 0 ? (currentPrice - unitCost) / currentPrice : null;
-  return {
-    symbol,
-    name,
-    sector: "ferrous",
-    current_price: currentPrice,
-    total_unit_cost: unitCost,
-    breakevens: { p25, p50, p75, p90 },
-    profit_margin: profitMargin,
-    cost_breakdown: [
-      { name: "raw_materials", value: unitCost * 0.68, unit: "CNY/t", source: "mock", uncertainty_pct: 0.05 },
-      { name: "processing_fee", value: unitCost * 0.18, unit: "CNY/t", source: "mock", uncertainty_pct: 0.05 },
-      { name: "freight_tax_fee", value: unitCost * 0.1, unit: "CNY/t", source: "mock", uncertainty_pct: 0.05 },
-      { name: "energy_labor_fee", value: unitCost * 0.08, unit: "CNY/t", source: "mock", uncertainty_pct: 0.05 },
-      { name: "credit", value: -unitCost * 0.04, unit: "CNY/t", source: "mock", uncertainty_pct: 0.05 },
-    ],
-    inputs: {
-      iron_ore_index_cny: input("iron_ore_index_cny", 760),
-      coking_processing_fee: input("coking_processing_fee", 250),
-      blast_furnace_conversion_fee: input("blast_furnace_conversion_fee", 760),
-    },
-    data_sources: [{ name: "mock", unit: "CNY/t", uncertainty_pct: 0.05 }],
-    uncertainty_pct: 0.05,
-    formula_version: "phase7a.mock",
-  };
-}
-
-function makeMockRubberModel(
-  symbol: string,
-  name: string,
-  currentPrice: number | null,
-  unitCost: number,
-  p25: number,
-  p50: number,
-  p75: number,
-  p90: number
-): CostModel {
-  const profitMargin = currentPrice && currentPrice > 0 ? (currentPrice - unitCost) / currentPrice : null;
-  const isRu = symbol === "RU";
-  return {
-    symbol,
-    name,
-    sector: "rubber",
-    current_price: currentPrice,
-    total_unit_cost: unitCost,
-    breakevens: { p25, p50, p75, p90 },
-    profit_margin: profitMargin,
-    cost_breakdown: isRu
-      ? [
-          { name: "upstream_nr_charge", value: unitCost - 1670, unit: "CNY/t", source: "mock", uncertainty_pct: 0.07 },
-          { name: "ru_processing_fee", value: 950, unit: "CNY/t", source: "mock", uncertainty_pct: 0.05 },
-          { name: "grade_premium", value: 260, unit: "CNY/t", source: "mock", uncertainty_pct: 0.05 },
-          { name: "warehouse_finance_fee", value: 180, unit: "CNY/t", source: "mock", uncertainty_pct: 0.05 },
-          { name: "exchange_delivery_fee", value: 120, unit: "CNY/t", source: "mock", uncertainty_pct: 0.05 },
-          { name: "loss_adjustment_fee", value: 160, unit: "CNY/t", source: "mock", uncertainty_pct: 0.05 },
-        ]
-      : [
-          { name: "thai_field_latex_cny", value: 11200, unit: "CNY/t", source: "mock", uncertainty_pct: 0.07 },
-          { name: "qingdao_bonded_spot_premium", value: 320, unit: "CNY/t", source: "mock", uncertainty_pct: 0.05 },
-          { name: "hainan_yunnan_collection_cost", value: 420, unit: "CNY/t", source: "mock", uncertainty_pct: 0.05 },
-          { name: "primary_processing_fee", value: 280, unit: "CNY/t", source: "mock", uncertainty_pct: 0.05 },
-          { name: "ocean_freight", value: 260, unit: "CNY/t", source: "mock", uncertainty_pct: 0.05 },
-          { name: "import_tax_vat_fee", value: 520, unit: "CNY/t", source: "mock", uncertainty_pct: 0.05 },
-          { name: "seasonal_premium", value: 260, unit: "CNY/t", source: "mock", uncertainty_pct: 0.05 },
-        ],
-    inputs: {
-      thai_field_latex_cny: input("thai_field_latex_cny", 11200),
-      seasonal_factor_pct: input("seasonal_factor_pct", 0.02, "pct"),
-      ru_processing_fee: input("ru_processing_fee", 950),
-      raw_rubber_ratio: input("raw_rubber_ratio", 1.03, "t/t"),
-    },
-    data_sources: [{ name: "mock", unit: "CNY/t", uncertainty_pct: 0.07 }],
-    uncertainty_pct: 0.07,
-    formula_version: "phase7b.mock",
-  };
-}
-
-function input(name: string, value: number, unit?: string): CostInput {
-  return {
-    name,
-    value,
-    unit: unit ?? (name.includes("ratio") ? "t/t" : "CNY/t"),
-    source: "mock",
-    updated_at: null,
-    uncertainty_pct: 0.05,
   };
 }
 
