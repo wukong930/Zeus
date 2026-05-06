@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 
-import { TRADE_PLANS, type TradePlan } from "@/data/mock";
+import { type TradePlan } from "@/data/mock";
 import { Card } from "@/components/Card";
 import { DataSourceBadge, type DataSourceState } from "@/components/DataSourceBadge";
 import { TradePlanCard } from "@/components/TradePlanCard";
@@ -38,8 +38,8 @@ export default function TradePlansPage() {
       })
       .catch(() => {
         if (!mounted) return;
-        setPlans(TRADE_PLANS);
-        setSource("mock");
+        setPlans([]);
+        setSource("fallback");
       });
     return () => {
       mounted = false;
@@ -68,7 +68,7 @@ export default function TradePlansPage() {
       <div className="space-y-5">
         {plans.length === 0 && source !== "loading" && (
           <Card variant="data" className="py-10 text-center">
-            <div className="text-sm text-text-secondary">{text("当前暂无待执行建议")}</div>
+            <div className="text-sm text-text-secondary">{text(emptyTradePlanMessage(source))}</div>
           </Card>
         )}
         {plans.map((plan) => (
@@ -77,4 +77,9 @@ export default function TradePlansPage() {
       </div>
     </div>
   );
+}
+
+function emptyTradePlanMessage(source: DataSourceState): string {
+  if (source === "fallback") return "交易建议接口暂不可用";
+  return "当前暂无待执行建议";
 }
