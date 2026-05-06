@@ -12,12 +12,14 @@ import { useI18n } from "@/lib/i18n";
 import {
   fetchAlertDedupSettings,
   fetchDataSourceStatuses,
+  fetchLLMProviderSettings,
   fetchLLMUsageSummary,
   fetchNotificationSettings,
   fetchSchedulerSnapshot,
   updateNotificationSettings,
   type AlertDedupSettings,
   type DataSourceStatus,
+  type LLMProviderSettings,
   type LLMUsageSummary,
   type NotificationSettings,
   type NotificationSettingsUpdate,
@@ -32,6 +34,8 @@ export default function SettingsPage() {
   const [scheduler, setScheduler] = useState<SchedulerSnapshot | null>(null);
   const [llmUsage, setLlmUsage] = useState<LLMUsageSummary | null>(null);
   const [llmUsageSource, setLlmUsageSource] = useState<DataSourceState>("loading");
+  const [llmProviders, setLlmProviders] = useState<LLMProviderSettings[]>([]);
+  const [llmProviderSource, setLlmProviderSource] = useState<DataSourceState>("loading");
   const [alertDedupSettings, setAlertDedupSettings] = useState<AlertDedupSettings | null>(null);
   const [alertDedupSource, setAlertDedupSource] = useState<DataSourceState>("loading");
   const [notificationSettings, setNotificationSettings] = useState<NotificationSettings | null>(null);
@@ -64,6 +68,15 @@ export default function SettingsPage() {
       })
       .catch(() => {
         if (mounted) setLlmUsageSource("fallback");
+      });
+    fetchLLMProviderSettings()
+      .then((providers) => {
+        if (!mounted) return;
+        setLlmProviders(providers);
+        setLlmProviderSource("api");
+      })
+      .catch(() => {
+        if (!mounted) setLlmProviderSource("fallback");
       });
     fetchAlertDedupSettings()
       .then((settings) => {
@@ -189,7 +202,7 @@ export default function SettingsPage() {
             <CardTitle>{text("LLM 供应商")}</CardTitle>
             <CardSubtitle>{text("多供应商支持，按场景路由")}</CardSubtitle>
           </div>
-          <DataSourceBadge state={llmUsageSource} compact />
+          <DataSourceBadge state={llmProviderSource} compact />
         </CardHeader>
         <div className="space-y-3">
           <div className="rounded-sm border border-border-subtle bg-bg-base p-3 shadow-inner-panel">
@@ -214,29 +227,30 @@ export default function SettingsPage() {
               </div>
             </div>
           </div>
-          {[
-            { name: "xAI Grok", model: "grok-4.3", status: "active" },
-            { name: "Anthropic Claude", model: "claude-sonnet-4-6", status: "configured" },
-            { name: "OpenAI", model: "gpt-4o", status: "configured" },
-            { name: "DeepSeek", model: "deepseek-chat", status: "configured" },
-          ].map((p) => (
-            <div key={p.name} className="flex items-center gap-3 rounded-sm border border-border-subtle bg-bg-base p-3 shadow-inner-panel">
+          {llmProviders.map((p) => (
+            <div key={p.provider} className="flex items-center gap-3 rounded-sm border border-border-subtle bg-bg-base p-3 shadow-inner-panel">
               <div className="flex-1">
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-medium">{p.name}</span>
-                  {p.status === "active" && <Badge variant="emerald">{text("主力")}</Badge>}
+                  {p.active && <Badge variant="emerald">{text("主力")}</Badge>}
+                  {!p.configured && <Badge variant="orange">{text("未配置")}</Badge>}
                 </div>
-                <div className="text-caption text-text-muted font-mono">{p.model}</div>
+                <div className="text-caption text-text-muted font-mono">{p.model ?? text("未配置 Key")}</div>
               </div>
               <div className="text-right text-sm">
                 <div className="text-text-secondary font-mono tabular-nums">
-                  {text(p.status === "active" ? "主路由" : "候选")}
+                  {text(providerRouteLabel(p))}
                 </div>
-                <div className="text-caption text-text-muted">{text("路由状态")}</div>
+                <div className="text-caption text-text-muted">{text(providerSourceLabel(p.source))}</div>
               </div>
-              <Button variant="secondary" size="sm">{text("配置")}</Button>
+              <Button variant="secondary" size="sm" disabled>{text("配置")}</Button>
             </div>
           ))}
+          {llmProviderSource === "fallback" && (
+            <div className="rounded-sm border border-border-subtle bg-bg-base px-3 py-2 text-sm text-text-secondary shadow-inner-panel">
+              {text("LLM 供应商配置接口暂不可用")}
+            </div>
+          )}
         </div>
       </Card>
 
@@ -329,6 +343,21 @@ export default function SettingsPage() {
       </Card>
     </div>
   );
+}
+
+function providerRouteLabel(provider: LLMProviderSettings): string {
+  if (provider.active) return "主路由";
+  if (provider.configured) return "候选";
+  return "未配置";
+}
+
+function providerSourceLabel(source: string): string {
+  const labels: Record<string, string> = {
+    database: "数据库配置",
+    environment: "环境变量配置",
+    not_configured: "缺少 Key",
+  };
+  return labels[source] ?? source;
 }
 
 function formatUsd(value?: number | null): string {

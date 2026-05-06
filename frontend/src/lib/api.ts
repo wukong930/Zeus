@@ -263,6 +263,17 @@ export interface LLMUsageSummary {
   output_tokens: number;
 }
 
+export interface LLMProviderSettings {
+  provider: string;
+  name: string;
+  model: string | null;
+  configured: boolean;
+  active: boolean;
+  source: string;
+  status: string;
+  reason: string | null;
+}
+
 export interface AlertDedupSettings {
   repeat_window_hours: number;
   combination_window_hours: number;
@@ -718,6 +729,10 @@ export async function fetchSchedulerSnapshot(): Promise<SchedulerSnapshot> {
 export async function fetchLLMUsageSummary(module = "alert_agent"): Promise<LLMUsageSummary> {
   const params = new URLSearchParams({ module });
   return fetchJson<LLMUsageSummary>(`/api/llm/usage?${params.toString()}`);
+}
+
+export async function fetchLLMProviderSettings(): Promise<LLMProviderSettings[]> {
+  return fetchJson<LLMProviderSettings[]>("/api/settings/llm-providers");
 }
 
 export async function fetchAlertDedupSettings(): Promise<AlertDedupSettings> {
