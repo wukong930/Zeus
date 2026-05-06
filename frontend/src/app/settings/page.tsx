@@ -10,9 +10,11 @@ import { cn } from "@/lib/utils";
 import { Bell, BrainCircuit, RadioTower, ShieldCheck } from "lucide-react";
 import { useI18n } from "@/lib/i18n";
 import {
+  fetchAlertDedupSettings,
   fetchDataSourceStatuses,
   fetchLLMUsageSummary,
   fetchSchedulerSnapshot,
+  type AlertDedupSettings,
   type DataSourceStatus,
   type LLMUsageSummary,
   type SchedulerSnapshot,
@@ -24,6 +26,8 @@ export default function SettingsPage() {
   const [scheduler, setScheduler] = useState<SchedulerSnapshot | null>(null);
   const [llmUsage, setLlmUsage] = useState<LLMUsageSummary | null>(null);
   const [llmUsageSource, setLlmUsageSource] = useState<DataSourceState>("loading");
+  const [alertDedupSettings, setAlertDedupSettings] = useState<AlertDedupSettings | null>(null);
+  const [alertDedupSource, setAlertDedupSource] = useState<DataSourceState>("loading");
   const readySources = dataSources.filter((source) => source.status === "ready").length;
   const degradedJobs = scheduler?.health.degraded_jobs.length ?? 0;
   const enabledJobs = scheduler?.health.enabled_jobs ?? 0;
@@ -52,6 +56,15 @@ export default function SettingsPage() {
       .catch(() => {
         if (mounted) setLlmUsageSource("fallback");
       });
+    fetchAlertDedupSettings()
+      .then((settings) => {
+        if (!mounted) return;
+        setAlertDedupSettings(settings);
+        setAlertDedupSource("api");
+      })
+      .catch(() => {
+        if (mounted) setAlertDedupSource("fallback");
+      });
     return () => {
       mounted = false;
     };
@@ -74,7 +87,13 @@ export default function SettingsPage() {
           icon={BrainCircuit}
           tone="violet"
         />
-        <MetricTile label={text("每日预警上限")} value="50" caption={text("每日上限")} icon={Bell} tone="warning" />
+        <MetricTile
+          label={text("每日预警上限")}
+          value={alertDedupSettings ? String(alertDedupSettings.daily_alert_limit) : "--"}
+          caption={text(alertDedupSource === "api" ? "运行态配置" : alertDedupSource === "loading" ? "配置同步中" : "接口不可用")}
+          icon={Bell}
+          tone={alertDedupSource === "api" ? "up" : "warning"}
+        />
       </div>
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
@@ -201,12 +220,25 @@ export default function SettingsPage() {
               <CardTitle>{text("预警去重设置")}</CardTitle>
               <CardSubtitle>{text("控制重复预警与升级重发")}</CardSubtitle>
             </div>
+            <DataSourceBadge state={alertDedupSource} compact />
           </CardHeader>
           <div className="space-y-3 text-sm">
-            <SettingRow label="同品种同方向 N 小时内只发一次" value="12 小时" />
-            <SettingRow label="同信号组合 N 小时内只发一次" value="24 小时" />
-            <SettingRow label="每日预警上限" value="50 条" />
-            <SettingRow label="允许严重度升级时重新发送" value="是" />
+            <SettingRow
+              label="同品种同方向 N 小时内只发一次"
+              value={formatHours(alertDedupSettings?.repeat_window_hours)}
+            />
+            <SettingRow
+              label="同信号组合 N 小时内只发一次"
+              value={formatHours(alertDedupSettings?.combination_window_hours)}
+            />
+            <SettingRow
+              label="每日预警上限"
+              value={formatAlertLimit(alertDedupSettings?.daily_alert_limit)}
+            />
+            <SettingRow
+              label="允许严重度升级时重新发送"
+              value={alertDedupSettings ? (alertDedupSettings.allow_severity_upgrade_resend ? "是" : "否") : "--"}
+            />
           </div>
         </Card>
       </div>
@@ -239,6 +271,14 @@ export default function SettingsPage() {
 function formatUsd(value?: number | null): string {
   if (value == null) return "--";
   return `$${value.toFixed(2)}`;
+}
+
+function formatHours(value?: number | null): string {
+  return value == null ? "--" : `${value} 小时`;
+}
+
+function formatAlertLimit(value?: number | null): string {
+  return value == null ? "--" : `${value} 条`;
 }
 
 function Toggle({ label, enabled = false }: { label: string; enabled?: boolean }) {

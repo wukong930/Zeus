@@ -166,6 +166,9 @@ const EN: Record<string, string> = {
   "24 小时": "24 hours",
   "50 条": "50 alerts",
   "是": "Yes",
+  "否": "No",
+  "运行态配置": "Runtime Config",
+  "配置同步中": "Syncing Config",
   "关于 Zeus": "About Zeus",
   "运行态版本": "Runtime Build",
   "当前版本已接入 Python 后端、事件总线、真实免费数据源、信号检测、校准循环、对抗引擎和 Alert Agent；接口不可用时会显示空态或降级状态，避免模拟数据冒充运行态结果。":

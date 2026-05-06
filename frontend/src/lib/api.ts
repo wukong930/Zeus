@@ -263,6 +263,14 @@ export interface LLMUsageSummary {
   output_tokens: number;
 }
 
+export interface AlertDedupSettings {
+  repeat_window_hours: number;
+  combination_window_hours: number;
+  daily_alert_limit: number;
+  allow_severity_upgrade_resend: boolean;
+  source: string;
+}
+
 export interface ScenarioSimulationRequest {
   target_symbol: string;
   shocks: Record<string, number>;
@@ -695,6 +703,10 @@ export async function fetchSchedulerSnapshot(): Promise<SchedulerSnapshot> {
 export async function fetchLLMUsageSummary(module = "alert_agent"): Promise<LLMUsageSummary> {
   const params = new URLSearchParams({ module });
   return fetchJson<LLMUsageSummary>(`/api/llm/usage?${params.toString()}`);
+}
+
+export async function fetchAlertDedupSettings(): Promise<AlertDedupSettings> {
+  return fetchJson<AlertDedupSettings>("/api/settings/alert-dedup");
 }
 
 export async function fetchAttributionReport(): Promise<AttributionReport> {
