@@ -5,11 +5,9 @@ import { Card, CardHeader, CardTitle, CardSubtitle } from "@/components/Card";
 import { CausalWeb } from "@/components/CausalWeb";
 import { DataSourceBadge, type DataSourceState } from "@/components/DataSourceBadge";
 import { SectorHeatmap } from "@/components/SectorHeatmap";
-import { AlertCard } from "@/components/AlertCard";
 import { Badge } from "@/components/Badge";
 import { MetricTile } from "@/components/MetricTile";
 import {
-  ALERTS,
   CAUSAL_EDGES,
   CAUSAL_NODES,
   POSITIONS,
@@ -36,13 +34,13 @@ import {
 
 export default function CommandCenterPage() {
   const g = PERSONAL_GREETING;
-  const [recentAlerts, setRecentAlerts] = useState<Alert[]>(ALERTS.slice(0, 3));
-  const [alertTotal, setAlertTotal] = useState(ALERTS.length);
+  const [recentAlerts, setRecentAlerts] = useState<Alert[]>([]);
+  const [alertTotal, setAlertTotal] = useState(0);
   const [positions, setPositions] = useState<Position[]>(POSITIONS);
   const [causalNodes, setCausalNodes] = useState<CausalNode[]>(CAUSAL_NODES);
   const [causalEdges, setCausalEdges] = useState<CausalEdge[]>(CAUSAL_EDGES);
   const [sectors, setSectors] = useState<SectorData[]>(SECTORS);
-  const [alertSource, setAlertSource] = useState<DataSourceState>("mock");
+  const [alertSource, setAlertSource] = useState<DataSourceState>("loading");
   const [portfolioSource, setPortfolioSource] = useState<DataSourceState>("mock");
   const [causalSource, setCausalSource] = useState<DataSourceState>("fallback");
   const [sectorSource, setSectorSource] = useState<DataSourceState>("loading");
@@ -61,13 +59,16 @@ export default function CommandCenterPage() {
     let mounted = true;
     fetchAlertsFromApi()
       .then((alerts) => {
-        if (!mounted || alerts.length === 0) return;
+        if (!mounted) return;
         setRecentAlerts(alerts.slice(0, 3));
         setAlertTotal(alerts.length);
         setAlertSource("api");
       })
       .catch(() => {
-        if (mounted) setAlertSource("mock");
+        if (!mounted) return;
+        setRecentAlerts([]);
+        setAlertTotal(0);
+        setAlertSource("fallback");
       });
     fetchPortfolioSnapshot()
       .then((snapshot) => {
@@ -165,25 +166,31 @@ export default function CommandCenterPage() {
               {text("查看全部")} →
             </Link>
           </div>
-          {recentAlerts.map((alert) => (
-            <Card
-              key={alert.id}
-              variant="data"
-              interactive
-              className={cn(
-                "border-l-[3px] cursor-pointer hover:bg-bg-surface-raised",
-                alert.severity === "critical" && "border-l-data-down",
-                alert.severity === "high" && "border-l-severity-high-fg",
-                alert.severity === "medium" && "border-l-brand-orange"
-              )}
-            >
-              <div className="flex items-start gap-2 mb-2">
-                <Badge variant={alert.severity}>{alert.severity}</Badge>
-                <span className="text-caption text-text-muted font-mono">{alert.symbol}</span>
-              </div>
-              <div className="text-sm text-text-primary line-clamp-2">{text(alert.title)}</div>
+          {recentAlerts.length > 0 ? (
+            recentAlerts.map((alert) => (
+              <Card
+                key={alert.id}
+                variant="data"
+                interactive
+                className={cn(
+                  "border-l-[3px] cursor-pointer hover:bg-bg-surface-raised",
+                  alert.severity === "critical" && "border-l-data-down",
+                  alert.severity === "high" && "border-l-severity-high-fg",
+                  alert.severity === "medium" && "border-l-brand-orange"
+                )}
+              >
+                <div className="flex items-start gap-2 mb-2">
+                  <Badge variant={alert.severity}>{alert.severity}</Badge>
+                  <span className="text-caption text-text-muted font-mono">{alert.symbol}</span>
+                </div>
+                <div className="text-sm text-text-primary line-clamp-2">{text(alert.title)}</div>
+              </Card>
+            ))
+          ) : (
+            <Card variant="data" className="py-8 text-center text-sm text-text-secondary">
+              {text(emptyAlertSummary(alertSource))}
             </Card>
-          ))}
+          )}
         </div>
       </div>
 
@@ -279,4 +286,10 @@ export default function CommandCenterPage() {
 function formatUsd(value?: number | null): string {
   if (value == null) return "--";
   return `$${value.toFixed(2)}`;
+}
+
+function emptyAlertSummary(source: DataSourceState): string {
+  if (source === "loading") return "预警加载中";
+  if (source === "fallback") return "预警接口暂不可用";
+  return "当前暂无当日预警";
 }

@@ -1,11 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { ALERTS, type Alert, type Severity } from "@/data/mock";
+import { type Alert, type Severity } from "@/data/mock";
 import { AlertCard } from "@/components/AlertCard";
 import { Badge } from "@/components/Badge";
 import { Card } from "@/components/Card";
-import { DataSourceBadge } from "@/components/DataSourceBadge";
+import { DataSourceBadge, type DataSourceState } from "@/components/DataSourceBadge";
 import { MetricTile } from "@/components/MetricTile";
 import { fetchAlertsFromApi } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -16,7 +16,7 @@ const SECTORS = ["ferrous", "rubber", "energy", "metals", "agri", "precious"];
 
 export default function AlertsPage() {
   const [alerts, setAlerts] = useState<Alert[]>([]);
-  const [source, setSource] = useState<"loading" | "api" | "mock">("loading");
+  const [source, setSource] = useState<DataSourceState>("loading");
   const [enabledSeverities, setEnabledSeverities] = useState<Set<Severity>>(
     new Set(["critical", "high", "medium", "low"])
   );
@@ -33,8 +33,8 @@ export default function AlertsPage() {
       })
       .catch(() => {
         if (!ignore) {
-          setAlerts(ALERTS);
-          setSource("mock");
+          setAlerts([]);
+          setSource("fallback");
         }
       });
 
@@ -166,7 +166,7 @@ export default function AlertsPage() {
         </div>
         {filtered.length === 0 ? (
           <Card variant="flat" className="py-10 text-center text-text-muted">
-            {source === "loading" ? text("预警加载中") : text("没有匹配的预警")}
+            {text(emptyAlertMessage(source, alerts.length))}
           </Card>
         ) : (
           filtered.map((alert, i) => (
@@ -180,6 +180,13 @@ export default function AlertsPage() {
       </div>
     </div>
   );
+}
+
+function emptyAlertMessage(source: DataSourceState, totalAlerts: number): string {
+  if (source === "loading") return "预警加载中";
+  if (source === "fallback") return "预警接口暂不可用";
+  if (totalAlerts === 0) return "当前暂无预警";
+  return "没有匹配的预警";
 }
 
 function FilterChip({
