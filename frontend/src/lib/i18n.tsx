@@ -253,7 +253,7 @@ const EN: Record<string, string> = {
   "实时数据": "Live Data",
   "部分降级": "Partial Degrade",
   "降级": "Degraded",
-  "回退数据": "Fallback Data",
+  "接口不可用": "API Unavailable",
   "运行态数据": "Runtime Data",
   "运行态": "Runtime",
   "正在从后端同步数据": "Syncing data from backend services.",
@@ -261,7 +261,8 @@ const EN: Record<string, string> = {
   "当前视图来自运行态图谱接口": "This view is backed by the runtime graph API.",
   "部分接口不可用，视图混合实时数据和降级结果":
     "Some APIs are unavailable; this view mixes live data with degraded results.",
-  "当前视图使用本地回退样本": "This view is using local fallback samples.",
+  "后端接口暂不可用，当前视图显示空态或不可用状态":
+    "Backend APIs are unavailable; this view is showing an empty or unavailable state.",
   "Verified": "Verified",
   "Mode": "Mode",
   "View": "View",

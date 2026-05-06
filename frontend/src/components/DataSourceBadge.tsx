@@ -53,10 +53,10 @@ const SOURCE_META: Record<
     icon: AlertTriangle,
   },
   fallback: {
-    label: "回退数据",
-    compactLabel: "回退",
-    title: "当前视图使用本地回退样本",
-    variant: "neutral",
+    label: "接口不可用",
+    compactLabel: "不可用",
+    title: "后端接口暂不可用，当前视图显示空态或不可用状态",
+    variant: "orange",
     icon: AlertTriangle,
   },
 };
