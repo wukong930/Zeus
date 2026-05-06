@@ -7,7 +7,7 @@ import { DataSourceBadge, type DataSourceState } from "@/components/DataSourceBa
 import { SectorHeatmap } from "@/components/SectorHeatmap";
 import { Badge } from "@/components/Badge";
 import { MetricTile } from "@/components/MetricTile";
-import { SECTORS } from "@/data/mock";
+import { SECTORS } from "@/data/sectorUniverse";
 import type { Alert, CausalEdge, CausalNode, SectorData } from "@/lib/domain";
 import { Activity, ArrowRight, Gauge, Network, TrendingUp, TrendingDown, WalletCards } from "lucide-react";
 import Link from "next/link";

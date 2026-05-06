@@ -6,7 +6,7 @@ import type { DataSourceState } from "@/components/DataSourceBadge";
 import { SectorHeatmap } from "@/components/SectorHeatmap";
 import { Badge } from "@/components/Badge";
 import { MetricTile } from "@/components/MetricTile";
-import { SECTORS } from "@/data/mock";
+import { SECTORS } from "@/data/sectorUniverse";
 import type { SectorData } from "@/lib/domain";
 import { fetchSectorSnapshot } from "@/lib/api";
 import { cn } from "@/lib/utils";
