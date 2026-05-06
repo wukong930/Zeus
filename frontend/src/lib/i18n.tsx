@@ -167,7 +167,7 @@ const EN: Record<string, string> = {
   "50 条": "50 alerts",
   "是": "Yes",
   "关于 Zeus": "About Zeus",
-  "运行态原型": "Runtime Prototype",
+  "运行态版本": "Runtime Build",
   "当前版本已接入 Python 后端、事件总线、真实免费数据源、信号检测、校准循环、对抗引擎和 Alert Agent；接口不可用时会显示空态或降级状态，避免模拟数据冒充运行态结果。":
     "This build is connected to the Python backend, event bus, real free data sources, signal detection, calibration loop, adversarial engine, and Alert Agent. Unavailable APIs now render empty or degraded states instead of presenting mock data as runtime results.",
   "成本链加载中": "Loading cost chain",
@@ -558,7 +558,6 @@ const ZH: Record<string, string> = {
   "Causal Web": "因果网络",
   "Trades are won before they begin": "交易胜于未始",
   "Futures Intel": "期货智能",
-  "prototype": "原型",
   "Data": "数据",
   "Nodes": "节点",
   "Node": "节点",

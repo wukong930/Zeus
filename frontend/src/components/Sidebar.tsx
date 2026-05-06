@@ -100,7 +100,7 @@ export function Sidebar() {
         <div className="rounded-sm border border-border-subtle bg-bg-base px-2 py-2 shadow-inner-panel">
           <div className="flex items-center gap-2 text-caption text-text-muted">
             <div className="h-1.5 w-1.5 rounded-full bg-brand-emerald-bright shadow-glow-emerald animate-heartbeat" />
-            <span>v0.1.0 {text("prototype")}</span>
+            <span>v0.1.0 {text("运行态")}</span>
           </div>
           <div className="mt-2 h-1 overflow-hidden rounded-full bg-bg-surface-raised">
             <div className="h-full w-2/3 rounded-full bg-brand-emerald" />

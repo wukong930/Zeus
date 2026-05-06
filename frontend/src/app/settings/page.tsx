@@ -219,7 +219,7 @@ export default function SettingsPage() {
               Trades are won before they begin.
             </p>
             <p className="text-sm text-text-secondary">
-              v0.1.0 — {text("运行态原型")}。{text("当前版本已接入 Python 后端、事件总线、真实免费数据源、信号检测、校准循环、对抗引擎和 Alert Agent；接口不可用时会显示空态或降级状态，避免模拟数据冒充运行态结果。")}
+              v0.1.0 — {text("运行态版本")}。{text("当前版本已接入 Python 后端、事件总线、真实免费数据源、信号检测、校准循环、对抗引擎和 Alert Agent；接口不可用时会显示空态或降级状态，避免模拟数据冒充运行态结果。")}
             </p>
           </div>
           <div className="hidden rounded-sm border border-brand-emerald/30 bg-brand-emerald/10 px-3 py-2 font-mono text-caption text-brand-emerald-bright md:block">

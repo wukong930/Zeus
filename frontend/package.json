@@ -1,6 +1,6 @@
 {
   "name": "zeus-frontend",
-  "version": "0.1.0-prototype",
+  "version": "0.1.0-runtime",
   "private": true,
   "scripts": {
     "dev": "next dev",
