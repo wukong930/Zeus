@@ -208,52 +208,67 @@ function formatPnl(value: number) {
 
 function CalibrationTab() {
   const [report, setReport] = useState<ThresholdCalibrationReport | null>(null);
+  const [source, setSource] = useState<DataSourceState>("loading");
+  const { text } = useI18n();
 
   useEffect(() => {
     let mounted = true;
     fetchThresholdCalibrationReport()
       .then((data) => {
-        if (mounted) setReport(data);
+        if (!mounted) return;
+        setReport(data);
+        setSource("api");
       })
       .catch(() => {
-        if (mounted) setReport(null);
+        if (!mounted) return;
+        setReport(null);
+        setSource("fallback");
       });
     return () => {
       mounted = false;
     };
   }, []);
 
-  const evaluators = [
-    { name: "spread_anomaly", samples: 47, hitRate: 0.71, weight: 1.18, status: "mature" as const },
-    { name: "basis_shift", samples: 23, hitRate: 0.62, weight: 1.04, status: "warmup" as const },
-    { name: "momentum", samples: 91, hitRate: 0.55, weight: 0.92, status: "mature" as const },
-    { name: "regime_shift", samples: 18, hitRate: 0.44, weight: 0.78, status: "warmup" as const },
-    { name: "inventory_shock", samples: 12, hitRate: 0.50, weight: 1.0, status: "warmup" as const },
-    { name: "price_gap", samples: 56, hitRate: 0.48, weight: 0.86, status: "mature" as const },
-    { name: "news_event", samples: 8, hitRate: 0.5, weight: 1.0, status: "warmup" as const },
-  ];
-  const auto = report?.suggested_thresholds.auto ?? 0.85;
-  const notify = report?.suggested_thresholds.notify ?? 0.6;
+  if (!report) {
+    return (
+      <div className="space-y-5 animate-fade-in">
+        <div className="flex justify-end">
+          <DataSourceBadge state={source} />
+        </div>
+        <Card variant="flat" className="py-12 text-center">
+          <div className="text-sm text-text-secondary">
+            {text(source === "loading" ? "校准报告加载中" : "校准报告暂不可用")}
+          </div>
+        </Card>
+      </div>
+    );
+  }
+
+  const auto = report.suggested_thresholds.auto;
+  const notify = report.suggested_thresholds.notify;
   return (
     <div className="space-y-5 animate-fade-in">
+      <div className="flex justify-end">
+        <DataSourceBadge state={source} />
+      </div>
       <div className="grid grid-cols-1 md:grid-cols-4 gap-5">
-        <Stat label="校准样本" value={String(report?.samples ?? 0)} trend="resolved" />
+        <Stat label="校准样本" value={String(report.samples)} trend="resolved" />
         <Stat
           label="命中率"
-          value={`${report && report.samples > 0 ? ((report.hits / report.samples) * 100).toFixed(1) : "0.0"}%`}
-          trend={`${report?.hits ?? 0}/${report?.samples ?? 0}`}
+          value={`${report.samples > 0 ? ((report.hits / report.samples) * 100).toFixed(1) : "0.0"}%`}
+          trend={`${report.hits}/${report.samples}`}
         />
         <Stat
           label="建议 auto"
           value={auto.toFixed(2)}
-          trend={`current ${(report?.current_thresholds.auto ?? 0.85).toFixed(2)}`}
-          trendNegative={report?.review_required}
+          trend={`current ${report.current_thresholds.auto.toFixed(2)}`}
+          trendNegative={report.review_required}
         />
         <Stat
           label="建议 notify"
           value={notify.toFixed(2)}
-          trend={`current ${(report?.current_thresholds.notify ?? 0.6).toFixed(2)}`}
-          trendNegative={report?.review_required}
+          trend={`current ${report.current_thresholds.notify.toFixed(2)}`}
+          trendNegative={report.review_required}
         />
       </div>
 
@@ -261,42 +276,46 @@ function CalibrationTab() {
         <CardHeader>
           <div>
             <CardTitle>校准仪表盘</CardTitle>
-            <CardSubtitle>每个评估器的样本量、命中率、当前权重</CardSubtitle>
+            <CardSubtitle>按置信度分箱展示真实样本、命中率和校准偏差</CardSubtitle>
           </div>
         </CardHeader>
         <table className="w-full text-sm">
           <thead>
             <tr className="text-caption text-text-muted border-b border-border-subtle">
-              <th className="text-left py-2 px-3 font-medium">评估器</th>
+              <th className="text-left py-2 px-3 font-medium">置信度分箱</th>
               <th className="text-right py-2 px-3 font-medium">样本量</th>
+              <th className="text-right py-2 px-3 font-medium">平均置信度</th>
               <th className="text-right py-2 px-3 font-medium">命中率</th>
-              <th className="text-right py-2 px-3 font-medium">权重</th>
+              <th className="text-right py-2 px-3 font-medium">校准偏差</th>
               <th className="text-left py-2 px-3 font-medium">状态</th>
-              <th className="text-left py-2 px-3 font-medium">置信带</th>
+              <th className="text-left py-2 px-3 font-medium">样本占比</th>
             </tr>
           </thead>
           <tbody>
-            {evaluators.map((e) => (
-              <tr key={e.name} className="border-b border-border-subtle hover:bg-bg-surface-raised">
-                <td className="py-3 px-3 font-mono">{e.name}</td>
-                <td className="py-3 px-3 text-right font-mono tabular-nums">
-                  <span className={cn(e.samples < 30 && "text-severity-high-fg")}>{e.samples}</span>
-                  <span className="text-text-muted"> / 100</span>
+            {report.bins.map((bin) => (
+              <tr key={`${bin.lower}-${bin.upper}`} className="border-b border-border-subtle hover:bg-bg-surface-raised">
+                <td className="py-3 px-3 font-mono">
+                  {bin.lower.toFixed(1)} - {bin.upper.toFixed(1)}
                 </td>
-                <td className="py-3 px-3 text-right font-mono tabular-nums">{(e.hitRate * 100).toFixed(0)}%</td>
-                <td className="py-3 px-3 text-right font-mono tabular-nums">{e.weight.toFixed(2)}</td>
+                <td className="py-3 px-3 text-right font-mono tabular-nums">
+                  <span className={cn(bin.samples === 0 && "text-text-muted")}>{bin.samples}</span>
+                  <span className="text-text-muted"> / {report.samples}</span>
+                </td>
+                <td className="py-3 px-3 text-right font-mono tabular-nums">{formatNullableNumber(bin.avg_confidence)}</td>
+                <td className="py-3 px-3 text-right font-mono tabular-nums">{formatNullablePercent(bin.hit_rate)}</td>
+                <td className={cn("py-3 px-3 text-right font-mono tabular-nums", calibrationGapClass(bin.calibration_gap))}>
+                  {formatSignedNullableNumber(bin.calibration_gap)}
+                </td>
                 <td className="py-3 px-3">
-                  {e.status === "warmup" ? (
-                    <Badge variant="orange">warmup · 先验主导</Badge>
-                  ) : (
-                    <Badge variant="emerald">mature</Badge>
-                  )}
+                  <CalibrationBinBadge samples={bin.samples} gap={bin.calibration_gap} />
                 </td>
                 <td className="py-3 px-3">
                   <div className="w-32 h-1.5 bg-bg-surface-raised rounded-full relative">
                     <div
                       className="absolute top-0 left-0 h-full bg-brand-emerald rounded-full"
-                      style={{ width: `${Math.min(100, (e.samples / 100) * 100)}%` }}
+                      style={{
+                        width: `${report.samples > 0 ? Math.min(100, (bin.samples / report.samples) * 100) : 0}%`,
+                      }}
                     />
                   </div>
                 </td>
@@ -308,13 +327,19 @@ function CalibrationTab() {
 
       <ChartFrame
         title="Reliability Diagram"
-        subtitle={`ECE ${formatNullablePercent(report?.expected_calibration_error)} -> ${formatNullablePercent(report?.projected_calibration_error)} · Δ ${formatNullablePercent(report?.calibration_error_improvement)}`}
-        action={report?.review_required ? <Badge variant="orange">review required</Badge> : <Badge variant="emerald">stable</Badge>}
+        subtitle={`ECE ${formatNullablePercent(report.expected_calibration_error)} -> ${formatNullablePercent(report.projected_calibration_error)} · Δ ${formatNullablePercent(report.calibration_error_improvement)}`}
+        action={report.review_required ? <Badge variant="orange">review required</Badge> : <Badge variant="emerald">stable</Badge>}
       >
         <ReliabilityDiagram report={report} />
       </ChartFrame>
     </div>
   );
+}
+
+function CalibrationBinBadge({ samples, gap }: { samples: number; gap: number | null }) {
+  if (samples === 0 || gap === null) return <Badge variant="neutral">no samples</Badge>;
+  if (Math.abs(gap) >= 0.2) return <Badge variant="orange">review</Badge>;
+  return <Badge variant="emerald">stable</Badge>;
 }
 
 function DriftTab() {
@@ -533,24 +558,15 @@ function MFEDistribution() {
 }
 
 function ReliabilityDiagram({ report }: { report: ThresholdCalibrationReport | null }) {
-  const fallback = [
-    { x: 0.1, y: 0.08 },
-    { x: 0.2, y: 0.18 },
-    { x: 0.3, y: 0.32 },
-    { x: 0.4, y: 0.38 },
-    { x: 0.5, y: 0.55 },
-    { x: 0.6, y: 0.58 },
-    { x: 0.7, y: 0.66 },
-    { x: 0.8, y: 0.74 },
-    { x: 0.9, y: 0.82 },
-  ];
   const points =
     report?.bins
       .filter((bin) => bin.samples > 0 && bin.avg_confidence !== null && bin.hit_rate !== null)
       .map((bin) => ({ x: bin.avg_confidence as number, y: bin.hit_rate as number })) ?? [];
-  const renderedPoints = points.length >= 2 ? points : fallback;
+  if (points.length < 2) {
+    return <EmptyChartState label="暂无足够样本生成可靠性曲线" />;
+  }
   const label = report && report.samples > 0 ? `${report.samples} resolved signals` : "waiting for resolved signals";
-  return <ReliabilityCurve points={renderedPoints} label={label} />;
+  return <ReliabilityCurve points={points} label={label} />;
 }
 
 function formatNullablePercent(value: number | null | undefined) {
@@ -559,6 +575,17 @@ function formatNullablePercent(value: number | null | undefined) {
 
 function formatNullableNumber(value: number | null | undefined) {
   return value == null ? "-" : value.toFixed(3);
+}
+
+function formatSignedNullableNumber(value: number | null | undefined) {
+  if (value == null) return "-";
+  return `${value >= 0 ? "+" : ""}${value.toFixed(3)}`;
+}
+
+function calibrationGapClass(value: number | null | undefined) {
+  if (value == null) return "text-text-muted";
+  if (Math.abs(value) >= 0.2) return "text-severity-high-fg";
+  return "text-text-secondary";
 }
 
 function DriftTrend() {
