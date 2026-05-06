@@ -264,13 +264,13 @@ function CalibrationTab() {
         <Stat
           label="建议 auto"
           value={auto.toFixed(2)}
-          trend={`current ${report.current_thresholds.auto.toFixed(2)}`}
+          trend={`${text("current")} ${report.current_thresholds.auto.toFixed(2)}`}
           trendNegative={report.review_required}
         />
         <Stat
           label="建议 notify"
           value={notify.toFixed(2)}
-          trend={`current ${report.current_thresholds.notify.toFixed(2)}`}
+          trend={`${text("current")} ${report.current_thresholds.notify.toFixed(2)}`}
           trendNegative={report.review_required}
         />
       </div>
@@ -331,7 +331,13 @@ function CalibrationTab() {
       <ChartFrame
         title="Reliability Diagram"
         subtitle={`ECE ${formatNullablePercent(report.expected_calibration_error)} -> ${formatNullablePercent(report.projected_calibration_error)} · Δ ${formatNullablePercent(report.calibration_error_improvement)}`}
-        action={report.review_required ? <Badge variant="orange">review required</Badge> : <Badge variant="emerald">stable</Badge>}
+        action={
+          report.review_required ? (
+            <Badge variant="orange">{text("review required")}</Badge>
+          ) : (
+            <Badge variant="emerald">{text("stable")}</Badge>
+          )
+        }
       >
         <ReliabilityDiagram report={report} />
       </ChartFrame>
@@ -340,9 +346,10 @@ function CalibrationTab() {
 }
 
 function CalibrationBinBadge({ samples, gap }: { samples: number; gap: number | null }) {
-  if (samples === 0 || gap === null) return <Badge variant="neutral">no samples</Badge>;
-  if (Math.abs(gap) >= 0.2) return <Badge variant="orange">review</Badge>;
-  return <Badge variant="emerald">stable</Badge>;
+  const { text } = useI18n();
+  if (samples === 0 || gap === null) return <Badge variant="neutral">{text("no samples")}</Badge>;
+  if (Math.abs(gap) >= 0.2) return <Badge variant="orange">{text("review")}</Badge>;
+  return <Badge variant="emerald">{text("stable")}</Badge>;
 }
 
 function DriftTab() {
@@ -496,6 +503,7 @@ function driftSeverityBar(severity: string): string {
 
 function HypothesesTab() {
   const [rows, setRows] = useState<LearningHypothesis[]>([]);
+  const { text } = useI18n();
 
   useEffect(() => {
     let mounted = true;
@@ -544,7 +552,7 @@ function HypothesesTab() {
               <div>
                 <CardTitle>{row.hypothesis}</CardTitle>
                 <CardSubtitle>
-                  n={row.sample_size} · confidence {formatNullableNumber(row.confidence)} · {row.created_at?.slice(0, 10) ?? "-"}
+                  n={row.sample_size} · {text("confidence")} {formatNullableNumber(row.confidence)} · {row.created_at?.slice(0, 10) ?? "-"}
                 </CardSubtitle>
               </div>
               <div className="flex items-center gap-2">
@@ -657,6 +665,7 @@ function MFEDistribution() {
 }
 
 function ReliabilityDiagram({ report }: { report: ThresholdCalibrationReport | null }) {
+  const { text } = useI18n();
   const points =
     report?.bins
       .filter((bin) => bin.samples > 0 && bin.avg_confidence !== null && bin.hit_rate !== null)
@@ -664,7 +673,10 @@ function ReliabilityDiagram({ report }: { report: ThresholdCalibrationReport | n
   if (points.length < 2) {
     return <EmptyChartState label="暂无足够样本生成可靠性曲线" />;
   }
-  const label = report && report.samples > 0 ? `${report.samples} resolved signals` : "waiting for resolved signals";
+  const label =
+    report && report.samples > 0
+      ? `${report.samples} ${text("resolved signals")}`
+      : text("waiting for resolved signals");
   return <ReliabilityCurve points={points} label={label} />;
 }
 
