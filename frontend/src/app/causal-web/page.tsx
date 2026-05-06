@@ -5,7 +5,7 @@ import type { ComponentType } from "react";
 import { Activity, CheckCircle2, Network } from "lucide-react";
 import { CausalWeb } from "@/components/CausalWeb";
 import { DataSourceBadge, type DataSourceState } from "@/components/DataSourceBadge";
-import type { CausalEdge, CausalNode } from "@/data/mock";
+import type { CausalEdge, CausalNode } from "@/lib/domain";
 import { fetchCausalWebGraph } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 

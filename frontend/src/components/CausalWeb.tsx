@@ -44,7 +44,7 @@ import {
   Target,
   X,
 } from "lucide-react";
-import type { CausalEdge, CausalNode } from "@/data/mock";
+import type { CausalEdge, CausalNode } from "@/lib/domain";
 import { cn } from "@/lib/utils";
 import { useI18n, type Language } from "@/lib/i18n";
 

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 
-import { type TradePlan } from "@/data/mock";
+import { type TradePlan } from "@/lib/domain";
 import { Card } from "@/components/Card";
 import { DataSourceBadge, type DataSourceState } from "@/components/DataSourceBadge";
 import { TradePlanCard } from "@/components/TradePlanCard";

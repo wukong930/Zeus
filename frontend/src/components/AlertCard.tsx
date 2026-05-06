@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { AlertTriangle, CheckCircle2, ChevronRight, Clock, Sparkles, XCircle } from "lucide-react";
 import Link from "next/link";
-import { type Alert } from "@/data/mock";
+import { type Alert } from "@/lib/domain";
 import { Card } from "./Card";
 import { Badge } from "./Badge";
 import { ConfidenceHalo } from "./ConfidenceHalo";

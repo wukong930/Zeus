@@ -5,7 +5,7 @@ import { Card } from "./Card";
 import { Badge } from "./Badge";
 import { Button } from "./Button";
 import { ConfidenceHalo } from "./ConfidenceHalo";
-import { type TradePlan } from "@/data/mock";
+import { type TradePlan } from "@/lib/domain";
 import { cn, formatNumber, formatPercent } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n";
 

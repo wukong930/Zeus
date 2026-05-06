@@ -1,6 +1,6 @@
 "use client";
 
-import type { SectorData } from "@/data/mock";
+import type { SectorData } from "@/lib/domain";
 import { cn } from "@/lib/utils";
 import { formatPercent } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n";

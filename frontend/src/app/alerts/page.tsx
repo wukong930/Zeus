@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { type Alert, type Sector, type Severity } from "@/data/mock";
+import { type Alert, type Sector, type Severity } from "@/lib/domain";
 import { AlertCard } from "@/components/AlertCard";
 import { Badge } from "@/components/Badge";
 import { Card } from "@/components/Card";

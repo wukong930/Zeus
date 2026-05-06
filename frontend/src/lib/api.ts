@@ -8,7 +8,7 @@ import type {
   SectorData,
   Severity,
   TradePlan,
-} from "@/data/mock";
+} from "@/lib/domain";
 
 const SEVERITIES = new Set<Severity>(["critical", "high", "medium", "low"]);
 const DEFAULT_API_TIMEOUT_MS = 15_000;
