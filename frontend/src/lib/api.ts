@@ -392,6 +392,27 @@ export interface ThresholdCalibrationReport {
   review_required: boolean;
 }
 
+export interface DriftMetric {
+  id: string;
+  metric_type: string;
+  category: string | null;
+  feature_name: string | null;
+  current_value: number | null;
+  baseline_value: number | null;
+  psi: number | null;
+  drift_severity: "green" | "yellow" | "red" | string;
+  details: Record<string, unknown>;
+  computed_at: string;
+}
+
+export interface DriftSnapshot {
+  generated_at: string;
+  latest_at: string | null;
+  status: "green" | "yellow" | "red" | "no_data" | string;
+  severity_counts: Record<string, number>;
+  metrics: DriftMetric[];
+}
+
 export interface LearningHypothesis {
   id: string;
   hypothesis: string;
@@ -702,6 +723,10 @@ export async function fetchBacktestQualitySummary(): Promise<BacktestQualitySumm
 
 export async function fetchThresholdCalibrationReport(): Promise<ThresholdCalibrationReport> {
   return fetchJson<ThresholdCalibrationReport>("/api/shadow/calibration");
+}
+
+export async function fetchDriftSnapshot(): Promise<DriftSnapshot> {
+  return fetchJson<DriftSnapshot>("/api/drift/metrics?limit=100");
 }
 
 export async function fetchLearningHypotheses(): Promise<LearningHypothesis[]> {

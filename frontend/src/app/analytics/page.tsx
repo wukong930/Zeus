@@ -11,10 +11,13 @@ import { DriftSparkline } from "@/components/charts/DriftSparkline";
 import { ReliabilityCurve } from "@/components/charts/ReliabilityCurve";
 import {
   fetchAttributionReport,
+  fetchDriftSnapshot,
   fetchLearningHypotheses,
   fetchThresholdCalibrationReport,
   type AttributionReport,
   type AttributionSlice,
+  type DriftMetric,
+  type DriftSnapshot,
   type LearningHypothesis,
   type ThresholdCalibrationReport,
 } from "@/lib/api";
@@ -343,15 +346,70 @@ function CalibrationBinBadge({ samples, gap }: { samples: number; gap: number | 
 }
 
 function DriftTab() {
+  const [snapshot, setSnapshot] = useState<DriftSnapshot | null>(null);
+  const [source, setSource] = useState<DataSourceState>("loading");
+  const { text } = useI18n();
+
+  useEffect(() => {
+    let mounted = true;
+    fetchDriftSnapshot()
+      .then((data) => {
+        if (!mounted) return;
+        setSnapshot(data);
+        setSource("api");
+      })
+      .catch(() => {
+        if (!mounted) return;
+        setSnapshot(null);
+        setSource("fallback");
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  if (!snapshot) {
+    return (
+      <div className="space-y-5 animate-fade-in">
+        <div className="flex justify-end">
+          <DataSourceBadge state={source} />
+        </div>
+        <Card variant="flat" className="py-12 text-center">
+          <div className="text-sm text-text-secondary">
+            {text(source === "loading" ? "Drift 指标加载中" : "Drift 指标暂不可用")}
+          </div>
+        </Card>
+      </div>
+    );
+  }
+
+  const metrics = snapshot.metrics;
+  const featureMetrics = metrics.filter((metric) => metric.metric_type === "feature_distribution");
+  const trendValues = metrics
+    .filter((metric) => metric.psi !== null)
+    .slice()
+    .reverse()
+    .map((metric) => metric.psi as number)
+    .slice(-14);
+  const latestAt = snapshot.latest_at ? new Date(snapshot.latest_at).toLocaleString() : text("暂无记录");
+  const statusMeta = driftStatusMeta(snapshot.status);
+
   return (
     <div className="space-y-5 animate-fade-in">
-      <Card variant="flat" className="border-l-[3px] border-l-brand-emerald">
+      <div className="flex justify-end">
+        <DataSourceBadge state={source} />
+      </div>
+      <Card variant="flat" className={cn("border-l-[3px]", statusMeta.borderClass)}>
         <div className="flex items-center gap-3">
-          <div className="w-2 h-2 rounded-full bg-brand-emerald-bright shadow-glow-emerald animate-heartbeat" />
+          <div className={cn("w-2 h-2 rounded-full animate-heartbeat", statusMeta.dotClass)} />
           <div>
-            <div className="text-h3 text-text-primary">Drift 状态：正常</div>
+            <div className="text-h3 text-text-primary">
+              {text("Drift 状态")}：{text(statusMeta.label)}
+            </div>
             <p className="text-sm text-text-secondary mt-1">
-              当前市场结构与系统校准期数据相似度高。所有 PSI 指标 &lt; 0.15。
+              {metrics.length > 0
+                ? `${text("最近一次计算")} ${latestAt} · ${metrics.length} ${text("条漂移指标")} · red ${snapshot.severity_counts.red ?? 0} / yellow ${snapshot.severity_counts.yellow ?? 0}`
+                : text("调度器尚未写入 Drift 指标。")}
             </p>
           </div>
         </div>
@@ -363,36 +421,77 @@ function DriftTab() {
             <CardTitle>特征分布漂移 (PSI)</CardTitle>
           </CardHeader>
           <div className="space-y-3">
-            {[
-              { name: "波动率", psi: 0.08, status: "healthy" },
-              { name: "价差水平", psi: 0.12, status: "healthy" },
-              { name: "基差", psi: 0.18, status: "healthy" },
-              { name: "成交量", psi: 0.06, status: "healthy" },
-              { name: "持仓量", psi: 0.21, status: "warning" },
-            ].map((m) => (
-              <div key={m.name} className="flex items-center gap-3">
-                <div className="w-20 text-sm text-text-secondary">{m.name}</div>
+            {(featureMetrics.length ? featureMetrics : metrics).slice(0, 8).map((metric) => (
+              <div key={metric.id} className="flex items-center gap-3">
+                <div className="w-28 truncate text-sm text-text-secondary" title={metricLabel(metric)}>
+                  {metricLabel(metric)}
+                </div>
                 <div className="flex-1 h-2 bg-bg-surface-raised rounded-full">
                   <div
-                    className={cn(
-                      "h-full rounded-full",
-                      m.status === "healthy" ? "bg-brand-emerald" : "bg-severity-high-fg"
-                    )}
-                    style={{ width: `${(m.psi / 0.5) * 100}%` }}
+                    className={cn("h-full rounded-full", driftSeverityBar(metric.drift_severity))}
+                    style={{ width: `${Math.min(100, ((metric.psi ?? 0) / 0.5) * 100)}%` }}
                   />
                 </div>
-                <div className="w-12 text-right font-mono text-sm tabular-nums">{m.psi.toFixed(2)}</div>
+                <div className="w-12 text-right font-mono text-sm tabular-nums">{formatNullableNumber(metric.psi)}</div>
               </div>
             ))}
+            {metrics.length === 0 && (
+              <div className="py-8 text-center text-sm text-text-secondary">
+                {text("暂无 Drift 指标")}
+              </div>
+            )}
           </div>
         </Card>
 
         <ChartFrame title="历史 Drift 趋势" subtitle="PSI rolling 14d · warning line 0.25">
-          <DriftTrend />
+          {trendValues.length >= 2 ? (
+            <DriftSparkline values={trendValues} />
+          ) : (
+            <EmptyChartState label="暂无足够样本生成 Drift 趋势" />
+          )}
         </ChartFrame>
       </div>
     </div>
   );
+}
+
+function driftStatusMeta(status: string) {
+  if (status === "red") {
+    return {
+      label: "严重漂移",
+      borderClass: "border-l-data-down",
+      dotClass: "bg-data-down shadow-glow-red",
+    };
+  }
+  if (status === "yellow") {
+    return {
+      label: "需要关注",
+      borderClass: "border-l-brand-orange",
+      dotClass: "bg-brand-orange shadow-glow-orange",
+    };
+  }
+  if (status === "green") {
+    return {
+      label: "正常",
+      borderClass: "border-l-brand-emerald",
+      dotClass: "bg-brand-emerald-bright shadow-glow-emerald",
+    };
+  }
+  return {
+    label: "暂无数据",
+    borderClass: "border-l-border-default",
+    dotClass: "bg-text-muted",
+  };
+}
+
+function metricLabel(metric: DriftMetric): string {
+  return metric.feature_name || metric.category || metric.metric_type;
+}
+
+function driftSeverityBar(severity: string): string {
+  if (severity === "red") return "bg-data-down";
+  if (severity === "yellow") return "bg-brand-orange";
+  return "bg-brand-emerald";
 }
 
 function HypothesesTab() {
@@ -586,8 +685,4 @@ function calibrationGapClass(value: number | null | undefined) {
   if (value == null) return "text-text-muted";
   if (Math.abs(value) >= 0.2) return "text-severity-high-fg";
   return "text-text-secondary";
-}
-
-function DriftTrend() {
-  return <DriftSparkline values={[0.08, 0.09, 0.1, 0.11, 0.08, 0.09, 0.13, 0.15, 0.14, 0.11, 0.09, 0.07, 0.08, 0.09]} />;
 }

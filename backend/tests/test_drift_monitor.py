@@ -1,3 +1,8 @@
+from datetime import datetime, timezone
+from uuid import uuid4
+
+from app.api.drift import build_drift_snapshot
+from app.models.drift_metrics import DriftMetric
 from app.services.learning.drift_monitor import (
     calculate_psi,
     correlation_matrix_from_returns,
@@ -123,3 +128,39 @@ def test_market_feature_distributions_extracts_available_ohlcv_features() -> Non
     assert features["realized_volatility_proxy"] == [0.1]
     assert features["volume"] == [1000.0, 1200.0]
     assert features["open_interest"] == [500.0]
+
+
+def test_drift_snapshot_summarizes_highest_severity() -> None:
+    rows = [
+        DriftMetric(
+            id=uuid4(),
+            metric_type="feature_distribution",
+            category="ferrous",
+            feature_name="volume",
+            current_value=0.22,
+            baseline_value=0.1,
+            psi=0.26,
+            drift_severity="red",
+            details={},
+            computed_at=datetime(2026, 5, 5, tzinfo=timezone.utc),
+        ),
+        DriftMetric(
+            id=uuid4(),
+            metric_type="signal_hit_rate",
+            category="rubber",
+            feature_name=None,
+            current_value=0.6,
+            baseline_value=0.7,
+            psi=0.12,
+            drift_severity="yellow",
+            details={},
+            computed_at=datetime(2026, 5, 4, tzinfo=timezone.utc),
+        ),
+    ]
+
+    snapshot = build_drift_snapshot(rows)
+
+    assert snapshot.status == "red"
+    assert snapshot.latest_at == datetime(2026, 5, 5, tzinfo=timezone.utc)
+    assert snapshot.severity_counts["red"] == 1
+    assert snapshot.severity_counts["yellow"] == 1

@@ -10,6 +10,7 @@ from app.api.causal_web import router as causal_web_router
 from app.api.contracts import router as contracts_router
 from app.api.cost_models import router as cost_models_router
 from app.api.data_sources import router as data_sources_router
+from app.api.drift import router as drift_router
 from app.api.feedback import router as feedback_router
 from app.api.health import router as health_router
 from app.api.industry_data import router as industry_data_router
@@ -73,6 +74,7 @@ def create_app() -> FastAPI:
     app.include_router(contracts_router)
     app.include_router(cost_models_router)
     app.include_router(data_sources_router)
+    app.include_router(drift_router)
     app.include_router(alerts_router)
     app.include_router(positions_router)
     app.include_router(recommendations_router)
