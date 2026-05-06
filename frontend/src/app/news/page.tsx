@@ -12,72 +12,18 @@ import {
 } from "lucide-react";
 import { Badge } from "@/components/Badge";
 import { Card, CardHeader, CardSubtitle, CardTitle } from "@/components/Card";
-import { DataSourceBadge } from "@/components/DataSourceBadge";
+import { DataSourceBadge, type DataSourceState } from "@/components/DataSourceBadge";
 import { MetricTile } from "@/components/MetricTile";
 import { fetchNewsEventsFromApi, type NewsEvent } from "@/lib/api";
 import { cn, timeAgo } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n";
-
-const MOCK_NEWS_EVENTS: NewsEvent[] = [
-  {
-    id: "news-demo-1",
-    source: "cailianshe",
-    rawUrl: null,
-    title: "OPEC+ 宣布延长自愿减产，原油短线走强",
-    summary: "OPEC+ 延长自愿减产安排，市场重新评估二季度供应缺口，对 SC 原油形成偏多冲击。",
-    publishedAt: new Date(Date.now() - 22 * 60_000).toISOString(),
-    eventType: "supply",
-    affectedSymbols: ["SC"],
-    direction: "bullish",
-    severity: 5,
-    timeHorizon: "medium",
-    confidence: 0.82,
-    sourceCount: 2,
-    verificationStatus: "cross_verified",
-    requiresManualConfirmation: false,
-  },
-  {
-    id: "news-demo-2",
-    source: "sina_futures",
-    rawUrl: null,
-    title: "泰国南部橡胶主产区连续强降雨",
-    summary: "合艾和宋卡降雨持续，割胶节奏受扰，NR/RU 近端供应预期收紧。",
-    publishedAt: new Date(Date.now() - 74 * 60_000).toISOString(),
-    eventType: "weather",
-    affectedSymbols: ["NR", "RU"],
-    direction: "bullish",
-    severity: 4,
-    timeHorizon: "short",
-    confidence: 0.74,
-    sourceCount: 2,
-    verificationStatus: "cross_verified",
-    requiresManualConfirmation: false,
-  },
-  {
-    id: "news-demo-3",
-    source: "exchange_announcements",
-    rawUrl: null,
-    title: "交易所提示铁矿石合约交易风险",
-    summary: "交易所发布铁矿石波动风险提示，单源高严重度事件等待人工确认后再进入评估。",
-    publishedAt: new Date(Date.now() - 3 * 3600_000).toISOString(),
-    eventType: "policy",
-    affectedSymbols: ["I"],
-    direction: "mixed",
-    severity: 4,
-    timeHorizon: "immediate",
-    confidence: 0.68,
-    sourceCount: 1,
-    verificationStatus: "single_source",
-    requiresManualConfirmation: true,
-  },
-];
 
 const EVENT_TYPES = ["all", "policy", "supply", "demand", "inventory", "weather", "breaking"];
 const DIRECTIONS = ["all", "bullish", "bearish", "mixed", "unclear"];
 
 export default function NewsEventsPage() {
   const [events, setEvents] = useState<NewsEvent[]>([]);
-  const [source, setSource] = useState<"loading" | "api" | "mock">("loading");
+  const [source, setSource] = useState<DataSourceState>("loading");
   const [query, setQuery] = useState("");
   const [eventType, setEventType] = useState("all");
   const [direction, setDirection] = useState("all");
@@ -103,9 +49,9 @@ export default function NewsEventsPage() {
       })
       .catch(() => {
         if (!ignore) {
-          setEvents(MOCK_NEWS_EVENTS);
-          setSource("mock");
-          setSelectedId(MOCK_NEWS_EVENTS[0]?.id ?? null);
+          setEvents([]);
+          setSource("fallback");
+          setSelectedId(null);
         }
       });
     return () => {
@@ -217,17 +163,37 @@ export default function NewsEventsPage() {
           ))}
           {filtered.length === 0 && (
             <Card variant="flat" className="py-10 text-center text-text-muted">
-              {source === "loading" ? text("新闻事件加载中") : text("没有匹配的新闻事件")}
+              {text(emptyNewsMessage(source, events.length, query, eventType, direction))}
             </Card>
           )}
         </section>
 
         <section className="overflow-y-auto p-6">
-          {selected ? <NewsEventDetail event={selected} /> : null}
+          {selected ? (
+            <NewsEventDetail event={selected} />
+          ) : (
+            <Card variant="flat" className="py-12 text-center text-sm text-text-secondary">
+              {text(source === "fallback" ? "新闻事件接口暂不可用" : "请选择新闻事件")}
+            </Card>
+          )}
         </section>
       </main>
     </div>
   );
+}
+
+function emptyNewsMessage(
+  source: DataSourceState,
+  totalEvents: number,
+  query: string,
+  eventType: string,
+  direction: string
+): string {
+  if (source === "loading") return "新闻事件加载中";
+  if (source === "fallback") return "新闻事件接口暂不可用";
+  if (totalEvents === 0) return "当前暂无新闻事件";
+  if (query.trim() || eventType !== "all" || direction !== "all") return "没有匹配的新闻事件";
+  return "当前暂无新闻事件";
 }
 
 function NewsEventDetail({ event }: { event: NewsEvent }) {
