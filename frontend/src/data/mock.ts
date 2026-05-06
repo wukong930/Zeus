@@ -435,16 +435,6 @@ export const CAUSAL_EDGES: CausalEdge[] = [
   { id: "e9", source: "n11", target: "n12", confidence: 0.84, lag: "10d", hitRate: 0.74, direction: "bearish", verified: true },
 ];
 
-export const HEARTBEAT_STATE = {
-  dataAge: "14s",
-  activeSignals: 17,
-  drift: "正常",
-  driftStatus: "healthy" as "healthy" | "warning" | "alert",
-  calibrationProgress: 73,
-  calibrationTarget: 100,
-  regime: "range_high_vol",
-};
-
 export const PERSONAL_GREETING = {
   greeting: "晚上好",
   username: "Nikoo",
@@ -462,11 +452,4 @@ export const SECTOR_COLORS: Record<Sector, string> = {
   metals: "#92400e",
   precious: "#854d0e",
   rubber: "#365314",
-};
-
-export const REGIME_LABEL: Record<string, string> = {
-  trend_up_low_vol: "趋势上行 · 低波动",
-  trend_down_low_vol: "趋势下行 · 低波动",
-  range_high_vol: "震荡 · 高波动",
-  range_low_vol: "震荡 · 低波动",
 };
