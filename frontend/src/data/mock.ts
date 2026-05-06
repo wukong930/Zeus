@@ -435,15 +435,6 @@ export const CAUSAL_EDGES: CausalEdge[] = [
   { id: "e9", source: "n11", target: "n12", confidence: 0.84, lag: "10d", hitRate: 0.74, direction: "bearish", verified: true },
 ];
 
-export const PERSONAL_GREETING = {
-  greeting: "晚上好",
-  username: "Nikoo",
-  hoursSinceLastVisit: 14,
-  alertsSinceLastVisit: 12,
-  alertsRelevantToPosition: 3,
-  highlight: "RB 触发了 cost_support_pressure",
-};
-
 // Sector heatmap conviction colors
 export const SECTOR_COLORS: Record<Sector, string> = {
   ferrous: "#475569",

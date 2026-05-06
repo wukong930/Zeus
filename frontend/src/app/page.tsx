@@ -8,7 +8,6 @@ import { SectorHeatmap } from "@/components/SectorHeatmap";
 import { Badge } from "@/components/Badge";
 import { MetricTile } from "@/components/MetricTile";
 import {
-  PERSONAL_GREETING,
   SECTORS,
   type Alert,
   type CausalEdge,
@@ -25,12 +24,13 @@ import {
   fetchLLMUsageSummary,
   fetchPortfolioSnapshot,
   fetchSectorSnapshot,
+  fetchThresholdCalibrationReport,
   type LLMUsageSummary,
   type PortfolioPosition,
+  type ThresholdCalibrationReport,
 } from "@/lib/api";
 
 export default function CommandCenterPage() {
-  const g = PERSONAL_GREETING;
   const [recentAlerts, setRecentAlerts] = useState<Alert[]>([]);
   const [alertTotal, setAlertTotal] = useState(0);
   const [positions, setPositions] = useState<PortfolioPosition[]>([]);
@@ -42,6 +42,8 @@ export default function CommandCenterPage() {
   const [causalSource, setCausalSource] = useState<DataSourceState>("loading");
   const [sectorSource, setSectorSource] = useState<DataSourceState>("loading");
   const [llmUsage, setLlmUsage] = useState<LLMUsageSummary | null>(null);
+  const [calibrationReport, setCalibrationReport] = useState<ThresholdCalibrationReport | null>(null);
+  const [calibrationSource, setCalibrationSource] = useState<DataSourceState>("loading");
   const { text } = useI18n();
   const totalPnl = useMemo(
     () => positions.reduce((sum, position) => sum + position.pnl, 0),
@@ -104,6 +106,17 @@ export default function CommandCenterPage() {
         if (mounted) setLlmUsage(summary);
       })
       .catch(() => undefined);
+    fetchThresholdCalibrationReport()
+      .then((report) => {
+        if (!mounted) return;
+        setCalibrationReport(report);
+        setCalibrationSource("api");
+      })
+      .catch(() => {
+        if (!mounted) return;
+        setCalibrationReport(null);
+        setCalibrationSource("fallback");
+      });
     return () => {
       mounted = false;
     };
@@ -111,19 +124,15 @@ export default function CommandCenterPage() {
 
   return (
     <div className="px-8 py-6 space-y-6 animate-fade-in">
-      {/* Personalized greeting bar */}
+      {/* Runtime summary bar */}
       <div className="bg-gradient-to-r from-brand-emerald/10 via-bg-surface to-bg-surface border border-brand-emerald/20 rounded-sm px-5 py-4">
         <div className="text-h2 text-text-primary">
-          {text(g.greeting)}
-          {text("，")}
-          <span className="text-brand-emerald-bright">{g.username}</span>
-          {text("。")}
+          {text("运行态总览")}
         </div>
         <div className="text-sm text-text-secondary mt-1">
-          {text("距上次访问")} {g.hoursSinceLastVisit} {text("小时。期间发生：")}
-          <span className="text-text-primary mx-1 font-mono">{g.alertsSinceLastVisit}</span> {text("条预警")} ·
-          {text("其中")} <span className="text-brand-orange mx-1 font-mono">{g.alertsRelevantToPosition}</span> {text("与你持仓相关")} ·
-          {text("重点：")} <span className="text-text-primary">{text(g.highlight)}</span>
+          {text("最新预警")} <span className="text-text-primary mx-1 font-mono">{runtimeCount(alertTotal, alertSource)}</span> ·
+          {text("开放持仓")} <span className="text-text-primary mx-1 font-mono">{runtimeCount(positions.length, portfolioSource)}</span> ·
+          {text("重点：")} <span className="text-text-primary">{text(runtimeHighlight(recentAlerts, alertSource))}</span>
         </div>
       </div>
 
@@ -274,9 +283,29 @@ export default function CommandCenterPage() {
 
       {/* Bottom: Quick stats */}
       <div className="grid grid-cols-4 gap-5">
-        <MetricTile label={text("活跃信号")} value={String(activeSignals || 0)} trend={text("实时")} caption={text("运行态图谱")} icon={Activity} tone="up" />
-        <MetricTile label={text("最新预警")} value={String(alertTotal)} trend={text("最新")} caption={text("接口返回")} icon={TrendingUp} tone="warning" />
-        <MetricTile label={text("校准进度")} value="73/100" caption={text("样本量")} icon={Gauge} tone="cyan" />
+        <MetricTile
+          label={text("活跃信号")}
+          value={runtimeCount(activeSignals, causalSource)}
+          trend={text("实时")}
+          caption={text("运行态图谱")}
+          icon={Activity}
+          tone={causalSource === "fallback" ? "warning" : "up"}
+        />
+        <MetricTile
+          label={text("最新预警")}
+          value={runtimeCount(alertTotal, alertSource)}
+          trend={text("最新")}
+          caption={text("接口返回")}
+          icon={TrendingUp}
+          tone="warning"
+        />
+        <MetricTile
+          label={text("校准进度")}
+          value={calibrationReport ? String(calibrationReport.samples) : "--"}
+          caption={text(calibrationCaption(calibrationSource))}
+          icon={Gauge}
+          tone={calibrationSource === "fallback" ? "warning" : "cyan"}
+        />
         <MetricTile
           label={text("LLM 月度成本")}
           value={formatUsd(llmUsage?.estimated_cost_usd)}
@@ -316,4 +345,21 @@ function emptyCausalSummary(source: DataSourceState): string {
   if (source === "loading") return "因果图谱加载中";
   if (source === "fallback") return "因果图谱接口暂不可用";
   return "当前暂无运行态因果图谱";
+}
+
+function runtimeCount(value: number, source: DataSourceState): string {
+  if (source === "loading" || source === "fallback") return "--";
+  return String(value);
+}
+
+function runtimeHighlight(alerts: Alert[], source: DataSourceState): string {
+  if (source === "loading") return "预警加载中";
+  if (source === "fallback") return "预警接口暂不可用";
+  return alerts[0]?.title ?? "暂无重点事件";
+}
+
+function calibrationCaption(source: DataSourceState): string {
+  if (source === "loading") return "校准加载中";
+  if (source === "fallback") return "校准接口暂不可用";
+  return "样本量";
 }
