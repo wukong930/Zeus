@@ -18,7 +18,7 @@ import {
   Plus,
   TrendingUp,
 } from "lucide-react";
-import { SECTORS } from "@/data/mock";
+import { fetchContracts, type ContractMetadata } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 
 interface CommandItem {
@@ -28,10 +28,15 @@ interface CommandItem {
   icon: React.ComponentType<{ className?: string }>;
   group: string;
   action: () => void;
+  disabled?: boolean;
 }
+
+type ContractsState = "loading" | "api" | "fallback";
 
 export function CommandPalette() {
   const [open, setOpen] = useState(false);
+  const [contracts, setContracts] = useState<ContractMetadata[]>([]);
+  const [contractsState, setContractsState] = useState<ContractsState>("loading");
   const router = useRouter();
   const { text } = useI18n();
 
@@ -52,6 +57,62 @@ export function CommandPalette() {
     close();
   }, [close, router]);
 
+  useEffect(() => {
+    let mounted = true;
+    fetchContracts()
+      .then((rows) => {
+        if (!mounted) return;
+        setContracts(rows);
+        setContractsState("api");
+      })
+      .catch(() => {
+        if (!mounted) return;
+        setContracts([]);
+        setContractsState("fallback");
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const symbolItems = useMemo(
+    () => buildContractCommandItems(contracts, go, text),
+    [contracts, go, text]
+  );
+  const symbolStatusItem = useMemo<CommandItem | null>(() => {
+    if (contractsState === "loading") {
+      return {
+        id: "sym-loading",
+        group: "品种",
+        label: "合约同步中",
+        icon: TrendingUp,
+        action: () => undefined,
+        disabled: true,
+      };
+    }
+    if (contractsState === "fallback") {
+      return {
+        id: "sym-fallback",
+        group: "品种",
+        label: "合约接口暂不可用",
+        icon: TrendingUp,
+        action: () => undefined,
+        disabled: true,
+      };
+    }
+    if (symbolItems.length === 0) {
+      return {
+        id: "sym-empty",
+        group: "品种",
+        label: "暂无合约数据",
+        icon: TrendingUp,
+        action: () => undefined,
+        disabled: true,
+      };
+    }
+    return null;
+  }, [contractsState, symbolItems.length]);
+
   const items: CommandItem[] = useMemo(
     () => [
       { id: "nav-cc", group: "跳转", label: "命令中心", icon: LayoutDashboard, action: () => go("/") },
@@ -63,20 +124,12 @@ export function CommandPalette() {
       { id: "nav-fl", group: "跳转", label: "未来实验室", icon: Beaker, action: () => go("/future-lab") },
       { id: "nav-nb", group: "跳转", label: "笔记本", icon: NotebookPen, action: () => go("/notebook") },
       { id: "nav-an", group: "跳转", label: "分析", icon: BarChart3, action: () => go("/analytics") },
-      ...SECTORS.flatMap((sec) =>
-        sec.symbols.map((sym) => ({
-          id: `sym-${sym.code}`,
-          group: "品种",
-          label: `${sym.code}  ${text(sym.name)}`,
-          icon: TrendingUp,
-          action: () => go("/causal-web"),
-        }))
-      ),
+      ...(symbolStatusItem ? [symbolStatusItem] : symbolItems),
       { id: "act-pos", group: "操作", label: "添加持仓", icon: Plus, action: () => go("/portfolio") },
       { id: "act-ai", group: "操作", label: "询问 AI Companion", icon: Sparkles, action: close },
       { id: "act-note", group: "操作", label: "创建笔记", icon: NotebookPen, action: () => go("/notebook") },
     ],
-    [close, go, text]
+    [close, go, symbolItems, symbolStatusItem]
   );
   const itemsByGroup = useMemo(() => {
     const grouped = new Map<string, CommandItem[]>();
@@ -129,7 +182,8 @@ export function CommandPalette() {
                       <Command.Item
                         key={item.id}
                         onSelect={item.action}
-                        className="flex h-10 cursor-pointer items-center gap-3 rounded-sm border border-transparent px-3 text-sm text-text-secondary transition-colors aria-selected:border-brand-emerald/35 aria-selected:bg-brand-emerald/12 aria-selected:text-text-primary"
+                        disabled={item.disabled}
+                        className="flex h-10 cursor-pointer items-center gap-3 rounded-sm border border-transparent px-3 text-sm text-text-secondary transition-colors aria-disabled:cursor-not-allowed aria-disabled:opacity-45 aria-selected:border-brand-emerald/35 aria-selected:bg-brand-emerald/12 aria-selected:text-text-primary"
                       >
                         <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-xs border border-border-subtle bg-bg-base text-text-muted">
                           <Icon className="h-3.5 w-3.5" />
@@ -150,4 +204,37 @@ export function CommandPalette() {
       </div>
     </div>
   );
+}
+
+function buildContractCommandItems(
+  contracts: ContractMetadata[],
+  go: (path: string) => void,
+  text: (source: string) => string
+): CommandItem[] {
+  const bySymbol = new Map<string, ContractMetadata>();
+  for (const contract of contracts) {
+    const current = bySymbol.get(contract.symbol);
+    if (!current || contractRank(contract) > contractRank(current)) {
+      bySymbol.set(contract.symbol, contract);
+    }
+  }
+  return [...bySymbol.values()]
+    .sort((a, b) => a.symbol.localeCompare(b.symbol))
+    .map((contract) => ({
+      id: `sym-${contract.symbol}`,
+      group: "品种",
+      label: contractLabel(contract, text),
+      shortcut: contract.is_main ? text("主力") : undefined,
+      icon: TrendingUp,
+      action: () => go(`/causal-web?symbol=${encodeURIComponent(contract.symbol)}`),
+    }));
+}
+
+function contractRank(contract: ContractMetadata): number {
+  return (contract.is_main ? 1_000_000_000 : 0) + (contract.volume ?? 0) + (contract.open_interest ?? 0) / 100;
+}
+
+function contractLabel(contract: ContractMetadata, text: (source: string) => string): string {
+  const name = contract.commodity ? text(contract.commodity) : contract.exchange ?? contract.contract_month;
+  return `${contract.symbol}  ${name}`;
 }

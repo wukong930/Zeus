@@ -209,6 +209,22 @@ export interface DataSourceStatus {
   note: string;
 }
 
+export interface ContractMetadata {
+  id: string;
+  symbol: string;
+  exchange: string | null;
+  commodity: string | null;
+  contract_month: string;
+  expiry_date: string | null;
+  is_main: boolean;
+  main_from: string | null;
+  main_until: string | null;
+  volume: number | null;
+  open_interest: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface SchedulerJobStatus {
   id: string;
   name: string;
@@ -665,6 +681,10 @@ export async function fetchCausalWebGraph(): Promise<CausalWebGraph> {
 
 export async function fetchDataSourceStatuses(): Promise<DataSourceStatus[]> {
   return fetchJson<DataSourceStatus[]>("/api/data-sources");
+}
+
+export async function fetchContracts(limit = 500): Promise<ContractMetadata[]> {
+  return fetchJson<ContractMetadata[]>(`/api/contracts?limit=${limit}`);
 }
 
 export async function fetchSchedulerSnapshot(): Promise<SchedulerSnapshot> {
