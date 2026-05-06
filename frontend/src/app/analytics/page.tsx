@@ -6,7 +6,6 @@ import { Badge } from "@/components/Badge";
 import { DataSourceBadge, type DataSourceState } from "@/components/DataSourceBadge";
 import { MetricTile } from "@/components/MetricTile";
 import { ChartFrame } from "@/components/charts/ChartFrame";
-import { DistributionBars } from "@/components/charts/DistributionBars";
 import { DriftSparkline } from "@/components/charts/DriftSparkline";
 import { ReliabilityCurve } from "@/components/charts/ReliabilityCurve";
 import {
@@ -106,8 +105,11 @@ function AttributionTab() {
 
   const signalSlices = toSliceData(report.slices.signal_type);
   const categorySlices = toSliceData(report.slices.category);
-  const p80Mae = report.risk_assessment.stop_loss?.p80_mae ?? null;
-  const p80Mfe = report.risk_assessment.take_profit?.p80_mfe ?? null;
+  const riskSampleCount = report.closed_recommendations;
+  const stopLossRisk = riskSampleCount > 0 ? report.risk_assessment.stop_loss : null;
+  const takeProfitRisk = riskSampleCount > 0 ? report.risk_assessment.take_profit : null;
+  const p80Mae = stopLossRisk?.p80_mae ?? null;
+  const p80Mfe = takeProfitRisk?.p80_mfe ?? null;
   const closedRate =
     report.total_recommendations > 0
       ? report.closed_recommendations / report.total_recommendations
@@ -161,7 +163,18 @@ function AttributionTab() {
           subtitle="MAE 分布看止损是太紧还是太松"
           metric={p80Mae === null ? "P80 --" : `P80 ${p80Mae.toFixed(2)}`}
         >
-          {p80Mae === null ? <EmptyChartState label="暂无 MAE 样本" /> : <MAEDistribution />}
+          {stopLossRisk ? (
+            <RiskQuantileSummary
+              lowerLabel="P50 MAE"
+              lowerValue={stopLossRisk.p50_mae}
+              upperLabel="P80 MAE"
+              upperValue={stopLossRisk.p80_mae}
+              sampleCount={riskSampleCount}
+              tone="down"
+            />
+          ) : (
+            <EmptyChartState label="暂无 MAE 样本" />
+          )}
           <div className="text-sm text-text-secondary leading-relaxed mt-3">
             <strong className="text-text-primary">P80 MAE</strong>：
             {p80Mae === null ? "--" : p80Mae.toFixed(2)}。归因只出报表，不自动改止损。
@@ -173,7 +186,18 @@ function AttributionTab() {
           subtitle="MFE 分布看止盈是否过早"
           metric={p80Mfe === null ? "P80 --" : `P80 ${p80Mfe.toFixed(2)}`}
         >
-          {p80Mfe === null ? <EmptyChartState label="暂无 MFE 样本" /> : <MFEDistribution />}
+          {takeProfitRisk ? (
+            <RiskQuantileSummary
+              lowerLabel="P50 MFE"
+              lowerValue={takeProfitRisk.p50_mfe}
+              upperLabel="P80 MFE"
+              upperValue={takeProfitRisk.p80_mfe}
+              sampleCount={riskSampleCount}
+              tone="up"
+            />
+          ) : (
+            <EmptyChartState label="暂无 MFE 样本" />
+          )}
           <div className="text-sm text-text-secondary leading-relaxed mt-3">
             <strong className="text-text-primary">P80 MFE</strong>：
             {p80Mfe === null ? "--" : p80Mfe.toFixed(2)}。止盈参数仍需人工评审。
@@ -654,14 +678,85 @@ function SliceTable({
   );
 }
 
-function MAEDistribution() {
-  const buckets = [12, 18, 24, 30, 22, 12, 8, 4, 2, 1];
-  return <DistributionBars buckets={buckets} tone="down" markerIndex={4} />;
+function RiskQuantileSummary({
+  lowerLabel,
+  lowerValue,
+  upperLabel,
+  upperValue,
+  sampleCount,
+  tone,
+}: {
+  lowerLabel: string;
+  lowerValue: number | null | undefined;
+  upperLabel: string;
+  upperValue: number | null | undefined;
+  sampleCount: number;
+  tone: "up" | "down";
+}) {
+  const { text } = useI18n();
+  const maxValue = Math.max(Math.abs(lowerValue ?? 0), Math.abs(upperValue ?? 0), 1);
+  const accentClass = tone === "up" ? "bg-data-up" : "bg-data-down";
+  const textClass = tone === "up" ? "text-data-up" : "text-data-down";
+
+  return (
+    <div className="rounded-sm border border-border-subtle bg-bg-base p-4">
+      <div className="mb-4 flex items-center justify-between text-caption text-text-muted">
+        <span>{text("样本量")} · {sampleCount}</span>
+        <span>{text("运行态数据")}</span>
+      </div>
+      <div className="space-y-3">
+        <RiskQuantileRow
+          label={lowerLabel}
+          value={lowerValue}
+          maxValue={maxValue}
+          accentClass={accentClass}
+          textClass={textClass}
+        />
+        <RiskQuantileRow
+          label={upperLabel}
+          value={upperValue}
+          maxValue={maxValue}
+          accentClass={accentClass}
+          textClass={textClass}
+        />
+      </div>
+    </div>
+  );
 }
 
-function MFEDistribution() {
-  const buckets = [3, 8, 15, 22, 28, 24, 18, 12, 8, 4];
-  return <DistributionBars buckets={buckets} tone="up" markerIndex={5} />;
+function RiskQuantileRow({
+  label,
+  value,
+  maxValue,
+  accentClass,
+  textClass,
+}: {
+  label: string;
+  value: number | null | undefined;
+  maxValue: number;
+  accentClass: string;
+  textClass: string;
+}) {
+  const ratio = Math.min(100, (Math.abs(value ?? 0) / maxValue) * 100);
+
+  return (
+    <div className="grid grid-cols-[76px_minmax(0,1fr)_64px] items-center gap-3 text-sm">
+      <div className="font-mono text-text-secondary">{label}</div>
+      <div className="h-1.5 overflow-hidden rounded-full bg-bg-surface-raised">
+        <div
+          className={cn("h-full rounded-full", accentClass)}
+          style={{ width: `${ratio}%` }}
+        />
+      </div>
+      <div className={cn("text-right font-mono tabular-nums", textClass)}>
+        {formatRiskValue(value)}
+      </div>
+    </div>
+  );
+}
+
+function formatRiskValue(value: number | null | undefined): string {
+  return value === null || value === undefined ? "--" : value.toFixed(2);
 }
 
 function ReliabilityDiagram({ report }: { report: ThresholdCalibrationReport | null }) {

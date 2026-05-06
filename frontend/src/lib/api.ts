@@ -78,8 +78,8 @@ export interface AttributionReport {
   expected_pnl: number;
   slices: Record<string, AttributionSlice[]>;
   risk_assessment: {
-    stop_loss?: { p50_mae: number; p80_mae: number; note: string };
-    take_profit?: { p50_mfe: number; p80_mfe: number; note: string };
+    stop_loss?: { p50_mae: number | null; p80_mae: number | null; note: string };
+    take_profit?: { p50_mfe: number | null; p80_mfe: number | null; note: string };
   };
 }
 
