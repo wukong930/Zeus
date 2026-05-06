@@ -170,8 +170,6 @@ const EN: Record<string, string> = {
   "运行态原型": "Runtime Prototype",
   "当前版本已接入 Python 后端、事件总线、真实免费数据源、信号检测、校准循环、对抗引擎和 Alert Agent；接口不可用时会显示空态或降级状态，避免模拟数据冒充运行态结果。":
     "This build is connected to the Python backend, event bus, real free data sources, signal detection, calibration loop, adversarial engine, and Alert Agent. Unavailable APIs now render empty or degraded states instead of presenting mock data as runtime results.",
-  "这个版本是纯前端原型，所有数据为模拟。后端 Python 服务（事件总线、信号检测、校准循环、对抗引擎、Alert Agent）将在 Phase 1 开始构建。":
-    "This version is a frontend prototype with simulated data. Backend Python services (event bus, signal detection, calibration loop, adversarial engine, Alert Agent) begin in Phase 1.",
   "成本链加载中": "Loading cost chain",
   "成本链接口暂不可用": "Cost chain API is unavailable",
   "正在同步产业成本链、历史快照和质量评估。":
@@ -183,8 +181,8 @@ const EN: Record<string, string> = {
   "质量评估接口暂不可用": "Quality assessment API is unavailable",
   "正在同步公开基准误差、历史场景触发和付费数据源决策。":
     "Syncing public benchmark drift, historical scenario hits, and paid-source decisions.",
-  "成本链仍可查看，但本次没有质量评估结果；页面不再使用模拟质量报告。":
-    "The cost chain is still visible, but no quality assessment is available; this page no longer uses a mock quality report.",
+  "成本链仍可查看，但本次没有质量评估结果；页面会明确显示质量评估不可用状态。":
+    "The cost chain is still visible, but no quality assessment is available; the page now clearly marks the assessment as unavailable.",
   "暂无真实历史成本快照": "No real historical cost snapshots yet",
   "最新利润率": "Latest Margin",
   "实时观察事件间的因果传导。点击节点追溯上游 / 预测下游。":

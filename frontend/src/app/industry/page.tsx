@@ -1119,7 +1119,7 @@ function QualityReportUnavailablePanel({ source }: { source: SourceState }) {
       <div className="rounded-sm border border-dashed border-border-subtle bg-bg-base/60 px-4 py-8 text-center text-sm text-text-secondary">
         {text(loading
           ? "正在同步公开基准误差、历史场景触发和付费数据源决策。"
-          : "成本链仍可查看，但本次没有质量评估结果；页面不再使用模拟质量报告。")}
+          : "成本链仍可查看，但本次没有质量评估结果；页面会明确显示质量评估不可用状态。")}
       </div>
     </Card>
   );
