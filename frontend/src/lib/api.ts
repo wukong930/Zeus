@@ -614,18 +614,18 @@ export async function fetchSectorSnapshot(baseSectors: SectorData[]): Promise<Se
 
   const sectors = baseSectors.map((sector) => {
     const symbols = sector.symbols.map((symbol) => {
-      const change = market?.changes.get(symbol.code) ?? symbol.change;
+      const change = market?.changes.get(symbol.code) ?? 0;
       return {
         ...symbol,
         change,
-        signalActive: activeSymbols ? activeSymbols.has(symbol.code) : symbol.signalActive,
+        signalActive: activeSymbols ? activeSymbols.has(symbol.code) : false,
       };
     });
     const avgChange =
       symbols.reduce((total, symbol) => total + symbol.change, 0) / Math.max(symbols.length, 1);
     return {
       ...sector,
-      conviction: market ? clamp(avgChange / 2.5, -1, 1) : sector.conviction,
+      conviction: market ? clamp(avgChange / 2.5, -1, 1) : 0,
       symbols,
     };
   });

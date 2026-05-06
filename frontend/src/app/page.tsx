@@ -38,7 +38,7 @@ export default function CommandCenterPage() {
   const [positions, setPositions] = useState<PortfolioPosition[]>([]);
   const [causalNodes, setCausalNodes] = useState<CausalNode[]>(CAUSAL_NODES);
   const [causalEdges, setCausalEdges] = useState<CausalEdge[]>(CAUSAL_EDGES);
-  const [sectors, setSectors] = useState<SectorData[]>(SECTORS);
+  const [sectors, setSectors] = useState<SectorData[]>([]);
   const [alertSource, setAlertSource] = useState<DataSourceState>("loading");
   const [portfolioSource, setPortfolioSource] = useState<DataSourceState>("loading");
   const [causalSource, setCausalSource] = useState<DataSourceState>("fallback");
@@ -98,8 +98,8 @@ export default function CommandCenterPage() {
       })
       .catch(() => {
         if (!mounted) return;
-        setSectors(SECTORS);
-        setSectorSource("mock");
+        setSectors([]);
+        setSectorSource("fallback");
       });
     fetchLLMUsageSummary()
       .then((summary) => {
@@ -269,7 +269,7 @@ export default function CommandCenterPage() {
               </Link>
             </div>
           </CardHeader>
-          <SectorHeatmap sectors={sectors} />
+          <SectorHeatmap sectors={sectors} emptyMessage={emptySectorSummary(sectorSource)} />
         </Card>
       </div>
 
@@ -305,4 +305,10 @@ function emptyPortfolioSummary(source: DataSourceState): string {
   if (source === "loading") return "持仓加载中";
   if (source === "fallback") return "持仓接口暂不可用";
   return "当前暂无开放持仓";
+}
+
+function emptySectorSummary(source: DataSourceState): string {
+  if (source === "loading") return "板块快照加载中";
+  if (source === "fallback") return "板块快照接口暂不可用";
+  return "当前暂无板块快照";
 }

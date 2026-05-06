@@ -1,13 +1,26 @@
 "use client";
 
-import { SECTORS } from "@/data/mock";
 import type { SectorData } from "@/data/mock";
 import { cn } from "@/lib/utils";
 import { formatPercent } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n";
 
-export function SectorHeatmap({ sectors = SECTORS }: { sectors?: SectorData[] }) {
+export function SectorHeatmap({
+  sectors,
+  emptyMessage = "暂无板块快照",
+}: {
+  sectors: SectorData[];
+  emptyMessage?: string;
+}) {
   const { text } = useI18n();
+
+  if (sectors.length === 0) {
+    return (
+      <div className="flex min-h-[220px] items-center justify-center rounded-sm border border-dashed border-border-subtle bg-bg-base/50 px-4 text-center text-sm text-text-secondary">
+        {text(emptyMessage)}
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-2.5">

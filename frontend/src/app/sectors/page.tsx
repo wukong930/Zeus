@@ -6,7 +6,7 @@ import type { DataSourceState } from "@/components/DataSourceBadge";
 import { SectorHeatmap } from "@/components/SectorHeatmap";
 import { Badge } from "@/components/Badge";
 import { MetricTile } from "@/components/MetricTile";
-import { SECTORS } from "@/data/mock";
+import { SECTORS, type SectorData } from "@/data/mock";
 import { fetchSectorSnapshot } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { Activity, Gauge, Layers3, RadioTower } from "lucide-react";
@@ -22,7 +22,7 @@ function factorValue(sectorId: string, factorIndex: number) {
 
 export default function SectorsPage() {
   const { text } = useI18n();
-  const [sectors, setSectors] = useState(SECTORS);
+  const [sectors, setSectors] = useState<SectorData[]>([]);
   const [source, setSource] = useState<DataSourceState>("loading");
   const activeSignals = useMemo(
     () => sectors.flatMap((sector) => sector.symbols).filter((symbol) => symbol.signalActive).length,
@@ -43,8 +43,8 @@ export default function SectorsPage() {
       })
       .catch(() => {
         if (!mounted) return;
-        setSectors(SECTORS);
-        setSource("mock");
+        setSectors([]);
+        setSource("fallback");
       });
     return () => {
       mounted = false;
@@ -78,11 +78,11 @@ export default function SectorsPage() {
           </div>
           <DataSourceBadge state={source} compact />
         </CardHeader>
-        <SectorHeatmap sectors={sectors} />
+        <SectorHeatmap sectors={sectors} emptyMessage={emptySectorSnapshotMessage(source)} />
       </Card>
 
       <div className="grid grid-cols-2 gap-5">
-        {sectors.map((s) => (
+        {sectors.length > 0 ? sectors.map((s) => (
           <Card key={s.id} variant="data" interactive>
             <CardHeader>
               <div className="flex items-center gap-3">
@@ -123,8 +123,18 @@ export default function SectorsPage() {
               </div>
             </div>
           </Card>
-        ))}
+        )) : (
+          <Card variant="data" className="col-span-2 py-10 text-center text-sm text-text-secondary">
+            {text(emptySectorSnapshotMessage(source))}
+          </Card>
+        )}
       </div>
     </div>
   );
+}
+
+function emptySectorSnapshotMessage(source: DataSourceState): string {
+  if (source === "loading") return "板块快照加载中";
+  if (source === "fallback") return "板块快照接口暂不可用";
+  return "当前暂无板块快照";
 }
