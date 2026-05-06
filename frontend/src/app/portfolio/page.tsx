@@ -4,10 +4,9 @@ import { useEffect, useMemo, useState } from "react";
 import { Card, CardHeader, CardTitle, CardSubtitle } from "@/components/Card";
 import { Badge } from "@/components/Badge";
 import { Button } from "@/components/Button";
-import { DataSourceBadge } from "@/components/DataSourceBadge";
+import { DataSourceBadge, type DataSourceState } from "@/components/DataSourceBadge";
 import { VintageBadge } from "@/components/VintageBadge";
 import { MetricTile } from "@/components/MetricTile";
-import { POSITIONS } from "@/data/mock";
 import { fetchPortfolioSnapshot, type PortfolioSnapshot, type PortfolioPosition } from "@/lib/api";
 import {
   Activity,
@@ -26,7 +25,7 @@ import { useI18n } from "@/lib/i18n";
 export default function PortfolioPage() {
   const [snapshot, setSnapshot] = useState<PortfolioSnapshot | null>(null);
   const [positions, setPositions] = useState<PortfolioPosition[]>([]);
-  const [source, setSource] = useState<"loading" | "api" | "partial" | "mock">("loading");
+  const [source, setSource] = useState<DataSourceState>("loading");
 
   useEffect(() => {
     let ignore = false;
@@ -41,8 +40,8 @@ export default function PortfolioPage() {
       .catch(() => {
         if (!ignore) {
           setSnapshot(null);
-          setPositions(mockPositions());
-          setSource("mock");
+          setPositions([]);
+          setSource("fallback");
         }
       });
 
@@ -187,7 +186,7 @@ export default function PortfolioPage() {
                         {text("持仓加载中")}
                       </span>
                     ) : (
-                      text("当前没有开放持仓")
+                      text(source === "fallback" ? "持仓接口暂不可用" : "当前没有开放持仓")
                     )}
                   </td>
                 </tr>
@@ -237,14 +236,6 @@ export default function PortfolioPage() {
       </Card>
     </div>
   );
-}
-
-function mockPositions(): PortfolioPosition[] {
-  return POSITIONS.map((position) => ({
-    ...position,
-    marginUsed: position.lots * position.currentPrice * 0.1,
-    status: "open",
-  }));
 }
 
 function formatCurrency(value: number) {

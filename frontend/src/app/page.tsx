@@ -10,13 +10,11 @@ import { MetricTile } from "@/components/MetricTile";
 import {
   CAUSAL_EDGES,
   CAUSAL_NODES,
-  POSITIONS,
   PERSONAL_GREETING,
   SECTORS,
   type Alert,
   type CausalEdge,
   type CausalNode,
-  type Position,
   type SectorData,
 } from "@/data/mock";
 import { Activity, ArrowRight, Gauge, Network, TrendingUp, TrendingDown, WalletCards } from "lucide-react";
@@ -30,18 +28,19 @@ import {
   fetchPortfolioSnapshot,
   fetchSectorSnapshot,
   type LLMUsageSummary,
+  type PortfolioPosition,
 } from "@/lib/api";
 
 export default function CommandCenterPage() {
   const g = PERSONAL_GREETING;
   const [recentAlerts, setRecentAlerts] = useState<Alert[]>([]);
   const [alertTotal, setAlertTotal] = useState(0);
-  const [positions, setPositions] = useState<Position[]>(POSITIONS);
+  const [positions, setPositions] = useState<PortfolioPosition[]>([]);
   const [causalNodes, setCausalNodes] = useState<CausalNode[]>(CAUSAL_NODES);
   const [causalEdges, setCausalEdges] = useState<CausalEdge[]>(CAUSAL_EDGES);
   const [sectors, setSectors] = useState<SectorData[]>(SECTORS);
   const [alertSource, setAlertSource] = useState<DataSourceState>("loading");
-  const [portfolioSource, setPortfolioSource] = useState<DataSourceState>("mock");
+  const [portfolioSource, setPortfolioSource] = useState<DataSourceState>("loading");
   const [causalSource, setCausalSource] = useState<DataSourceState>("fallback");
   const [sectorSource, setSectorSource] = useState<DataSourceState>("loading");
   const [llmUsage, setLlmUsage] = useState<LLMUsageSummary | null>(null);
@@ -73,11 +72,13 @@ export default function CommandCenterPage() {
     fetchPortfolioSnapshot()
       .then((snapshot) => {
         if (!mounted) return;
-        if (snapshot.positions.length > 0) setPositions(snapshot.positions);
+        setPositions(snapshot.positions);
         setPortfolioSource(snapshot.degraded ? "partial" : "api");
       })
       .catch(() => {
-        if (mounted) setPortfolioSource("mock");
+        if (!mounted) return;
+        setPositions([]);
+        setPortfolioSource("fallback");
       });
     fetchCausalWebGraph()
       .then((graph) => {
@@ -213,34 +214,40 @@ export default function CommandCenterPage() {
             </div>
           </CardHeader>
           <div className="space-y-3">
-            {positions.map((pos) => {
-              const isUp = pos.pnlPercent >= 0;
-              return (
-                <div
-                  key={pos.id}
-                  className="flex items-center gap-3 py-2 border-b border-border-subtle last:border-b-0"
-                >
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono text-sm">{pos.symbol}</span>
-                      <Badge variant={pos.direction === "long" ? "up" : "down"}>
-                        {pos.direction === "long" ? text("多") : text("空")} {pos.lots} {text("手")}
-                      </Badge>
+            {positions.length > 0 ? (
+              positions.map((pos) => {
+                const isUp = pos.pnlPercent >= 0;
+                return (
+                  <div
+                    key={pos.id}
+                    className="flex items-center gap-3 py-2 border-b border-border-subtle last:border-b-0"
+                  >
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-sm">{pos.symbol}</span>
+                        <Badge variant={pos.direction === "long" ? "up" : "down"}>
+                          {pos.direction === "long" ? text("多") : text("空")} {pos.lots} {text("手")}
+                        </Badge>
+                      </div>
+                      <div className="text-caption text-text-muted mt-0.5">{text(pos.symbolName)}</div>
                     </div>
-                    <div className="text-caption text-text-muted mt-0.5">{text(pos.symbolName)}</div>
+                    <div className="text-right">
+                      <div className={cn("font-mono text-sm font-semibold tabular-nums flex items-center gap-1 justify-end", isUp ? "text-data-up" : "text-data-down")}>
+                        {isUp ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+                        {formatPercent(pos.pnlPercent)}
+                      </div>
+                      <div className="text-caption text-text-muted font-mono tabular-nums">
+                        {pos.pnl > 0 ? "+" : ""}¥{pos.pnl.toLocaleString()}
+                      </div>
+                    </div>
                   </div>
-                  <div className="text-right">
-                    <div className={cn("font-mono text-sm font-semibold tabular-nums flex items-center gap-1 justify-end", isUp ? "text-data-up" : "text-data-down")}>
-                      {isUp ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-                      {formatPercent(pos.pnlPercent)}
-                    </div>
-                    <div className="text-caption text-text-muted font-mono tabular-nums">
-                      {pos.pnl > 0 ? "+" : ""}¥{pos.pnl.toLocaleString()}
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
+                );
+              })
+            ) : (
+              <div className="py-8 text-center text-sm text-text-secondary">
+                {text(emptyPortfolioSummary(portfolioSource))}
+              </div>
+            )}
           </div>
         </Card>
 
@@ -292,4 +299,10 @@ function emptyAlertSummary(source: DataSourceState): string {
   if (source === "loading") return "预警加载中";
   if (source === "fallback") return "预警接口暂不可用";
   return "当前暂无当日预警";
+}
+
+function emptyPortfolioSummary(source: DataSourceState): string {
+  if (source === "loading") return "持仓加载中";
+  if (source === "fallback") return "持仓接口暂不可用";
+  return "当前暂无开放持仓";
 }
