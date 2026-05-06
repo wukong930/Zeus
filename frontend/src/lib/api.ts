@@ -271,6 +271,21 @@ export interface AlertDedupSettings {
   source: string;
 }
 
+export interface NotificationSettings {
+  realtime_sse: boolean;
+  feishu_webhook: boolean;
+  email: boolean;
+  custom_webhook: boolean;
+  source: string;
+}
+
+export type NotificationSettingsUpdate = Partial<
+  Pick<
+    NotificationSettings,
+    "realtime_sse" | "feishu_webhook" | "email" | "custom_webhook"
+  >
+>;
+
 export interface ScenarioSimulationRequest {
   target_symbol: string;
   shocks: Record<string, number>;
@@ -707,6 +722,20 @@ export async function fetchLLMUsageSummary(module = "alert_agent"): Promise<LLMU
 
 export async function fetchAlertDedupSettings(): Promise<AlertDedupSettings> {
   return fetchJson<AlertDedupSettings>("/api/settings/alert-dedup");
+}
+
+export async function fetchNotificationSettings(): Promise<NotificationSettings> {
+  return fetchJson<NotificationSettings>("/api/settings/notifications");
+}
+
+export async function updateNotificationSettings(
+  payload: NotificationSettingsUpdate,
+): Promise<NotificationSettings> {
+  return fetchJson<NotificationSettings>("/api/settings/notifications", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
 }
 
 export async function fetchAttributionReport(): Promise<AttributionReport> {

@@ -13,12 +13,18 @@ import {
   fetchAlertDedupSettings,
   fetchDataSourceStatuses,
   fetchLLMUsageSummary,
+  fetchNotificationSettings,
   fetchSchedulerSnapshot,
+  updateNotificationSettings,
   type AlertDedupSettings,
   type DataSourceStatus,
   type LLMUsageSummary,
+  type NotificationSettings,
+  type NotificationSettingsUpdate,
   type SchedulerSnapshot,
 } from "@/lib/api";
+
+type NotificationKey = keyof NotificationSettingsUpdate;
 
 export default function SettingsPage() {
   const { text } = useI18n();
@@ -28,6 +34,9 @@ export default function SettingsPage() {
   const [llmUsageSource, setLlmUsageSource] = useState<DataSourceState>("loading");
   const [alertDedupSettings, setAlertDedupSettings] = useState<AlertDedupSettings | null>(null);
   const [alertDedupSource, setAlertDedupSource] = useState<DataSourceState>("loading");
+  const [notificationSettings, setNotificationSettings] = useState<NotificationSettings | null>(null);
+  const [notificationSource, setNotificationSource] = useState<DataSourceState>("loading");
+  const [savingNotification, setSavingNotification] = useState<NotificationKey | null>(null);
   const readySources = dataSources.filter((source) => source.status === "ready").length;
   const degradedJobs = scheduler?.health.degraded_jobs.length ?? 0;
   const enabledJobs = scheduler?.health.enabled_jobs ?? 0;
@@ -65,10 +74,43 @@ export default function SettingsPage() {
       .catch(() => {
         if (mounted) setAlertDedupSource("fallback");
       });
+    fetchNotificationSettings()
+      .then((settings) => {
+        if (!mounted) return;
+        setNotificationSettings(settings);
+        setNotificationSource("api");
+      })
+      .catch(() => {
+        if (mounted) setNotificationSource("fallback");
+      });
     return () => {
       mounted = false;
     };
   }, []);
+
+  function toggleNotification(key: NotificationKey) {
+    if (!notificationSettings || savingNotification) return;
+
+    const previous = notificationSettings;
+    const nextValue = !notificationSettings[key];
+    const optimistic = { ...notificationSettings, [key]: nextValue };
+    const update = { [key]: nextValue } as NotificationSettingsUpdate;
+
+    setNotificationSettings(optimistic);
+    setSavingNotification(key);
+    updateNotificationSettings(update)
+      .then((settings) => {
+        setNotificationSettings(settings);
+        setNotificationSource("api");
+      })
+      .catch(() => {
+        setNotificationSettings(previous);
+        setNotificationSource("fallback");
+      })
+      .finally(() => {
+        setSavingNotification(null);
+      });
+  }
 
   return (
     <div className="px-8 py-6 space-y-6 max-w-5xl animate-fade-in">
@@ -205,12 +247,33 @@ export default function SettingsPage() {
               <CardTitle>{text("通知渠道")}</CardTitle>
               <CardSubtitle>{text("前端实时推送与外部 Webhook")}</CardSubtitle>
             </div>
+            <DataSourceBadge state={notificationSource} compact />
           </CardHeader>
           <div className="space-y-3 text-sm">
-            <Toggle label="实时 SSE 推送（前端）" enabled />
-            <Toggle label="飞书 Webhook" enabled />
-            <Toggle label="Email 通知" />
-            <Toggle label="自定义 Webhook" />
+            <Toggle
+              label="实时 SSE 推送（前端）"
+              checked={Boolean(notificationSettings?.realtime_sse)}
+              disabled={!notificationSettings || savingNotification !== null}
+              onToggle={() => toggleNotification("realtime_sse")}
+            />
+            <Toggle
+              label="飞书 Webhook"
+              checked={Boolean(notificationSettings?.feishu_webhook)}
+              disabled={!notificationSettings || savingNotification !== null}
+              onToggle={() => toggleNotification("feishu_webhook")}
+            />
+            <Toggle
+              label="Email 通知"
+              checked={Boolean(notificationSettings?.email)}
+              disabled={!notificationSettings || savingNotification !== null}
+              onToggle={() => toggleNotification("email")}
+            />
+            <Toggle
+              label="自定义 Webhook"
+              checked={Boolean(notificationSettings?.custom_webhook)}
+              disabled={!notificationSettings || savingNotification !== null}
+              onToggle={() => toggleNotification("custom_webhook")}
+            />
           </div>
         </Card>
 
@@ -281,17 +344,30 @@ function formatAlertLimit(value?: number | null): string {
   return value == null ? "--" : `${value} 条`;
 }
 
-function Toggle({ label, enabled = false }: { label: string; enabled?: boolean }) {
-  const [checked, setChecked] = useState(enabled);
+function Toggle({
+  label,
+  checked,
+  disabled,
+  onToggle,
+}: {
+  label: string;
+  checked: boolean;
+  disabled?: boolean;
+  onToggle: () => void;
+}) {
   const { text } = useI18n();
 
   return (
-    <div className="flex min-h-10 items-center justify-between rounded-sm border border-border-subtle bg-bg-base px-3 py-2 shadow-inner-panel">
+    <div className={cn(
+      "flex min-h-10 items-center justify-between rounded-sm border border-border-subtle bg-bg-base px-3 py-2 shadow-inner-panel",
+      disabled && "opacity-65"
+    )}>
       <span className="text-text-secondary">{text(label)}</span>
       <SwitchControl
         checked={checked}
+        disabled={disabled}
         label={text(label)}
-        onToggle={() => setChecked((current) => !current)}
+        onToggle={onToggle}
       />
     </div>
   );
@@ -299,10 +375,12 @@ function Toggle({ label, enabled = false }: { label: string; enabled?: boolean }
 
 function SwitchControl({
   checked,
+  disabled = false,
   label,
   onToggle,
 }: {
   checked: boolean;
+  disabled?: boolean;
   label: string;
   onToggle: () => void;
 }) {
@@ -312,9 +390,10 @@ function SwitchControl({
       role="switch"
       aria-checked={checked}
       aria-label={label}
+      disabled={disabled}
       onClick={onToggle}
       className={cn(
-        "relative inline-flex h-[28px] w-[54px] shrink-0 items-center rounded-full border p-[3px] transition-all duration-200 focus-visible:shadow-focus-ring focus-visible:outline-none",
+        "relative inline-flex h-[28px] w-[54px] shrink-0 items-center rounded-full border p-[3px] transition-all duration-200 focus-visible:shadow-focus-ring focus-visible:outline-none disabled:cursor-not-allowed",
         checked
           ? "border-brand-emerald/55 bg-brand-emerald/90 shadow-[0_0_22px_rgba(16,185,129,0.28)]"
           : "border-border-default bg-[linear-gradient(180deg,rgba(31,31,31,0.95),rgba(8,8,8,0.98))]"
