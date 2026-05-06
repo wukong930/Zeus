@@ -253,8 +253,6 @@ const EN: Record<string, string> = {
   "实时数据": "Live Data",
   "部分降级": "Partial Degrade",
   "降级": "Degraded",
-  "模拟数据": "Mock Data",
-  "模拟": "Mock",
   "回退数据": "Fallback Data",
   "运行态数据": "Runtime Data",
   "运行态": "Runtime",
@@ -263,7 +261,6 @@ const EN: Record<string, string> = {
   "当前视图来自运行态图谱接口": "This view is backed by the runtime graph API.",
   "部分接口不可用，视图混合实时数据和降级结果":
     "Some APIs are unavailable; this view mixes live data with degraded results.",
-  "后端不可用时展示离线模拟数据": "Offline mock data is shown because the backend is unavailable.",
   "当前视图使用本地回退样本": "This view is using local fallback samples.",
   "Verified": "Verified",
   "Mode": "Mode",

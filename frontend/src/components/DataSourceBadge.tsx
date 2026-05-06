@@ -6,7 +6,7 @@ import { Badge } from "@/components/Badge";
 import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
-export type DataSourceState = "loading" | "api" | "runtime" | "partial" | "mock" | "fallback";
+export type DataSourceState = "loading" | "api" | "runtime" | "partial" | "fallback";
 
 type DataSourceBadgeProps = {
   state: DataSourceState;
@@ -49,13 +49,6 @@ const SOURCE_META: Record<
     label: "部分降级",
     compactLabel: "降级",
     title: "部分接口不可用，视图混合实时数据和降级结果",
-    variant: "orange",
-    icon: AlertTriangle,
-  },
-  mock: {
-    label: "模拟数据",
-    compactLabel: "模拟",
-    title: "后端不可用时展示离线模拟数据",
     variant: "orange",
     icon: AlertTriangle,
   },
