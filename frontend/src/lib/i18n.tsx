@@ -506,6 +506,24 @@ const EN: Record<string, string> = {
   "乙二醇": "Ethylene Glycol",
   "策略研究、回测、参数调优 · vectorbt + DoWhy": "Strategy research, backtesting, and parameter tuning · vectorbt + DoWhy",
   "新建笔记": "New Note",
+  "未接入": "Not Connected",
+  "无本地示例数据": "No Local Sample Data",
+  "暂无笔记": "No notes",
+  "研究笔记暂未接入运行态存储": "Research notebook is not connected to runtime storage yet",
+  "当前页面不再展示固定示例笔记；接入 Notebook API 后会显示用户保存的研究、假设和交易日志。":
+    "This page no longer shows fixed sample notes. Once the Notebook API is connected, it will show saved research, hypotheses, and trade journals.",
+  "当前状态": "Current State",
+  "不会显示固定演示内容": "Fixed demo content is not shown",
+  "暂无运行态笔记": "No runtime notes",
+  "等待后端笔记存储接口接入。": "Waiting for the backend notebook storage API.",
+  "暂无运行态关联": "No runtime links",
+  "预警、假设和交易归因暂未生成真实引用关系。":
+    "Alerts, hypotheses, and trade attribution have not produced real reference links yet.",
+  "接入笔记 CRUD API 与持久化存储。": "Connect the notes CRUD API and persistent storage.",
+  "将笔记与预警、假设和交易归因建立真实关联。":
+    "Create real links between notes, alerts, hypotheses, and trade attribution.",
+  "启用搜索、标签和自动保存后再开放新建入口。":
+    "Enable search, tags, and autosave before opening note creation.",
   "添加": "Add",
   "自动保存": "Autosaved",
   "关联": "Links",
@@ -748,10 +766,6 @@ const ZH: Record<string, string> = {
   "引用此笔记": "引用此笔记",
   "提及的假设": "提及的假设",
   "提及的预警": "提及的预警",
-  "RB 螺纹复盘 2026-04-28": "RB 螺纹复盘 2026-04-28",
-  "橡胶产区季节性框架": "橡胶产区季节性框架",
-  "假设：焦煤 → 螺纹利润传导": "假设：焦煤 → 螺纹利润传导",
-  "本月交易归因": "本月交易归因",
   "假设库": "假设库",
   "交易日志": "交易日志",
 };
