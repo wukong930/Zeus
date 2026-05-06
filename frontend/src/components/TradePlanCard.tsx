@@ -35,7 +35,7 @@ export function TradePlanCard({ plan }: TradePlanCardProps) {
           </div>
           <div className="text-caption text-text-muted">{text(plan.symbolName)}</div>
         </div>
-        <ConfidenceHalo confidence={plan.confidence} sampleSize={47} size={48} />
+        <ConfidenceHalo confidence={plan.confidence} sampleSize={plan.sampleSize} size={48} />
       </div>
 
       {/* Price plan visualization */}

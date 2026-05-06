@@ -43,6 +43,7 @@ export interface TradePlan {
   portfolioRisk: number;
   signalSummary: string;
   confidence: number;
+  sampleSize: number;
   createdAt: string;
 }
 

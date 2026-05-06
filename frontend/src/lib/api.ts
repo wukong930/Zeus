@@ -517,6 +517,7 @@ interface BackendRecommendation {
   created_at: string;
   position_size_pct?: number | null;
   risk_reward_ratio?: number | null;
+  backtest_summary?: Record<string, unknown> | null;
   entry_price?: number | null;
   stop_loss?: number | null;
   take_profit?: number | null;
@@ -986,8 +987,25 @@ function mapTradePlan(
       recommendation.risk_items.join(" · ") ||
       recommendation.recommended_action,
     confidence: normalizedScore(recommendation.priority_score),
+    sampleSize: sampleSizeFromBacktestSummary(recommendation.backtest_summary),
     createdAt: recommendation.created_at,
   };
+}
+
+function sampleSizeFromBacktestSummary(summary: Record<string, unknown> | null | undefined): number {
+  if (!summary) return 0;
+  const candidates = [
+    summary.sample_size,
+    summary.sampleSize,
+    summary.samples,
+    summary.total_samples,
+    summary.n,
+  ];
+  for (const value of candidates) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed) && parsed >= 0) return Math.floor(parsed);
+  }
+  return 0;
 }
 
 function mapAlert(alert: BackendAlert): Alert {
