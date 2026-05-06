@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { type Alert, type Severity } from "@/data/mock";
+import { type Alert, type Sector, type Severity } from "@/data/mock";
 import { AlertCard } from "@/components/AlertCard";
 import { Badge } from "@/components/Badge";
 import { Card } from "@/components/Card";
@@ -12,15 +12,13 @@ import { cn } from "@/lib/utils";
 import { AlertTriangle, RadioTower, Search, ShieldCheck } from "lucide-react";
 import { useI18n } from "@/lib/i18n";
 
-const SECTORS = ["ferrous", "rubber", "energy", "metals", "agri", "precious"];
-
 export default function AlertsPage() {
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [source, setSource] = useState<DataSourceState>("loading");
   const [enabledSeverities, setEnabledSeverities] = useState<Set<Severity>>(
     new Set(["critical", "high", "medium", "low"])
   );
-  const [enabledSectors, setEnabledSectors] = useState<Set<string>>(new Set(SECTORS));
+  const [enabledSectors, setEnabledSectors] = useState<Set<Sector> | null>(null);
 
   useEffect(() => {
     let ignore = false;
@@ -45,7 +43,7 @@ export default function AlertsPage() {
 
   const alertStats = useMemo(() => {
     const severityCounts = new Map<Severity, number>();
-    const sectorCounts = new Map<string, number>();
+    const sectorCounts = new Map<Sector, number>();
     let manual = 0;
     let verified = 0;
 
@@ -75,14 +73,38 @@ export default function AlertsPage() {
     [alertStats]
   );
 
+  const sectorOptions = useMemo(
+    () =>
+      Array.from(alertStats.sectorCounts.entries())
+        .sort(([leftSector, leftCount], [rightSector, rightCount]) => {
+          if (leftCount !== rightCount) return rightCount - leftCount;
+          return leftSector.localeCompare(rightSector);
+        })
+        .map(([value, count]) => ({ value, count })),
+    [alertStats]
+  );
+
   const filtered = useMemo(
     () =>
       alerts.filter(
-        (a) => enabledSeverities.has(a.severity) && enabledSectors.has(a.sector)
+        (a) =>
+          enabledSeverities.has(a.severity) &&
+          (enabledSectors === null || enabledSectors.has(a.sector))
       ),
     [alerts, enabledSectors, enabledSeverities]
   );
   const { text } = useI18n();
+
+  function toggleSector(sector: Sector) {
+    setEnabledSectors((current) => {
+      const next =
+        current === null
+          ? new Set(sectorOptions.map((option) => option.value))
+          : new Set(current);
+      next.has(sector) ? next.delete(sector) : next.add(sector);
+      return next;
+    });
+  }
 
   return (
     <div className="flex h-full">
@@ -99,9 +121,27 @@ export default function AlertsPage() {
         </div>
 
         <div className="grid grid-cols-1 gap-3">
-          <MetricTile label={text("当前可见")} value={String(filtered.length)} caption={`${alerts.length} total`} icon={RadioTower} tone="cyan" />
-          <MetricTile label="Critical" value={String(alertStats.critical)} caption="requires focus" icon={AlertTriangle} tone={alertStats.critical > 0 ? "down" : "neutral"} />
-          <MetricTile label={text("已验证")} value={String(alertStats.verified)} caption={`${alertStats.manual} manual gates`} icon={ShieldCheck} tone="up" />
+          <MetricTile
+            label={text("当前可见")}
+            value={String(filtered.length)}
+            caption={`${alerts.length} ${text("total")}`}
+            icon={RadioTower}
+            tone="cyan"
+          />
+          <MetricTile
+            label={text("Critical")}
+            value={String(alertStats.critical)}
+            caption={text("requires focus")}
+            icon={AlertTriangle}
+            tone={alertStats.critical > 0 ? "down" : "neutral"}
+          />
+          <MetricTile
+            label={text("已验证")}
+            value={String(alertStats.verified)}
+            caption={`${alertStats.manual} ${text("manual gates")}`}
+            icon={ShieldCheck}
+            tone="up"
+          />
         </div>
 
         <div className="relative">
@@ -138,19 +178,21 @@ export default function AlertsPage() {
         <div>
           <div className="text-caption text-text-muted uppercase tracking-wider mb-2">{text("板块")}</div>
           <div className="space-y-1">
-            {SECTORS.map((sec) => (
-              <FilterChip
-                key={sec}
-                checked={enabledSectors.has(sec)}
-                onToggle={() => {
-                  const next = new Set(enabledSectors);
-                  next.has(sec) ? next.delete(sec) : next.add(sec);
-                  setEnabledSectors(next);
-                }}
-                label={text(sec)}
-                count={alertStats.sectorCounts.get(sec) ?? 0}
-              />
-            ))}
+            {sectorOptions.length === 0 ? (
+              <div className="rounded-sm border border-border-subtle bg-bg-surface/60 px-3 py-2 text-sm text-text-muted">
+                {text("暂无板块维度")}
+              </div>
+            ) : (
+              sectorOptions.map((sector) => (
+                <FilterChip
+                  key={sector.value}
+                  checked={enabledSectors === null || enabledSectors.has(sector.value)}
+                  onToggle={() => toggleSector(sector.value)}
+                  label={text(sector.value)}
+                  count={sector.count}
+                />
+              ))
+            )}
           </div>
         </div>
       </aside>

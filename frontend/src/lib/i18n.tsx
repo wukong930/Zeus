@@ -350,6 +350,7 @@ const EN: Record<string, string> = {
   "按严重度、板块和人工确认状态扫描当前事件。": "Scan current events by severity, sector, and manual review state.",
   "预警加载中": "Loading alerts",
   "没有匹配的预警": "No matching alerts",
+  "暂无板块维度": "No sector dimensions",
   "无行情": "No quote",
   "Open AI Companion": "Open AI Companion",
   "Context aware research copilot": "Context-aware research copilot",
