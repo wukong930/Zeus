@@ -44,12 +44,7 @@ import {
   Target,
   X,
 } from "lucide-react";
-import {
-  CAUSAL_EDGES as FALLBACK_CAUSAL_EDGES,
-  CAUSAL_NODES as FALLBACK_CAUSAL_NODES,
-  type CausalEdge,
-  type CausalNode,
-} from "@/data/mock";
+import type { CausalEdge, CausalNode } from "@/data/mock";
 import { cn } from "@/lib/utils";
 import { useI18n, type Language } from "@/lib/i18n";
 
@@ -65,6 +60,7 @@ interface CausalWebProps {
   className?: string;
   nodes?: CausalNode[];
   edges?: CausalEdge[];
+  emptyMessage?: string;
 }
 
 interface CausalFlowNodeData extends Record<string, unknown> {
@@ -345,6 +341,7 @@ function CausalWebCanvas({
   className,
   nodes: runtimeNodes,
   edges: runtimeEdges,
+  emptyMessage = "当前暂无运行态因果图谱",
 }: CausalWebProps) {
   const flow = useReactFlow<CausalFlowNode, CausalFlowEdge>();
   const [mode, setMode] = useState<Mode>("live");
@@ -354,14 +351,15 @@ function CausalWebCanvas({
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
   const [selectedEventIds, setSelectedEventIds] = useState<Set<string>>(new Set());
   const isFull = variant === "full";
-  const rawGraphNodes = runtimeNodes?.length ? runtimeNodes : FALLBACK_CAUSAL_NODES;
-  const rawGraphEdges = runtimeEdges?.length ? runtimeEdges : FALLBACK_CAUSAL_EDGES;
+  const rawGraphNodes = runtimeNodes ?? [];
+  const rawGraphEdges = runtimeEdges ?? [];
   const normalizedGraph = useMemo(
     () => normalizeEventGraph(rawGraphNodes, rawGraphEdges),
     [rawGraphEdges, rawGraphNodes]
   );
   const graphNodes = normalizedGraph.nodes;
   const graphEdges = normalizedGraph.edges;
+  const graphEmpty = graphNodes.length === 0;
   const graphNodeById = useMemo(
     () => new Map(graphNodes.map((node) => [node.id, node])),
     [graphNodes]
@@ -767,7 +765,14 @@ function CausalWebCanvas({
           </ReactFlow>
 
           {isFull && viewNodeIds.size === 0 && (
-            <EmptyGraphState view={view} eventScoped={eventScopeEmpty} />
+            <EmptyGraphState
+              view={view}
+              eventScoped={eventScopeEmpty}
+              message={graphEmpty ? emptyMessage : undefined}
+            />
+          )}
+          {!isFull && graphEmpty && (
+            <PreviewEmptyGraphState message={emptyMessage} />
           )}
         </div>
 
@@ -989,13 +994,23 @@ function EventPoolPanel({
   );
 }
 
-function EmptyGraphState({ view, eventScoped = false }: { view: View; eventScoped?: boolean }) {
+function EmptyGraphState({
+  view,
+  eventScoped = false,
+  message,
+}: {
+  view: View;
+  eventScoped?: boolean;
+  message?: string;
+}) {
   const { text } = useI18n();
   const meta = VIEW_META[view];
   const Icon = meta.icon;
-  const title = eventScoped ? eventScopedEmptyTitle(view) : "当前视图暂无节点";
+  const title = message ? "暂无运行态因果图谱" : eventScoped ? eventScopedEmptyTitle(view) : "当前视图暂无节点";
   const body = eventScoped
     ? "此视图现在只显示当前事件源直接或间接传导到的下游节点。"
+    : message
+      ? message
     : view === "counter"
       ? "当前样本暂无反证节点，已建议改用证据/反证视图。"
       : "请调整筛选或选择更多事件。";
@@ -1009,6 +1024,19 @@ function EmptyGraphState({ view, eventScoped = false }: { view: View; eventScope
         <div className="mt-1 text-xs text-text-secondary">
           {text(body)}
         </div>
+      </div>
+    </div>
+  );
+}
+
+function PreviewEmptyGraphState({ message }: { message: string }) {
+  const { text } = useI18n();
+
+  return (
+    <div className="pointer-events-none absolute inset-0 z-[50] flex items-center justify-center p-6">
+      <div className="max-w-[260px] rounded-sm border border-border-default bg-bg-surface-overlay/90 px-4 py-3 text-center text-xs text-text-secondary shadow-inner-panel backdrop-blur-sm">
+        <div className="mb-1 text-sm font-semibold text-text-primary">{text("暂无运行态因果图谱")}</div>
+        <div>{text(message)}</div>
       </div>
     </div>
   );

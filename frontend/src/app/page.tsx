@@ -8,8 +8,6 @@ import { SectorHeatmap } from "@/components/SectorHeatmap";
 import { Badge } from "@/components/Badge";
 import { MetricTile } from "@/components/MetricTile";
 import {
-  CAUSAL_EDGES,
-  CAUSAL_NODES,
   PERSONAL_GREETING,
   SECTORS,
   type Alert,
@@ -36,12 +34,12 @@ export default function CommandCenterPage() {
   const [recentAlerts, setRecentAlerts] = useState<Alert[]>([]);
   const [alertTotal, setAlertTotal] = useState(0);
   const [positions, setPositions] = useState<PortfolioPosition[]>([]);
-  const [causalNodes, setCausalNodes] = useState<CausalNode[]>(CAUSAL_NODES);
-  const [causalEdges, setCausalEdges] = useState<CausalEdge[]>(CAUSAL_EDGES);
+  const [causalNodes, setCausalNodes] = useState<CausalNode[]>([]);
+  const [causalEdges, setCausalEdges] = useState<CausalEdge[]>([]);
   const [sectors, setSectors] = useState<SectorData[]>([]);
   const [alertSource, setAlertSource] = useState<DataSourceState>("loading");
   const [portfolioSource, setPortfolioSource] = useState<DataSourceState>("loading");
-  const [causalSource, setCausalSource] = useState<DataSourceState>("fallback");
+  const [causalSource, setCausalSource] = useState<DataSourceState>("loading");
   const [sectorSource, setSectorSource] = useState<DataSourceState>("loading");
   const [llmUsage, setLlmUsage] = useState<LLMUsageSummary | null>(null);
   const { text } = useI18n();
@@ -82,7 +80,7 @@ export default function CommandCenterPage() {
       });
     fetchCausalWebGraph()
       .then((graph) => {
-        if (!mounted || graph.nodes.length === 0) return;
+        if (!mounted) return;
         setCausalNodes(graph.nodes);
         setCausalEdges(graph.edges);
         setCausalSource("runtime");
@@ -154,6 +152,7 @@ export default function CommandCenterPage() {
             className="absolute inset-x-0 bottom-0 top-12"
             nodes={causalNodes}
             edges={causalEdges}
+            emptyMessage={emptyCausalSummary(causalSource)}
           />
         </Card>
 
@@ -311,4 +310,10 @@ function emptySectorSummary(source: DataSourceState): string {
   if (source === "loading") return "板块快照加载中";
   if (source === "fallback") return "板块快照接口暂不可用";
   return "当前暂无板块快照";
+}
+
+function emptyCausalSummary(source: DataSourceState): string {
+  if (source === "loading") return "因果图谱加载中";
+  if (source === "fallback") return "因果图谱接口暂不可用";
+  return "当前暂无运行态因果图谱";
 }

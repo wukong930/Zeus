@@ -4,16 +4,15 @@ import { useEffect, useMemo, useState } from "react";
 import type { ComponentType } from "react";
 import { Activity, CheckCircle2, Network } from "lucide-react";
 import { CausalWeb } from "@/components/CausalWeb";
-import { DataSourceBadge } from "@/components/DataSourceBadge";
-import { CAUSAL_EDGES, CAUSAL_NODES } from "@/data/mock";
+import { DataSourceBadge, type DataSourceState } from "@/components/DataSourceBadge";
 import type { CausalEdge, CausalNode } from "@/data/mock";
 import { fetchCausalWebGraph } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 
 export default function CausalWebPage() {
-  const [nodes, setNodes] = useState<CausalNode[]>(CAUSAL_NODES);
-  const [edges, setEdges] = useState<CausalEdge[]>(CAUSAL_EDGES);
-  const [source, setSource] = useState<"runtime" | "fallback">("fallback");
+  const [nodes, setNodes] = useState<CausalNode[]>([]);
+  const [edges, setEdges] = useState<CausalEdge[]>([]);
+  const [source, setSource] = useState<DataSourceState>("loading");
   const { text } = useI18n();
   const activeCount = useMemo(
     () => nodes.filter((node) => node.active).length,
@@ -28,7 +27,7 @@ export default function CausalWebPage() {
     let mounted = true;
     fetchCausalWebGraph()
       .then((graph) => {
-        if (!mounted || graph.nodes.length === 0) return;
+        if (!mounted) return;
         setNodes(graph.nodes);
         setEdges(graph.edges);
         setSource("runtime");
@@ -58,10 +57,21 @@ export default function CausalWebPage() {
         </div>
       </div>
       <div className="relative flex-1">
-        <CausalWeb variant="full" nodes={nodes} edges={edges} />
+        <CausalWeb
+          variant="full"
+          nodes={nodes}
+          edges={edges}
+          emptyMessage={emptyCausalGraphMessage(source)}
+        />
       </div>
     </div>
   );
+}
+
+function emptyCausalGraphMessage(source: DataSourceState): string {
+  if (source === "loading") return "因果图谱加载中";
+  if (source === "fallback") return "因果图谱接口暂不可用";
+  return "当前暂无运行态因果图谱";
 }
 
 function HeaderMetric({

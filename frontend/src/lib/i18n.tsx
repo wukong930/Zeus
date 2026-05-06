@@ -205,6 +205,10 @@ const EN: Record<string, string> = {
   "默认展示优先级最高的事件，可手动加入图谱。":
     "The highest-priority events are shown by default; add more to the graph manually.",
   "当前视图暂无节点": "No nodes in this view",
+  "暂无运行态因果图谱": "No Runtime Causal Graph",
+  "因果图谱加载中": "Loading causal graph",
+  "因果图谱接口暂不可用": "Causal graph API is unavailable",
+  "当前暂无运行态因果图谱": "No runtime causal graph is available right now",
   "当前事件源暂无持仓下游": "No portfolio downstream for the selected event source",
   "当前事件源暂无反证下游": "No counter-evidence downstream for the selected event source",
   "当前事件源暂无预警下游": "No alert downstream for the selected event source",
