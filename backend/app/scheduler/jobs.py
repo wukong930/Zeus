@@ -264,13 +264,18 @@ async def news_ingest_job() -> dict[str, Any]:
     async with AsyncSessionLocal() as session:
         result = await ingest_news_items(session, raw_items)
         await session.commit()
+    status = "degraded" if collector_errors else "completed"
     return {
-        "status": "completed",
+        "status": status,
         "collected": result.collected,
         "recorded": result.recorded,
         "duplicates": result.duplicates,
         "published": result.published,
         "collector_errors": collector_errors,
+        "active_collectors": [
+            getattr(collector, "source", collector.__class__.__name__)
+            for collector in collectors
+        ],
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 

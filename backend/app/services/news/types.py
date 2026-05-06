@@ -2,6 +2,10 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
 
+class NewsCollectorUnavailable(RuntimeError):
+    """Raised when a declared collector is intentionally not wired to a runtime source."""
+
+
 @dataclass(frozen=True)
 class RawNewsItem:
     source: str

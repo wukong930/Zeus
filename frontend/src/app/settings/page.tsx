@@ -484,6 +484,8 @@ function statusLabel(value: string) {
     ok: "正常",
     success: "成功",
     disabled: "停用",
+    degraded: "降级",
+    skipped: "跳过",
     missing_key: "缺少 Key",
     missing_dependency: "缺少依赖",
     unconfigured: "未配置",

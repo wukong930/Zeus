@@ -28,6 +28,8 @@ class ScheduledJobState:
             return "disabled"
         if self.consecutive_failures >= 3:
             return "degraded"
+        if self.last_result in {"degraded", "skipped"}:
+            return "warning"
         if self.last_result == "error":
             return "warning"
         return "ok"
@@ -177,7 +179,7 @@ class SchedulerManager:
 
             payload = await handler()
             state.last_run = datetime.now(timezone.utc)
-            state.last_result = "success"
+            state.last_result = job_result_status(payload)
             state.last_error = None
             state.consecutive_failures = 0
             return {"success": True, "data": payload}
@@ -196,3 +198,10 @@ _scheduler = SchedulerManager()
 
 def get_scheduler() -> SchedulerManager:
     return _scheduler
+
+
+def job_result_status(payload: dict[str, Any]) -> str:
+    status = payload.get("status")
+    if status in {"degraded", "skipped"}:
+        return str(status)
+    return "success"

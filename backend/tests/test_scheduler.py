@@ -11,7 +11,8 @@ from app.scheduler.jobs import (
     collect_news_from_collectors,
 )
 from app.scheduler.manager import SchedulerManager
-from app.services.news.types import RawNewsItem
+from app.services.news.collectors import CailiansheCollector, ExchangeAnnouncementsCollector, SinaFuturesCollector
+from app.services.news.types import NewsCollectorUnavailable, RawNewsItem
 
 
 async def _ok_handler() -> dict:
@@ -138,6 +139,48 @@ async def test_news_collectors_run_concurrently_and_keep_source_errors() -> None
     assert [item.source for item in items] == ["waiting", "releasing"]
     assert [item.title for item in items] == ["waiting 7", "releasing 7"]
     assert errors == [{"source": "failing", "error": "failed at 7"}]
+
+
+async def test_unwired_news_collectors_report_unavailable_errors() -> None:
+    items, errors = await collect_news_from_collectors(
+        [CailiansheCollector(), SinaFuturesCollector(), ExchangeAnnouncementsCollector()],
+        limit=7,
+    )
+
+    assert items == []
+    assert [error["source"] for error in errors] == [
+        "cailianshe",
+        "sina_futures",
+        "exchange_announcements",
+    ]
+    assert all("not connected" in error["error"] for error in errors)
+
+
+async def test_unwired_collector_raises_explicit_unavailable_error() -> None:
+    collector = SinaFuturesCollector()
+
+    try:
+        await collector.collect()
+    except NewsCollectorUnavailable as exc:
+        assert "not connected" in str(exc)
+    else:
+        raise AssertionError("SinaFuturesCollector should report unavailable runtime feed")
+
+
+async def test_scheduler_marks_degraded_payload_as_warning() -> None:
+    async def _degraded_handler() -> dict:
+        return {"status": "degraded", "collector_errors": [{"source": "x", "error": "offline"}]}
+
+    manager = SchedulerManager(
+        definitions=(JobDefinition("test", "Test", "* * * * *"),),
+        handlers={"test": _degraded_handler},
+    )
+
+    result = await manager.run_now("test")
+
+    assert result["success"] is True
+    assert manager.list_jobs()[0]["last_result"] == "degraded"
+    assert manager.list_jobs()[0]["status"] == "warning"
 
 
 def test_scheduler_rejects_bad_cron() -> None:
