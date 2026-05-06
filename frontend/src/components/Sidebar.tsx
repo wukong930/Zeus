@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useState } from "react";
 import {
   LayoutDashboard,
   Bell,
@@ -19,10 +20,11 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n";
+import { fetchAlertsFromApi } from "@/lib/api";
 
 const NAV_ITEMS = [
   { href: "/", label: "命令中心", icon: LayoutDashboard },
-  { href: "/alerts", label: "预警", icon: Bell, badge: 12 },
+  { href: "/alerts", label: "预警", icon: Bell },
   { href: "/trade-plans", label: "交易计划", icon: Plane },
   { href: "/portfolio", label: "持仓地图", icon: MapIcon },
   { divider: true } as const,
@@ -42,7 +44,24 @@ const NAV_ITEMS = [
 export function Sidebar() {
   const pathname = usePathname();
   const { text } = useI18n();
+  const [alertCount, setAlertCount] = useState<number | null>(null);
   const brandTagline = text("Trades are won before they begin");
+
+  useEffect(() => {
+    let cancelled = false;
+
+    fetchAlertsFromApi()
+      .then((alerts) => {
+        if (!cancelled) setAlertCount(alerts.length);
+      })
+      .catch(() => {
+        if (!cancelled) setAlertCount(null);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   return (
     <aside className="flex h-full w-[188px] shrink-0 flex-col border-r border-border-subtle bg-[linear-gradient(180deg,rgba(15,17,16,0.98),rgba(0,0,0,0.98))] shadow-inner-panel">
@@ -62,6 +81,7 @@ export function Sidebar() {
           }
           const Icon = item.icon;
           const active = pathname === item.href;
+          const badge = item.href === "/alerts" ? formatAlertCount(alertCount) : null;
           return (
             <Link
               key={item.href}
@@ -87,9 +107,9 @@ export function Sidebar() {
                 <Icon className="h-3 w-3" strokeWidth={1.75} />
               </span>
               <span className="min-w-0 flex-1 truncate">{text(item.label)}</span>
-              {"badge" in item && item.badge && (
+              {badge && (
                 <span className="inline-flex h-4 items-center rounded-xs bg-brand-orange px-1.5 text-caption font-semibold text-white shadow-glow-orange">
-                  {item.badge}
+                  {badge}
                 </span>
               )}
             </Link>
@@ -109,6 +129,11 @@ export function Sidebar() {
       </div>
     </aside>
   );
+}
+
+function formatAlertCount(count: number | null): string | null {
+  if (count === null || count <= 0) return null;
+  return count > 99 ? "99+" : String(count);
 }
 
 function Logo() {
