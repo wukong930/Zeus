@@ -517,42 +517,6 @@ const EN: Record<string, string> = {
   "提及的预警": "Mentioned Alerts",
   "假设库": "Hypothesis Library",
   "交易日志": "Trade Journal",
-  "美国航母移动": "US carrier movement",
-  "中东局势升级": "Middle East escalation",
-  "原油 SC 上涨预期": "SC crude upside thesis",
-  "化工链上行": "Chemical chain rising",
-  "PTA 现货上涨": "PTA spot rising",
-  "PP 走强": "PP strengthening",
-  "CFTC 持仓未增": "CFTC positions not rising",
-  "产区暴雨": "Producing-region rainstorm",
-  "NR/RU 短期看涨": "NR/RU short-term bullish",
-  "焦煤价格回落": "Coking coal price pullback",
-  "高炉利润转负": "Blast-furnace margin turns negative",
-  "螺纹成本支撑": "Rebar cost support",
-  "外部军事移动是能源风险溢价的上游扰动源。":
-    "External military movement is an upstream disturbance for energy risk premium.",
-  "区域局势升级会放大航运和供应中断预期。":
-    "Regional escalation amplifies shipping and supply-disruption expectations.",
-  "把地缘风险和价格预期压缩成可监控的原油上涨假设。":
-    "Compress geopolitical risk and price expectations into a monitorable crude-oil upside thesis.",
-  "原油假设向化工链利润和成本端继续传播。":
-    "The crude thesis propagates into chemical-chain margins and cost inputs.",
-  "PTA 现货上涨是能化链传导后的市场影响节点。":
-    "PTA spot strength is a market-impact node after energy/chemical propagation.",
-  "PP 走强验证能化链的下游盘面响应。":
-    "PP strength validates downstream screen response in the energy/chemical chain.",
-  "持仓未同步增加会削弱能源上涨信号的发射概率。":
-    "Positions failing to rise in sync reduce the emission probability of the energy upside signal.",
-  "产区天气冲击是橡胶链短期供应风险的触发源。":
-    "Producing-region weather shock is the trigger source for short-term rubber supply risk.",
-  "橡胶短期看涨直接关联持仓风险和交易计划。":
-    "Short-term rubber upside directly links to position risk and trade plans.",
-  "焦煤回落会削弱黑色链成本支撑的强度。":
-    "Coking coal pullback weakens cost-support strength in the ferrous chain.",
-  "高炉利润转负提示黑色链需求与成本传导存在压力。":
-    "Negative blast-furnace margins indicate pressure in ferrous demand and cost propagation.",
-  "螺纹成本支撑是黑色链风险出口，适合进入预警追踪。":
-    "Rebar cost support is the ferrous-chain risk outlet and fits alert tracing.",
   "冲突": "Conflict",
   "航运": "Shipping",
   "阈值": "Threshold",

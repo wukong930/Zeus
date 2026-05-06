@@ -219,101 +219,6 @@ const SECTOR_META: Record<Sector, { label: string; color: string }> = {
   positioning: { label: "持仓", color: "#EF4444" },
 };
 
-const NODE_META: Record<string, NodeSemanticMeta> = {
-  n1: {
-    stage: "source",
-    sector: "geo",
-    tags: ["地缘", "原油"],
-    narrative: "外部军事移动是能源风险溢价的上游扰动源。",
-  },
-  n2: {
-    stage: "source",
-    sector: "geo",
-    tags: ["冲突", "航运"],
-    narrative: "区域局势升级会放大航运和供应中断预期。",
-  },
-  n3: {
-    stage: "thesis",
-    sector: "energy",
-    tags: ["SC", "阈值"],
-    narrative: "把地缘风险和价格预期压缩成可监控的原油上涨假设。",
-    alertLinked: true,
-  },
-  n4: {
-    stage: "thesis",
-    sector: "energy",
-    tags: ["化工", "传导"],
-    narrative: "原油假设向化工链利润和成本端继续传播。",
-  },
-  n5: {
-    stage: "impact",
-    sector: "energy",
-    tags: ["PTA", "现货"],
-    narrative: "PTA 现货上涨是能化链传导后的市场影响节点。",
-  },
-  n6: {
-    stage: "impact",
-    sector: "energy",
-    tags: ["PP", "盘面"],
-    narrative: "PP 走强验证能化链的下游盘面响应。",
-  },
-  n7: {
-    stage: "validation",
-    sector: "positioning",
-    tags: ["CFTC", "反证"],
-    narrative: "持仓未同步增加会削弱能源上涨信号的发射概率。",
-  },
-  n8: {
-    stage: "source",
-    sector: "rubber",
-    tags: ["天气", "产区"],
-    narrative: "产区天气冲击是橡胶链短期供应风险的触发源。",
-  },
-  n9: {
-    stage: "impact",
-    sector: "rubber",
-    tags: ["NR/RU", "持仓"],
-    narrative: "橡胶短期看涨直接关联持仓风险和交易计划。",
-    portfolioLinked: true,
-    alertLinked: true,
-  },
-  n10: {
-    stage: "validation",
-    sector: "ferrous",
-    tags: ["焦煤", "成本"],
-    narrative: "焦煤回落会削弱黑色链成本支撑的强度。",
-  },
-  n11: {
-    stage: "validation",
-    sector: "ferrous",
-    tags: ["高炉", "利润"],
-    narrative: "高炉利润转负提示黑色链需求与成本传导存在压力。",
-  },
-  n12: {
-    stage: "impact",
-    sector: "ferrous",
-    tags: ["螺纹", "支撑"],
-    narrative: "螺纹成本支撑是黑色链风险出口，适合进入预警追踪。",
-    portfolioLinked: true,
-    alertLinked: true,
-  },
-};
-
-const FLOW_LAYOUT: Record<string, { x: number; y: number }> = {
-  n1: { x: 60, y: 140 },
-  n2: { x: 430, y: 130 },
-  n3: { x: 820, y: 260 },
-  n4: { x: 1120, y: 140 },
-  n5: { x: 1490, y: 80 },
-  n6: { x: 1490, y: 310 },
-  n7: { x: 820, y: 470 },
-  n8: { x: 60, y: 610 },
-  n9: { x: 1490, y: 590 },
-  n10: { x: 820, y: 800 },
-  n11: { x: 1120, y: 800 },
-  n12: { x: 1490, y: 760 },
-};
-
 const fitViewOptions = { padding: 0.06, duration: 500 };
 const previewFitViewOptions = { padding: 0.08, duration: 500 };
 const flowProOptions = { hideAttribution: true };
@@ -507,7 +412,7 @@ function CausalWebCanvas({
         return {
           id: node.id,
           type: "causalNode",
-          position: node.x !== undefined && node.y !== undefined ? { x: node.x, y: node.y } : FLOW_LAYOUT[node.id] ?? { x: 520, y: 320 },
+          position: node.x !== undefined && node.y !== undefined ? { x: node.x, y: node.y } : { x: 520, y: 320 },
           data: {
             causal: node,
             meta: metaByNodeId.get(node.id) ?? semanticMetaForNode(node),
@@ -2194,17 +2099,15 @@ function downstreamChainIds(focusId: string, edges: CausalEdge[], maxDepth = Num
 }
 
 function semanticMetaForNode(node: CausalNode): NodeSemanticMeta {
-  const fallback = NODE_META[node.id];
-  if (fallback && !node.stage && !node.sector && !node.narrative) return fallback;
-  const stage = node.stage ?? fallback?.stage ?? stageForNodeType(node.type);
-  const sector = node.sector ?? fallback?.sector ?? sectorForLabel(node.label);
+  const stage = node.stage ?? stageForNodeType(node.type);
+  const sector = node.sector ?? sectorForLabel(node.label);
   return {
     stage,
     sector,
-    tags: node.tags ?? fallback?.tags ?? [],
-    narrative: node.narrative ?? fallback?.narrative ?? "运行态事件链路节点。",
-    portfolioLinked: node.portfolioLinked ?? fallback?.portfolioLinked,
-    alertLinked: node.alertLinked ?? fallback?.alertLinked,
+    tags: node.tags ?? [],
+    narrative: node.narrative ?? "运行态事件链路节点。",
+    portfolioLinked: node.portfolioLinked,
+    alertLinked: node.alertLinked,
   };
 }
 
