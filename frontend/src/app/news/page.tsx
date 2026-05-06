@@ -18,9 +18,6 @@ import { fetchNewsEventsFromApi, type NewsEvent } from "@/lib/api";
 import { cn, timeAgo } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n";
 
-const EVENT_TYPES = ["all", "policy", "supply", "demand", "inventory", "weather", "breaking"];
-const DIRECTIONS = ["all", "bullish", "bearish", "mixed", "unclear"];
-
 export default function NewsEventsPage() {
   const [events, setEvents] = useState<NewsEvent[]>([]);
   const [source, setSource] = useState<DataSourceState>("loading");
@@ -58,6 +55,23 @@ export default function NewsEventsPage() {
       ignore = true;
     };
   }, []);
+
+  const eventTypeOptions = useMemo(
+    () => buildFilterValues(events.map((event) => event.eventType)),
+    [events]
+  );
+  const directionOptions = useMemo(
+    () => buildFilterValues(events.map((event) => event.direction)),
+    [events]
+  );
+
+  useEffect(() => {
+    if (!eventTypeOptions.includes(eventType)) setEventType("all");
+  }, [eventType, eventTypeOptions]);
+
+  useEffect(() => {
+    if (!directionOptions.includes(direction)) setDirection("all");
+  }, [direction, directionOptions]);
 
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -106,9 +120,27 @@ export default function NewsEventsPage() {
         </div>
 
         <div className="grid grid-cols-1 gap-3">
-          <MetricTile label={text("总数")} value={String(stats.total)} caption="events" icon={Newspaper} tone="cyan" />
-          <MetricTile label={text("交叉验证")} value={String(stats.verified)} caption="source quorum" icon={ShieldCheck} tone="up" />
-          <MetricTile label={text("人工确认")} value={String(stats.manual)} caption="manual gate" icon={AlertTriangle} tone={stats.manual > 0 ? "warning" : "neutral"} />
+          <MetricTile
+            label={text("总数")}
+            value={String(stats.total)}
+            caption={text("events")}
+            icon={Newspaper}
+            tone="cyan"
+          />
+          <MetricTile
+            label={text("交叉验证")}
+            value={String(stats.verified)}
+            caption={text("source quorum")}
+            icon={ShieldCheck}
+            tone="up"
+          />
+          <MetricTile
+            label={text("人工确认")}
+            value={String(stats.manual)}
+            caption={text("manual gate")}
+            icon={AlertTriangle}
+            tone={stats.manual > 0 ? "warning" : "neutral"}
+          />
         </div>
 
         <div className="relative">
@@ -121,8 +153,8 @@ export default function NewsEventsPage() {
           />
         </div>
 
-        <Segmented value={eventType} values={EVENT_TYPES} onChange={setEventType} />
-        <Segmented value={direction} values={DIRECTIONS} onChange={setDirection} />
+        <Segmented value={eventType} values={eventTypeOptions} onChange={setEventType} />
+        <Segmented value={direction} values={directionOptions} onChange={setDirection} />
       </aside>
 
       <main className="flex-1 min-w-0 grid grid-cols-[minmax(360px,0.9fr)_minmax(420px,1.1fr)]">
@@ -142,7 +174,7 @@ export default function NewsEventsPage() {
                 <Badge variant={severityVariant(event.severity)}>
                   S{event.severity}
                 </Badge>
-                <Badge variant={directionVariant(event.direction)}>{event.direction}</Badge>
+                <Badge variant={directionVariant(event.direction)}>{text(event.direction)}</Badge>
                 <span className="text-caption text-text-muted font-mono">{event.source}</span>
                 <span className="flex-1" />
                 <span className="text-caption text-text-muted">{timeAgo(event.publishedAt)}</span>
@@ -196,6 +228,22 @@ function emptyNewsMessage(
   return "当前暂无新闻事件";
 }
 
+function buildFilterValues(values: string[]): string[] {
+  const counts = new Map<string, number>();
+  for (const value of values) {
+    if (value.trim()) counts.set(value, (counts.get(value) ?? 0) + 1);
+  }
+  return [
+    "all",
+    ...Array.from(counts.entries())
+      .sort(([leftValue, leftCount], [rightValue, rightCount]) => {
+        if (leftCount !== rightCount) return rightCount - leftCount;
+        return leftValue.localeCompare(rightValue);
+      })
+      .map(([value]) => value),
+  ];
+}
+
 function NewsEventDetail({ event }: { event: NewsEvent }) {
   const { text } = useI18n();
 
@@ -206,7 +254,7 @@ function NewsEventDetail({ event }: { event: NewsEvent }) {
           <Badge variant={severityVariant(event.severity)}>
             {text("Severity")} {event.severity}
           </Badge>
-          <Badge variant={directionVariant(event.direction)}>{event.direction}</Badge>
+          <Badge variant={directionVariant(event.direction)}>{text(event.direction)}</Badge>
           <Badge variant={event.requiresManualConfirmation ? "orange" : "emerald"}>
             {event.verificationStatus}
           </Badge>
@@ -246,7 +294,7 @@ function NewsEventDetail({ event }: { event: NewsEvent }) {
         <CardHeader>
           <div>
             <CardTitle>{text("质量门槛")}</CardTitle>
-            <CardSubtitle>source quorum / severity gate / manual gate</CardSubtitle>
+            <CardSubtitle>{text("来源共识 / 严重度门槛 / 人工门槛")}</CardSubtitle>
           </div>
           {event.requiresManualConfirmation ? (
             <AlertTriangle className="w-4 h-4 text-brand-orange" />
