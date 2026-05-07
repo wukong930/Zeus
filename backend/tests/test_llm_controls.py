@@ -4,10 +4,10 @@ from fastapi.testclient import TestClient
 
 from app.core.database import get_db
 from app.main import create_app
-from app.models.llm_cache import LLMCache
-from app.services.llm.budget_guard import month_bounds
+from app.models.llm_cache import LLMCache, LLMBudget
+from app.services.llm.budget_guard import add_budget_spend, month_bounds
 from app.services.llm.cache import get_cached_completion, llm_cache_key, store_cached_completion
-from app.services.llm.cost_tracker import LLMUsageSummary, estimate_cost_usd
+from app.services.llm.cost_tracker import LLMUsageSummary, estimate_cost_usd, record_llm_usage
 from app.services.llm.types import LLMCompletionResult, LLMUsage
 
 
@@ -205,6 +205,47 @@ async def test_store_cached_completion_rolls_back_lookup_failure() -> None:
     assert row is None
     assert session.rollback_count == 1
     assert session.flush_count == 0
+
+
+async def test_record_llm_usage_rolls_back_flush_failure() -> None:
+    session = FakeSession(fail_flush=True)
+
+    row = await record_llm_usage(
+        session,  # type: ignore[arg-type]
+        module="alert_agent",
+        provider="xai",
+        model="grok-4.3",
+        input_tokens=10,
+        output_tokens=4,
+    )
+
+    assert row is None
+    assert session.flush_count == 1
+    assert session.rollback_count == 1
+
+
+async def test_add_budget_spend_rolls_back_flush_failure() -> None:
+    now = datetime(2026, 5, 5, tzinfo=timezone.utc)
+    budget = LLMBudget(
+        module="alert_agent",
+        monthly_budget_usd=10.0,
+        current_spend_usd=1.0,
+        period_start=date(2026, 5, 1),
+        period_end=date(2026, 6, 1),
+        status="active",
+    )
+    session = FakeSession(budget, fail_flush=True)
+
+    await add_budget_spend(
+        session,  # type: ignore[arg-type]
+        module="alert_agent",
+        amount_usd=0.25,
+        as_of=now,
+    )
+
+    assert session.scalars_count == 1
+    assert session.flush_count == 1
+    assert session.rollback_count == 1
 
 
 def test_month_bounds_returns_next_month_exclusive_end() -> None:

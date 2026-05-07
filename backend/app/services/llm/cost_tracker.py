@@ -4,6 +4,7 @@ from datetime import date, datetime, timezone
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.database import rollback_if_possible
 from app.models.llm_cache import LLMUsageLog
 
 
@@ -34,24 +35,28 @@ async def record_llm_usage(
 ) -> LLMUsageLog | None:
     if session is None:
         return None
-    row = LLMUsageLog(
-        module=module,
-        provider=provider,
-        model=model,
-        input_tokens=max(0, input_tokens),
-        output_tokens=max(0, output_tokens),
-        estimated_cost_usd=(
-            estimate_cost_usd(model, input_tokens, output_tokens)
-            if estimated_cost_usd is None
-            else estimated_cost_usd
-        ),
-        cache_hit=cache_hit,
-        status=status,
-        error=error,
-    )
-    session.add(row)
-    await session.flush()
-    return row
+    try:
+        row = LLMUsageLog(
+            module=module,
+            provider=provider,
+            model=model,
+            input_tokens=max(0, input_tokens),
+            output_tokens=max(0, output_tokens),
+            estimated_cost_usd=(
+                estimate_cost_usd(model, input_tokens, output_tokens)
+                if estimated_cost_usd is None
+                else estimated_cost_usd
+            ),
+            cache_hit=cache_hit,
+            status=status,
+            error=error,
+        )
+        session.add(row)
+        await session.flush()
+        return row
+    except Exception:
+        await rollback_if_possible(session)
+        return None
 
 
 async def monthly_usage_summary(

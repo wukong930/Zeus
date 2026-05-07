@@ -93,9 +93,12 @@ async def add_budget_spend(
         return
     if row is None:
         return
-    row.current_spend_usd = float(row.current_spend_usd or 0) + amount_usd
-    row.updated_at = effective_at
-    await session.flush()
+    try:
+        row.current_spend_usd = float(row.current_spend_usd or 0) + amount_usd
+        row.updated_at = effective_at
+        await session.flush()
+    except Exception:
+        await rollback_if_possible(session)
 
 
 def month_bounds(value: date) -> tuple[date, date]:
