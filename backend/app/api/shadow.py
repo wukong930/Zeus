@@ -1,9 +1,11 @@
+import json
+import math
 from datetime import datetime
 from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import Field
+from pydantic import Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -24,13 +26,86 @@ from app.services.shadow.runner import create_shadow_run, stop_shadow_run
 
 router = APIRouter(prefix="/api/shadow", tags=["shadow"])
 
+MAX_SHADOW_CONFIG_TOP_LEVEL_KEYS = 32
+MAX_SHADOW_CONFIG_OBJECT_KEYS = 64
+MAX_SHADOW_CONFIG_LIST_ITEMS = 80
+MAX_SHADOW_CONFIG_DEPTH = 6
+MAX_SHADOW_CONFIG_NODES = 300
+MAX_SHADOW_CONFIG_BYTES = 16_384
+MAX_SHADOW_CONFIG_KEY_LENGTH = 80
+MAX_SHADOW_CONFIG_STRING_LENGTH = 500
+
 
 class ShadowRunCreate(StrictInputModel):
     name: str = Field(min_length=1, max_length=120)
     algorithm_version: str = Field(min_length=1, max_length=80)
-    config_diff: dict[str, Any] = Field(default_factory=dict)
-    created_by: str | None = None
-    notes: str | None = None
+    config_diff: dict[str, Any] = Field(
+        default_factory=dict,
+        max_length=MAX_SHADOW_CONFIG_TOP_LEVEL_KEYS,
+    )
+    created_by: str | None = Field(default=None, max_length=80)
+    notes: str | None = Field(default=None, max_length=4000)
+
+    @field_validator("config_diff")
+    @classmethod
+    def validate_config_diff(cls, value: dict[str, Any]) -> dict[str, Any]:
+        _validate_json_config_shape(value)
+        try:
+            encoded = json.dumps(
+                value,
+                allow_nan=False,
+                ensure_ascii=False,
+                separators=(",", ":"),
+                sort_keys=True,
+            )
+        except (TypeError, ValueError) as exc:
+            raise ValueError("config_diff must be JSON serializable") from exc
+        if len(encoded.encode("utf-8")) > MAX_SHADOW_CONFIG_BYTES:
+            raise ValueError(f"config_diff must be at most {MAX_SHADOW_CONFIG_BYTES} bytes")
+        return value
+
+
+def _validate_json_config_shape(value: Any, *, depth: int = 0, nodes: int = 0) -> int:
+    if depth > MAX_SHADOW_CONFIG_DEPTH:
+        raise ValueError(f"config_diff nesting cannot exceed {MAX_SHADOW_CONFIG_DEPTH} levels")
+    nodes += 1
+    if nodes > MAX_SHADOW_CONFIG_NODES:
+        raise ValueError(f"config_diff can include at most {MAX_SHADOW_CONFIG_NODES} nodes")
+    if isinstance(value, dict):
+        if len(value) > MAX_SHADOW_CONFIG_OBJECT_KEYS:
+            raise ValueError(
+                f"config_diff objects can include at most {MAX_SHADOW_CONFIG_OBJECT_KEYS} keys"
+            )
+        for key, item in value.items():
+            if not isinstance(key, str) or not key.strip():
+                raise ValueError("config_diff keys must be non-empty strings")
+            if len(key) > MAX_SHADOW_CONFIG_KEY_LENGTH:
+                raise ValueError(
+                    f"config_diff keys can be at most {MAX_SHADOW_CONFIG_KEY_LENGTH} characters"
+                )
+            nodes = _validate_json_config_shape(item, depth=depth + 1, nodes=nodes)
+        return nodes
+    if isinstance(value, list):
+        if len(value) > MAX_SHADOW_CONFIG_LIST_ITEMS:
+            raise ValueError(
+                f"config_diff lists can include at most {MAX_SHADOW_CONFIG_LIST_ITEMS} items"
+            )
+        for item in value:
+            nodes = _validate_json_config_shape(item, depth=depth + 1, nodes=nodes)
+        return nodes
+    if isinstance(value, str):
+        if len(value) > MAX_SHADOW_CONFIG_STRING_LENGTH:
+            raise ValueError(
+                f"config_diff strings can be at most {MAX_SHADOW_CONFIG_STRING_LENGTH} characters"
+            )
+        return nodes
+    if value is None or isinstance(value, (bool, int)):
+        return nodes
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            raise ValueError("config_diff numeric values must be finite")
+        return nodes
+    raise ValueError("config_diff values must be JSON primitives, objects, or lists")
 
 
 @router.get("/applications/initial")

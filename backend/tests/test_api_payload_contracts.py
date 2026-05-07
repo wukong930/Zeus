@@ -52,3 +52,70 @@ def test_local_api_write_payloads_reject_unknown_fields() -> None:
     for schema, payload in cases:
         with pytest.raises(ValidationError):
             schema.model_validate(payload)
+
+
+def test_shadow_run_payload_rejects_oversized_config_diff() -> None:
+    with pytest.raises(ValidationError):
+        ShadowRunCreate.model_validate(
+            {
+                "name": "threshold shadow",
+                "algorithm_version": "phase9",
+                "config_diff": {f"key_{index}": index for index in range(33)},
+            }
+        )
+
+
+def test_shadow_run_payload_rejects_deep_config_diff() -> None:
+    with pytest.raises(ValidationError):
+        ShadowRunCreate.model_validate(
+            {
+                "name": "threshold shadow",
+                "algorithm_version": "phase9",
+                "config_diff": {
+                    "nested": {
+                        "a": {
+                            "b": {
+                                "c": {
+                                    "d": {
+                                        "e": {
+                                            "f": "too deep",
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+            }
+        )
+
+
+def test_shadow_run_payload_rejects_non_json_config_values() -> None:
+    with pytest.raises(ValidationError):
+        ShadowRunCreate.model_validate(
+            {
+                "name": "threshold shadow",
+                "algorithm_version": "phase9",
+                "config_diff": {"bad": object()},
+            }
+        )
+
+
+def test_shadow_run_payload_bounds_database_sized_text_fields() -> None:
+    with pytest.raises(ValidationError):
+        ShadowRunCreate.model_validate(
+            {
+                "name": "threshold shadow",
+                "algorithm_version": "phase9",
+                "created_by": "x" * 81,
+            }
+        )
+
+    with pytest.raises(ValidationError):
+        ShadowRunCreate.model_validate(
+            {
+                "name": "threshold shadow",
+                "algorithm_version": "phase9",
+                "notes": "x" * 4001,
+            }
+        )
