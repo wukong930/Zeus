@@ -227,6 +227,90 @@ def test_stress_api_marks_symbols_without_scenario_coverage(monkeypatch) -> None
     assert payload["unavailable_sections"] == ["stress_uncovered_symbols:NR2509"]
 
 
+def test_custom_stress_api_normalizes_shock_symbols(monkeypatch) -> None:
+    client = _risk_api_client(
+        monkeypatch,
+        positions=[_position()],
+        market_data={},
+    )
+
+    response = client.post(
+        "/api/risk/stress",
+        json={
+            "scenarios": [
+                {
+                    "name": "rb pullback",
+                    "description": "lowercase contract shock should match RB legs",
+                    "shocks": {"rb2506": -0.1},
+                }
+            ]
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["data"][0]["portfolio_pnl"] == -3500
+    assert payload["degraded"] is False
+
+
+def test_custom_stress_api_rejects_empty_scenarios(monkeypatch) -> None:
+    client = _risk_api_client(monkeypatch, positions=[], market_data={})
+
+    response = client.post("/api/risk/stress", json={"scenarios": []})
+
+    assert response.status_code == 422
+
+
+def test_custom_stress_api_rejects_too_many_scenarios(monkeypatch) -> None:
+    client = _risk_api_client(monkeypatch, positions=[], market_data={})
+    scenarios = [
+        {"name": f"s{i}", "description": "shock", "shocks": {"RB": -0.01}}
+        for i in range(21)
+    ]
+
+    response = client.post("/api/risk/stress", json={"scenarios": scenarios})
+
+    assert response.status_code == 422
+
+
+def test_custom_stress_api_rejects_too_many_shocks(monkeypatch) -> None:
+    client = _risk_api_client(monkeypatch, positions=[], market_data={})
+
+    response = client.post(
+        "/api/risk/stress",
+        json={
+            "scenarios": [
+                {
+                    "name": "wide shock",
+                    "description": "too many shocked symbols",
+                    "shocks": {f"S{i}": -0.01 for i in range(41)},
+                }
+            ]
+        },
+    )
+
+    assert response.status_code == 422
+
+
+def test_custom_stress_api_rejects_unbounded_shock(monkeypatch) -> None:
+    client = _risk_api_client(monkeypatch, positions=[], market_data={})
+
+    response = client.post(
+        "/api/risk/stress",
+        json={
+            "scenarios": [
+                {
+                    "name": "bad shock",
+                    "description": "outside stress bounds",
+                    "shocks": {"RB": -1.5},
+                }
+            ]
+        },
+    )
+
+    assert response.status_code == 422
+
+
 def test_correlation_api_marks_missing_series_degraded(monkeypatch) -> None:
     client = _risk_api_client(
         monkeypatch,

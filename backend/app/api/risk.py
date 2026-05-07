@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import math
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import Field
+from pydantic import Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -21,17 +22,39 @@ router = APIRouter(prefix="/api/risk", tags=["risk"])
 VAR_MIN_MARKET_POINTS = 11
 CORRELATION_MIN_MARKET_POINTS = 4
 MAX_CORRELATION_SYMBOLS = 40
+MAX_CUSTOM_STRESS_SCENARIOS = 20
+MAX_CUSTOM_STRESS_SHOCKS = 40
 
 
 class StressScenarioPayload(StrictInputModel):
-    name: str
-    description: str
-    shocks: dict[str, float]
+    name: str = Field(min_length=1, max_length=80)
+    description: str = Field(min_length=1, max_length=240)
+    shocks: dict[str, float] = Field(min_length=1, max_length=MAX_CUSTOM_STRESS_SHOCKS)
     historical: bool = False
+
+    @field_validator("shocks")
+    @classmethod
+    def validate_shocks(cls, value: dict[str, float]) -> dict[str, float]:
+        cleaned: dict[str, float] = {}
+        for symbol, shock in value.items():
+            normalized_symbol = symbol_prefix(str(symbol).strip())
+            if not normalized_symbol:
+                continue
+            normalized_shock = float(shock)
+            if not math.isfinite(normalized_shock) or normalized_shock < -1.0 or normalized_shock > 2.0:
+                raise ValueError("shock values must be finite numbers between -1.0 and 2.0")
+            cleaned[normalized_symbol] = normalized_shock
+        if not cleaned:
+            raise ValueError("at least one non-empty shock symbol is required")
+        return cleaned
 
 
 class StressRequest(StrictInputModel):
-    scenarios: list[StressScenarioPayload] | None = Field(default=None)
+    scenarios: list[StressScenarioPayload] | None = Field(
+        default=None,
+        min_length=1,
+        max_length=MAX_CUSTOM_STRESS_SCENARIOS,
+    )
 
 
 @router.get("/var")
