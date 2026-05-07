@@ -43,6 +43,9 @@ export default function SettingsPage() {
   const [savingNotification, setSavingNotification] = useState<NotificationKey | null>(null);
   const readySources = dataSources.filter((source) => source.status === "ready").length;
   const degradedJobs = scheduler?.health.degraded_jobs.length ?? 0;
+  const warningJobs = scheduler?.health.warning_jobs.length ?? 0;
+  const unconfiguredJobs = scheduler?.health.unconfigured_jobs.length ?? 0;
+  const schedulerIssues = degradedJobs + warningJobs + unconfiguredJobs;
   const enabledJobs = scheduler?.health.enabled_jobs ?? 0;
   const llmUsageCaption = llmUsage
     ? `${llmUsage.calls} ${text("本月调用")}`
@@ -134,7 +137,7 @@ export default function SettingsPage() {
 
       <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-4">
         <MetricTile label={text("数据源")} value={`${readySources}/${dataSources.length || 6}`} caption={text("就绪")} icon={RadioTower} tone="cyan" />
-        <MetricTile label={text("调度任务")} value={`${enabledJobs}`} caption={degradedJobs ? `${degradedJobs} ${text("异常")}` : text("健康")} icon={ShieldCheck} tone={degradedJobs ? "warning" : "up"} />
+        <MetricTile label={text("调度任务")} value={`${enabledJobs}`} caption={schedulerIssues ? `${schedulerIssues} ${text("需要关注")}` : text("健康")} icon={ShieldCheck} tone={schedulerIssues ? "warning" : "up"} />
         <MetricTile
           label={text("LLM 月度成本")}
           value={formatUsd(llmUsage?.estimated_cost_usd)}
@@ -189,7 +192,7 @@ export default function SettingsPage() {
             ))}
             {scheduler && scheduler.health.unconfigured_jobs.length > 0 && (
               <div className="rounded-sm border border-border-subtle bg-bg-base px-3 py-2 text-caption text-text-muted shadow-inner-panel">
-                {text("未启用")}：{scheduler.health.unconfigured_jobs.join(", ")}
+                {text("未配置")}：{scheduler.health.unconfigured_jobs.join(", ")}
               </div>
             )}
           </div>
@@ -483,6 +486,7 @@ function statusLabel(value: string) {
     ready: "就绪",
     ok: "正常",
     success: "成功",
+    warning: "注意",
     disabled: "停用",
     degraded: "降级",
     skipped: "跳过",

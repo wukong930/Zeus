@@ -131,7 +131,9 @@ async function fetchHeartbeatRuntimeState(): Promise<HeartbeatRuntimeState> {
     (result) => result.status === "rejected"
   ).length;
   const schedulerDegraded = Boolean(
-    scheduler?.health.degraded_jobs.length || scheduler?.health.unconfigured_jobs.length
+    scheduler?.health.degraded_jobs.length ||
+      scheduler?.health.warning_jobs.length ||
+      scheduler?.health.unconfigured_jobs.length
   );
 
   return {

@@ -88,17 +88,22 @@ class SchedulerManager:
         jobs = list(self._jobs.values())
         last_runs = [job.last_run for job in jobs if job.last_run is not None]
         last_activity = max(last_runs).isoformat() if last_runs else None
+        statuses = {
+            job.id: job.status(handler_registered=job.id in self._handlers)
+            for job in jobs
+        }
         return {
             "total_jobs": len(jobs),
             "enabled_jobs": sum(1 for job in jobs if job.enabled and job.id in self._handlers),
-            "degraded_jobs": [job.id for job in jobs if job.consecutive_failures >= 3],
-            "unconfigured_jobs": [job.id for job in jobs if job.id not in self._handlers],
+            "degraded_jobs": [job.id for job in jobs if statuses[job.id] == "degraded"],
+            "warning_jobs": [job.id for job in jobs if statuses[job.id] == "warning"],
+            "unconfigured_jobs": [job.id for job in jobs if statuses[job.id] == "unconfigured"],
             "last_activity": last_activity,
             "jobs": [
                 {
                     "id": job.id,
                     "name": job.name,
-                    "status": job.status(handler_registered=job.id in self._handlers),
+                    "status": statuses[job.id],
                     "last_run": job.last_run.isoformat() if job.last_run else None,
                     "last_error": job.last_error if job.consecutive_failures > 0 else None,
                 }

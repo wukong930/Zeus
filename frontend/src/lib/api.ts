@@ -242,6 +242,7 @@ export interface SchedulerHealth {
   total_jobs: number;
   enabled_jobs: number;
   degraded_jobs: string[];
+  warning_jobs: string[];
   unconfigured_jobs: string[];
   last_activity: string | null;
   jobs: Pick<SchedulerJobStatus, "id" | "name" | "status" | "last_run" | "last_error">[];

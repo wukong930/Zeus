@@ -117,6 +117,7 @@ const EN: Record<string, string> = {
   "就绪": "Ready",
   "异常": "degraded",
   "注意": "Attention",
+  "需要关注": "Needs attention",
   "无漂移数据": "No Drift Data",
   "不可用": "Unavailable",
   "接口降级": "API Degraded",

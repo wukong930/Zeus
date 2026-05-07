@@ -181,6 +181,7 @@ async def test_scheduler_marks_degraded_payload_as_warning() -> None:
     assert result["success"] is True
     assert manager.list_jobs()[0]["last_result"] == "degraded"
     assert manager.list_jobs()[0]["status"] == "warning"
+    assert manager.health_summary()["warning_jobs"] == ["test"]
 
 
 def test_scheduler_rejects_bad_cron() -> None:
@@ -218,6 +219,7 @@ def test_scheduler_reports_missing_handlers_as_unconfigured() -> None:
 
     assert jobs[0]["status"] == "unconfigured"
     assert health["enabled_jobs"] == 0
+    assert health["warning_jobs"] == []
     assert health["unconfigured_jobs"] == ["planned"]
     assert manager.start_job("planned") is False
 
