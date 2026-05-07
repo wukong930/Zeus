@@ -1,12 +1,13 @@
 from typing import Any
 
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, StrictBool
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.models.alert_agent import AlertAgentConfig
+from app.schemas.common import StrictInputModel
 from app.services.llm.registry import get_active_llm_config, get_env_llm_config
 from app.services.llm.types import DEFAULT_MODELS, LLMProviderConfig, LLMProviderName
 from app.services.alert_agent.dedup import (
@@ -49,13 +50,11 @@ class NotificationSettingsRead(BaseModel):
     source: str
 
 
-class NotificationSettingsUpdate(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    realtime_sse: bool | None = None
-    feishu_webhook: bool | None = None
-    email: bool | None = None
-    custom_webhook: bool | None = None
+class NotificationSettingsUpdate(StrictInputModel):
+    realtime_sse: StrictBool | None = None
+    feishu_webhook: StrictBool | None = None
+    email: StrictBool | None = None
+    custom_webhook: StrictBool | None = None
 
 
 class LLMProviderSettingsRead(BaseModel):
