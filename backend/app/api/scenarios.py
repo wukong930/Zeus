@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from dataclasses import asdict, replace
 from typing import Any
 
@@ -21,10 +22,12 @@ from app.services.scenarios import (
 
 router = APIRouter(prefix="/api/scenarios", tags=["scenarios"])
 
+MAX_SCENARIO_SHOCKS = 40
+
 
 class ScenarioSimulationPayload(StrictInputModel):
     target_symbol: str = Field(min_length=1, max_length=20)
-    shocks: dict[str, float] = Field(min_length=1)
+    shocks: dict[str, float] = Field(min_length=1, max_length=MAX_SCENARIO_SHOCKS)
     base_price: float | None = Field(default=None, gt=0)
     days: int = Field(default=20, ge=1, le=252)
     simulations: int = Field(default=1000, ge=100, le=10000)
@@ -33,17 +36,30 @@ class ScenarioSimulationPayload(StrictInputModel):
     seed: int = Field(default=7, ge=0)
     max_depth: int = Field(default=3, ge=1, le=5)
 
+    @field_validator("target_symbol")
+    @classmethod
+    def normalize_target_symbol(cls, value: str) -> str:
+        normalized_symbol = symbol_prefix(str(value).strip())
+        if not normalized_symbol:
+            raise ValueError("target_symbol must include a non-empty symbol")
+        return normalized_symbol
+
     @field_validator("shocks")
     @classmethod
     def validate_shocks(cls, value: dict[str, float]) -> dict[str, float]:
         cleaned: dict[str, float] = {}
         for symbol, shock in value.items():
-            normalized_symbol = str(symbol).strip().upper()
+            normalized_symbol = symbol_prefix(str(symbol).strip())
             if not normalized_symbol:
                 continue
-            if shock < -0.8 or shock > 0.8:
-                raise ValueError("shock values must be between -0.8 and 0.8")
-            cleaned[normalized_symbol] = float(shock)
+            normalized_shock = float(shock)
+            if (
+                not math.isfinite(normalized_shock)
+                or normalized_shock < -0.8
+                or normalized_shock > 0.8
+            ):
+                raise ValueError("shock values must be finite numbers between -0.8 and 0.8")
+            cleaned[normalized_symbol] = normalized_shock
         if not cleaned:
             raise ValueError("at least one non-empty shock symbol is required")
         return cleaned

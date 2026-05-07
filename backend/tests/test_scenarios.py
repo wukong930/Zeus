@@ -4,6 +4,7 @@ import json
 
 from fastapi.testclient import TestClient
 
+from app.api.scenarios import ScenarioSimulationPayload
 from app.core.database import get_db
 from app.core.events import ZeusEvent
 from app.main import create_app
@@ -111,6 +112,20 @@ def test_simulator_marks_static_default_base_price_as_degraded() -> None:
     assert payload["unavailable_sections"] == ["market_price_unavailable"]
 
 
+def test_scenario_payload_normalizes_contract_symbols() -> None:
+    payload = ScenarioSimulationPayload(
+        target_symbol=" rb2506 ",
+        shocks={"i2509": 0.10, " j2509 ": -0.05},
+        base_price=3250,
+        simulations=500,
+    )
+
+    request = payload.to_service_request()
+
+    assert request.target_symbol == "RB"
+    assert request.shocks == {"I": 0.10, "J": -0.05}
+
+
 async def test_llm_narrative_enrichment_updates_report_text() -> None:
     async def fake_completer(**_kwargs):
         return LLMCompletionResult(
@@ -176,6 +191,61 @@ def test_scenario_simulation_api_returns_report() -> None:
     assert payload["monte_carlo"]["terminal_distribution"]["p95"] > payload["monte_carlo"][
         "terminal_distribution"
     ]["p5"]
+
+
+def test_scenario_simulation_api_normalizes_contract_symbol_inputs() -> None:
+    client = TestClient(create_app())
+
+    response = client.post(
+        "/api/scenarios/simulate",
+        json={
+            "target_symbol": "rb2506",
+            "base_price": 3250,
+            "shocks": {"i2509": 0.10, "j2509": -0.05},
+            "days": 20,
+            "simulations": 500,
+            "volatility_pct": 0.018,
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["target_symbol"] == "RB"
+    assert payload["request"]["target_symbol"] == "RB"
+    assert payload["what_if"]["shocks"] == {"I": 0.10, "J": -0.05}
+    assert payload["what_if"]["impacts"]
+
+
+def test_scenario_simulation_api_rejects_too_many_shocks() -> None:
+    client = TestClient(create_app())
+
+    response = client.post(
+        "/api/scenarios/simulate",
+        json={
+            "target_symbol": "RB",
+            "base_price": 3250,
+            "shocks": {f"S{i}": 0.01 for i in range(41)},
+            "simulations": 500,
+        },
+    )
+
+    assert response.status_code == 422
+
+
+def test_scenario_simulation_api_rejects_out_of_range_shock() -> None:
+    client = TestClient(create_app())
+
+    response = client.post(
+        "/api/scenarios/simulate",
+        json={
+            "target_symbol": "RB",
+            "base_price": 3250,
+            "shocks": {"I": 1.5},
+            "simulations": 500,
+        },
+    )
+
+    assert response.status_code == 422
 
 
 def test_scenario_simulation_api_uses_runtime_market_price(monkeypatch) -> None:
