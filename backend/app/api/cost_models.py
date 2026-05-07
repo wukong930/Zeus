@@ -22,6 +22,7 @@ from app.services.cost_models.snapshots import (
 )
 
 router = APIRouter(prefix="/api/cost-models", tags=["cost-models"])
+MAX_COST_HISTORY_SYMBOLS = 40
 
 
 @router.get("/quality/ferrous", response_model=CostQualityReportRead)
@@ -157,6 +158,14 @@ def cost_model_payload(payload: dict) -> dict:
 
 
 def _parse_cost_symbols(value: str) -> tuple[str, ...]:
-    return tuple(
+    symbols = tuple(
         dict.fromkeys(symbol.strip().upper() for symbol in value.split(",") if symbol.strip())
     )
+    if not symbols:
+        raise HTTPException(status_code=400, detail="symbols must include at least one value")
+    if len(symbols) > MAX_COST_HISTORY_SYMBOLS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"symbols supports at most {MAX_COST_HISTORY_SYMBOLS} unique values",
+        )
+    return symbols

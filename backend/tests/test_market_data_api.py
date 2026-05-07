@@ -17,6 +17,27 @@ def test_parse_market_symbols_dedupes_and_normalizes() -> None:
     assert _parse_market_symbols(" rb,HC, rb ,,sc ") == ["RB", "HC", "SC"]
 
 
+def test_parse_market_symbols_rejects_empty_after_normalization() -> None:
+    app = create_app()
+    client = TestClient(app)
+
+    response = client.get("/api/market-data/latest?symbols=,,,")
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "symbols must include at least one value"
+
+
+def test_parse_market_symbols_rejects_too_many_unique_values() -> None:
+    app = create_app()
+    client = TestClient(app)
+    symbols = ",".join(f"S{i}" for i in range(51))
+
+    response = client.get(f"/api/market-data/latest?symbols={symbols}")
+
+    assert response.status_code == 400
+    assert "at most 50" in response.json()["detail"]
+
+
 def test_latest_market_data_statement_uses_window_per_symbol() -> None:
     compiled = str(
         _latest_market_data_statement(["RB", "HC"]).compile(

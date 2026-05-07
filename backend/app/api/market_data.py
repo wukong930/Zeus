@@ -12,6 +12,7 @@ from app.services.etl.writers import append_market_data
 from app.services.market_data.pit import get_market_data_pit
 
 router = APIRouter(prefix="/api/market-data", tags=["market-data"])
+MAX_BATCH_SYMBOLS = 50
 
 
 @router.get("", response_model=list[MarketDataRead])
@@ -189,6 +190,14 @@ def _recent_market_data_statement(symbols: list[str], limit: int):
 
 
 def _parse_market_symbols(value: str) -> list[str]:
-    return list(
+    symbols = list(
         dict.fromkeys(symbol.strip().upper() for symbol in value.split(",") if symbol.strip())
     )
+    if not symbols:
+        raise HTTPException(status_code=400, detail="symbols must include at least one value")
+    if len(symbols) > MAX_BATCH_SYMBOLS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"symbols supports at most {MAX_BATCH_SYMBOLS} unique values",
+        )
+    return symbols

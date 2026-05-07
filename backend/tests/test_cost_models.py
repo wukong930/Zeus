@@ -368,6 +368,27 @@ def test_cost_histories_api_batches_requested_symbols(monkeypatch) -> None:
     assert set(response.json()) == {"RB", "HC"}
 
 
+def test_parse_cost_symbols_rejects_empty_after_normalization() -> None:
+    app = create_app()
+    client = TestClient(app)
+
+    response = client.get("/api/cost-models/histories?symbols=,,,")
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "symbols must include at least one value"
+
+
+def test_parse_cost_symbols_rejects_too_many_unique_values() -> None:
+    app = create_app()
+    client = TestClient(app)
+    symbols = ",".join(f"S{i}" for i in range(41))
+
+    response = client.get(f"/api/cost-models/histories?symbols={symbols}")
+
+    assert response.status_code == 400
+    assert "at most 40" in response.json()["detail"]
+
+
 def cost_snapshot_row(symbol: str, snapshot_date: date) -> CostSnapshot:
     return CostSnapshot(
         id=uuid4(),
