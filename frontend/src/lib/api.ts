@@ -387,6 +387,10 @@ export interface BacktestPathMetrics {
 
 export interface BacktestQualitySummary {
   as_of: string;
+  source: string;
+  sample_size: number;
+  degraded: boolean;
+  unavailable_sections: string[];
   walk_forward: {
     training_years: number;
     test_months: number;

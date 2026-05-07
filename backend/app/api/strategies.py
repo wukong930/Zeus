@@ -3,10 +3,11 @@ from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.models.recommendation import Recommendation
 from app.models.strategy import Strategy
 from app.schemas.common import StrategyCreate, StrategyRead
 from app.services.backtest import (
@@ -54,25 +55,39 @@ async def get_backtest_quality_summary(
         active_symbols=active_symbols,
         as_of=effective_as_of,
     )
-    returns = [0.008, -0.004, 0.011, -0.018, 0.006, 0.004, -0.006, 0.014, -0.003, 0.007]
+    outcomes = await load_runtime_recommendation_outcomes(session)
+    returns = [item["return_pct"] for item in outcomes]
     observations = [
-        RegimeObservation("range_low_vol", 0.006),
-        RegimeObservation("range_low_vol", -0.003),
-        RegimeObservation("range_low_vol", 0.004),
-        RegimeObservation("range_high_vol", -0.018),
-        RegimeObservation("range_high_vol", 0.014),
-        RegimeObservation("trend_up_low_vol", 0.011),
-        RegimeObservation("trend_up_low_vol", 0.008),
-        RegimeObservation("trend_down_low_vol", -0.006),
+        RegimeObservation(str(item["regime"] or "unknown"), item["return_pct"])
+        for item in outcomes
     ]
+    degraded_reasons = []
+    if not returns:
+        degraded_reasons.append("no_completed_recommendation_outcomes")
+    elif len(returns) < 5:
+        degraded_reasons.append("insufficient_completed_recommendation_outcomes")
+    if not universe.valid:
+        degraded_reasons.append("invalid_point_in_time_universe")
     return {
         "as_of": effective_as_of.isoformat(),
+        "source": "runtime_recommendations",
+        "sample_size": len(returns),
+        "degraded": bool(degraded_reasons),
+        "unavailable_sections": degraded_reasons,
         "walk_forward": walk_forward_defaults(),
         "regime_profile": [item.to_dict() for item in build_regime_profile(observations)],
         "path_metrics": calculate_path_metrics(
             returns,
-            mae_values=[-0.006, -0.012, -0.004, -0.018, -0.009],
-            mfe_values=[0.012, 0.024, 0.008, 0.030, 0.016],
+            mae_values=[
+                item["mae_pct"]
+                for item in outcomes
+                if item["mae_pct"] is not None
+            ],
+            mfe_values=[
+                item["mfe_pct"]
+                for item in outcomes
+                if item["mfe_pct"] is not None
+            ],
         ).to_dict(),
         "universe": universe.to_dict(),
         "guardrails": {
@@ -82,6 +97,87 @@ async def get_backtest_quality_summary(
             "decision_grade_required": True,
         },
     }
+
+
+async def load_runtime_recommendation_outcomes(
+    session: AsyncSession,
+    *,
+    limit: int = 500,
+) -> list[dict[str, Any]]:
+    rows = (
+        await session.scalars(
+            select(Recommendation)
+            .where(
+                or_(
+                    Recommendation.status == "completed",
+                    Recommendation.pnl_realized.is_not(None),
+                    Recommendation.actual_exit.is_not(None),
+                )
+            )
+            .order_by(Recommendation.created_at.desc())
+            .limit(limit)
+        )
+    ).all()
+    outcomes = [recommendation_outcome(row) for row in rows]
+    return [item for item in outcomes if item is not None]
+
+
+def recommendation_outcome(row: Recommendation) -> dict[str, Any] | None:
+    entry = positive_float(row.actual_entry, row.entry_price)
+    exit_value = positive_float(row.actual_exit)
+    if entry is not None and exit_value is not None:
+        direction = primary_recommendation_direction(row)
+        move = exit_value - entry
+        signed_move = -move if direction == "short" else move
+        return_pct = signed_move / abs(entry)
+    elif row.pnl_realized is not None and row.margin_required:
+        return_pct = float(row.pnl_realized) / abs(float(row.margin_required))
+    else:
+        return None
+
+    return {
+        "return_pct": return_pct,
+        "regime": recommendation_regime(row),
+        "mae_pct": excursion_pct(row.mae, entry),
+        "mfe_pct": excursion_pct(row.mfe, entry),
+    }
+
+
+def recommendation_regime(row: Recommendation) -> str:
+    summary = row.backtest_summary or {}
+    for key in ("regime", "market_regime", "state"):
+        value = summary.get(key)
+        if value:
+            return str(value)
+    return "unknown"
+
+
+def primary_recommendation_direction(row: Recommendation) -> str:
+    for leg in row.legs or []:
+        if not isinstance(leg, dict):
+            continue
+        direction = str(leg.get("direction") or "long").lower()
+        if direction in {"short", "sell"}:
+            return "short"
+        if direction in {"long", "buy"}:
+            return "long"
+    return "long"
+
+
+def positive_float(*values: float | None) -> float | None:
+    for value in values:
+        if value is None:
+            continue
+        number = float(value)
+        if number > 0:
+            return number
+    return None
+
+
+def excursion_pct(value: float | None, entry: float | None) -> float | None:
+    if value is None or entry is None or entry == 0:
+        return None
+    return float(value) / abs(entry)
 
 
 @router.get("/{strategy_id}", response_model=StrategyRead)

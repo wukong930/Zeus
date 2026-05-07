@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Activity, Gauge, GitBranch, ShieldCheck, Waves } from "lucide-react";
 import { Badge } from "@/components/Badge";
 import { Card, CardHeader, CardSubtitle, CardTitle } from "@/components/Card";
+import { DataSourceBadge, type DataSourceState } from "@/components/DataSourceBadge";
 import { MetricTile } from "@/components/MetricTile";
 import { fetchBacktestQualitySummary, type BacktestQualitySummary } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -13,6 +14,13 @@ export default function StrategyForgePage() {
   const { text } = useI18n();
   const [summary, setSummary] = useState<BacktestQualitySummary | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const source: DataSourceState = error
+    ? "fallback"
+    : summary?.degraded
+      ? "partial"
+      : summary
+        ? "api"
+        : "loading";
 
   useEffect(() => {
     let mounted = true;
@@ -30,9 +38,12 @@ export default function StrategyForgePage() {
 
   return (
     <div className="px-8 py-6 space-y-6 animate-fade-in">
-      <div>
-        <h1 className="text-h1 text-text-primary">{text("Strategy Forge")}</h1>
-        <p className="text-sm text-text-secondary mt-1">{text("策略研究、回测、参数调优 · vectorbt + DoWhy")}</p>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h1 className="text-h1 text-text-primary">{text("Strategy Forge")}</h1>
+          <p className="text-sm text-text-secondary mt-1">{text("策略研究、回测、参数调优 · vectorbt + DoWhy")}</p>
+        </div>
+        <DataSourceBadge state={source} />
       </div>
 
       <div className="grid grid-cols-12 gap-5">
@@ -40,9 +51,9 @@ export default function StrategyForgePage() {
           className="col-span-12 md:col-span-6 xl:col-span-3"
           label="Calibration"
           value={summary?.guardrails.calibration_strategy.toUpperCase() ?? "-"}
-          caption={summary?.guardrails.decision_grade_required ? "decision-grade" : "diagnostic"}
+          caption={summary?.guardrails.decision_grade_required ? "decision-grade gate" : "diagnostic"}
           icon={ShieldCheck}
-          tone="up"
+          tone={summary?.degraded ? "warning" : "up"}
         />
         <MetricTile
           className="col-span-12 md:col-span-6 xl:col-span-3"
@@ -76,6 +87,22 @@ export default function StrategyForgePage() {
         </Card>
       )}
 
+      {summary?.degraded && (
+        <Card variant="data" className="border-brand-orange/35">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <div className="text-sm font-medium text-brand-orange">{text("回测质量样本不足")}</div>
+              <div className="mt-1 text-sm text-text-secondary">
+                {text("Strategy Forge 当前只使用已完成建议的真实归因结果；缺少足够样本时不会展示硬编码回测表现。")}
+              </div>
+            </div>
+            <Badge variant="orange">
+              {summary.sample_size} {text("样本")}
+            </Badge>
+          </div>
+        </Card>
+      )}
+
       <div className="grid grid-cols-12 gap-5">
         <Card variant="data" className="col-span-12 xl:col-span-7">
           <CardHeader>
@@ -106,6 +133,13 @@ export default function StrategyForgePage() {
                     <td className="px-3 py-2 text-right text-data-down">{pct(row.max_drawdown)}</td>
                   </tr>
                 ))}
+                {summary && summary.regime_profile.length === 0 && (
+                  <tr>
+                    <td colSpan={5} className="px-3 py-8 text-center text-sm text-text-muted">
+                      {text("暂无已完成建议样本")}
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>

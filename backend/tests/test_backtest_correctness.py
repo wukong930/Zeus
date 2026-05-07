@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timezone
+from uuid import uuid4
 
 from fastapi.testclient import TestClient
 
+from app.api.strategies import recommendation_outcome
 from app.core.database import get_db
 from app.main import create_app
 from app.models.change_review_queue import ChangeReviewQueue
 from app.models.live_divergence_metrics import LiveDivergenceMetric
+from app.models.recommendation import Recommendation
 from app.services.backtest.calibration_replay import (
     CURRENT_WARNING,
     calibration_metadata,
@@ -306,14 +309,34 @@ def test_walk_forward_defaults_generate_reproducible_windows() -> None:
     assert windows[-1].test_end == date(2023, 7, 1)
 
 
-def test_backtest_quality_api_returns_guardrail_summary(monkeypatch) -> None:
+def test_recommendation_outcome_uses_directional_realized_return() -> None:
+    long = _completed_recommendation(
+        actual_entry=100,
+        actual_exit=108,
+        direction="long",
+    )
+    short = _completed_recommendation(
+        actual_entry=100,
+        actual_exit=92,
+        direction="short",
+    )
+
+    assert recommendation_outcome(long)["return_pct"] == 0.08
+    assert recommendation_outcome(short)["return_pct"] == 0.08
+
+
+def test_backtest_quality_api_marks_missing_outcomes_as_degraded(monkeypatch) -> None:
     async def fake_db():
         yield object()
 
     async def fake_universe(_session, *, as_of):
         return ["RB", "HC", "I", "J", "JM", "RU", "NR", "BR"]
 
+    async def fake_outcomes(_session):
+        return []
+
     monkeypatch.setattr("app.api.strategies.pit_commodity_universe", fake_universe)
+    monkeypatch.setattr("app.api.strategies.load_runtime_recommendation_outcomes", fake_outcomes)
     app = create_app()
     app.dependency_overrides[get_db] = fake_db
     client = TestClient(app)
@@ -324,5 +347,65 @@ def test_backtest_quality_api_returns_guardrail_summary(monkeypatch) -> None:
     payload = response.json()
     assert payload["guardrails"]["calibration_strategy"] == "pit"
     assert payload["universe"]["valid"] is True
+    assert payload["source"] == "runtime_recommendations"
+    assert payload["sample_size"] == 0
+    assert payload["degraded"] is True
+    assert payload["unavailable_sections"] == ["no_completed_recommendation_outcomes"]
+    assert payload["regime_profile"] == []
+    assert payload["path_metrics"]["max_drawdown"] == 0
+
+
+def test_backtest_quality_api_uses_runtime_recommendation_outcomes(monkeypatch) -> None:
+    async def fake_db():
+        yield object()
+
+    async def fake_universe(_session, *, as_of):
+        return ["RB", "HC", "I", "J", "JM", "RU", "NR", "BR"]
+
+    async def fake_outcomes(_session):
+        return [
+            {"return_pct": 0.02, "regime": "range", "mae_pct": -0.01, "mfe_pct": 0.03},
+            {"return_pct": -0.01, "regime": "range", "mae_pct": -0.02, "mfe_pct": 0.01},
+            {"return_pct": 0.03, "regime": "trend", "mae_pct": -0.01, "mfe_pct": 0.04},
+            {"return_pct": 0.01, "regime": "trend", "mae_pct": -0.005, "mfe_pct": 0.02},
+            {"return_pct": -0.02, "regime": "trend", "mae_pct": -0.03, "mfe_pct": 0.005},
+        ]
+
+    monkeypatch.setattr("app.api.strategies.pit_commodity_universe", fake_universe)
+    monkeypatch.setattr("app.api.strategies.load_runtime_recommendation_outcomes", fake_outcomes)
+    app = create_app()
+    app.dependency_overrides[get_db] = fake_db
+    client = TestClient(app)
+
+    response = client.get("/api/strategies/backtest-quality?as_of=2026-05-04")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["sample_size"] == 5
+    assert payload["degraded"] is False
     assert payload["regime_profile"]
     assert payload["path_metrics"]["max_drawdown"] < 0
+
+
+def _completed_recommendation(
+    *,
+    actual_entry: float,
+    actual_exit: float,
+    direction: str,
+) -> Recommendation:
+    return Recommendation(
+        id=uuid4(),
+        status="completed",
+        recommended_action="open_spread",
+        legs=[{"asset": "RB", "direction": direction}],
+        priority_score=80,
+        portfolio_fit_score=70,
+        margin_efficiency_score=75,
+        margin_required=10_000,
+        reasoning="completed recommendation",
+        risk_items=[],
+        expires_at=datetime(2026, 5, 5, tzinfo=timezone.utc),
+        actual_entry=actual_entry,
+        actual_exit=actual_exit,
+        backtest_summary={"regime": "range"},
+    )
