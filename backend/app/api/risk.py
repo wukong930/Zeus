@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.models.position import Position
-from app.schemas.common import StrictInputModel
+from app.schemas.common import MAX_INGEST_SYMBOL_LENGTH, StrictInputModel
 from app.services.risk.correlation import build_correlation_matrix
 from app.services.risk.market_data import load_risk_market_data
 from app.services.risk.stress import STRESS_SCENARIOS, run_stress_test, symbol_prefix
@@ -22,6 +22,7 @@ router = APIRouter(prefix="/api/risk", tags=["risk"])
 VAR_MIN_MARKET_POINTS = 11
 CORRELATION_MIN_MARKET_POINTS = 4
 MAX_CORRELATION_SYMBOLS = 40
+MAX_CORRELATION_SYMBOL_QUERY_LENGTH = 1000
 MAX_CUSTOM_STRESS_SCENARIOS = 20
 MAX_CUSTOM_STRESS_SHOCKS = 40
 
@@ -110,7 +111,7 @@ async def run_custom_stress_tests(
 
 @router.get("/correlation")
 async def get_correlation_matrix(
-    symbols: str | None = None,
+    symbols: str | None = Query(default=None, max_length=MAX_CORRELATION_SYMBOL_QUERY_LENGTH),
     window: int = Query(default=60, ge=5, le=252),
     session: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
@@ -184,6 +185,14 @@ def _parse_risk_symbols(value: str, *, allow_empty: bool) -> list[str]:
         raise HTTPException(
             status_code=400,
             detail=f"symbols supports at most {MAX_CORRELATION_SYMBOLS} unique values",
+        )
+    if oversized := [symbol for symbol in symbols if len(symbol) > MAX_INGEST_SYMBOL_LENGTH]:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "symbol entries can be at most "
+                f"{MAX_INGEST_SYMBOL_LENGTH} characters: {','.join(oversized[:3])}"
+            ),
         )
     return symbols
 

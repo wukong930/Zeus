@@ -367,6 +367,24 @@ def test_correlation_api_rejects_too_many_symbols(monkeypatch) -> None:
     assert "at most 40" in response.json()["detail"]
 
 
+def test_correlation_api_rejects_oversized_symbol(monkeypatch) -> None:
+    client = _risk_api_client(monkeypatch, positions=[], market_data={})
+
+    response = client.get(f"/api/risk/correlation?symbols={'X' * 33}&window=5")
+
+    assert response.status_code == 400
+    assert "at most 32" in response.json()["detail"]
+
+
+def test_correlation_api_rejects_oversized_symbol_query(monkeypatch) -> None:
+    client = _risk_api_client(monkeypatch, positions=[], market_data={})
+    symbols = ",".join("RB" for _ in range(600))
+
+    response = client.get(f"/api/risk/correlation?symbols={symbols}&window=5")
+
+    assert response.status_code == 422
+
+
 def _risk_api_client(
     monkeypatch,
     *,
