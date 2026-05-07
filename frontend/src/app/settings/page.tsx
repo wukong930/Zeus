@@ -79,7 +79,7 @@ export default function SettingsPage() {
         setLlmProviderSource("api");
       })
       .catch(() => {
-        if (!mounted) setLlmProviderSource("fallback");
+        if (mounted) setLlmProviderSource("fallback");
       });
     fetchAlertDedupSettings()
       .then((settings) => {
