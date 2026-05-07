@@ -25,6 +25,10 @@ MAX_GOVERNANCE_JSON_BYTES = 32_768
 MAX_GOVERNANCE_JSON_KEY_LENGTH = 80
 MAX_GOVERNANCE_JSON_STRING_LENGTH = 1000
 MAX_GOVERNANCE_TEXT_LENGTH = 4000
+MAX_TRADE_LEGS = 8
+MAX_TRADE_RISK_ITEMS = 20
+MAX_POSITION_PROPAGATION_NODES = 40
+MAX_TRADE_ITEM_TEXT_LENGTH = 800
 
 
 class MarketDataCreate(StrictInputModel):
@@ -478,14 +482,14 @@ class RecommendationCreate(StrictInputModel):
     alert_id: UUID | None = None
     status: str = "pending"
     recommended_action: str
-    legs: list[dict[str, Any]] = Field(default_factory=list)
+    legs: list[dict[str, Any]] = Field(default_factory=list, max_length=MAX_TRADE_LEGS)
     priority_score: float
     portfolio_fit_score: float
     margin_efficiency_score: float
     margin_required: float
     reasoning: str
     one_liner: str | None = None
-    risk_items: list[str] = Field(default_factory=list)
+    risk_items: list[str] = Field(default_factory=list, max_length=MAX_TRADE_RISK_ITEMS)
     expires_at: datetime
     deferred_until: datetime | None = None
     ignored_reason: str | None = None
@@ -505,6 +509,30 @@ class RecommendationCreate(StrictInputModel):
     mfe: float | None = None
     holding_period_days: float | None = None
 
+    @field_validator("legs")
+    @classmethod
+    def validate_legs(cls, value: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        for leg in value:
+            validate_governance_json_object(leg, field_name="legs")
+        return value
+
+    @field_validator("risk_items")
+    @classmethod
+    def validate_risk_items(cls, value: list[str]) -> list[str]:
+        for item in value:
+            if len(item) > MAX_TRADE_ITEM_TEXT_LENGTH:
+                raise ValueError(
+                    f"risk_items entries can be at most {MAX_TRADE_ITEM_TEXT_LENGTH} characters"
+                )
+        return value
+
+    @field_validator("backtest_summary")
+    @classmethod
+    def validate_backtest_summary(cls, value: dict[str, Any] | None) -> dict[str, Any] | None:
+        if value is not None:
+            validate_governance_json_object(value, field_name="backtest_summary")
+        return value
+
 
 class RecommendationRead(RecommendationCreate, ORMModel):
     id: UUID
@@ -516,7 +544,7 @@ class PositionCreate(StrictInputModel):
     strategy_id: UUID | None = None
     strategy_name: str | None = None
     recommendation_id: UUID | None = None
-    legs: list[dict[str, Any]] = Field(default_factory=list)
+    legs: list[dict[str, Any]] = Field(default_factory=list, max_length=MAX_TRADE_LEGS)
     opened_at: datetime
     entry_spread: float
     current_spread: float
@@ -534,10 +562,30 @@ class PositionCreate(StrictInputModel):
     manual_entry: bool = False
     avg_entry_price: float | None = None
     monitoring_priority: int = 50
-    propagation_nodes: list[dict[str, Any]] = Field(default_factory=list)
+    propagation_nodes: list[dict[str, Any]] = Field(
+        default_factory=list,
+        max_length=MAX_POSITION_PROPAGATION_NODES,
+    )
     last_updated_at: datetime | None = None
     stale_since: datetime | None = None
     data_mode: str = "position_aware"
+
+    @field_validator("legs")
+    @classmethod
+    def validate_position_legs(cls, value: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        for leg in value:
+            validate_governance_json_object(leg, field_name="legs")
+        return value
+
+    @field_validator("propagation_nodes")
+    @classmethod
+    def validate_propagation_nodes(
+        cls,
+        value: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        for node in value:
+            validate_governance_json_object(node, field_name="propagation_nodes")
+        return value
 
 
 class PositionRead(PositionCreate, ORMModel):

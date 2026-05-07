@@ -194,3 +194,81 @@ def test_user_feedback_reason_is_bounded() -> None:
                 "disagreement_reason": "x" * 4001,
             }
         )
+
+
+def test_recommendation_payload_bounds_trade_json_fields() -> None:
+    now = datetime(2026, 5, 7, tzinfo=timezone.utc)
+    base_payload = {
+        "recommended_action": "open",
+        "priority_score": 80,
+        "portfolio_fit_score": 70,
+        "margin_efficiency_score": 75,
+        "margin_required": 10_000,
+        "reasoning": "test",
+        "expires_at": now,
+    }
+
+    with pytest.raises(ValidationError):
+        RecommendationCreate.model_validate(
+            {
+                **base_payload,
+                "legs": [{"asset": f"RB{index}", "direction": "long"} for index in range(9)],
+            }
+        )
+
+    with pytest.raises(ValidationError):
+        RecommendationCreate.model_validate(
+            {
+                **base_payload,
+                "risk_items": ["x" * 801],
+            }
+        )
+
+    with pytest.raises(ValidationError):
+        RecommendationCreate.model_validate(
+            {
+                **base_payload,
+                "backtest_summary": {"bad": object()},
+            }
+        )
+
+
+def test_position_payload_bounds_trade_json_fields() -> None:
+    now = datetime(2026, 5, 7, tzinfo=timezone.utc)
+    base_payload = {
+        "opened_at": now,
+        "entry_spread": 100,
+        "current_spread": 101,
+        "spread_unit": "price",
+        "unrealized_pnl": 10,
+        "total_margin_used": 1000,
+        "exit_condition": "manual_close",
+        "target_z_score": 0,
+        "current_z_score": 0,
+        "half_life_days": 0,
+        "days_held": 0,
+    }
+
+    with pytest.raises(ValidationError):
+        PositionCreate.model_validate(
+            {
+                **base_payload,
+                "legs": [{"asset": f"RU{index}", "direction": "long"} for index in range(9)],
+            }
+        )
+
+    with pytest.raises(ValidationError):
+        PositionCreate.model_validate(
+            {
+                **base_payload,
+                "propagation_nodes": [{"symbol": f"RU{index}"} for index in range(41)],
+            }
+        )
+
+    with pytest.raises(ValidationError):
+        PositionCreate.model_validate(
+            {
+                **base_payload,
+                "legs": [{"asset": "RU", "metadata": {"bad": object()}}],
+            }
+        )
