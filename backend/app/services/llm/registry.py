@@ -202,6 +202,10 @@ async def complete_with_llm_controls(
         model=config.model,
         system=system,
         user=user,
+        temperature=options.temperature,
+        max_tokens=options.max_tokens,
+        json_mode=options.json_mode,
+        json_schema=options.json_schema,
     )
     cached = await get_cached_completion(session, cache_key=cache_key)
     if cached is not None:

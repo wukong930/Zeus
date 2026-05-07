@@ -57,6 +57,54 @@ def test_llm_cache_key_is_stable_and_provider_scoped() -> None:
     assert left != other
 
 
+def test_llm_cache_key_includes_output_constraints() -> None:
+    base = llm_cache_key(provider="openai", model="m1", system="s", user="u")
+    json_mode = llm_cache_key(
+        provider="openai",
+        model="m1",
+        system="s",
+        user="u",
+        json_mode=True,
+    )
+    limited = llm_cache_key(
+        provider="openai",
+        model="m1",
+        system="s",
+        user="u",
+        max_tokens=200,
+    )
+    cool = llm_cache_key(
+        provider="openai",
+        model="m1",
+        system="s",
+        user="u",
+        temperature=0,
+    )
+
+    assert len({base, json_mode, limited, cool}) == 4
+
+
+def test_llm_cache_key_canonicalizes_json_schema() -> None:
+    left = llm_cache_key(
+        provider="openai",
+        model="m1",
+        system="s",
+        user="u",
+        json_mode=True,
+        json_schema={"type": "object", "properties": {"ok": {"type": "boolean"}}},
+    )
+    right = llm_cache_key(
+        provider="openai",
+        model="m1",
+        system="s",
+        user="u",
+        json_mode=True,
+        json_schema={"properties": {"ok": {"type": "boolean"}}, "type": "object"},
+    )
+
+    assert left == right
+
+
 async def test_store_cached_completion_updates_existing_cache_row() -> None:
     now = datetime(2026, 5, 5, tzinfo=timezone.utc)
     existing = LLMCache(

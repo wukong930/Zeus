@@ -11,14 +11,29 @@ from app.models.llm_cache import LLMCache
 from app.services.llm.types import LLMCompletionResult, LLMUsage
 
 
-def llm_cache_key(*, provider: str, model: str, system: str, user: str) -> str:
+def llm_cache_key(
+    *,
+    provider: str,
+    model: str,
+    system: str,
+    user: str,
+    temperature: float | None = None,
+    max_tokens: int | None = None,
+    json_mode: bool = False,
+    json_schema: dict[str, Any] | None = None,
+) -> str:
     payload = {
+        "version": 2,
         "provider": provider,
         "model": model,
         "system": system,
         "user": user,
+        "temperature": temperature,
+        "max_tokens": max_tokens,
+        "json_mode": json_mode,
+        "json_schema": json_schema,
     }
-    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
