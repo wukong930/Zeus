@@ -667,6 +667,8 @@ interface BackendMarketData {
 interface ApiEnvelope<T> {
   success: boolean;
   data: T;
+  degraded?: boolean;
+  unavailable_sections?: string[];
 }
 
 export async function fetchAlertsFromApi(): Promise<Alert[]> {
@@ -688,6 +690,8 @@ export async function fetchPortfolioSnapshot(): Promise<PortfolioSnapshot> {
   const positions = positionsResult.value;
   const varEnvelope = optionalSettledValue(varResult, null, "var", unavailableSections);
   const stressEnvelope = optionalSettledValue(stressResult, null, "stress", unavailableSections);
+  appendEnvelopeSections(varEnvelope, "var", unavailableSections);
+  appendEnvelopeSections(stressEnvelope, "stress", unavailableSections);
   const symbols = uniqueSymbols(positions);
   const latestRows = await fetchLatestMarketRows(symbols);
   const mappedPositions = positions.map((position) => mapPosition(position, latestRows));
@@ -994,11 +998,26 @@ async function fetchOptionalEnvelope<T>(
 ): Promise<T | null> {
   try {
     const envelope = await fetchJson<ApiEnvelope<T>>(path);
+    appendEnvelopeSections(envelope, section, unavailableSections);
     return envelope.data;
   } catch {
     unavailableSections.push(section);
     return null;
   }
+}
+
+function appendEnvelopeSections<T>(
+  envelope: ApiEnvelope<T> | null,
+  section: string,
+  unavailableSections: string[]
+): void {
+  if (!envelope?.degraded) {
+    return;
+  }
+  const reasons = envelope.unavailable_sections?.length
+    ? envelope.unavailable_sections
+    : ["degraded"];
+  reasons.forEach((reason) => unavailableSections.push(`${section}:${reason}`));
 }
 
 async function fetchLatestMarketRows(symbols: string[]): Promise<Map<string, BackendMarketData>> {

@@ -1,5 +1,9 @@
 from datetime import datetime, timedelta, timezone
 
+from fastapi.testclient import TestClient
+
+from app.core.database import get_db
+from app.main import create_app
 from app.models.market_data import MarketData
 from app.services.risk.correlation import build_correlation_matrix
 from app.services.risk.market_data import _risk_market_data_statement, load_risk_market_data
@@ -170,6 +174,94 @@ def test_correlation_matrix_detects_inverse_relationship() -> None:
     assert result.matrix[1][1] == 1
     assert result.matrix[0][1] < -0.99
     assert result.matrix[1][0] < -0.99
+
+
+def test_var_api_marks_insufficient_market_data_degraded(monkeypatch) -> None:
+    client = _risk_api_client(
+        monkeypatch,
+        positions=[_position()],
+        market_data={"RB2506": _market_data("RB2506", [3500, 3510, 3495])},
+    )
+
+    response = client.get("/api/risk/var")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["success"] is True
+    assert payload["degraded"] is True
+    assert payload["unavailable_sections"] == ["market_data_insufficient:RB2506"]
+    assert payload["data"]["var95"] == 0
+
+
+def test_var_api_keeps_empty_portfolio_non_degraded(monkeypatch) -> None:
+    client = _risk_api_client(monkeypatch, positions=[], market_data={})
+
+    response = client.get("/api/risk/var")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["success"] is True
+    assert payload["degraded"] is False
+    assert payload["unavailable_sections"] == []
+
+
+def test_stress_api_marks_symbols_without_scenario_coverage(monkeypatch) -> None:
+    client = _risk_api_client(
+        monkeypatch,
+        positions=[
+            _position(
+                legs=(
+                    RiskLeg(asset="NR2509", direction="long", current_price=12000, size=2),
+                )
+            )
+        ],
+        market_data={},
+    )
+
+    response = client.get("/api/risk/stress")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["success"] is True
+    assert payload["degraded"] is True
+    assert payload["unavailable_sections"] == ["stress_uncovered_symbols:NR2509"]
+
+
+def test_correlation_api_marks_missing_series_degraded(monkeypatch) -> None:
+    client = _risk_api_client(
+        monkeypatch,
+        positions=[],
+        market_data={
+            "RB2506": _market_data("RB2506", [3500, 3510, 3490, 3520]),
+            "HC2506": [],
+        },
+    )
+
+    response = client.get("/api/risk/correlation?symbols=RB2506,HC2506&window=5")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["success"] is True
+    assert payload["degraded"] is True
+    assert payload["unavailable_sections"] == ["correlation_data_missing:HC2506"]
+
+
+def _risk_api_client(monkeypatch, *, positions: list[RiskPosition], market_data: dict):
+    async def fake_db():
+        yield object()
+
+    async def fake_open_positions(_session):
+        return positions
+
+    async def fake_load_risk_market_data(_session, symbols, *, limit):
+        return {symbol: list(market_data.get(symbol, [])) for symbol in symbols}
+
+    monkeypatch.setattr("app.api.risk._open_positions", fake_open_positions)
+    monkeypatch.setattr("app.api.risk.load_risk_market_data", fake_load_risk_market_data)
+
+    app = create_app()
+    app.dependency_overrides[get_db] = fake_db
+    return TestClient(app)
 
 
 def _market_row(symbol: str, *, close: float, days: int) -> MarketData:
