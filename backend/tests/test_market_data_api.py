@@ -3,7 +3,11 @@ from uuid import uuid4
 
 from fastapi.testclient import TestClient
 
-from app.api.market_data import _latest_market_data_statement, _parse_market_symbols
+from app.api.market_data import (
+    _latest_market_data_statement,
+    _parse_market_symbols,
+    _recent_market_data_statement,
+)
 from app.core.database import get_db
 from app.main import create_app
 from app.models.market_data import MarketData
@@ -25,6 +29,20 @@ def test_latest_market_data_statement_uses_window_per_symbol() -> None:
     assert "ORDER BY market_data.timestamp DESC" in compiled
     assert "CASE WHEN (market_data.contract_month = 'main')" in compiled
     assert "market_data.symbol IN ('RB', 'HC')" in compiled
+
+
+def test_recent_market_data_statement_limits_rows_per_symbol() -> None:
+    compiled = str(
+        _recent_market_data_statement(["RB", "HC"], 5).compile(
+            compile_kwargs={"literal_binds": True}
+        )
+    )
+
+    assert "row_number() OVER" in compiled
+    assert "PARTITION BY market_data.symbol, market_data.timestamp" in compiled
+    assert "ORDER BY anon_" in compiled
+    assert ".timestamp DESC" in compiled
+    assert "symbol_row_number <= 5" in compiled
 
 
 def test_latest_market_data_batch_endpoint_returns_requested_rows(monkeypatch) -> None:
@@ -52,6 +70,34 @@ def test_latest_market_data_batch_endpoint_returns_requested_rows(monkeypatch) -
     assert response.status_code == 200
     assert captured == {"session": session, "symbols": ["RB", "HC"]}
     assert [row["symbol"] for row in response.json()] == ["RB", "HC"]
+
+
+def test_recent_market_data_batch_endpoint_returns_requested_rows(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+    session = object()
+
+    async def fake_db():
+        yield session
+
+    async def fake_recent_market_data_for_symbols(db_session, symbols, *, limit):
+        captured["session"] = db_session
+        captured["symbols"] = symbols
+        captured["limit"] = limit
+        return [_market_row("RB", days=2), _market_row("RB", days=1), _market_row("HC", days=2)]
+
+    monkeypatch.setattr(
+        "app.api.market_data.recent_market_data_for_symbols",
+        fake_recent_market_data_for_symbols,
+    )
+    app = create_app()
+    app.dependency_overrides[get_db] = fake_db
+    client = TestClient(app)
+
+    response = client.get("/api/market-data/recent?symbols=rb,hc,rb&limit=2")
+
+    assert response.status_code == 200
+    assert captured == {"session": session, "symbols": ["RB", "HC"], "limit": 2}
+    assert [row["symbol"] for row in response.json()] == ["RB", "RB", "HC"]
 
 
 def test_single_latest_market_data_endpoint_uses_shared_lookup(monkeypatch) -> None:

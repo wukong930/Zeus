@@ -52,6 +52,19 @@ async def get_latest_market_data_batch(
     return await latest_market_data_for_symbols(session, _parse_market_symbols(symbols))
 
 
+@router.get("/recent", response_model=list[MarketDataRead])
+async def get_recent_market_data_batch(
+    symbols: str = Query(..., min_length=1),
+    limit: int = Query(default=5, ge=1, le=200),
+    session: AsyncSession = Depends(get_db),
+) -> list[MarketData]:
+    return await recent_market_data_for_symbols(
+        session,
+        _parse_market_symbols(symbols),
+        limit=limit,
+    )
+
+
 @router.get("/{market_data_id}", response_model=MarketDataRead)
 async def get_market_data(
     market_data_id: UUID,
@@ -89,6 +102,23 @@ async def latest_market_data_for_symbols(
     return [rows_by_symbol[symbol] for symbol in requested_symbols if symbol in rows_by_symbol]
 
 
+async def recent_market_data_for_symbols(
+    session: AsyncSession,
+    symbols: list[str],
+    *,
+    limit: int,
+) -> list[MarketData]:
+    requested_symbols = list(
+        dict.fromkeys(symbol.strip().upper() for symbol in symbols if symbol.strip())
+    )
+    if not requested_symbols:
+        return []
+
+    return list(
+        (await session.scalars(_recent_market_data_statement(requested_symbols, limit))).all()
+    )
+
+
 def _latest_market_data_statement(symbols: list[str]):
     ranked = (
         select(
@@ -115,5 +145,50 @@ def _latest_market_data_statement(symbols: list[str]):
     )
 
 
+def _recent_market_data_statement(symbols: list[str], limit: int):
+    pit_ranked = (
+        select(
+            MarketData.id.label("id"),
+            MarketData.symbol.label("symbol"),
+            MarketData.timestamp.label("timestamp"),
+            func.row_number()
+            .over(
+                partition_by=(MarketData.symbol, MarketData.timestamp),
+                order_by=(
+                    MarketData.vintage_at.desc(),
+                    case((MarketData.contract_month == "main", 0), else_=1),
+                    MarketData.ingested_at.desc(),
+                ),
+            )
+            .label("pit_row_number"),
+        )
+        .where(MarketData.symbol.in_(symbols))
+        .subquery()
+    )
+    symbol_ranked = (
+        select(
+            pit_ranked.c.id.label("id"),
+            pit_ranked.c.symbol.label("symbol"),
+            pit_ranked.c.timestamp.label("timestamp"),
+            func.row_number()
+            .over(
+                partition_by=pit_ranked.c.symbol,
+                order_by=pit_ranked.c.timestamp.desc(),
+            )
+            .label("symbol_row_number"),
+        )
+        .where(pit_ranked.c.pit_row_number == 1)
+        .subquery()
+    )
+    return (
+        select(MarketData)
+        .join(symbol_ranked, MarketData.id == symbol_ranked.c.id)
+        .where(symbol_ranked.c.symbol_row_number <= limit)
+        .order_by(MarketData.symbol.asc(), MarketData.timestamp.desc())
+    )
+
+
 def _parse_market_symbols(value: str) -> list[str]:
-    return list(dict.fromkeys(symbol.strip().upper() for symbol in value.split(",") if symbol.strip()))
+    return list(
+        dict.fromkeys(symbol.strip().upper() for symbol in value.split(",") if symbol.strip())
+    )

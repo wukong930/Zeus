@@ -1058,7 +1058,22 @@ async function fetchSectorMarketChanges(baseSectors: SectorData[]): Promise<{
   changes: Map<string, number>;
   missingSymbols: string[];
 }> {
-  const symbols = baseSectors.flatMap((sector) => sector.symbols.map((symbol) => symbol.code));
+  const symbols = Array.from(
+    new Set(baseSectors.flatMap((sector) => sector.symbols.map((symbol) => symbol.code)))
+  ).sort();
+  if (symbols.length === 0) {
+    return { changes: new Map(), missingSymbols: [] };
+  }
+
+  try {
+    const rows = await fetchJson<BackendMarketData[]>(
+      `/api/market-data/recent?symbols=${encodeURIComponent(symbols.join(","))}&limit=5`
+    );
+    return changesFromMarketRows(symbols, rows);
+  } catch {
+    // Fall back to the older per-symbol endpoint if the batch endpoint is unavailable.
+  }
+
   const entries = await Promise.all(
     symbols.map(async (symbol) => {
       try {
@@ -1080,6 +1095,30 @@ async function fetchSectorMarketChanges(baseSectors: SectorData[]): Promise<{
       changes.set(symbol, change);
     }
   }
+  return { changes, missingSymbols };
+}
+
+function changesFromMarketRows(
+  symbols: string[],
+  rows: BackendMarketData[]
+): { changes: Map<string, number>; missingSymbols: string[] } {
+  const rowsBySymbol = new Map<string, BackendMarketData[]>();
+  rows.forEach((row) => {
+    const symbolRows = rowsBySymbol.get(row.symbol) ?? [];
+    symbolRows.push(row);
+    rowsBySymbol.set(row.symbol, symbolRows);
+  });
+
+  const changes = new Map<string, number>();
+  const missingSymbols: string[] = [];
+  symbols.forEach((symbol) => {
+    const change = marketChangePct(rowsBySymbol.get(symbol) ?? []);
+    if (change === null) {
+      missingSymbols.push(symbol);
+    } else {
+      changes.set(symbol, change);
+    }
+  });
   return { changes, missingSymbols };
 }
 
