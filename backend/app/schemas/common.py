@@ -35,6 +35,11 @@ MAX_INGEST_SOURCE_KEY_LENGTH = 160
 MAX_INGEST_SYMBOL_LENGTH = 32
 MAX_INGEST_TEXT_LENGTH = 120
 MAX_INGEST_ABS_VALUE = 1_000_000_000_000.0
+MAX_NEWS_TITLE_LENGTH = 300
+MAX_NEWS_SUMMARY_LENGTH = 1200
+MAX_NEWS_CONTENT_LENGTH = 20_000
+MAX_NEWS_URL_LENGTH = 1000
+MAX_NEWS_AFFECTED_SYMBOLS = 20
 
 
 class MarketDataCreate(StrictInputModel):
@@ -141,23 +146,46 @@ class AlertRead(AlertCreate, ORMModel):
 
 class NewsEventCreate(StrictInputModel):
     source: str = Field(min_length=1, max_length=50)
-    raw_url: str | None = None
-    title: str = Field(min_length=1)
-    summary: str | None = None
-    content_text: str | None = None
+    raw_url: str | None = Field(default=None, max_length=MAX_NEWS_URL_LENGTH)
+    title: str = Field(min_length=1, max_length=MAX_NEWS_TITLE_LENGTH)
+    summary: str | None = Field(default=None, max_length=MAX_NEWS_SUMMARY_LENGTH)
+    content_text: str | None = Field(default=None, max_length=MAX_NEWS_CONTENT_LENGTH)
     published_at: datetime
     event_type: str = Field(
         pattern="^(policy|supply|demand|inventory|geopolitical|weather|breaking)$"
     )
-    affected_symbols: list[str] = Field(default_factory=list)
+    affected_symbols: list[str] = Field(default_factory=list, max_length=MAX_NEWS_AFFECTED_SYMBOLS)
     direction: str = Field(pattern="^(bullish|bearish|mixed|unclear)$")
     severity: int = Field(ge=1, le=5)
     time_horizon: str = Field(pattern="^(immediate|short|medium|long)$")
     llm_confidence: float = Field(ge=0, le=1)
-    source_count: int = Field(default=1, ge=1)
-    verification_status: str | None = None
-    dedup_hash: str | None = None
-    extraction_payload: dict[str, Any] = Field(default_factory=dict)
+    source_count: int = Field(default=1, ge=1, le=50)
+    verification_status: str | None = Field(default=None, max_length=30)
+    dedup_hash: str | None = Field(default=None, max_length=64)
+    extraction_payload: dict[str, Any] = Field(
+        default_factory=dict,
+        max_length=MAX_GOVERNANCE_JSON_TOP_LEVEL_KEYS,
+    )
+
+    @field_validator("affected_symbols")
+    @classmethod
+    def normalize_affected_symbols(cls, value: list[str]) -> list[str]:
+        symbols: list[str] = []
+        for symbol in value:
+            normalized = str(symbol).strip().upper()
+            if not normalized:
+                continue
+            if len(normalized) > MAX_INGEST_SYMBOL_LENGTH:
+                raise ValueError(
+                    f"affected symbol entries can be at most {MAX_INGEST_SYMBOL_LENGTH} characters"
+                )
+            symbols.append(normalized)
+        return sorted(dict.fromkeys(symbols))
+
+    @field_validator("extraction_payload")
+    @classmethod
+    def validate_extraction_payload(cls, value: dict[str, Any]) -> dict[str, Any]:
+        return validate_governance_json_object(value, field_name="extraction_payload")
 
 
 class NewsEventRead(NewsEventCreate, ORMModel):

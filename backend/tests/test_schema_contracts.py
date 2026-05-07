@@ -398,3 +398,83 @@ def test_contract_payload_bounds_identifiers_and_liquidity() -> None:
 
     with pytest.raises(ValidationError):
         ContractCreate.model_validate({"symbol": "RB", "contract_month": "2510", "volume": -1})
+
+
+def test_news_event_payload_normalizes_affected_symbols() -> None:
+    now = datetime(2026, 5, 7, tzinfo=timezone.utc)
+    payload = NewsEventCreate.model_validate(
+        {
+            "source": "gdelt",
+            "title": "Supply event",
+            "published_at": now,
+            "event_type": "supply",
+            "affected_symbols": [" rb ", "RB", " sc "],
+            "direction": "bullish",
+            "severity": 3,
+            "time_horizon": "short",
+            "llm_confidence": 0.7,
+        }
+    )
+
+    assert payload.affected_symbols == ["RB", "SC"]
+
+
+def test_news_event_payload_bounds_text_and_symbol_fields() -> None:
+    now = datetime(2026, 5, 7, tzinfo=timezone.utc)
+    base_payload = {
+        "source": "gdelt",
+        "title": "Supply event",
+        "published_at": now,
+        "event_type": "supply",
+        "direction": "bullish",
+        "severity": 3,
+        "time_horizon": "short",
+        "llm_confidence": 0.7,
+    }
+
+    with pytest.raises(ValidationError):
+        NewsEventCreate.model_validate({**base_payload, "title": "x" * 301})
+
+    with pytest.raises(ValidationError):
+        NewsEventCreate.model_validate({**base_payload, "content_text": "x" * 20001})
+
+    with pytest.raises(ValidationError):
+        NewsEventCreate.model_validate(
+            {
+                **base_payload,
+                "affected_symbols": [f"S{index}" for index in range(21)],
+            }
+        )
+
+    with pytest.raises(ValidationError):
+        NewsEventCreate.model_validate({**base_payload, "source_count": 51})
+
+
+def test_news_event_payload_bounds_extraction_payload() -> None:
+    now = datetime(2026, 5, 7, tzinfo=timezone.utc)
+    base_payload = {
+        "source": "gdelt",
+        "title": "Supply event",
+        "published_at": now,
+        "event_type": "supply",
+        "direction": "bullish",
+        "severity": 3,
+        "time_horizon": "short",
+        "llm_confidence": 0.7,
+    }
+
+    with pytest.raises(ValidationError):
+        NewsEventCreate.model_validate(
+            {
+                **base_payload,
+                "extraction_payload": {f"key_{index}": index for index in range(41)},
+            }
+        )
+
+    with pytest.raises(ValidationError):
+        NewsEventCreate.model_validate(
+            {
+                **base_payload,
+                "extraction_payload": {"bad": object()},
+            }
+        )
