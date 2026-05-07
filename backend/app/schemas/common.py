@@ -29,6 +29,8 @@ MAX_TRADE_LEGS = 8
 MAX_TRADE_RISK_ITEMS = 20
 MAX_POSITION_PROPAGATION_NODES = 40
 MAX_TRADE_ITEM_TEXT_LENGTH = 800
+MAX_STRATEGY_REFERENCES = 100
+MAX_STRATEGY_REFERENCE_LENGTH = 80
 
 
 class MarketDataCreate(StrictInputModel):
@@ -459,16 +461,45 @@ class CostQualityReportRead(BaseModel):
 
 
 class StrategyCreate(StrictInputModel):
-    name: str
-    description: str
-    status: str = "draft"
-    hypothesis: dict[str, Any] = Field(default_factory=dict)
-    validation: dict[str, Any] = Field(default_factory=dict)
-    related_alert_ids: list[str] = Field(default_factory=list)
-    recommendation_history: list[str] = Field(default_factory=list)
-    execution_feedback_ids: list[str] = Field(default_factory=list)
+    name: str = Field(min_length=1, max_length=160)
+    description: str = Field(min_length=1, max_length=MAX_GOVERNANCE_TEXT_LENGTH)
+    status: str = Field(default="draft", max_length=30)
+    hypothesis: dict[str, Any] = Field(
+        default_factory=dict,
+        max_length=MAX_GOVERNANCE_JSON_TOP_LEVEL_KEYS,
+    )
+    validation: dict[str, Any] = Field(
+        default_factory=dict,
+        max_length=MAX_GOVERNANCE_JSON_TOP_LEVEL_KEYS,
+    )
+    related_alert_ids: list[str] = Field(default_factory=list, max_length=MAX_STRATEGY_REFERENCES)
+    recommendation_history: list[str] = Field(default_factory=list, max_length=MAX_STRATEGY_REFERENCES)
+    execution_feedback_ids: list[str] = Field(default_factory=list, max_length=MAX_STRATEGY_REFERENCES)
     last_activated_at: datetime | None = None
-    notes: str | None = None
+    notes: str | None = Field(default=None, max_length=MAX_GOVERNANCE_TEXT_LENGTH)
+
+    @field_validator("hypothesis")
+    @classmethod
+    def validate_hypothesis(cls, value: dict[str, Any]) -> dict[str, Any]:
+        return validate_governance_json_object(value, field_name="hypothesis")
+
+    @field_validator("validation")
+    @classmethod
+    def validate_validation(cls, value: dict[str, Any]) -> dict[str, Any]:
+        return validate_governance_json_object(value, field_name="validation")
+
+    @field_validator("related_alert_ids", "recommendation_history", "execution_feedback_ids")
+    @classmethod
+    def validate_reference_list(cls, value: list[str]) -> list[str]:
+        for item in value:
+            if not item.strip():
+                raise ValueError("strategy reference entries must be non-empty strings")
+            if len(item) > MAX_STRATEGY_REFERENCE_LENGTH:
+                raise ValueError(
+                    "strategy reference entries can be at most "
+                    f"{MAX_STRATEGY_REFERENCE_LENGTH} characters"
+                )
+        return value
 
 
 class StrategyRead(StrategyCreate, ORMModel):

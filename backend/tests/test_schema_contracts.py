@@ -272,3 +272,68 @@ def test_position_payload_bounds_trade_json_fields() -> None:
                 "legs": [{"asset": "RU", "metadata": {"bad": object()}}],
             }
         )
+
+
+def test_strategy_payload_bounds_json_and_reference_fields() -> None:
+    with pytest.raises(ValidationError):
+        StrategyCreate.model_validate(
+            {
+                "name": "strategy",
+                "description": "test",
+                "hypothesis": {f"key_{index}": index for index in range(41)},
+            }
+        )
+
+    with pytest.raises(ValidationError):
+        StrategyCreate.model_validate(
+            {
+                "name": "strategy",
+                "description": "test",
+                "validation": {"bad": object()},
+            }
+        )
+
+    with pytest.raises(ValidationError):
+        StrategyCreate.model_validate(
+            {
+                "name": "strategy",
+                "description": "test",
+                "related_alert_ids": [f"alert-{index}" for index in range(101)],
+            }
+        )
+
+
+def test_strategy_payload_bounds_text_fields_and_references() -> None:
+    with pytest.raises(ValidationError):
+        StrategyCreate.model_validate(
+            {
+                "name": "x" * 161,
+                "description": "test",
+            }
+        )
+
+    with pytest.raises(ValidationError):
+        StrategyCreate.model_validate(
+            {
+                "name": "strategy",
+                "description": "x" * 4001,
+            }
+        )
+
+    with pytest.raises(ValidationError):
+        StrategyCreate.model_validate(
+            {
+                "name": "strategy",
+                "description": "test",
+                "recommendation_history": [""],
+            }
+        )
+
+    with pytest.raises(ValidationError):
+        StrategyCreate.model_validate(
+            {
+                "name": "strategy",
+                "description": "test",
+                "execution_feedback_ids": ["x" * 81],
+            }
+        )
