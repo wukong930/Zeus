@@ -1022,8 +1022,24 @@ function appendEnvelopeSections<T>(
 }
 
 async function fetchLatestMarketRows(symbols: string[]): Promise<Map<string, BackendMarketData>> {
+  const uniqueSymbols = Array.from(
+    new Set(symbols.map((symbol) => symbol.trim()).filter((symbol) => symbol.length > 0))
+  ).sort();
+  if (uniqueSymbols.length === 0) {
+    return new Map();
+  }
+
+  try {
+    const rows = await fetchJson<BackendMarketData[]>(
+      `/api/market-data/latest?symbols=${encodeURIComponent(uniqueSymbols.join(","))}`
+    );
+    return new Map(rows.map((row) => [row.symbol, row]));
+  } catch {
+    // Older or partially degraded backends can still serve per-symbol latest rows.
+  }
+
   const entries = await Promise.all(
-    symbols.map(async (symbol) => {
+    uniqueSymbols.map(async (symbol) => {
       try {
         const row = await fetchJson<BackendMarketData>(
           `/api/market-data/symbols/${encodeURIComponent(symbol)}/latest`

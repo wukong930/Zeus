@@ -2,7 +2,7 @@ from datetime import datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -44,6 +44,14 @@ async def create_market_data(
     return row
 
 
+@router.get("/latest", response_model=list[MarketDataRead])
+async def get_latest_market_data_batch(
+    symbols: str = Query(..., min_length=1),
+    session: AsyncSession = Depends(get_db),
+) -> list[MarketData]:
+    return await latest_market_data_for_symbols(session, _parse_market_symbols(symbols))
+
+
 @router.get("/{market_data_id}", response_model=MarketDataRead)
 async def get_market_data(
     market_data_id: UUID,
@@ -60,14 +68,52 @@ async def get_latest_market_data(
     symbol: str,
     session: AsyncSession = Depends(get_db),
 ) -> MarketData:
-    row = (
-        await session.scalars(
-            select(MarketData)
-            .where(MarketData.symbol == symbol)
-            .order_by(MarketData.timestamp.desc(), MarketData.vintage_at.desc())
-            .limit(1)
-        )
-    ).first()
-    if row is None:
+    rows = await latest_market_data_for_symbols(session, [symbol])
+    if not rows:
         raise HTTPException(status_code=404, detail="Market data row not found")
-    return row
+    return rows[0]
+
+
+async def latest_market_data_for_symbols(
+    session: AsyncSession,
+    symbols: list[str],
+) -> list[MarketData]:
+    requested_symbols = list(
+        dict.fromkeys(symbol.strip().upper() for symbol in symbols if symbol.strip())
+    )
+    if not requested_symbols:
+        return []
+
+    rows = list((await session.scalars(_latest_market_data_statement(requested_symbols))).all())
+    rows_by_symbol = {row.symbol.upper(): row for row in rows}
+    return [rows_by_symbol[symbol] for symbol in requested_symbols if symbol in rows_by_symbol]
+
+
+def _latest_market_data_statement(symbols: list[str]):
+    ranked = (
+        select(
+            MarketData.id.label("id"),
+            func.row_number()
+            .over(
+                partition_by=MarketData.symbol,
+                order_by=(
+                    MarketData.timestamp.desc(),
+                    MarketData.vintage_at.desc(),
+                    case((MarketData.contract_month == "main", 0), else_=1),
+                    MarketData.ingested_at.desc(),
+                ),
+            )
+            .label("row_number"),
+        )
+        .where(MarketData.symbol.in_(symbols))
+        .subquery()
+    )
+    return (
+        select(MarketData)
+        .join(ranked, MarketData.id == ranked.c.id)
+        .where(ranked.c.row_number == 1)
+    )
+
+
+def _parse_market_symbols(value: str) -> list[str]:
+    return list(dict.fromkeys(symbol.strip().upper() for symbol in value.split(",") if symbol.strip()))
