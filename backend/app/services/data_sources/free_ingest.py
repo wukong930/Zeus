@@ -58,8 +58,14 @@ class FreeDataIngestResult:
     errors: list[dict[str, str]] = field(default_factory=list)
     contexts: list[dict[str, Any]] = field(default_factory=list)
 
+    @property
+    def status(self) -> str:
+        return "degraded" if self.errors else "completed"
+
     def to_dict(self) -> dict[str, Any]:
         return {
+            "status": self.status,
+            "degraded": bool(self.errors),
             "market_rows": self.market_rows,
             "industry_rows": self.industry_rows,
             "source_counts": self.source_counts,
@@ -99,47 +105,59 @@ async def run_free_data_ingest(
         except Exception as exc:
             errors.append({"source": "open_meteo", "error": safe_error_message(exc)})
 
-    if current.data_source_fred_enabled and current.fred_api_key:
-        try:
-            fred_rows = await collect_fred_indicators(
-                api_key=current.fred_api_key,
-                base_url=current.fred_base_url,
-            )
-            industry_payloads.extend(fred_rows)
-            source_counts["fred"] = len(fred_rows)
-        except Exception as exc:
-            errors.append({"source": "fred", "error": safe_error_message(exc, current.fred_api_key)})
+    if current.data_source_fred_enabled:
+        if current.fred_api_key:
+            try:
+                fred_rows = await collect_fred_indicators(
+                    api_key=current.fred_api_key,
+                    base_url=current.fred_base_url,
+                )
+                industry_payloads.extend(fred_rows)
+                source_counts["fred"] = len(fred_rows)
+            except Exception as exc:
+                errors.append({"source": "fred", "error": safe_error_message(exc, current.fred_api_key)})
+        else:
+            source_counts["fred"] = 0
+            errors.append({"source": "fred", "error": "enabled source missing FRED_API_KEY"})
 
-    if current.data_source_eia_enabled and current.eia_api_key:
-        try:
-            eia_rows = await collect_eia_indicators(
-                api_key=current.eia_api_key,
-                base_url=current.eia_base_url,
-            )
-            industry_payloads.extend(eia_rows)
-            source_counts["eia"] = len(eia_rows)
-        except Exception as exc:
-            errors.append({"source": "eia", "error": safe_error_message(exc, current.eia_api_key)})
+    if current.data_source_eia_enabled:
+        if current.eia_api_key:
+            try:
+                eia_rows = await collect_eia_indicators(
+                    api_key=current.eia_api_key,
+                    base_url=current.eia_base_url,
+                )
+                industry_payloads.extend(eia_rows)
+                source_counts["eia"] = len(eia_rows)
+            except Exception as exc:
+                errors.append({"source": "eia", "error": safe_error_message(exc, current.eia_api_key)})
+        else:
+            source_counts["eia"] = 0
+            errors.append({"source": "eia", "error": "enabled source missing EIA_API_KEY"})
 
-    if current.data_source_tushare_enabled and current.tushare_token:
-        try:
-            tushare_result = await collect_tushare_market_data(
-                token=current.tushare_token,
-                base_url=current.tushare_base_url,
-                exchanges=parse_csv_tuple(
-                    current.data_source_tushare_exchanges,
-                    DEFAULT_TUSHARE_EXCHANGES,
-                ),
-                symbols=parse_csv_tuple(
-                    current.data_source_tushare_symbols,
-                    DEFAULT_TUSHARE_SYMBOLS,
-                ),
-            )
-            market_payloads.extend(tushare_result.rows)
-            errors.extend(sanitize_source_errors(tushare_result.errors, current.tushare_token))
-            source_counts["tushare"] = len(tushare_result.rows)
-        except Exception as exc:
-            errors.append({"source": "tushare", "error": safe_error_message(exc, current.tushare_token)})
+    if current.data_source_tushare_enabled:
+        if current.tushare_token:
+            try:
+                tushare_result = await collect_tushare_market_data(
+                    token=current.tushare_token,
+                    base_url=current.tushare_base_url,
+                    exchanges=parse_csv_tuple(
+                        current.data_source_tushare_exchanges,
+                        DEFAULT_TUSHARE_EXCHANGES,
+                    ),
+                    symbols=parse_csv_tuple(
+                        current.data_source_tushare_symbols,
+                        DEFAULT_TUSHARE_SYMBOLS,
+                    ),
+                )
+                market_payloads.extend(tushare_result.rows)
+                errors.extend(sanitize_source_errors(tushare_result.errors, current.tushare_token))
+                source_counts["tushare"] = len(tushare_result.rows)
+            except Exception as exc:
+                errors.append({"source": "tushare", "error": safe_error_message(exc, current.tushare_token)})
+        else:
+            source_counts["tushare"] = 0
+            errors.append({"source": "tushare", "error": "enabled source missing TUSHARE_TOKEN"})
 
     if market_payloads:
         await append_market_data(session, market_payloads)

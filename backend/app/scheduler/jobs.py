@@ -78,7 +78,7 @@ async def ingest_job() -> dict[str, Any]:
             {
                 "job_id": "ingest",
                 "triggered_at": datetime.now(timezone.utc).isoformat(),
-                "status": "completed",
+                "status": ingest_result.status,
                 "watchlist_count": len(watchlist),
                 "data_sources": ingest_result.to_dict(),
                 "contexts": ingest_result.contexts,
@@ -88,7 +88,7 @@ async def ingest_job() -> dict[str, Any]:
         )
         await session.commit()
     return {
-        "status": "published",
+        "status": ingest_result.status,
         "event_id": str(event.id),
         "channel": event.channel,
         **ingest_result.to_dict(),

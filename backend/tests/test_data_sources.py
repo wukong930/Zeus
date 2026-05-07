@@ -9,7 +9,11 @@ from app.main import create_app
 from app.services.data_sources.akshare_futures import _rows_from_frame, parse_akshare_symbols
 from app.services.data_sources.eia import EiaSeries, collect_eia_indicators, row_from_eia_payload
 from app.services.data_sources.fred import FredSeries, collect_fred_indicators, row_from_fred_payload
-from app.services.data_sources.free_ingest import market_context_payloads, safe_error_message
+from app.services.data_sources.free_ingest import (
+    market_context_payloads,
+    run_free_data_ingest,
+    safe_error_message,
+)
 from app.services.data_sources.open_meteo import WeatherLocation, rows_from_weather_payload
 from app.services.data_sources.registry import data_source_statuses
 from app.services.data_sources.types import DataSourceStatus
@@ -290,6 +294,26 @@ def test_market_context_payloads_group_rows_by_symbol() -> None:
     assert contexts[0]["symbol1"] == "SC"
     assert contexts[0]["category"] == "energy"
     assert len(contexts[0]["market_data"]) == 2
+
+
+async def test_free_data_ingest_reports_enabled_keyed_sources_without_keys() -> None:
+    settings = Settings(
+        data_source_fred_enabled=True,
+        fred_api_key="",
+        data_source_eia_enabled=True,
+        eia_api_key="",
+        data_source_tushare_enabled=True,
+        tushare_token="",
+        _env_file=None,
+    )
+
+    result = await run_free_data_ingest(object(), settings=settings)  # type: ignore[arg-type]
+
+    assert result.status == "degraded"
+    assert result.to_dict()["degraded"] is True
+    assert result.source_counts == {"fred": 0, "eia": 0, "tushare": 0}
+    assert [error["source"] for error in result.errors] == ["fred", "eia", "tushare"]
+    assert all("missing" in error["error"] for error in result.errors)
 
 
 def test_data_source_registry_marks_keyed_sources() -> None:
