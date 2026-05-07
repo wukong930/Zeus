@@ -246,7 +246,50 @@ def test_correlation_api_marks_missing_series_degraded(monkeypatch) -> None:
     assert payload["unavailable_sections"] == ["correlation_data_missing:HC2506"]
 
 
-def _risk_api_client(monkeypatch, *, positions: list[RiskPosition], market_data: dict):
+def test_correlation_api_normalizes_and_dedupes_symbols(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+    client = _risk_api_client(
+        monkeypatch,
+        positions=[],
+        market_data={
+            "RB2506": _market_data("RB2506", [3500, 3510, 3490, 3520]),
+            "HC2506": _market_data("HC2506", [3400, 3420, 3390, 3430]),
+        },
+        captured=captured,
+    )
+
+    response = client.get("/api/risk/correlation?symbols=rb2506,HC2506,rb2506&window=5")
+
+    assert response.status_code == 200
+    assert captured["symbols"] == ["RB2506", "HC2506"]
+
+
+def test_correlation_api_rejects_empty_symbol_query(monkeypatch) -> None:
+    client = _risk_api_client(monkeypatch, positions=[], market_data={})
+
+    response = client.get("/api/risk/correlation?symbols=,,,&window=5")
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "symbols must include at least one value"
+
+
+def test_correlation_api_rejects_too_many_symbols(monkeypatch) -> None:
+    client = _risk_api_client(monkeypatch, positions=[], market_data={})
+    symbols = ",".join(f"S{i}" for i in range(41))
+
+    response = client.get(f"/api/risk/correlation?symbols={symbols}&window=5")
+
+    assert response.status_code == 400
+    assert "at most 40" in response.json()["detail"]
+
+
+def _risk_api_client(
+    monkeypatch,
+    *,
+    positions: list[RiskPosition],
+    market_data: dict,
+    captured: dict[str, object] | None = None,
+):
     async def fake_db():
         yield object()
 
@@ -254,6 +297,9 @@ def _risk_api_client(monkeypatch, *, positions: list[RiskPosition], market_data:
         return positions
 
     async def fake_load_risk_market_data(_session, symbols, *, limit):
+        if captured is not None:
+            captured["symbols"] = symbols
+            captured["limit"] = limit
         return {symbol: list(market_data.get(symbol, [])) for symbol in symbols}
 
     monkeypatch.setattr("app.api.risk._open_positions", fake_open_positions)

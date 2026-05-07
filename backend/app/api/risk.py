@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,6 +20,7 @@ router = APIRouter(prefix="/api/risk", tags=["risk"])
 
 VAR_MIN_MARKET_POINTS = 11
 CORRELATION_MIN_MARKET_POINTS = 4
+MAX_CORRELATION_SYMBOLS = 40
 
 
 class StressScenarioPayload(StrictInputModel):
@@ -91,9 +92,9 @@ async def get_correlation_matrix(
     session: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     if symbols is not None:
-        symbol_list = [symbol.strip() for symbol in symbols.split(",") if symbol.strip()]
+        symbol_list = _parse_risk_symbols(symbols, allow_empty=False)
     else:
-        symbol_list = _position_symbols(await _open_positions(session))
+        symbol_list = _normalize_risk_symbols(_position_symbols(await _open_positions(session)))
 
     market_data = await load_risk_market_data(session, symbol_list, limit=window + 10)
     matrix = build_correlation_matrix(market_data, symbol_list, window=window)
@@ -150,6 +151,22 @@ def _leg_from_payload(payload: dict[str, Any]) -> RiskLeg:
 
 def _position_symbols(positions: list[RiskPosition]) -> list[str]:
     return sorted({leg.asset for position in positions for leg in position.legs if leg.asset})
+
+
+def _parse_risk_symbols(value: str, *, allow_empty: bool) -> list[str]:
+    symbols = _normalize_risk_symbols(value.split(","))
+    if not symbols and not allow_empty:
+        raise HTTPException(status_code=400, detail="symbols must include at least one value")
+    if len(symbols) > MAX_CORRELATION_SYMBOLS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"symbols supports at most {MAX_CORRELATION_SYMBOLS} unique values",
+        )
+    return symbols
+
+
+def _normalize_risk_symbols(symbols: list[str] | tuple[str, ...] | set[str]) -> list[str]:
+    return list(dict.fromkeys(symbol.strip().upper() for symbol in symbols if symbol.strip()))
 
 
 def _var_unavailable_sections(
