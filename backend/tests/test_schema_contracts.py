@@ -337,3 +337,64 @@ def test_strategy_payload_bounds_text_fields_and_references() -> None:
                 "execution_feedback_ids": ["x" * 81],
             }
         )
+
+
+def test_market_data_payload_bounds_strings_and_ohlc() -> None:
+    now = datetime(2026, 5, 7, tzinfo=timezone.utc)
+    base_payload = {
+        "market": "CN",
+        "exchange": "SHFE",
+        "commodity": "rebar",
+        "symbol": "RB",
+        "contract_month": "main",
+        "timestamp": now,
+        "open": 3200,
+        "high": 3220,
+        "low": 3180,
+        "close": 3210,
+        "volume": 1000,
+    }
+
+    with pytest.raises(ValidationError):
+        MarketDataCreate.model_validate({**base_payload, "symbol": "X" * 33})
+
+    with pytest.raises(ValidationError):
+        MarketDataCreate.model_validate({**base_payload, "currency": "CNYY"})
+
+    with pytest.raises(ValidationError):
+        MarketDataCreate.model_validate({**base_payload, "high": 3190})
+
+    with pytest.raises(ValidationError):
+        MarketDataCreate.model_validate({**base_payload, "volume": -1})
+
+
+def test_industry_data_payload_bounds_strings_and_value() -> None:
+    now = datetime(2026, 5, 7, tzinfo=timezone.utc)
+    base_payload = {
+        "symbol": "RB",
+        "data_type": "inventory",
+        "value": 42,
+        "unit": "kt",
+        "source": "manual",
+        "timestamp": now,
+    }
+
+    with pytest.raises(ValidationError):
+        IndustryDataCreate.model_validate({**base_payload, "data_type": "x" * 31})
+
+    with pytest.raises(ValidationError):
+        IndustryDataCreate.model_validate({**base_payload, "source": "x" * 51})
+
+    with pytest.raises(ValidationError):
+        IndustryDataCreate.model_validate({**base_payload, "value": 1_000_000_000_001})
+
+
+def test_contract_payload_bounds_identifiers_and_liquidity() -> None:
+    with pytest.raises(ValidationError):
+        ContractCreate.model_validate({"symbol": "X" * 33, "contract_month": "2510"})
+
+    with pytest.raises(ValidationError):
+        ContractCreate.model_validate({"symbol": "RB", "contract_month": "x" * 21})
+
+    with pytest.raises(ValidationError):
+        ContractCreate.model_validate({"symbol": "RB", "contract_month": "2510", "volume": -1})

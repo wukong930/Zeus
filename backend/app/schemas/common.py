@@ -5,7 +5,7 @@ from datetime import date, datetime
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class ORMModel(BaseModel):
@@ -31,27 +31,39 @@ MAX_POSITION_PROPAGATION_NODES = 40
 MAX_TRADE_ITEM_TEXT_LENGTH = 800
 MAX_STRATEGY_REFERENCES = 100
 MAX_STRATEGY_REFERENCE_LENGTH = 80
+MAX_INGEST_SOURCE_KEY_LENGTH = 160
+MAX_INGEST_SYMBOL_LENGTH = 32
+MAX_INGEST_TEXT_LENGTH = 120
+MAX_INGEST_ABS_VALUE = 1_000_000_000_000.0
 
 
 class MarketDataCreate(StrictInputModel):
-    source_key: str | None = None
-    market: str
-    exchange: str
-    commodity: str
-    symbol: str
-    contract_month: str
+    source_key: str | None = Field(default=None, max_length=MAX_INGEST_SOURCE_KEY_LENGTH)
+    market: str = Field(min_length=1, max_length=10)
+    exchange: str = Field(min_length=1, max_length=20)
+    commodity: str = Field(min_length=1, max_length=MAX_INGEST_TEXT_LENGTH)
+    symbol: str = Field(min_length=1, max_length=MAX_INGEST_SYMBOL_LENGTH)
+    contract_month: str = Field(min_length=1, max_length=20)
     contract_id: UUID | None = None
     timestamp: datetime
-    open: float
-    high: float
-    low: float
-    close: float
-    settle: float | None = None
-    volume: float
-    open_interest: float | None = None
-    currency: str = "CNY"
-    timezone: str = "Asia/Shanghai"
+    open: float = Field(gt=0, le=MAX_INGEST_ABS_VALUE)
+    high: float = Field(gt=0, le=MAX_INGEST_ABS_VALUE)
+    low: float = Field(gt=0, le=MAX_INGEST_ABS_VALUE)
+    close: float = Field(gt=0, le=MAX_INGEST_ABS_VALUE)
+    settle: float | None = Field(default=None, gt=0, le=MAX_INGEST_ABS_VALUE)
+    volume: float = Field(ge=0, le=MAX_INGEST_ABS_VALUE)
+    open_interest: float | None = Field(default=None, ge=0, le=MAX_INGEST_ABS_VALUE)
+    currency: str = Field(default="CNY", min_length=3, max_length=3)
+    timezone: str = Field(default="Asia/Shanghai", min_length=1, max_length=64)
     vintage_at: datetime | None = None
+
+    @model_validator(mode="after")
+    def validate_ohlc(self) -> "MarketDataCreate":
+        if self.high < max(self.open, self.low, self.close):
+            raise ValueError("high must be greater than or equal to open, low, and close")
+        if self.low > min(self.open, self.high, self.close):
+            raise ValueError("low must be less than or equal to open, high, and close")
+        return self
 
 
 class MarketDataRead(MarketDataCreate, ORMModel):
@@ -60,12 +72,12 @@ class MarketDataRead(MarketDataCreate, ORMModel):
 
 
 class IndustryDataCreate(StrictInputModel):
-    source_key: str | None = None
-    symbol: str
-    data_type: str
-    value: float
-    unit: str
-    source: str
+    source_key: str | None = Field(default=None, max_length=MAX_INGEST_SOURCE_KEY_LENGTH)
+    symbol: str = Field(min_length=1, max_length=MAX_INGEST_SYMBOL_LENGTH)
+    data_type: str = Field(min_length=1, max_length=30)
+    value: float = Field(ge=-MAX_INGEST_ABS_VALUE, le=MAX_INGEST_ABS_VALUE)
+    unit: str = Field(min_length=1, max_length=20)
+    source: str = Field(min_length=1, max_length=50)
     timestamp: datetime
     vintage_at: datetime | None = None
 
@@ -76,16 +88,16 @@ class IndustryDataRead(IndustryDataCreate, ORMModel):
 
 
 class ContractCreate(StrictInputModel):
-    symbol: str
-    exchange: str | None = None
-    commodity: str | None = None
-    contract_month: str
+    symbol: str = Field(min_length=1, max_length=MAX_INGEST_SYMBOL_LENGTH)
+    exchange: str | None = Field(default=None, max_length=20)
+    commodity: str | None = Field(default=None, max_length=MAX_INGEST_TEXT_LENGTH)
+    contract_month: str = Field(min_length=1, max_length=20)
     expiry_date: date | None = None
     is_main: bool = False
     main_from: datetime | None = None
     main_until: datetime | None = None
-    volume: float | None = None
-    open_interest: float | None = None
+    volume: float | None = Field(default=None, ge=0, le=MAX_INGEST_ABS_VALUE)
+    open_interest: float | None = Field(default=None, ge=0, le=MAX_INGEST_ABS_VALUE)
 
 
 class ContractRead(ContractCreate, ORMModel):
