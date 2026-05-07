@@ -113,6 +113,95 @@ def test_common_write_payloads_reject_unknown_fields() -> None:
             schema.model_validate({**payload, "unexpected_field": True})
 
 
+def test_alert_payload_normalizes_related_assets() -> None:
+    now = datetime(2026, 5, 7, tzinfo=timezone.utc)
+    payload = AlertCreate.model_validate(
+        {
+            "title": "RB alert",
+            "summary": "test",
+            "severity": "high",
+            "category": "ferrous",
+            "type": "momentum",
+            "triggered_at": now,
+            "confidence": 0.8,
+            "related_assets": [" rb ", "RB", " sc "],
+        }
+    )
+
+    assert payload.related_assets == ["RB", "SC"]
+
+
+def test_alert_payload_bounds_core_fields() -> None:
+    now = datetime(2026, 5, 7, tzinfo=timezone.utc)
+    base_payload = {
+        "title": "RB alert",
+        "summary": "test",
+        "severity": "high",
+        "category": "ferrous",
+        "type": "momentum",
+        "triggered_at": now,
+        "confidence": 0.8,
+    }
+
+    with pytest.raises(ValidationError):
+        AlertCreate.model_validate({**base_payload, "title": "x" * 301})
+
+    with pytest.raises(ValidationError):
+        AlertCreate.model_validate({**base_payload, "severity": "urgent"})
+
+    with pytest.raises(ValidationError):
+        AlertCreate.model_validate({**base_payload, "category": "x" * 21})
+
+    with pytest.raises(ValidationError):
+        AlertCreate.model_validate({**base_payload, "confidence": 1.1})
+
+    with pytest.raises(ValidationError):
+        AlertCreate.model_validate({**base_payload, "confidence_tier": "escalate"})
+
+
+def test_alert_payload_bounds_json_and_list_fields() -> None:
+    now = datetime(2026, 5, 7, tzinfo=timezone.utc)
+    base_payload = {
+        "title": "RB alert",
+        "summary": "test",
+        "severity": "high",
+        "category": "ferrous",
+        "type": "momentum",
+        "triggered_at": now,
+        "confidence": 0.8,
+    }
+
+    with pytest.raises(ValidationError):
+        AlertCreate.model_validate(
+            {
+                **base_payload,
+                "related_assets": [f"RB{index}" for index in range(21)],
+            }
+        )
+
+    with pytest.raises(ValidationError):
+        AlertCreate.model_validate(
+            {
+                **base_payload,
+                "spread_info": {"bad": object()},
+            }
+        )
+
+    with pytest.raises(ValidationError):
+        AlertCreate.model_validate(
+            {
+                **base_payload,
+                "trigger_chain": [{"step": index} for index in range(31)],
+            }
+        )
+
+    with pytest.raises(ValidationError):
+        AlertCreate.model_validate({**base_payload, "risk_items": ["x" * 801]})
+
+    with pytest.raises(ValidationError):
+        AlertCreate.model_validate({**base_payload, "manual_check_items": ["x" * 801]})
+
+
 def test_human_decision_payload_rejects_oversized_json() -> None:
     with pytest.raises(ValidationError):
         HumanDecisionCreate.model_validate(

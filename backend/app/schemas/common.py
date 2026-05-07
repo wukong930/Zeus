@@ -40,6 +40,11 @@ MAX_NEWS_SUMMARY_LENGTH = 1200
 MAX_NEWS_CONTENT_LENGTH = 20_000
 MAX_NEWS_URL_LENGTH = 1000
 MAX_NEWS_AFFECTED_SYMBOLS = 20
+MAX_ALERT_TITLE_LENGTH = 300
+MAX_ALERT_SUMMARY_LENGTH = 2000
+MAX_ALERT_ONE_LINER_LENGTH = 600
+MAX_ALERT_RELATED_ASSETS = 20
+MAX_ALERT_TRIGGER_STEPS = 30
 
 
 class MarketDataCreate(StrictInputModel):
@@ -112,31 +117,71 @@ class ContractRead(ContractCreate, ORMModel):
 
 
 class AlertCreate(StrictInputModel):
-    title: str
-    summary: str
-    severity: str
-    category: str
-    type: str
-    status: str = "active"
+    title: str = Field(min_length=1, max_length=MAX_ALERT_TITLE_LENGTH)
+    summary: str = Field(min_length=1, max_length=MAX_ALERT_SUMMARY_LENGTH)
+    severity: str = Field(pattern="^(low|medium|high|critical)$")
+    category: str = Field(min_length=1, max_length=20)
+    type: str = Field(min_length=1, max_length=30)
+    status: str = Field(default="active", max_length=20)
     triggered_at: datetime
     expires_at: datetime | None = None
-    confidence: float
+    confidence: float = Field(ge=0, le=1)
     adversarial_passed: bool = False
     llm_involved: bool = False
-    confidence_tier: str = "notify"
+    confidence_tier: str = Field(default="notify", pattern="^(auto|notify|confirm)$")
     human_action_required: bool = False
     human_action_deadline: datetime | None = None
     dedup_suppressed: bool = False
-    related_assets: list[str] = Field(default_factory=list)
+    related_assets: list[str] = Field(default_factory=list, max_length=MAX_ALERT_RELATED_ASSETS)
     spread_info: dict[str, Any] | None = None
-    trigger_chain: list[dict[str, Any]] = Field(default_factory=list)
-    risk_items: list[str] = Field(default_factory=list)
-    manual_check_items: list[str] = Field(default_factory=list)
-    one_liner: str | None = None
+    trigger_chain: list[dict[str, Any]] = Field(default_factory=list, max_length=MAX_ALERT_TRIGGER_STEPS)
+    risk_items: list[str] = Field(default_factory=list, max_length=MAX_TRADE_RISK_ITEMS)
+    manual_check_items: list[str] = Field(default_factory=list, max_length=MAX_TRADE_RISK_ITEMS)
+    one_liner: str | None = Field(default=None, max_length=MAX_ALERT_ONE_LINER_LENGTH)
     related_strategy_id: UUID | None = None
     related_recommendation_id: UUID | None = None
     related_research_id: UUID | None = None
-    invalidation_reason: str | None = None
+    invalidation_reason: str | None = Field(default=None, max_length=MAX_GOVERNANCE_TEXT_LENGTH)
+
+    @field_validator("related_assets")
+    @classmethod
+    def normalize_related_assets(cls, value: list[str]) -> list[str]:
+        symbols: list[str] = []
+        for symbol in value:
+            normalized = str(symbol).strip().upper()
+            if not normalized:
+                continue
+            if len(normalized) > MAX_INGEST_SYMBOL_LENGTH:
+                raise ValueError(
+                    f"related asset entries can be at most {MAX_INGEST_SYMBOL_LENGTH} characters"
+                )
+            symbols.append(normalized)
+        return list(dict.fromkeys(symbols))
+
+    @field_validator("spread_info")
+    @classmethod
+    def validate_spread_info(cls, value: dict[str, Any] | None) -> dict[str, Any] | None:
+        if value is not None:
+            validate_governance_json_object(value, field_name="spread_info")
+        return value
+
+    @field_validator("trigger_chain")
+    @classmethod
+    def validate_trigger_chain(cls, value: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        for step in value:
+            validate_governance_json_object(step, field_name="trigger_chain")
+        return value
+
+    @field_validator("risk_items", "manual_check_items")
+    @classmethod
+    def validate_alert_item_text(cls, value: list[str]) -> list[str]:
+        for item in value:
+            if len(item) > MAX_TRADE_ITEM_TEXT_LENGTH:
+                raise ValueError(
+                    "alert item entries can be at most "
+                    f"{MAX_TRADE_ITEM_TEXT_LENGTH} characters"
+                )
+        return value
 
 
 class AlertRead(AlertCreate, ORMModel):
