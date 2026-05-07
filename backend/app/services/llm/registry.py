@@ -109,14 +109,19 @@ async def get_active_llm_config(
     provider = str(row.provider).lower()
     if provider not in PROVIDER_FACTORIES:
         return None
+    api_key = _clean_secret(row.api_key)
+    if api_key is None:
+        return None
 
     settings = get_settings()
+    model = str(row.model or "").strip() or DEFAULT_MODELS[provider][0]
+    base_url = str(row.base_url).strip() if row.base_url else None
     return LLMProviderConfig(
         provider=provider,  # type: ignore[arg-type]
-        api_key=row.api_key,
-        model=row.model,
+        api_key=api_key,
+        model=model,
         enabled=row.enabled,
-        base_url=row.base_url,
+        base_url=base_url,
         timeout_seconds=settings.llm_timeout_seconds,
     )
 

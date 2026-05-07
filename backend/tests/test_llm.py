@@ -4,16 +4,37 @@ import httpx
 import pytest
 
 from app.core.config import Settings
+from app.models.llm_config import LLMConfig as LLMConfigModel
 from app.services.llm.anthropic import AnthropicProvider
 from app.services.llm.deepseek import DeepSeekProvider
 from app.services.llm.openai import OpenAIProvider, XAIProvider
-from app.services.llm.registry import create_provider, get_env_llm_config
+from app.services.llm.registry import create_provider, get_active_llm_config, get_env_llm_config
 from app.services.llm.types import (
     LLMCompletionOptions,
     LLMConfigurationError,
     LLMMessage,
     LLMProviderConfig,
 )
+
+
+class FakeScalars:
+    def __init__(self, row=None) -> None:
+        self.row = row
+
+    def first(self):
+        return self.row
+
+
+class FakeSession:
+    def __init__(self, row=None) -> None:
+        self.row = row
+        self.rollback_count = 0
+
+    async def scalars(self, _statement):
+        return FakeScalars(self.row)
+
+    async def rollback(self) -> None:
+        self.rollback_count += 1
 
 
 @pytest.mark.asyncio
@@ -226,6 +247,42 @@ def test_registry_reads_xai_env_config() -> None:
     assert config.provider == "xai"
     assert config.model == "grok-4.3"
     assert config.base_url == "https://api.x.ai/v1"
+
+
+@pytest.mark.asyncio
+async def test_registry_ignores_database_config_without_api_key() -> None:
+    config = await get_active_llm_config(
+        session=FakeSession(
+            LLMConfigModel(
+                provider="xai",
+                api_key=" ",
+                model="grok-4.3",
+                enabled=True,
+            )
+        )  # type: ignore[arg-type]
+    )
+
+    assert config is None
+
+
+@pytest.mark.asyncio
+async def test_registry_trims_database_config_secret_and_base_url() -> None:
+    config = await get_active_llm_config(
+        session=FakeSession(
+            LLMConfigModel(
+                provider="xai",
+                api_key=" xai-test ",
+                model=" ",
+                base_url=" https://api.x.ai/v1/ ",
+                enabled=True,
+            )
+        )  # type: ignore[arg-type]
+    )
+
+    assert config is not None
+    assert config.api_key == "xai-test"
+    assert config.model == "grok-4.3"
+    assert config.base_url == "https://api.x.ai/v1/"
 
 
 def test_registry_rejects_missing_api_key() -> None:
