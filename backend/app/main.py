@@ -18,6 +18,7 @@ from app.api.learning import router as learning_router
 from app.api.llm_usage import router as llm_usage_router
 from app.api.market_data import router as market_data_router
 from app.api.news_events import router as news_events_router
+from app.api.notebook import router as notebook_router
 from app.api.positions import router as positions_router
 from app.api.recommendations import router as recommendations_router
 from app.api.risk import router as risk_router
@@ -68,6 +69,7 @@ def create_app() -> FastAPI:
     app.include_router(causal_web_router)
     app.include_router(market_data_router)
     app.include_router(news_events_router)
+    app.include_router(notebook_router)
     app.include_router(industry_data_router)
     app.include_router(feedback_router)
     app.include_router(learning_router)

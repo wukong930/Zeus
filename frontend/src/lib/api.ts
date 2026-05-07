@@ -477,6 +477,44 @@ export interface LearningHypothesis {
   created_at: string | null;
 }
 
+export interface NotebookReference {
+  id: string;
+  type: "alert" | "hypothesis" | "report";
+  title: string;
+  status: string | null;
+  timestamp: string | null;
+  relation: string;
+}
+
+export interface NotebookEntry {
+  id: string;
+  kind: "report" | "learning_hypothesis" | "research_hypothesis";
+  title: string;
+  summary: string;
+  body: string;
+  status: string;
+  confidence: number | null;
+  folder: string;
+  tags: string[];
+  symbols: string[];
+  references: NotebookReference[];
+  createdAt: string;
+  updatedAt: string | null;
+}
+
+export interface NotebookFolder {
+  name: string;
+  count: number;
+}
+
+export interface NotebookSnapshot {
+  generatedAt: string;
+  source: "database";
+  notes: NotebookEntry[];
+  folders: NotebookFolder[];
+  referenceCounts: Record<string, number>;
+}
+
 export interface NewsEvent {
   id: string;
   source: string;
@@ -532,6 +570,30 @@ interface BackendNewsEvent {
   source_count: number;
   verification_status: string;
   requires_manual_confirmation: boolean;
+}
+
+interface BackendNotebookEntry {
+  id: string;
+  kind: "report" | "learning_hypothesis" | "research_hypothesis";
+  title: string;
+  summary: string;
+  body: string;
+  status: string;
+  confidence: number | null;
+  folder: string;
+  tags: string[];
+  symbols: string[];
+  references: NotebookReference[];
+  created_at: string;
+  updated_at: string | null;
+}
+
+interface BackendNotebookSnapshot {
+  generated_at: string;
+  source: "database";
+  notes: BackendNotebookEntry[];
+  folders: NotebookFolder[];
+  reference_counts: Record<string, number>;
 }
 
 interface BackendRecommendation {
@@ -808,6 +870,31 @@ export async function fetchDriftSnapshot(): Promise<DriftSnapshot> {
 
 export async function fetchLearningHypotheses(): Promise<LearningHypothesis[]> {
   return fetchJson<LearningHypothesis[]>("/api/learning/hypotheses");
+}
+
+export async function fetchNotebookSnapshot(): Promise<NotebookSnapshot> {
+  const snapshot = await fetchJson<BackendNotebookSnapshot>("/api/notebook?limit=100");
+  return {
+    generatedAt: snapshot.generated_at,
+    source: snapshot.source,
+    notes: snapshot.notes.map((note) => ({
+      id: note.id,
+      kind: note.kind,
+      title: note.title,
+      summary: note.summary,
+      body: note.body,
+      status: note.status,
+      confidence: note.confidence,
+      folder: note.folder,
+      tags: note.tags,
+      symbols: note.symbols,
+      references: note.references,
+      createdAt: note.created_at,
+      updatedAt: note.updated_at,
+    })),
+    folders: snapshot.folders,
+    referenceCounts: snapshot.reference_counts,
+  };
 }
 
 export async function submitAlertFeedback(
