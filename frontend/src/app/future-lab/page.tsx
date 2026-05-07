@@ -5,6 +5,7 @@ import { AlertTriangle, Beaker, Play, Sparkles } from "lucide-react";
 import { Badge } from "@/components/Badge";
 import { Button } from "@/components/Button";
 import { Card, CardHeader, CardSubtitle, CardTitle } from "@/components/Card";
+import { DataSourceBadge, type DataSourceState } from "@/components/DataSourceBadge";
 import { MetricTile } from "@/components/MetricTile";
 import { runScenarioSimulation, type ScenarioReport } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -14,7 +15,7 @@ const SCENARIO_PRESETS = [
   {
     label: "20号胶 / 橡胶链",
     targetSymbol: "RU",
-    basePrice: 15400,
+    fallbackBasePrice: 15400,
     volatilityPct: 2.1,
     shocks: [
       { symbol: "NR", label: "NR 原料冲击", min: -20, max: 20, value: 6 },
@@ -25,7 +26,7 @@ const SCENARIO_PRESETS = [
   {
     label: "螺纹钢 / 黑色链",
     targetSymbol: "RB",
-    basePrice: 3250,
+    fallbackBasePrice: 3250,
     volatilityPct: 1.8,
     shocks: [
       { symbol: "I", label: "铁矿石", min: -20, max: 20, value: 10 },
@@ -36,7 +37,7 @@ const SCENARIO_PRESETS = [
   {
     label: "原油 / 能化链",
     targetSymbol: "TA",
-    basePrice: 5860,
+    fallbackBasePrice: 5860,
     volatilityPct: 2.0,
     shocks: [
       { symbol: "SC", label: "原油", min: -20, max: 20, value: 8 },
@@ -58,6 +59,13 @@ export default function FutureLabPage() {
   const [running, setRunning] = useState(false);
   const [report, setReport] = useState<ScenarioReport | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const source: DataSourceState = error
+    ? "fallback"
+    : report?.degraded
+      ? "partial"
+      : report
+        ? "api"
+        : "loading";
 
   const run = async () => {
     setRunning(true);
@@ -65,7 +73,7 @@ export default function FutureLabPage() {
     try {
       const result = await runScenarioSimulation({
         target_symbol: preset.targetSymbol,
-        base_price: preset.basePrice,
+        base_price: null,
         shocks: Object.fromEntries(
           Object.entries(shockValues).map(([symbol, value]) => [symbol, value / 100])
         ),
@@ -92,11 +100,14 @@ export default function FutureLabPage() {
 
   return (
     <div className="px-8 py-6 space-y-6 animate-fade-in">
-      <div>
-        <h1 className="text-h1 text-text-primary">{text("Future Lab")}</h1>
-        <p className="text-sm text-text-secondary mt-1">
-          {text("Monte Carlo 价格路径模拟 + What-if 假设检验")}
-        </p>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h1 className="text-h1 text-text-primary">{text("Future Lab")}</h1>
+          <p className="text-sm text-text-secondary mt-1">
+            {text("Monte Carlo 价格路径模拟 + What-if 假设检验")}
+          </p>
+        </div>
+        <DataSourceBadge state={source} />
       </div>
 
       <div className="grid grid-cols-12 gap-5">
@@ -191,6 +202,11 @@ export default function FutureLabPage() {
             <div className="flex items-center gap-3">
               <CardTitle>概率扇</CardTitle>
               {report && <Badge variant="emerald">{text("推演完成")}</Badge>}
+              {report && (
+                <Badge variant={report.degraded ? "orange" : "emerald"}>
+                  {text(basePriceSourceLabel(report.base_price_source))}
+                </Badge>
+              )}
             </div>
             <CardSubtitle>
               {preset.targetSymbol} {text("未来")} {days} {text("天价格路径分布")}（{simulations} {text("次模拟")}）
@@ -215,7 +231,7 @@ export default function FutureLabPage() {
               </div>
             </div>
           ) : (
-            <ProbabilityFan report={report} basePrice={preset.basePrice} />
+            <ProbabilityFan report={report} basePrice={report?.base_price ?? preset.fallbackBasePrice} />
           )}
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-5">
@@ -243,6 +259,20 @@ export default function FutureLabPage() {
           </div>
         </Card>
       </div>
+
+      {report?.degraded && (
+        <Card variant="data" className="border-brand-orange/35">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <div className="text-sm font-medium text-brand-orange">{text("场景基准价使用静态回退")}</div>
+              <div className="mt-1 text-sm text-text-secondary">
+                {text("未找到目标品种最新行情，推演仍可运行，但价格锚来自内置静态基准。")}
+              </div>
+            </div>
+            <Badge variant="orange">{text("部分可用")}</Badge>
+          </div>
+        </Card>
+      )}
 
       {report && (
         <Card variant="data">
@@ -461,6 +491,12 @@ function ProbabilityFan({ report, basePrice }: { report: ScenarioReport | null; 
 
 function valuesFromPreset(preset: (typeof SCENARIO_PRESETS)[number]): Record<string, number> {
   return Object.fromEntries(preset.shocks.map((shock) => [shock.symbol, shock.value]));
+}
+
+function basePriceSourceLabel(source: string): string {
+  if (source === "runtime_market_data") return "运行态行情";
+  if (source === "provided") return "手动基准";
+  return "静态基准";
 }
 
 function price(value: number): string {

@@ -45,12 +45,24 @@ DEFAULT_DAILY_VOLATILITY: dict[str, float] = {
 }
 
 
-def run_scenario_simulation(request: ScenarioRequest) -> ScenarioReport:
+def run_scenario_simulation(
+    request: ScenarioRequest,
+    *,
+    base_price_source: str | None = None,
+    unavailable_sections: tuple[str, ...] | list[str] = (),
+) -> ScenarioReport:
     target_symbol = symbol_prefix(request.target_symbol)
     what_if = run_what_if(request.shocks, max_depth=request.max_depth)
     target_impact = impact_for_symbol(what_if, target_symbol)
     applied_shock = target_impact.total_shock if target_impact is not None else 0.0
     base_price = request.base_price or DEFAULT_BASE_PRICES.get(target_symbol, 100.0)
+    inferred_base_price_source = (
+        base_price_source
+        or ("provided" if request.base_price is not None else "default_static")
+    )
+    unavailable = tuple(unavailable_sections)
+    if inferred_base_price_source == "default_static" and "market_price_unavailable" not in unavailable:
+        unavailable = (*unavailable, "market_price_unavailable")
     volatility_pct = request.volatility_pct or DEFAULT_DAILY_VOLATILITY.get(target_symbol, 0.02)
     monte_carlo = run_monte_carlo(
         target_symbol=target_symbol,
@@ -80,6 +92,9 @@ def run_scenario_simulation(request: ScenarioRequest) -> ScenarioReport:
         ),
         risk_points=tuple(build_risk_points(target_symbol, what_if, applied_shock)),
         suggested_actions=tuple(build_suggested_actions(applied_shock, monte_carlo.downside_probability)),
+        base_price_source=inferred_base_price_source,
+        degraded=bool(unavailable),
+        unavailable_sections=unavailable,
     )
 
 
@@ -88,8 +103,14 @@ async def run_scenario_simulation_with_llm_narrative(
     *,
     session: AsyncSession | None = None,
     completer: ScenarioCompleter | None = None,
+    base_price_source: str | None = None,
+    unavailable_sections: tuple[str, ...] | list[str] = (),
 ) -> ScenarioReport:
-    report = run_scenario_simulation(request)
+    report = run_scenario_simulation(
+        request,
+        base_price_source=base_price_source,
+        unavailable_sections=unavailable_sections,
+    )
     if completer is None:
         return await enrich_report_with_llm_narrative(report, session=session)
     return await enrich_report_with_llm_narrative(report, session=session, completer=completer)

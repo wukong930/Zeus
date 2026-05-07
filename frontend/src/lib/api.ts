@@ -336,6 +336,9 @@ export interface ScenarioReport {
   status: string;
   target_symbol: string;
   base_price: number;
+  base_price_source: string;
+  degraded: boolean;
+  unavailable_sections: string[];
   what_if: {
     shocks: Record<string, number>;
     impacts: ScenarioImpact[];

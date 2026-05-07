@@ -275,11 +275,11 @@ async def test_signal_scored_handler_creates_alert_and_publishes_event() -> None
 
     assert created is not None
     assert created.channel == "alert.created"
-    assert isinstance(session.rows[0], Alert)
-    assert session.rows[0].type == "spread_anomaly"
-    assert session.rows[0].adversarial_passed is True
+    alert = next(row for row in session.rows if isinstance(row, Alert))
+    assert alert.type == "spread_anomaly"
+    assert alert.adversarial_passed is True
     assert created.payload["adversarial_passed"] is True
-    assert created.payload["alert_id"] == str(session.rows[0].id)
+    assert created.payload["alert_id"] == str(alert.id)
 
 
 async def test_signal_scored_handler_requests_scenario_for_arbitration_route() -> None:

@@ -501,6 +501,13 @@ const EN: Record<string, string> = {
   "滞后": "lag",
   "天": "days",
   "配置场景后运行推演": "Configure a scenario, then run the simulation",
+  "运行态行情": "Runtime Market Data",
+  "手动基准": "Manual Base",
+  "静态基准": "Static Base",
+  "场景基准价使用静态回退": "Scenario base price is using a static fallback",
+  "未找到目标品种最新行情，推演仍可运行，但价格锚来自内置静态基准。":
+    "Latest market data for the target symbol was not found. The simulation can still run, but its price anchor comes from a built-in static baseline.",
+  "部分可用": "Partially Available",
   "20号胶 / 橡胶链": "No.20 Rubber / Rubber Chain",
   "螺纹钢 / 黑色链": "Rebar / Ferrous Chain",
   "原油 / 能化链": "Crude Oil / Energy-Chem Chain",

@@ -4,6 +4,7 @@ import json
 
 from fastapi.testclient import TestClient
 
+from app.core.database import get_db
 from app.core.events import ZeusEvent
 from app.main import create_app
 from app.services.llm.types import LLMCompletionResult
@@ -91,6 +92,23 @@ def test_simulator_combines_what_if_and_monte_carlo_report() -> None:
     assert payload["risk_points"]
     assert payload["suggested_actions"]
     assert payload["narrative_source"] == "deterministic"
+    assert payload["base_price_source"] == "provided"
+    assert payload["degraded"] is False
+
+
+def test_simulator_marks_static_default_base_price_as_degraded() -> None:
+    report = run_scenario_simulation(
+        ScenarioRequest(
+            target_symbol="RU",
+            shocks={"NR": 0.06},
+            simulations=500,
+        )
+    )
+
+    payload = report.to_dict()
+    assert payload["base_price_source"] == "default_static"
+    assert payload["degraded"] is True
+    assert payload["unavailable_sections"] == ["market_price_unavailable"]
 
 
 async def test_llm_narrative_enrichment_updates_report_text() -> None:
@@ -154,9 +172,53 @@ def test_scenario_simulation_api_returns_report() -> None:
     payload = response.json()
     assert payload["target_symbol"] == "RB"
     assert payload["what_if"]["impacts"]
+    assert payload["base_price_source"] == "provided"
     assert payload["monte_carlo"]["terminal_distribution"]["p95"] > payload["monte_carlo"][
         "terminal_distribution"
     ]["p5"]
+
+
+def test_scenario_simulation_api_uses_runtime_market_price(monkeypatch) -> None:
+    async def fake_db():
+        yield object()
+
+    async def fake_resolver(_session, request):
+        return (
+            ScenarioRequest(
+                target_symbol=request.target_symbol,
+                shocks=request.shocks,
+                base_price=3210,
+                days=request.days,
+                simulations=request.simulations,
+                volatility_pct=request.volatility_pct,
+                drift_pct=request.drift_pct,
+                seed=request.seed,
+                max_depth=request.max_depth,
+            ),
+            {"base_price_source": "runtime_market_data", "unavailable_sections": ()},
+        )
+
+    monkeypatch.setattr("app.api.scenarios.resolve_scenario_request_inputs", fake_resolver)
+    app = create_app()
+    app.dependency_overrides[get_db] = fake_db
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/scenarios/simulate",
+        json={
+            "target_symbol": "RB",
+            "shocks": {"I": 0.10},
+            "days": 20,
+            "simulations": 500,
+            "volatility_pct": 0.018,
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["base_price"] == 3210
+    assert payload["base_price_source"] == "runtime_market_data"
+    assert payload["degraded"] is False
 
 
 async def test_scenario_requested_handler_publishes_completed_event() -> None:
@@ -181,4 +243,5 @@ async def test_scenario_requested_handler_publishes_completed_event() -> None:
     assert completed is not None
     assert completed.channel == "scenario.completed"
     assert publisher.calls[0]["event"].payload["report"]["target_symbol"] == "RU"
+    assert publisher.calls[0]["event"].payload["report"]["base_price_source"] == "provided"
     assert publisher.calls[0]["kwargs"]["source"] == "scenario-simulator"

@@ -141,6 +141,9 @@ class ScenarioReport:
     risk_points: tuple[str, ...]
     suggested_actions: tuple[str, ...]
     narrative_source: str = "deterministic"
+    base_price_source: str = "provided"
+    degraded: bool = False
+    unavailable_sections: tuple[str, ...] = ()
     scenario_id: str = field(default_factory=lambda: str(uuid4()))
     generated_at: str = field(default_factory=utc_now_iso)
     status: str = "completed"
@@ -153,6 +156,9 @@ class ScenarioReport:
             "status": self.status,
             "target_symbol": self.target_symbol,
             "base_price": round(self.base_price, 4),
+            "base_price_source": self.base_price_source,
+            "degraded": self.degraded,
+            "unavailable_sections": list(self.unavailable_sections),
             "request": payload,
             "what_if": self.what_if.to_dict(),
             "monte_carlo": self.monte_carlo.to_dict(),

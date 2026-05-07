@@ -545,10 +545,16 @@ async def handle_scenario_requested(
         seed=int(request_payload.get("seed", 7)),
         max_depth=int(request_payload.get("max_depth", 3)),
     )
+    runtime_payload = event.payload.get("runtime")
+    runtime = scenario_runtime_metadata(runtime_payload if isinstance(runtime_payload, dict) else {})
     if event.payload.get("use_llm_narrative", False):
-        report = await run_scenario_simulation_with_llm_narrative(request, session=session)
+        report = await run_scenario_simulation_with_llm_narrative(
+            request,
+            session=session,
+            **runtime,
+        )
     else:
-        report = run_scenario_simulation(request)
+        report = run_scenario_simulation(request, **runtime)
     return await publisher(
         "scenario.completed",
         {"report": report.to_dict()},
@@ -578,6 +584,19 @@ def scenario_request_from_alert(
         "simulations": 1000,
         "seed": 17,
         "max_depth": 3,
+    }
+
+
+def scenario_runtime_metadata(payload: dict[str, Any]) -> dict[str, Any]:
+    source = payload.get("base_price_source")
+    sections = payload.get("unavailable_sections")
+    return {
+        "base_price_source": source if isinstance(source, str) else None,
+        "unavailable_sections": tuple(
+            str(item)
+            for item in (sections if isinstance(sections, list) else [])
+            if item
+        ),
     }
 
 
