@@ -1,4 +1,4 @@
-FROM python:3.11-slim AS runtime
+FROM python:3.11-slim AS base
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -15,8 +15,20 @@ COPY app ./app
 COPY alembic ./alembic
 COPY alembic.ini ./alembic.ini
 
+EXPOSE 8000
+
+FROM base AS dev
+
+RUN pip install ".[dev]"
+COPY tests ./tests
+RUN chown zeus:zeus /app
+
 USER zeus
 
-EXPOSE 8000
+CMD ["python", "-m", "pytest", "-q"]
+
+FROM base AS runtime
+
+USER zeus
 
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

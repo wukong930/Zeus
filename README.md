@@ -45,6 +45,12 @@ docker compose up --build
 # Postgres host port: 55432
 ```
 
+后端测试容器（不会把 dev 依赖装进生产 backend 镜像）：
+
+```bash
+docker compose run --rm backend-test
+```
+
 ## 设计文档
 
 | 文档 | 用途 |
