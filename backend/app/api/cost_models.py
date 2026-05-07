@@ -15,6 +15,7 @@ from app.services.cost_models.cost_chain import calculate_cost_chain, chain_orde
 from app.services.cost_models.quality import run_ferrous_quality_report, run_rubber_quality_report
 from app.services.cost_models.snapshots import (
     calculate_cost_snapshot,
+    cost_histories_for_symbols,
     current_prices_for_symbols,
     snapshot_ferrous_costs,
     snapshot_rubber_costs,
@@ -33,6 +34,19 @@ async def get_ferrous_cost_quality_report(session: AsyncSession = Depends(get_db
 async def get_rubber_cost_quality_report(session: AsyncSession = Depends(get_db)) -> dict:
     report = await run_rubber_quality_report(session)
     return report.to_dict()
+
+
+@router.get("/histories", response_model=dict[str, list[CostSnapshotRead]])
+async def get_cost_model_histories(
+    symbols: str = Query(..., min_length=1),
+    limit: int = Query(default=30, ge=1, le=1000),
+    session: AsyncSession = Depends(get_db),
+) -> dict[str, list[CostSnapshot]]:
+    return await cost_histories_for_symbols(
+        session,
+        symbols=_parse_cost_symbols(symbols),
+        limit_per_symbol=limit,
+    )
 
 
 @router.get("/{symbol}", response_model=CostModelRead)
@@ -140,3 +154,9 @@ def cost_model_payload(payload: dict) -> dict:
         "uncertainty_pct": payload["uncertainty_pct"],
         "formula_version": payload["formula_version"],
     }
+
+
+def _parse_cost_symbols(value: str) -> tuple[str, ...]:
+    return tuple(
+        dict.fromkeys(symbol.strip().upper() for symbol in value.split(",") if symbol.strip())
+    )

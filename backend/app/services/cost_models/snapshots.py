@@ -278,23 +278,34 @@ async def cost_signal_contexts(
     symbols: tuple[str, ...] = FERROUS_SYMBOLS,
     limit_per_symbol: int = 20,
 ) -> list[dict[str, Any]]:
-    if not symbols:
-        return []
-
-    normalized_symbols = tuple(dict.fromkeys(symbol.upper() for symbol in symbols))
-    ranked_ids = (
-        select(
-            CostSnapshot.id.label("id"),
-            func.row_number()
-            .over(
-                partition_by=CostSnapshot.symbol,
-                order_by=(CostSnapshot.snapshot_date.desc(), CostSnapshot.created_at.desc()),
-            )
-            .label("rn"),
-        )
-        .where(CostSnapshot.symbol.in_(normalized_symbols))
-        .subquery()
+    rows_by_symbol = await cost_histories_for_symbols(
+        session,
+        symbols=symbols,
+        limit_per_symbol=limit_per_symbol,
     )
+
+    contexts: list[dict[str, Any]] = []
+    for symbol in rows_by_symbol:
+        context = build_cost_signal_context(symbol, rows_by_symbol.get(symbol, []))
+        if context is not None:
+            contexts.append(context)
+    return contexts
+
+
+async def cost_histories_for_symbols(
+    session: AsyncSession,
+    *,
+    symbols: tuple[str, ...],
+    limit_per_symbol: int,
+) -> dict[str, list[CostSnapshot]]:
+    if not symbols:
+        return {}
+
+    normalized_symbols = tuple(dict.fromkeys(symbol.upper() for symbol in symbols if symbol))
+    if not normalized_symbols:
+        return {}
+
+    ranked_ids = _cost_history_ranked_ids(normalized_symbols)
     rows = list(
         (
             await session.scalars(
@@ -312,13 +323,23 @@ async def cost_signal_contexts(
     rows_by_symbol: dict[str, list[CostSnapshot]] = {symbol: [] for symbol in normalized_symbols}
     for row in rows:
         rows_by_symbol.setdefault(row.symbol.upper(), []).append(row)
+    return rows_by_symbol
 
-    contexts: list[dict[str, Any]] = []
-    for symbol in normalized_symbols:
-        context = build_cost_signal_context(symbol, rows_by_symbol.get(symbol, []))
-        if context is not None:
-            contexts.append(context)
-    return contexts
+
+def _cost_history_ranked_ids(symbols: tuple[str, ...]):
+    return (
+        select(
+            CostSnapshot.id.label("id"),
+            func.row_number()
+            .over(
+                partition_by=CostSnapshot.symbol,
+                order_by=(CostSnapshot.snapshot_date.desc(), CostSnapshot.created_at.desc()),
+            )
+            .label("rn"),
+        )
+        .where(CostSnapshot.symbol.in_(symbols))
+        .subquery()
+    )
 
 
 async def latest_cost_snapshot(session: AsyncSession, symbol: str) -> CostSnapshot | None:

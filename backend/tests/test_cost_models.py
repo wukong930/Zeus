@@ -1,5 +1,6 @@
 import asyncio
 from datetime import date, datetime, timezone
+from uuid import uuid4
 
 from fastapi.testclient import TestClient
 
@@ -29,6 +30,7 @@ from app.services.cost_models.rubber_sources import (
 )
 from app.services.cost_models.snapshots import (
     build_cost_signal_context,
+    cost_histories_for_symbols,
     cost_signal_contexts,
     current_prices_for_symbols,
     latest_cost_snapshots,
@@ -240,6 +242,27 @@ async def test_latest_cost_snapshots_uses_single_batch_query() -> None:
     assert session.scalars_count == 1
 
 
+async def test_cost_histories_for_symbols_uses_single_batch_query() -> None:
+    rows = [
+        cost_snapshot_row("RB", date(2026, 5, 4)),
+        cost_snapshot_row("RB", date(2026, 5, 3)),
+        cost_snapshot_row("I", date(2026, 5, 4)),
+    ]
+    session = FakeSession(scalar_rows=rows)
+
+    histories = await cost_histories_for_symbols(
+        session,  # type: ignore[arg-type]
+        symbols=("RB", "I", "HC"),
+        limit_per_symbol=2,
+    )
+
+    assert list(histories) == ["RB", "I", "HC"]
+    assert [row.symbol for row in histories["RB"]] == ["RB", "RB"]
+    assert [row.symbol for row in histories["I"]] == ["I"]
+    assert histories["HC"] == []
+    assert session.scalars_count == 1
+
+
 async def test_cost_signal_contexts_uses_single_batch_query() -> None:
     rows = [
         cost_snapshot_row("RB", date(2026, 5, 4)),
@@ -314,8 +337,40 @@ def test_build_cost_signal_context_serializes_snapshot_history() -> None:
     assert len(context["cost_snapshots"]) == 2
 
 
+def test_cost_histories_api_batches_requested_symbols(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+    session = object()
+
+    async def fake_db():
+        yield session
+
+    async def fake_cost_histories_for_symbols(db_session, *, symbols, limit_per_symbol):
+        captured["session"] = db_session
+        captured["symbols"] = symbols
+        captured["limit"] = limit_per_symbol
+        return {
+            "RB": [cost_snapshot_row("RB", date(2026, 5, 4))],
+            "HC": [cost_snapshot_row("HC", date(2026, 5, 4))],
+        }
+
+    monkeypatch.setattr(
+        "app.api.cost_models.cost_histories_for_symbols",
+        fake_cost_histories_for_symbols,
+    )
+    app = create_app()
+    app.dependency_overrides[get_db] = fake_db
+    client = TestClient(app)
+
+    response = client.get("/api/cost-models/histories?symbols=rb,hc,rb&limit=3")
+
+    assert response.status_code == 200
+    assert captured == {"session": session, "symbols": ("RB", "HC"), "limit": 3}
+    assert set(response.json()) == {"RB", "HC"}
+
+
 def cost_snapshot_row(symbol: str, snapshot_date: date) -> CostSnapshot:
     return CostSnapshot(
+        id=uuid4(),
         symbol=symbol,
         name=symbol,
         sector="ferrous",

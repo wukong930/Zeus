@@ -841,6 +841,21 @@ export async function fetchCostHistory(symbol: string, limit = 30): Promise<Cost
   );
 }
 
+export async function fetchCostHistories(
+  symbols: readonly string[],
+  limit = 30
+): Promise<Record<string, CostSnapshot[]>> {
+  const uniqueSymbols = Array.from(
+    new Set(symbols.map((symbol) => symbol.trim()).filter((symbol) => symbol.length > 0))
+  ).sort();
+  if (uniqueSymbols.length === 0) {
+    return {};
+  }
+  return fetchJson<Record<string, CostSnapshot[]>>(
+    `/api/cost-models/histories?symbols=${encodeURIComponent(uniqueSymbols.join(","))}&limit=${limit}`
+  );
+}
+
 export async function simulateCostModel(
   symbol: string,
   payload: CostSimulationRequest

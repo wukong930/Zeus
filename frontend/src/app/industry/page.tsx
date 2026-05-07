@@ -17,6 +17,7 @@ import { Card, CardHeader, CardSubtitle, CardTitle } from "@/components/Card";
 import { DataSourceBadge, type DataSourceState } from "@/components/DataSourceBadge";
 import {
   fetchCostChain,
+  fetchCostHistories,
   fetchCostHistory,
   fetchCostQualityReport,
   simulateCostModel,
@@ -112,15 +113,7 @@ export default function IndustryLensPage() {
         setQualityReport(null);
         const nextChain = await fetchCostChain(nextSelected);
         const [historyResults, qualityResult] = await Promise.all([
-          Promise.all(
-            config.symbols.map(async (symbol) => {
-              try {
-                return { ok: true, symbol, rows: await fetchCostHistory(symbol, 30) } as const;
-              } catch {
-                return { ok: false, symbol, rows: [] as CostSnapshot[] } as const;
-              }
-            })
-          ),
+          fetchSectorCostHistories(config.symbols),
           fetchCostQualityReport(config.quality)
             .then((report) => ({ ok: true, report }) as const)
             .catch(() => ({ ok: false, report: null }) as const),
@@ -357,6 +350,30 @@ export default function IndustryLensPage() {
       )}
     </div>
   );
+}
+
+async function fetchSectorCostHistories(symbols: readonly string[]) {
+  try {
+    const histories = await fetchCostHistories(symbols, 30);
+    return symbols.map(
+      (symbol) =>
+        ({
+          ok: true,
+          symbol,
+          rows: histories[symbol] ?? [],
+        }) as const
+    );
+  } catch {
+    return Promise.all(
+      symbols.map(async (symbol) => {
+        try {
+          return { ok: true, symbol, rows: await fetchCostHistory(symbol, 30) } as const;
+        } catch {
+          return { ok: false, symbol, rows: [] as CostSnapshot[] } as const;
+        }
+      })
+    );
+  }
 }
 
 function IndustryEmptyState({
