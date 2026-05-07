@@ -38,6 +38,39 @@ def test_parse_market_symbols_rejects_too_many_unique_values() -> None:
     assert "at most 50" in response.json()["detail"]
 
 
+def test_parse_market_symbols_rejects_oversized_symbol() -> None:
+    app = create_app()
+    client = TestClient(app)
+
+    response = client.get(f"/api/market-data/latest?symbols={'X' * 33}")
+
+    assert response.status_code == 400
+    assert "at most 32" in response.json()["detail"]
+
+
+def test_market_data_batch_endpoints_reject_oversized_query() -> None:
+    app = create_app()
+    client = TestClient(app)
+    symbols = ",".join("RB" for _ in range(900))
+
+    latest_response = client.get(f"/api/market-data/latest?symbols={symbols}")
+    recent_response = client.get(f"/api/market-data/recent?symbols={symbols}")
+
+    assert latest_response.status_code == 422
+    assert recent_response.status_code == 422
+
+
+def test_single_market_data_symbol_inputs_are_bounded() -> None:
+    app = create_app()
+    client = TestClient(app)
+
+    list_response = client.get(f"/api/market-data?symbol={'X' * 33}")
+    latest_response = client.get(f"/api/market-data/symbols/{'X' * 33}/latest")
+
+    assert list_response.status_code == 422
+    assert latest_response.status_code == 422
+
+
 def test_latest_market_data_statement_uses_window_per_symbol() -> None:
     compiled = str(
         _latest_market_data_statement(["RB", "HC"]).compile(

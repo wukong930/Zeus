@@ -1,23 +1,24 @@
 from datetime import datetime
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
 from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.models.market_data import MarketData
-from app.schemas.common import MarketDataCreate, MarketDataRead
+from app.schemas.common import MAX_INGEST_SYMBOL_LENGTH, MarketDataCreate, MarketDataRead
 from app.services.etl.writers import append_market_data
 from app.services.market_data.pit import get_market_data_pit
 
 router = APIRouter(prefix="/api/market-data", tags=["market-data"])
 MAX_BATCH_SYMBOLS = 50
+MAX_MARKET_SYMBOL_QUERY_LENGTH = 2000
 
 
 @router.get("", response_model=list[MarketDataRead])
 async def list_market_data(
-    symbol: str,
+    symbol: str = Query(..., min_length=1, max_length=MAX_INGEST_SYMBOL_LENGTH),
     as_of: datetime | None = None,
     start: datetime | None = None,
     end: datetime | None = None,
@@ -47,7 +48,7 @@ async def create_market_data(
 
 @router.get("/latest", response_model=list[MarketDataRead])
 async def get_latest_market_data_batch(
-    symbols: str = Query(..., min_length=1),
+    symbols: str = Query(..., min_length=1, max_length=MAX_MARKET_SYMBOL_QUERY_LENGTH),
     session: AsyncSession = Depends(get_db),
 ) -> list[MarketData]:
     return await latest_market_data_for_symbols(session, _parse_market_symbols(symbols))
@@ -55,7 +56,7 @@ async def get_latest_market_data_batch(
 
 @router.get("/recent", response_model=list[MarketDataRead])
 async def get_recent_market_data_batch(
-    symbols: str = Query(..., min_length=1),
+    symbols: str = Query(..., min_length=1, max_length=MAX_MARKET_SYMBOL_QUERY_LENGTH),
     limit: int = Query(default=5, ge=1, le=200),
     session: AsyncSession = Depends(get_db),
 ) -> list[MarketData]:
@@ -79,7 +80,7 @@ async def get_market_data(
 
 @router.get("/symbols/{symbol}/latest", response_model=MarketDataRead)
 async def get_latest_market_data(
-    symbol: str,
+    symbol: str = Path(..., min_length=1, max_length=MAX_INGEST_SYMBOL_LENGTH),
     session: AsyncSession = Depends(get_db),
 ) -> MarketData:
     rows = await latest_market_data_for_symbols(session, [symbol])
@@ -199,5 +200,13 @@ def _parse_market_symbols(value: str) -> list[str]:
         raise HTTPException(
             status_code=400,
             detail=f"symbols supports at most {MAX_BATCH_SYMBOLS} unique values",
+        )
+    if oversized := [symbol for symbol in symbols if len(symbol) > MAX_INGEST_SYMBOL_LENGTH]:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "symbol entries can be at most "
+                f"{MAX_INGEST_SYMBOL_LENGTH} characters: {','.join(oversized[:3])}"
+            ),
         )
     return symbols
