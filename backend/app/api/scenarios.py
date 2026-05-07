@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.events import publish
 from app.models.market_data import MarketData
-from app.schemas.common import StrictInputModel
+from app.schemas.common import MAX_INGEST_ABS_VALUE, MAX_INGEST_SYMBOL_LENGTH, StrictInputModel
 from app.services.risk.stress import symbol_prefix
 from app.services.scenarios import (
     ScenarioRequest,
@@ -23,17 +23,18 @@ from app.services.scenarios import (
 router = APIRouter(prefix="/api/scenarios", tags=["scenarios"])
 
 MAX_SCENARIO_SHOCKS = 40
+MAX_SCENARIO_SEED = 2_147_483_647
 
 
 class ScenarioSimulationPayload(StrictInputModel):
-    target_symbol: str = Field(min_length=1, max_length=20)
+    target_symbol: str = Field(min_length=1, max_length=MAX_INGEST_SYMBOL_LENGTH)
     shocks: dict[str, float] = Field(min_length=1, max_length=MAX_SCENARIO_SHOCKS)
-    base_price: float | None = Field(default=None, gt=0)
+    base_price: float | None = Field(default=None, gt=0, le=MAX_INGEST_ABS_VALUE)
     days: int = Field(default=20, ge=1, le=252)
     simulations: int = Field(default=1000, ge=100, le=10000)
     volatility_pct: float | None = Field(default=None, ge=0.001, le=0.2)
     drift_pct: float = Field(default=0.0, ge=-0.8, le=0.8)
-    seed: int = Field(default=7, ge=0)
+    seed: int = Field(default=7, ge=0, le=MAX_SCENARIO_SEED)
     max_depth: int = Field(default=3, ge=1, le=5)
 
     @field_validator("target_symbol")
@@ -42,6 +43,10 @@ class ScenarioSimulationPayload(StrictInputModel):
         normalized_symbol = symbol_prefix(str(value).strip())
         if not normalized_symbol:
             raise ValueError("target_symbol must include a non-empty symbol")
+        if len(normalized_symbol) > MAX_INGEST_SYMBOL_LENGTH:
+            raise ValueError(
+                f"target_symbol can be at most {MAX_INGEST_SYMBOL_LENGTH} characters"
+            )
         return normalized_symbol
 
     @field_validator("shocks")
@@ -52,6 +57,11 @@ class ScenarioSimulationPayload(StrictInputModel):
             normalized_symbol = symbol_prefix(str(symbol).strip())
             if not normalized_symbol:
                 continue
+            if len(normalized_symbol) > MAX_INGEST_SYMBOL_LENGTH:
+                raise ValueError(
+                    "shock symbol entries can be at most "
+                    f"{MAX_INGEST_SYMBOL_LENGTH} characters"
+                )
             normalized_shock = float(shock)
             if (
                 not math.isfinite(normalized_shock)

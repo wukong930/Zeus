@@ -248,6 +248,67 @@ def test_scenario_simulation_api_rejects_out_of_range_shock() -> None:
     assert response.status_code == 422
 
 
+def test_scenario_simulation_api_rejects_oversized_target_symbol() -> None:
+    client = TestClient(create_app())
+
+    response = client.post(
+        "/api/scenarios/simulate",
+        json={
+            "target_symbol": "X" * 33,
+            "base_price": 3250,
+            "shocks": {"I": 0.10},
+            "simulations": 500,
+        },
+    )
+
+    assert response.status_code == 422
+
+
+def test_scenario_simulation_api_rejects_oversized_shock_symbol() -> None:
+    client = TestClient(create_app())
+
+    response = client.post(
+        "/api/scenarios/simulate",
+        json={
+            "target_symbol": "RB",
+            "base_price": 3250,
+            "shocks": {"X" * 33: 0.10},
+            "simulations": 500,
+        },
+    )
+
+    assert response.status_code == 422
+
+
+def test_scenario_simulation_api_rejects_unbounded_base_price_and_seed() -> None:
+    client = TestClient(create_app())
+
+    response = client.post(
+        "/api/scenarios/simulate",
+        json={
+            "target_symbol": "RB",
+            "base_price": 1_000_000_000_001,
+            "shocks": {"I": 0.10},
+            "simulations": 500,
+        },
+    )
+
+    assert response.status_code == 422
+
+    response = client.post(
+        "/api/scenarios/simulate",
+        json={
+            "target_symbol": "RB",
+            "base_price": 3250,
+            "shocks": {"I": 0.10},
+            "simulations": 500,
+            "seed": 2_147_483_648,
+        },
+    )
+
+    assert response.status_code == 422
+
+
 def test_scenario_simulation_api_uses_runtime_market_price(monkeypatch) -> None:
     async def fake_db():
         yield object()
