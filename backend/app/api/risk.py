@@ -4,7 +4,7 @@ import math
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import Field, field_validator
+from pydantic import Field, StrictBool, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -31,7 +31,15 @@ class StressScenarioPayload(StrictInputModel):
     name: str = Field(min_length=1, max_length=80)
     description: str = Field(min_length=1, max_length=240)
     shocks: dict[str, float] = Field(min_length=1, max_length=MAX_CUSTOM_STRESS_SHOCKS)
-    historical: bool = False
+    historical: StrictBool = False
+
+    @field_validator("name", "description")
+    @classmethod
+    def trim_text(cls, value: str) -> str:
+        trimmed = value.strip()
+        if not trimmed:
+            raise ValueError("stress scenario text fields must be non-empty")
+        return trimmed
 
     @field_validator("shocks")
     @classmethod
@@ -41,6 +49,11 @@ class StressScenarioPayload(StrictInputModel):
             normalized_symbol = symbol_prefix(str(symbol).strip())
             if not normalized_symbol:
                 continue
+            if len(normalized_symbol) > MAX_INGEST_SYMBOL_LENGTH:
+                raise ValueError(
+                    "shock symbol entries can be at most "
+                    f"{MAX_INGEST_SYMBOL_LENGTH} characters"
+                )
             normalized_shock = float(shock)
             if not math.isfinite(normalized_shock) or normalized_shock < -1.0 or normalized_shock > 2.0:
                 raise ValueError("shock values must be finite numbers between -1.0 and 2.0")
