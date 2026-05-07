@@ -9,7 +9,11 @@ class ORMModel(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-class MarketDataCreate(BaseModel):
+class StrictInputModel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
+class MarketDataCreate(StrictInputModel):
     source_key: str | None = None
     market: str
     exchange: str
@@ -35,7 +39,7 @@ class MarketDataRead(MarketDataCreate, ORMModel):
     ingested_at: datetime
 
 
-class IndustryDataCreate(BaseModel):
+class IndustryDataCreate(StrictInputModel):
     source_key: str | None = None
     symbol: str
     data_type: str
@@ -51,7 +55,7 @@ class IndustryDataRead(IndustryDataCreate, ORMModel):
     ingested_at: datetime
 
 
-class ContractCreate(BaseModel):
+class ContractCreate(StrictInputModel):
     symbol: str
     exchange: str | None = None
     commodity: str | None = None
@@ -70,7 +74,7 @@ class ContractRead(ContractCreate, ORMModel):
     updated_at: datetime
 
 
-class AlertCreate(BaseModel):
+class AlertCreate(StrictInputModel):
     title: str
     summary: str
     severity: str
@@ -103,7 +107,7 @@ class AlertRead(AlertCreate, ORMModel):
     updated_at: datetime
 
 
-class NewsEventCreate(BaseModel):
+class NewsEventCreate(StrictInputModel):
     source: str = Field(min_length=1, max_length=50)
     raw_url: str | None = None
     title: str = Field(min_length=1)
@@ -132,7 +136,7 @@ class NewsEventRead(NewsEventCreate, ORMModel):
     updated_at: datetime
 
 
-class HumanDecisionCreate(BaseModel):
+class HumanDecisionCreate(StrictInputModel):
     alert_id: UUID | None = None
     signal_track_id: UUID | None = None
     decision: str = Field(pattern="^(approve|reject|modify)$")
@@ -147,7 +151,7 @@ class HumanDecisionRead(HumanDecisionCreate, ORMModel):
     created_at: datetime
 
 
-class UserFeedbackCreate(BaseModel):
+class UserFeedbackCreate(StrictInputModel):
     alert_id: UUID | None = None
     recommendation_id: UUID | None = None
     agree: str = Field(pattern="^(agree|disagree|uncertain)$")
@@ -216,7 +220,7 @@ class CostModelRead(BaseModel):
     formula_version: str
 
 
-class CostSimulationRequest(BaseModel):
+class CostSimulationRequest(StrictInputModel):
     inputs_by_symbol: dict[str, dict[str, float]] = Field(default_factory=dict)
     current_prices: dict[str, float | None] = Field(default_factory=dict)
 
@@ -263,7 +267,7 @@ class CostQualityReportRead(BaseModel):
     limitations: list[str]
 
 
-class StrategyCreate(BaseModel):
+class StrategyCreate(StrictInputModel):
     name: str
     description: str
     status: str = "draft"
@@ -282,7 +286,7 @@ class StrategyRead(StrategyCreate, ORMModel):
     updated_at: datetime
 
 
-class RecommendationCreate(BaseModel):
+class RecommendationCreate(StrictInputModel):
     strategy_id: UUID | None = None
     alert_id: UUID | None = None
     status: str = "pending"
@@ -321,7 +325,7 @@ class RecommendationRead(RecommendationCreate, ORMModel):
     updated_at: datetime
 
 
-class PositionCreate(BaseModel):
+class PositionCreate(StrictInputModel):
     strategy_id: UUID | None = None
     strategy_name: str | None = None
     recommendation_id: UUID | None = None
@@ -353,9 +357,7 @@ class PositionRead(PositionCreate, ORMModel):
     id: UUID
 
 
-class PositionMinimalCreate(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class PositionMinimalCreate(StrictInputModel):
     symbol: str = Field(min_length=1)
     direction: str = Field(pattern="^(long|short)$")
     lots: float = Field(gt=0)
@@ -367,26 +369,20 @@ class PositionMinimalCreate(BaseModel):
     total_margin_used: float = 0
 
 
-class PositionCloseRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class PositionCloseRequest(StrictInputModel):
     actual_exit: float | None = None
     actual_exit_reason: str = "manual_close"
     realized_pnl: float | None = None
     closed_at: datetime | None = None
 
 
-class PositionResizeRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class PositionResizeRequest(StrictInputModel):
     lots: float | None = Field(default=None, gt=0)
     fraction: float | None = Field(default=None, gt=0, le=1)
     reason: str | None = None
 
 
-class RecommendationAdoptRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class RecommendationAdoptRequest(StrictInputModel):
     opened_at: datetime | None = None
     actual_entry: float | None = None
     lots: float = Field(default=1, gt=0)
