@@ -3,12 +3,13 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, Depends, Query
-from pydantic import BaseModel, Field
+from pydantic import Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.models.position import Position
+from app.schemas.common import StrictInputModel
 from app.services.risk.correlation import build_correlation_matrix
 from app.services.risk.market_data import load_risk_market_data
 from app.services.risk.stress import STRESS_SCENARIOS, run_stress_test, symbol_prefix
@@ -21,14 +22,14 @@ VAR_MIN_MARKET_POINTS = 11
 CORRELATION_MIN_MARKET_POINTS = 4
 
 
-class StressScenarioPayload(BaseModel):
+class StressScenarioPayload(StrictInputModel):
     name: str
     description: str
     shocks: dict[str, float]
     historical: bool = False
 
 
-class StressRequest(BaseModel):
+class StressRequest(StrictInputModel):
     scenarios: list[StressScenarioPayload] | None = Field(default=None)
 
 

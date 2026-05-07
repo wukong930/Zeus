@@ -3,13 +3,14 @@ from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel, Field
+from pydantic import Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.models.shadow_runs import ShadowRun
 from app.models.shadow_signals import ShadowSignal
+from app.schemas.common import StrictInputModel
 from app.services.calibration.threshold_calibrator import (
     enqueue_threshold_review,
     generate_threshold_calibration_report,
@@ -24,7 +25,7 @@ from app.services.shadow.runner import create_shadow_run, stop_shadow_run
 router = APIRouter(prefix="/api/shadow", tags=["shadow"])
 
 
-class ShadowRunCreate(BaseModel):
+class ShadowRunCreate(StrictInputModel):
     name: str = Field(min_length=1, max_length=120)
     algorithm_version: str = Field(min_length=1, max_length=80)
     config_diff: dict[str, Any] = Field(default_factory=dict)

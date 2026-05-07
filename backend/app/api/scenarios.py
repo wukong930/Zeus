@@ -4,13 +4,14 @@ from dataclasses import asdict, replace
 from typing import Any
 
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel, Field, field_validator
+from pydantic import Field, field_validator
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.events import publish
 from app.models.market_data import MarketData
+from app.schemas.common import StrictInputModel
 from app.services.risk.stress import symbol_prefix
 from app.services.scenarios import (
     ScenarioRequest,
@@ -21,7 +22,7 @@ from app.services.scenarios import (
 router = APIRouter(prefix="/api/scenarios", tags=["scenarios"])
 
 
-class ScenarioSimulationPayload(BaseModel):
+class ScenarioSimulationPayload(StrictInputModel):
     target_symbol: str = Field(min_length=1, max_length=20)
     shocks: dict[str, float] = Field(min_length=1)
     base_price: float | None = Field(default=None, gt=0)
