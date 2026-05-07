@@ -199,6 +199,74 @@ def test_position_action_payloads_reject_unknown_fields() -> None:
             schema.model_validate(payload)
 
 
+def test_minimal_position_payload_normalizes_symbol_and_bounds_fields() -> None:
+    opened_at = datetime(2026, 5, 1, tzinfo=timezone.utc)
+    payload = PositionMinimalCreate.model_validate(
+        {
+            "symbol": " ru2510 ",
+            "direction": "long",
+            "lots": 1,
+            "avg_entry_price": 100,
+            "opened_at": opened_at,
+        }
+    )
+
+    assert payload.symbol == "RU2510"
+
+    base_payload = {
+        "symbol": "RU",
+        "direction": "long",
+        "lots": 1,
+        "avg_entry_price": 100,
+        "opened_at": opened_at,
+    }
+    invalid_payloads = (
+        {**base_payload, "symbol": "X" * 33},
+        {**base_payload, "lots": 1_000_001},
+        {**base_payload, "avg_entry_price": 1_000_000_000_001},
+        {**base_payload, "category": "x" * 31},
+        {**base_payload, "strategy_name": "x" * 161},
+        {**base_payload, "total_margin_used": -1},
+    )
+
+    for invalid in invalid_payloads:
+        with pytest.raises(ValidationError):
+            PositionMinimalCreate.model_validate(invalid)
+
+
+def test_position_close_payload_bounds_numeric_and_reason_fields() -> None:
+    with pytest.raises(ValidationError):
+        PositionCloseRequest.model_validate({"actual_exit": 1_000_000_000_001})
+
+    with pytest.raises(ValidationError):
+        PositionCloseRequest.model_validate({"realized_pnl": -1_000_000_000_001})
+
+    with pytest.raises(ValidationError):
+        PositionCloseRequest.model_validate({"actual_exit_reason": "x" * 81})
+
+
+def test_position_resize_payload_bounds_size_and_reason_fields() -> None:
+    with pytest.raises(ValidationError):
+        PositionResizeRequest.model_validate({"lots": 1_000_001})
+
+    with pytest.raises(ValidationError):
+        PositionResizeRequest.model_validate({"fraction": 1.1})
+
+    with pytest.raises(ValidationError):
+        PositionResizeRequest.model_validate({"reason": "x" * 81})
+
+
+def test_recommendation_adopt_payload_bounds_execution_fields() -> None:
+    with pytest.raises(ValidationError):
+        RecommendationAdoptRequest.model_validate({"actual_entry": 0})
+
+    with pytest.raises(ValidationError):
+        RecommendationAdoptRequest.model_validate({"lots": 1_000_001})
+
+    with pytest.raises(ValidationError):
+        RecommendationAdoptRequest.model_validate({"total_margin_used": -1})
+
+
 async def test_closed_positions_cannot_be_resized_or_closed_again() -> None:
     closed_position = _position(status="closed")
     session = FakeSession(recommendation=closed_position)

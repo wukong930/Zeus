@@ -45,6 +45,9 @@ MAX_ALERT_SUMMARY_LENGTH = 2000
 MAX_ALERT_ONE_LINER_LENGTH = 600
 MAX_ALERT_RELATED_ASSETS = 20
 MAX_ALERT_TRIGGER_STEPS = 30
+MAX_POSITION_LOTS = 1_000_000.0
+MAX_POSITION_REASON_LENGTH = 80
+MAX_POSITION_STRATEGY_NAME_LENGTH = 160
 
 
 class MarketDataCreate(StrictInputModel):
@@ -709,32 +712,45 @@ class PositionRead(PositionCreate, ORMModel):
 
 
 class PositionMinimalCreate(StrictInputModel):
-    symbol: str = Field(min_length=1)
+    symbol: str = Field(min_length=1, max_length=MAX_INGEST_SYMBOL_LENGTH)
     direction: str = Field(pattern="^(long|short)$")
-    lots: float = Field(gt=0)
-    avg_entry_price: float = Field(gt=0)
+    lots: float = Field(gt=0, le=MAX_POSITION_LOTS)
+    avg_entry_price: float = Field(gt=0, le=MAX_INGEST_ABS_VALUE)
     opened_at: datetime
-    category: str = "unknown"
+    category: str = Field(default="unknown", min_length=1, max_length=30)
     recommendation_id: UUID | None = None
-    strategy_name: str | None = None
-    total_margin_used: float = 0
+    strategy_name: str | None = Field(default=None, max_length=MAX_POSITION_STRATEGY_NAME_LENGTH)
+    total_margin_used: float = Field(default=0, ge=0, le=MAX_INGEST_ABS_VALUE)
+
+    @field_validator("symbol")
+    @classmethod
+    def normalize_symbol(cls, value: str) -> str:
+        return value.strip().upper()
 
 
 class PositionCloseRequest(StrictInputModel):
-    actual_exit: float | None = None
-    actual_exit_reason: str = "manual_close"
-    realized_pnl: float | None = None
+    actual_exit: float | None = Field(
+        default=None,
+        ge=-MAX_INGEST_ABS_VALUE,
+        le=MAX_INGEST_ABS_VALUE,
+    )
+    actual_exit_reason: str = Field(default="manual_close", max_length=MAX_POSITION_REASON_LENGTH)
+    realized_pnl: float | None = Field(
+        default=None,
+        ge=-MAX_INGEST_ABS_VALUE,
+        le=MAX_INGEST_ABS_VALUE,
+    )
     closed_at: datetime | None = None
 
 
 class PositionResizeRequest(StrictInputModel):
-    lots: float | None = Field(default=None, gt=0)
+    lots: float | None = Field(default=None, gt=0, le=MAX_POSITION_LOTS)
     fraction: float | None = Field(default=None, gt=0, le=1)
-    reason: str | None = None
+    reason: str | None = Field(default=None, max_length=MAX_POSITION_REASON_LENGTH)
 
 
 class RecommendationAdoptRequest(StrictInputModel):
     opened_at: datetime | None = None
-    actual_entry: float | None = None
-    lots: float = Field(default=1, gt=0)
-    total_margin_used: float | None = None
+    actual_entry: float | None = Field(default=None, gt=0, le=MAX_INGEST_ABS_VALUE)
+    lots: float = Field(default=1, gt=0, le=MAX_POSITION_LOTS)
+    total_margin_used: float | None = Field(default=None, ge=0, le=MAX_INGEST_ABS_VALUE)
