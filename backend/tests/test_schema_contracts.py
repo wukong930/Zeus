@@ -111,3 +111,86 @@ def test_common_write_payloads_reject_unknown_fields() -> None:
     for schema, payload in cases:
         with pytest.raises(ValidationError):
             schema.model_validate({**payload, "unexpected_field": True})
+
+
+def test_human_decision_payload_rejects_oversized_json() -> None:
+    with pytest.raises(ValidationError):
+        HumanDecisionCreate.model_validate(
+            {
+                "decision": "approve",
+                "payload": {f"key_{index}": index for index in range(41)},
+            }
+        )
+
+
+def test_human_decision_payload_rejects_non_json_values() -> None:
+    with pytest.raises(ValidationError):
+        HumanDecisionCreate.model_validate(
+            {
+                "decision": "approve",
+                "payload": {"bad": object()},
+            }
+        )
+
+
+def test_human_decision_text_fields_are_bounded() -> None:
+    with pytest.raises(ValidationError):
+        HumanDecisionCreate.model_validate(
+            {
+                "decision": "approve",
+                "decided_by": "x" * 81,
+            }
+        )
+
+    with pytest.raises(ValidationError):
+        HumanDecisionCreate.model_validate(
+            {
+                "decision": "approve",
+                "reasoning": "x" * 4001,
+            }
+        )
+
+
+def test_user_feedback_metadata_rejects_oversized_or_deep_json() -> None:
+    with pytest.raises(ValidationError):
+        UserFeedbackCreate.model_validate(
+            {
+                "agree": "agree",
+                "will_trade": "will_trade",
+                "metadata": {"items": list(range(121))},
+            }
+        )
+
+    with pytest.raises(ValidationError):
+        UserFeedbackCreate.model_validate(
+            {
+                "agree": "agree",
+                "will_trade": "will_trade",
+                "metadata": {
+                    "a": {
+                        "b": {
+                            "c": {
+                                "d": {
+                                    "e": {
+                                        "f": {
+                                            "g": "too deep",
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+            }
+        )
+
+
+def test_user_feedback_reason_is_bounded() -> None:
+    with pytest.raises(ValidationError):
+        UserFeedbackCreate.model_validate(
+            {
+                "agree": "disagree",
+                "will_trade": "will_not_trade",
+                "disagreement_reason": "x" * 4001,
+            }
+        )

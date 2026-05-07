@@ -1,3 +1,4 @@
+import json
 import math
 import re
 from datetime import date, datetime
@@ -13,6 +14,17 @@ class ORMModel(BaseModel):
 
 class StrictInputModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
+
+
+MAX_GOVERNANCE_JSON_TOP_LEVEL_KEYS = 40
+MAX_GOVERNANCE_JSON_OBJECT_KEYS = 80
+MAX_GOVERNANCE_JSON_LIST_ITEMS = 120
+MAX_GOVERNANCE_JSON_DEPTH = 6
+MAX_GOVERNANCE_JSON_NODES = 500
+MAX_GOVERNANCE_JSON_BYTES = 32_768
+MAX_GOVERNANCE_JSON_KEY_LENGTH = 80
+MAX_GOVERNANCE_JSON_STRING_LENGTH = 1000
+MAX_GOVERNANCE_TEXT_LENGTH = 4000
 
 
 class MarketDataCreate(StrictInputModel):
@@ -143,9 +155,17 @@ class HumanDecisionCreate(StrictInputModel):
     signal_track_id: UUID | None = None
     decision: str = Field(pattern="^(approve|reject|modify)$")
     confidence_override: float | None = Field(default=None, ge=0, le=1)
-    reasoning: str | None = None
-    decided_by: str | None = None
-    payload: dict[str, Any] = Field(default_factory=dict)
+    reasoning: str | None = Field(default=None, max_length=MAX_GOVERNANCE_TEXT_LENGTH)
+    decided_by: str | None = Field(default=None, max_length=80)
+    payload: dict[str, Any] = Field(
+        default_factory=dict,
+        max_length=MAX_GOVERNANCE_JSON_TOP_LEVEL_KEYS,
+    )
+
+    @field_validator("payload")
+    @classmethod
+    def validate_payload(cls, value: dict[str, Any]) -> dict[str, Any]:
+        return validate_governance_json_object(value, field_name="payload")
 
 
 class HumanDecisionRead(HumanDecisionCreate, ORMModel):
@@ -157,9 +177,17 @@ class UserFeedbackCreate(StrictInputModel):
     alert_id: UUID | None = None
     recommendation_id: UUID | None = None
     agree: str = Field(pattern="^(agree|disagree|uncertain)$")
-    disagreement_reason: str | None = None
+    disagreement_reason: str | None = Field(default=None, max_length=MAX_GOVERNANCE_TEXT_LENGTH)
     will_trade: str = Field(pattern="^(will_trade|will_not_trade|partial)$")
-    metadata: dict[str, Any] = Field(default_factory=dict)
+    metadata: dict[str, Any] = Field(
+        default_factory=dict,
+        max_length=MAX_GOVERNANCE_JSON_TOP_LEVEL_KEYS,
+    )
+
+    @field_validator("metadata")
+    @classmethod
+    def validate_metadata(cls, value: dict[str, Any]) -> dict[str, Any]:
+        return validate_governance_json_object(value, field_name="metadata")
 
 
 class UserFeedbackRead(ORMModel):
@@ -173,6 +201,82 @@ class UserFeedbackRead(ORMModel):
     will_trade: str
     metadata: dict[str, Any] = Field(default_factory=dict, validation_alias="metadata_json")
     recorded_at: datetime
+
+
+def validate_governance_json_object(value: dict[str, Any], *, field_name: str) -> dict[str, Any]:
+    _validate_governance_json_shape(value, field_name=field_name)
+    try:
+        encoded = json.dumps(
+            value,
+            allow_nan=False,
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        )
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{field_name} must be JSON serializable") from exc
+    if len(encoded.encode("utf-8")) > MAX_GOVERNANCE_JSON_BYTES:
+        raise ValueError(f"{field_name} must be at most {MAX_GOVERNANCE_JSON_BYTES} bytes")
+    return value
+
+
+def _validate_governance_json_shape(
+    value: Any,
+    *,
+    field_name: str,
+    depth: int = 0,
+    nodes: int = 0,
+) -> int:
+    if depth > MAX_GOVERNANCE_JSON_DEPTH:
+        raise ValueError(f"{field_name} nesting cannot exceed {MAX_GOVERNANCE_JSON_DEPTH} levels")
+    nodes += 1
+    if nodes > MAX_GOVERNANCE_JSON_NODES:
+        raise ValueError(f"{field_name} can include at most {MAX_GOVERNANCE_JSON_NODES} nodes")
+    if isinstance(value, dict):
+        if len(value) > MAX_GOVERNANCE_JSON_OBJECT_KEYS:
+            raise ValueError(
+                f"{field_name} objects can include at most {MAX_GOVERNANCE_JSON_OBJECT_KEYS} keys"
+            )
+        for key, item in value.items():
+            if not isinstance(key, str) or not key.strip():
+                raise ValueError(f"{field_name} keys must be non-empty strings")
+            if len(key) > MAX_GOVERNANCE_JSON_KEY_LENGTH:
+                raise ValueError(
+                    f"{field_name} keys can be at most {MAX_GOVERNANCE_JSON_KEY_LENGTH} characters"
+                )
+            nodes = _validate_governance_json_shape(
+                item,
+                field_name=field_name,
+                depth=depth + 1,
+                nodes=nodes,
+            )
+        return nodes
+    if isinstance(value, list):
+        if len(value) > MAX_GOVERNANCE_JSON_LIST_ITEMS:
+            raise ValueError(
+                f"{field_name} lists can include at most {MAX_GOVERNANCE_JSON_LIST_ITEMS} items"
+            )
+        for item in value:
+            nodes = _validate_governance_json_shape(
+                item,
+                field_name=field_name,
+                depth=depth + 1,
+                nodes=nodes,
+            )
+        return nodes
+    if isinstance(value, str):
+        if len(value) > MAX_GOVERNANCE_JSON_STRING_LENGTH:
+            raise ValueError(
+                f"{field_name} strings can be at most {MAX_GOVERNANCE_JSON_STRING_LENGTH} characters"
+            )
+        return nodes
+    if value is None or isinstance(value, (bool, int)):
+        return nodes
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            raise ValueError(f"{field_name} numeric values must be finite")
+        return nodes
+    raise ValueError(f"{field_name} values must be JSON primitives, objects, or lists")
 
 
 class LLMUsageSummaryRead(BaseModel):
