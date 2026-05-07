@@ -39,16 +39,18 @@ class GdeltCollector:
             headers=headers,
         ) as client:
             response = await client.get(GDELT_DOC_API, params=params)
-            if response.status_code in {204, 429}:
+            if response.status_code == 204:
                 return []
+            if response.status_code == 429:
+                raise RuntimeError("GDELT rate limited the DOC API request")
             response.raise_for_status()
             if not response.content.strip():
                 return []
             try:
                 data = response.json()
-            except ValueError:
-                return []
-        articles = data.get("articles", []) if isinstance(data, dict) else []
+            except ValueError as exc:
+                raise RuntimeError("GDELT returned invalid JSON") from exc
+        articles = _articles_from_payload(data)
         return [self._item_from_article(article) for article in articles]
 
     def _item_from_article(self, article: dict[str, Any]) -> RawNewsItem:
@@ -74,3 +76,14 @@ def _parse_gdelt_datetime(value: str | None) -> datetime:
         return datetime.strptime(value[:14], "%Y%m%d%H%M%S").replace(tzinfo=timezone.utc)
     except ValueError:
         return datetime.now(timezone.utc)
+
+
+def _articles_from_payload(payload: Any) -> list[dict[str, Any]]:
+    if not isinstance(payload, dict):
+        raise RuntimeError("GDELT payload must be a JSON object")
+    articles = payload.get("articles", [])
+    if not isinstance(articles, list):
+        raise RuntimeError("GDELT payload articles must be a list")
+    if any(not isinstance(article, dict) for article in articles):
+        raise RuntimeError("GDELT payload articles must contain objects")
+    return articles

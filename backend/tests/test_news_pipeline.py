@@ -81,22 +81,49 @@ async def test_rubber_supply_collector_enriches_gdelt_items() -> None:
     assert rows[0].metadata["origin_markets"] == ["Thailand"]
 
 
-async def test_gdelt_collector_treats_rate_limit_as_empty_batch() -> None:
+async def test_gdelt_collector_reports_rate_limit() -> None:
     async def handler(_request: httpx.Request) -> httpx.Response:
         return httpx.Response(429, text="Too Many Requests")
 
-    rows = await GdeltCollector(transport=httpx.MockTransport(handler)).collect()
+    try:
+        await GdeltCollector(transport=httpx.MockTransport(handler)).collect()
+    except RuntimeError as exc:
+        assert "rate limited" in str(exc)
+    else:
+        raise AssertionError("GDELT rate limits should surface as collector errors")
 
-    assert rows == []
 
-
-async def test_gdelt_collector_treats_empty_or_invalid_json_as_empty_batch() -> None:
+async def test_gdelt_collector_treats_empty_body_as_empty_batch() -> None:
     async def handler(_request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, text="")
 
     rows = await GdeltCollector(transport=httpx.MockTransport(handler)).collect()
 
     assert rows == []
+
+
+async def test_gdelt_collector_reports_invalid_json() -> None:
+    async def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, text="{")
+
+    try:
+        await GdeltCollector(transport=httpx.MockTransport(handler)).collect()
+    except RuntimeError as exc:
+        assert "invalid JSON" in str(exc)
+    else:
+        raise AssertionError("Invalid GDELT JSON should surface as collector error")
+
+
+async def test_gdelt_collector_reports_malformed_articles() -> None:
+    async def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"articles": ["bad"]})
+
+    try:
+        await GdeltCollector(transport=httpx.MockTransport(handler)).collect()
+    except RuntimeError as exc:
+        assert "articles" in str(exc)
+    else:
+        raise AssertionError("Malformed GDELT articles should surface as collector error")
 
 
 def test_news_extractor_maps_rubber_origin_weather_metadata() -> None:
