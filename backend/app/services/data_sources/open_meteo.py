@@ -11,6 +11,12 @@ from app.schemas.common import IndustryDataCreate
 
 OPEN_METEO_FORECAST_API = "https://api.open-meteo.com/v1/forecast"
 CHINA_TZ = ZoneInfo("Asia/Shanghai")
+REQUIRED_DAILY_FIELDS = (
+    "time",
+    "precipitation_sum",
+    "temperature_2m_max",
+    "temperature_2m_min",
+)
 
 
 @dataclass(frozen=True)
@@ -66,15 +72,19 @@ def rows_from_weather_payload(
 ) -> list[IndustryDataCreate]:
     daily = payload.get("daily")
     if not isinstance(daily, dict):
-        return []
+        raise RuntimeError("Open-Meteo payload missing daily data")
 
-    dates = daily.get("time") or []
+    missing_fields = [field for field in REQUIRED_DAILY_FIELDS if field not in daily]
+    if missing_fields:
+        raise RuntimeError(f"Open-Meteo payload missing daily fields: {', '.join(missing_fields)}")
+
+    dates = _daily_list(daily, "time")
     if not dates:
         return []
     timestamp = _date_to_timestamp(str(dates[0]))
-    precipitation = _sum_numbers(daily.get("precipitation_sum") or [])
-    temp_max = _max_number(daily.get("temperature_2m_max") or [])
-    temp_min = _min_number(daily.get("temperature_2m_min") or [])
+    precipitation = _sum_numbers(_daily_list(daily, "precipitation_sum"))
+    temp_max = _max_number(_daily_list(daily, "temperature_2m_max"))
+    temp_min = _min_number(_daily_list(daily, "temperature_2m_min"))
 
     rows = [
         IndustryDataCreate(
@@ -116,6 +126,13 @@ def rows_from_weather_payload(
 
 def _date_to_timestamp(value: str) -> datetime:
     return datetime.fromisoformat(value).replace(tzinfo=CHINA_TZ)
+
+
+def _daily_list(daily: dict[str, Any], field: str) -> list[Any]:
+    values = daily[field]
+    if not isinstance(values, list):
+        raise RuntimeError(f"Open-Meteo daily field must be a list: {field}")
+    return values
 
 
 def _numbers(values: list[Any]) -> list[float]:

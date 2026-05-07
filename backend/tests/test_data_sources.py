@@ -7,7 +7,11 @@ from fastapi.testclient import TestClient
 
 from app.core.config import Settings
 from app.main import create_app
-from app.services.data_sources.akshare_futures import _rows_from_frame, parse_akshare_symbols
+from app.services.data_sources.akshare_futures import (
+    _rows_from_frame,
+    collect_akshare_market_data,
+    parse_akshare_symbols,
+)
 from app.services.data_sources.eia import EiaSeries, collect_eia_indicators, row_from_eia_payload
 from app.services.data_sources.fred import FredSeries, collect_fred_indicators, row_from_fred_payload
 from app.services.data_sources.free_ingest import (
@@ -56,6 +60,26 @@ def test_akshare_rows_from_frame_normalizes_daily_prices() -> None:
     assert rows[0].open_interest == 2200
 
 
+def test_akshare_rows_reject_missing_required_columns() -> None:
+    with pytest.raises(RuntimeError, match="close"):
+        _rows_from_frame(
+            pd.DataFrame([{"date": "2026-05-01", "price": 3280}]),
+            query_symbol="RB0",
+            limit=10,
+        )
+
+
+async def test_akshare_collector_records_field_drift_error() -> None:
+    def fetcher(_query_symbol: str) -> pd.DataFrame:
+        return pd.DataFrame([{"date": "2026-05-01", "price": 3280}])
+
+    result = await collect_akshare_market_data(symbols=("RB0",), fetcher=fetcher)
+
+    assert result.rows == []
+    assert result.errors[0]["source"] == "akshare:RB0"
+    assert "close" in result.errors[0]["error"]
+
+
 def test_open_meteo_payload_creates_weather_industry_rows() -> None:
     location = WeatherLocation("hat_yai", "Hat Yai", "NR", 7.0, 100.0)
     rows = rows_from_weather_payload(
@@ -77,6 +101,46 @@ def test_open_meteo_payload_creates_weather_industry_rows() -> None:
     }
     assert rows[0].symbol == "NR"
     assert rows[0].value == 20.0
+
+
+def test_open_meteo_payload_rejects_missing_daily_shape() -> None:
+    location = WeatherLocation("hat_yai", "Hat Yai", "NR", 7.0, 100.0)
+
+    with pytest.raises(RuntimeError, match="daily data"):
+        rows_from_weather_payload(location, {"hourly": {}})
+
+
+def test_open_meteo_payload_rejects_missing_required_daily_field() -> None:
+    location = WeatherLocation("hat_yai", "Hat Yai", "NR", 7.0, 100.0)
+
+    with pytest.raises(RuntimeError, match="temperature_2m_min"):
+        rows_from_weather_payload(
+            location,
+            {
+                "daily": {
+                    "time": ["2026-05-04"],
+                    "precipitation_sum": [12.5],
+                    "temperature_2m_max": [31.0],
+                }
+            },
+        )
+
+
+def test_open_meteo_payload_rejects_non_list_daily_field() -> None:
+    location = WeatherLocation("hat_yai", "Hat Yai", "NR", 7.0, 100.0)
+
+    with pytest.raises(RuntimeError, match="precipitation_sum"):
+        rows_from_weather_payload(
+            location,
+            {
+                "daily": {
+                    "time": ["2026-05-04"],
+                    "precipitation_sum": "12.5",
+                    "temperature_2m_max": [31.0],
+                    "temperature_2m_min": [24.0],
+                }
+            },
+        )
 
 
 def test_fred_payload_skips_missing_values_and_uses_latest_numeric() -> None:

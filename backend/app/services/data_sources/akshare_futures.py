@@ -93,6 +93,10 @@ CLOSE_COLUMNS = ("close", "收盘", "收盘价")
 SETTLE_COLUMNS = ("settle", "结算", "结算价")
 VOLUME_COLUMNS = ("volume", "成交量", "vol")
 OPEN_INTEREST_COLUMNS = ("hold", "持仓量", "open_interest", "oi")
+REQUIRED_FRAME_COLUMN_GROUPS = {
+    "date": DATE_COLUMNS,
+    "close": CLOSE_COLUMNS,
+}
 
 AkshareFetcher = Callable[[str], Any]
 
@@ -135,6 +139,7 @@ def _rows_from_frame(frame: Any, *, query_symbol: str, limit: int) -> list[Marke
     if frame is None or getattr(frame, "empty", False):
         return []
 
+    _validate_frame_columns(frame, query_symbol=query_symbol)
     records = frame.tail(max(1, limit)).to_dict("records")
     base_symbol = _base_symbol(query_symbol)
     contract_month = _contract_month(query_symbol)
@@ -188,6 +193,17 @@ def _first(record: dict[str, Any], columns: tuple[str, ...]) -> Any:
         if key in normalized:
             return normalized[key]
     return None
+
+
+def _validate_frame_columns(frame: Any, *, query_symbol: str) -> None:
+    normalized_columns = {str(column).strip().lower() for column in getattr(frame, "columns", [])}
+    missing = [
+        label
+        for label, candidates in REQUIRED_FRAME_COLUMN_GROUPS.items()
+        if not any(candidate.lower() in normalized_columns for candidate in candidates)
+    ]
+    if missing:
+        raise RuntimeError(f"AKShare payload for {query_symbol} missing columns: {', '.join(missing)}")
 
 
 def _float_or_none(value: Any) -> float | None:
