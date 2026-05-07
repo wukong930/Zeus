@@ -1,7 +1,7 @@
 from typing import Any
 
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -50,6 +50,8 @@ class NotificationSettingsRead(BaseModel):
 
 
 class NotificationSettingsUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     realtime_sse: bool | None = None
     feishu_webhook: bool | None = None
     email: bool | None = None

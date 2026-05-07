@@ -109,6 +109,29 @@ def test_notification_settings_api_persists_updates(monkeypatch) -> None:
     }
 
 
+def test_notification_settings_rejects_unknown_fields(monkeypatch) -> None:
+    async def fake_db():
+        yield object()
+
+    async def fake_save_notification_settings(db_session, payload) -> NotificationSettingsRead:
+        raise AssertionError("save should not run for invalid payload")
+
+    monkeypatch.setattr(
+        "app.api.settings.save_notification_settings",
+        fake_save_notification_settings,
+    )
+    app = create_app()
+    app.dependency_overrides[get_db] = fake_db
+    client = TestClient(app)
+
+    response = client.put(
+        "/api/settings/notifications",
+        json={"feishu_webhhook": True},
+    )
+
+    assert response.status_code == 422
+
+
 def test_llm_provider_settings_api_uses_env_runtime(monkeypatch) -> None:
     async def fake_db():
         yield object()
