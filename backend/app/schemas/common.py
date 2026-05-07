@@ -354,6 +354,8 @@ class PositionRead(PositionCreate, ORMModel):
 
 
 class PositionMinimalCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     symbol: str = Field(min_length=1)
     direction: str = Field(pattern="^(long|short)$")
     lots: float = Field(gt=0)
@@ -366,6 +368,8 @@ class PositionMinimalCreate(BaseModel):
 
 
 class PositionCloseRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     actual_exit: float | None = None
     actual_exit_reason: str = "manual_close"
     realized_pnl: float | None = None
@@ -373,12 +377,16 @@ class PositionCloseRequest(BaseModel):
 
 
 class PositionResizeRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     lots: float | None = Field(default=None, gt=0)
     fraction: float | None = Field(default=None, gt=0, le=1)
     reason: str | None = None
 
 
 class RecommendationAdoptRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     opened_at: datetime | None = None
     actual_entry: float | None = None
     lots: float = Field(default=1, gt=0)

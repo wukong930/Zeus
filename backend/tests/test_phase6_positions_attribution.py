@@ -3,10 +3,17 @@ from uuid import uuid4
 
 import pytest
 from fastapi import HTTPException
+from pydantic import ValidationError
 
 from app.api.positions import require_open_position
 from app.models.position import Position
 from app.models.recommendation import Recommendation
+from app.schemas.common import (
+    PositionCloseRequest,
+    PositionMinimalCreate,
+    PositionResizeRequest,
+    RecommendationAdoptRequest,
+)
 from app.services.learning.recommendation_attribution import (
     calculate_position_pnl,
     update_recommendation_from_position,
@@ -167,6 +174,29 @@ async def test_position_freshness_marks_stale_and_degrades_old_positions() -> No
 
 def test_phase6_symbol_category_fallback_covers_rubber() -> None:
     assert infer_category_from_symbol("RU") == "rubber"
+
+
+def test_position_action_payloads_reject_unknown_fields() -> None:
+    opened_at = datetime(2026, 5, 1, tzinfo=timezone.utc)
+
+    for schema, payload in (
+        (
+            PositionMinimalCreate,
+            {
+                "symbol": "RU",
+                "direction": "long",
+                "lots": 1,
+                "avg_entry_price": 100,
+                "opened_at": opened_at,
+                "lotz": 2,
+            },
+        ),
+        (PositionCloseRequest, {"actual_exit": 102, "actual_ext": 101}),
+        (PositionResizeRequest, {"lots": 1, "lotz": 2}),
+        (RecommendationAdoptRequest, {"lots": 1, "actual_entrry": 3200}),
+    ):
+        with pytest.raises(ValidationError):
+            schema.model_validate(payload)
 
 
 async def test_closed_positions_cannot_be_resized_or_closed_again() -> None:
