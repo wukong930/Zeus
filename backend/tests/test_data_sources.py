@@ -2,6 +2,7 @@ import json
 
 import httpx
 import pandas as pd
+import pytest
 from fastapi.testclient import TestClient
 
 from app.core.config import Settings
@@ -216,6 +217,28 @@ def test_tushare_payload_selects_whitelisted_futures_rows() -> None:
     assert active[0].symbol == "RB"
     assert active[0].contract_month == "2601"
     assert active[0].exchange == "SHFE"
+
+
+def test_tushare_payload_rejects_missing_shape() -> None:
+    with pytest.raises(RuntimeError, match="data\\.fields/items"):
+        rows_from_tushare_payload(
+            {"code": 0, "data": {"fields": ["ts_code"], "rows": []}},
+            exchange="SHFE",
+        )
+
+
+def test_tushare_payload_rejects_required_field_drift() -> None:
+    with pytest.raises(RuntimeError, match="trade_date"):
+        rows_from_tushare_payload(
+            {
+                "code": 0,
+                "data": {
+                    "fields": ["ts_code", "close"],
+                    "items": [["RB2510.SHF", 3250]],
+                },
+            },
+            exchange="SHFE",
+        )
 
 
 async def test_tushare_collector_posts_fut_daily_request() -> None:

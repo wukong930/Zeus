@@ -39,6 +39,7 @@ DEFAULT_TUSHARE_SYMBOLS: tuple[str, ...] = (
 )
 
 TUSHARE_FIELDS = "ts_code,trade_date,open,high,low,close,settle,vol,oi"
+REQUIRED_TUSHARE_FIELDS = {"ts_code", "trade_date", "close"}
 TUSHARE_EXCHANGE_SUFFIXES = {
     "SHFE": "SHF",
     "DCE": "DCE",
@@ -113,7 +114,12 @@ def rows_from_tushare_payload(
     fields = data.get("fields") if isinstance(data, dict) else None
     items = data.get("items") if isinstance(data, dict) else None
     if not isinstance(fields, list) or not isinstance(items, list):
-        return []
+        raise RuntimeError("Tushare payload missing data.fields/items")
+
+    missing_fields = REQUIRED_TUSHARE_FIELDS - {str(field) for field in fields}
+    if missing_fields:
+        missing = ", ".join(sorted(missing_fields))
+        raise RuntimeError(f"Tushare payload missing required fields: {missing}")
 
     records = [dict(zip(fields, item, strict=False)) for item in items if isinstance(item, list)]
     rows: list[MarketDataCreate] = []
