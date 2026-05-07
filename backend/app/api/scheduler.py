@@ -1,17 +1,31 @@
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import Field, field_validator
 
+from app.schemas.common import StrictInputModel
 from app.scheduler.manager import get_scheduler
 
 router = APIRouter(prefix="/api/scheduler", tags=["scheduler"])
 
+MAX_SCHEDULER_JOB_ID_LENGTH = 80
+MAX_SCHEDULER_CRON_LENGTH = 120
 
-class SchedulerAction(BaseModel):
+
+class SchedulerAction(StrictInputModel):
     action: Literal["start", "stop", "run", "updateCron", "startAll", "stopAll"]
-    job_id: str | None = None
-    cron: str | None = None
+    job_id: str | None = Field(default=None, min_length=1, max_length=MAX_SCHEDULER_JOB_ID_LENGTH)
+    cron: str | None = Field(default=None, min_length=1, max_length=MAX_SCHEDULER_CRON_LENGTH)
+
+    @field_validator("job_id", "cron")
+    @classmethod
+    def trim_optional_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        trimmed = value.strip()
+        if not trimmed:
+            raise ValueError("scheduler text fields must be non-empty")
+        return trimmed
 
 
 @router.get("")

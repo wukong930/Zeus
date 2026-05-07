@@ -250,6 +250,43 @@ def test_scheduler_api_rejects_invalid_cron(monkeypatch) -> None:
     assert response.json()["detail"] == "invalid cron"
 
 
+def test_scheduler_api_rejects_unknown_and_oversized_action_fields(monkeypatch) -> None:
+    client = scheduler_api_client(monkeypatch, ApiScheduler())
+
+    response = client.post(
+        "/api/scheduler",
+        json={"action": "run", "job_id": "known", "unexpected": True},
+    )
+
+    assert response.status_code == 422
+
+    response = client.post(
+        "/api/scheduler",
+        json={"action": "run", "job_id": "x" * 81},
+    )
+
+    assert response.status_code == 422
+
+    response = client.post(
+        "/api/scheduler",
+        json={"action": "updateCron", "job_id": "known", "cron": "x" * 121},
+    )
+
+    assert response.status_code == 422
+
+
+def test_scheduler_api_trims_job_id_and_cron(monkeypatch) -> None:
+    client = scheduler_api_client(monkeypatch, ApiScheduler())
+
+    response = client.post(
+        "/api/scheduler",
+        json={"action": "updateCron", "job_id": " known ", "cron": " * * * * * "},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"success": True}
+
+
 def test_scheduler_api_rejects_unconfigured_manual_run(monkeypatch) -> None:
     client = scheduler_api_client(
         monkeypatch,
