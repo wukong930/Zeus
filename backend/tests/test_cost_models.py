@@ -668,6 +668,65 @@ def test_simulation_api_returns_cost_breakdown() -> None:
     assert payload["profit_margin"] > 0
 
 
+def test_simulation_api_normalizes_contract_symbol_payloads() -> None:
+    client = TestClient(create_app())
+
+    response = client.post(
+        "/api/cost-models/rb2506/simulate",
+        json={
+            "inputs_by_symbol": {
+                "i2509": {"iron_ore_index_cny": 700},
+                "rb2506": {"blast_furnace_conversion_fee": 720},
+            },
+            "current_prices": {"rb2506": 3300},
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["symbol"] == "RB"
+    assert payload["current_price"] == 3300
+    assert payload["inputs"]["blast_furnace_conversion_fee"]["value"] == 720
+    assert payload["inputs"]["upstream_i_unit_cost"]["value"] == 820
+    assert payload["total_unit_cost"] == 3060.9
+
+
+def test_simulation_api_rejects_oversized_input_symbol_set() -> None:
+    client = TestClient(create_app())
+
+    response = client.post(
+        "/api/cost-models/RB/simulate",
+        json={
+            "inputs_by_symbol": {f"S{index}": {"value": 1} for index in range(21)},
+            "current_prices": {"RB": 3300},
+        },
+    )
+
+    assert response.status_code == 422
+
+
+def test_simulation_api_rejects_invalid_numeric_inputs() -> None:
+    client = TestClient(create_app())
+
+    negative_price = client.post(
+        "/api/cost-models/RB/simulate",
+        json={
+            "inputs_by_symbol": {"RB": {"blast_furnace_conversion_fee": 720}},
+            "current_prices": {"RB": -1},
+        },
+    )
+    oversized_input = client.post(
+        "/api/cost-models/RB/simulate",
+        json={
+            "inputs_by_symbol": {"RB": {"blast_furnace_conversion_fee": 1_000_001}},
+            "current_prices": {"RB": 3300},
+        },
+    )
+
+    assert negative_price.status_code == 422
+    assert oversized_input.status_code == 422
+
+
 def test_rubber_simulation_api_returns_cost_breakdown() -> None:
     client = TestClient(create_app())
 

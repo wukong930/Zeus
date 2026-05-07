@@ -10,6 +10,7 @@ from app.schemas.common import (
     CostQualityReportRead,
     CostSimulationRequest,
     CostSnapshotRead,
+    normalize_commodity_symbol,
 )
 from app.services.cost_models.cost_chain import calculate_cost_chain, chain_order_for_symbol
 from app.services.cost_models.quality import run_ferrous_quality_report, run_rubber_quality_report
@@ -53,7 +54,7 @@ async def get_cost_model_histories(
 @router.get("/{symbol}", response_model=CostModelRead)
 async def get_cost_model(symbol: str, session: AsyncSession = Depends(get_db)) -> dict:
     try:
-        result = await calculate_cost_snapshot(session, symbol)
+        result = await calculate_cost_snapshot(session, normalize_commodity_symbol(symbol))
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return cost_model_payload(result.to_snapshot_payload())
@@ -65,11 +66,15 @@ async def get_cost_model_history(
     limit: int = Query(default=120, ge=1, le=1000),
     session: AsyncSession = Depends(get_db),
 ) -> list[CostSnapshot]:
+    try:
+        normalized = normalize_commodity_symbol(symbol)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=f"Unsupported cost model symbol: {symbol}") from exc
     return list(
         (
             await session.scalars(
                 select(CostSnapshot)
-                .where(CostSnapshot.symbol == symbol.upper())
+                .where(CostSnapshot.symbol == normalized)
                 .order_by(CostSnapshot.snapshot_date.desc())
                 .limit(limit)
             )
@@ -79,13 +84,10 @@ async def get_cost_model_history(
 
 @router.post("/{symbol}/simulate", response_model=CostModelRead)
 async def simulate_cost_model(symbol: str, payload: CostSimulationRequest) -> dict:
-    normalized = symbol.upper()
-    current_prices = {key.upper(): value for key, value in payload.current_prices.items()}
-    inputs_by_symbol = {
-        key.upper(): dict(value)
-        for key, value in payload.inputs_by_symbol.items()
-    }
     try:
+        normalized = normalize_commodity_symbol(symbol)
+        current_prices = payload.current_prices
+        inputs_by_symbol = {key: dict(value) for key, value in payload.inputs_by_symbol.items()}
         chain_order = chain_order_for_symbol(normalized)
         chain = calculate_cost_chain(
             symbols=chain_order,
@@ -100,8 +102,8 @@ async def simulate_cost_model(symbol: str, payload: CostSimulationRequest) -> di
 
 @router.get("/{symbol}/chain", response_model=CostChainRead)
 async def get_cost_chain(symbol: str, session: AsyncSession = Depends(get_db)) -> dict:
-    normalized = symbol.upper()
     try:
+        normalized = normalize_commodity_symbol(symbol)
         chain_order = chain_order_for_symbol(normalized)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=f"Unsupported cost model symbol: {symbol}") from exc
@@ -158,9 +160,23 @@ def cost_model_payload(payload: dict) -> dict:
 
 
 def _parse_cost_symbols(value: str) -> tuple[str, ...]:
-    symbols = tuple(
-        dict.fromkeys(symbol.strip().upper() for symbol in value.split(",") if symbol.strip())
+    raw_symbols = tuple(
+        dict.fromkeys(symbol.strip() for symbol in value.split(",") if symbol.strip())
     )
+    if len(raw_symbols) > MAX_COST_HISTORY_SYMBOLS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"symbols supports at most {MAX_COST_HISTORY_SYMBOLS} unique values",
+        )
+    try:
+        symbols = tuple(
+            dict.fromkeys(
+                normalize_commodity_symbol(symbol)
+                for symbol in raw_symbols
+            )
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     if not symbols:
         raise HTTPException(status_code=400, detail="symbols must include at least one value")
     if len(symbols) > MAX_COST_HISTORY_SYMBOLS:

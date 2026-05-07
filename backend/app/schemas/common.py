@@ -1,8 +1,10 @@
+import math
+import re
 from datetime import date, datetime
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class ORMModel(BaseModel):
@@ -220,9 +222,90 @@ class CostModelRead(BaseModel):
     formula_version: str
 
 
+MAX_COST_SIMULATION_SYMBOLS = 20
+MAX_COST_SIMULATION_INPUTS_PER_SYMBOL = 40
+MAX_COST_SIMULATION_SYMBOL_LENGTH = 20
+MAX_COST_SIMULATION_INPUT_KEY_LENGTH = 80
+MAX_COST_SIMULATION_ABS_VALUE = 1_000_000.0
+
+
 class CostSimulationRequest(StrictInputModel):
-    inputs_by_symbol: dict[str, dict[str, float]] = Field(default_factory=dict)
-    current_prices: dict[str, float | None] = Field(default_factory=dict)
+    inputs_by_symbol: dict[str, dict[str, float]] = Field(
+        default_factory=dict,
+        max_length=MAX_COST_SIMULATION_SYMBOLS,
+    )
+    current_prices: dict[str, float | None] = Field(
+        default_factory=dict,
+        max_length=MAX_COST_SIMULATION_SYMBOLS,
+    )
+
+    @field_validator("inputs_by_symbol")
+    @classmethod
+    def normalize_inputs_by_symbol(
+        cls,
+        value: dict[str, dict[str, float]],
+    ) -> dict[str, dict[str, float]]:
+        normalized: dict[str, dict[str, float]] = {}
+        for symbol, raw_inputs in value.items():
+            normalized_symbol = normalize_commodity_symbol(symbol)
+            if len(raw_inputs) > MAX_COST_SIMULATION_INPUTS_PER_SYMBOL:
+                raise ValueError(
+                    "cost simulation inputs support at most "
+                    f"{MAX_COST_SIMULATION_INPUTS_PER_SYMBOL} values per symbol"
+                )
+            inputs = normalized.setdefault(normalized_symbol, {})
+            for key, raw_value in raw_inputs.items():
+                normalized_key = str(key).strip()
+                if not normalized_key:
+                    raise ValueError("cost simulation input keys must be non-empty strings")
+                if len(normalized_key) > MAX_COST_SIMULATION_INPUT_KEY_LENGTH:
+                    raise ValueError(
+                        "cost simulation input keys can be at most "
+                        f"{MAX_COST_SIMULATION_INPUT_KEY_LENGTH} characters"
+                    )
+                inputs[normalized_key] = bounded_cost_simulation_float(raw_value)
+        return normalized
+
+    @field_validator("current_prices")
+    @classmethod
+    def normalize_current_prices(
+        cls,
+        value: dict[str, float | None],
+    ) -> dict[str, float | None]:
+        normalized: dict[str, float | None] = {}
+        for symbol, raw_value in value.items():
+            normalized_symbol = normalize_commodity_symbol(symbol)
+            if raw_value is None:
+                normalized[normalized_symbol] = None
+                continue
+            price = bounded_cost_simulation_float(raw_value)
+            if price <= 0:
+                raise ValueError("cost simulation current prices must be greater than zero")
+            normalized[normalized_symbol] = price
+        return normalized
+
+
+def normalize_commodity_symbol(value: Any) -> str:
+    normalized = re.sub(r"\d+", "", str(value).strip()).upper()
+    if not normalized:
+        raise ValueError("commodity symbol must be non-empty")
+    if len(normalized) > MAX_COST_SIMULATION_SYMBOL_LENGTH:
+        raise ValueError(
+            f"commodity symbols can be at most {MAX_COST_SIMULATION_SYMBOL_LENGTH} characters"
+        )
+    return normalized
+
+
+def bounded_cost_simulation_float(value: float) -> float:
+    parsed = float(value)
+    if not math.isfinite(parsed):
+        raise ValueError("cost simulation numeric values must be finite")
+    if abs(parsed) > MAX_COST_SIMULATION_ABS_VALUE:
+        raise ValueError(
+            "cost simulation numeric values must be between "
+            f"{-MAX_COST_SIMULATION_ABS_VALUE:g} and {MAX_COST_SIMULATION_ABS_VALUE:g}"
+        )
+    return parsed
 
 
 class CostChainRead(BaseModel):
