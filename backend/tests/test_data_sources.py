@@ -96,6 +96,22 @@ def test_fred_payload_skips_missing_values_and_uses_latest_numeric() -> None:
     assert row.source_key == "fred:DCOILWTICO:2026-05-02"
 
 
+def test_fred_payload_rejects_missing_observation_shape() -> None:
+    with pytest.raises(RuntimeError, match="observations"):
+        row_from_fred_payload(
+            FredSeries("DCOILWTICO", "SC", "macro_wti_usd_bbl", "USD/bbl"),
+            {"series_id": "DCOILWTICO"},
+        )
+
+
+def test_fred_payload_rejects_observation_field_drift() -> None:
+    with pytest.raises(RuntimeError, match="date/value"):
+        row_from_fred_payload(
+            FredSeries("DCOILWTICO", "SC", "macro_wti_usd_bbl", "USD/bbl"),
+            {"observations": [{"period": "2026-05-02", "close": "65.12"}]},
+        )
+
+
 async def test_fred_collector_uses_keyed_observation_endpoint() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.url.path == "/fred/series/observations"
@@ -140,6 +156,22 @@ def test_eia_payload_uses_latest_weekly_value() -> None:
     assert row.data_type == "eia_crude_stocks_ex_spr"
     assert row.value == 459495
     assert row.source_key == "eia:WCESTUS1:2026-04-24"
+
+
+def test_eia_payload_rejects_missing_data_shape() -> None:
+    with pytest.raises(RuntimeError, match="response\\.data"):
+        row_from_eia_payload(
+            EiaSeries("petroleum/stoc/wstk", "WCESTUS1", "SC", "eia_crude_stocks_ex_spr", "MBBL"),
+            {"request": {"command": "series"}},
+        )
+
+
+def test_eia_payload_rejects_data_field_drift() -> None:
+    with pytest.raises(RuntimeError, match="period/series/value"):
+        row_from_eia_payload(
+            EiaSeries("petroleum/stoc/wstk", "WCESTUS1", "SC", "eia_crude_stocks_ex_spr", "MBBL"),
+            {"response": {"data": [{"date": "2026-04-24", "amount": "459495"}]}},
+        )
 
 
 async def test_eia_collector_uses_v2_series_facet_endpoint() -> None:

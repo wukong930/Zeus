@@ -10,6 +10,7 @@ import httpx
 from app.schemas.common import IndustryDataCreate
 
 UTC = ZoneInfo("UTC")
+REQUIRED_EIA_DATA_FIELDS = {"period", "series", "value"}
 
 
 @dataclass(frozen=True)
@@ -91,7 +92,12 @@ def row_from_eia_payload(series: EiaSeries, payload: dict[str, Any]) -> Industry
     response = payload.get("response")
     data = response.get("data") if isinstance(response, dict) else None
     if not isinstance(data, list):
-        return None
+        message = payload.get("error") or payload.get("message")
+        if isinstance(response, dict):
+            message = message or response.get("error") or response.get("message")
+        raise RuntimeError(str(message or "EIA payload missing response.data"))
+    if data and not any(_has_eia_data_shape(item) for item in data):
+        raise RuntimeError("EIA payload missing data period/series/value")
 
     for item in data:
         if not isinstance(item, dict):
@@ -116,6 +122,10 @@ def row_from_eia_payload(series: EiaSeries, payload: dict[str, Any]) -> Industry
             timestamp=timestamp,
         )
     return None
+
+
+def _has_eia_data_shape(item: Any) -> bool:
+    return isinstance(item, dict) and REQUIRED_EIA_DATA_FIELDS <= item.keys()
 
 
 def _float_or_none(value: Any) -> float | None:

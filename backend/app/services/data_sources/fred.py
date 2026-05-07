@@ -10,6 +10,7 @@ import httpx
 from app.schemas.common import IndustryDataCreate
 
 UTC = ZoneInfo("UTC")
+REQUIRED_FRED_OBSERVATION_FIELDS = {"date", "value"}
 
 
 @dataclass(frozen=True)
@@ -71,7 +72,10 @@ def row_from_fred_payload(
 ) -> IndustryDataCreate | None:
     observations = payload.get("observations")
     if not isinstance(observations, list):
-        return None
+        message = payload.get("error_message") or payload.get("message")
+        raise RuntimeError(str(message or "FRED payload missing observations"))
+    if observations and not any(_has_observation_shape(observation) for observation in observations):
+        raise RuntimeError("FRED payload missing observation date/value")
     for observation in observations:
         if not isinstance(observation, dict):
             continue
@@ -93,3 +97,7 @@ def row_from_fred_payload(
             timestamp=timestamp,
         )
     return None
+
+
+def _has_observation_shape(observation: Any) -> bool:
+    return isinstance(observation, dict) and REQUIRED_FRED_OBSERVATION_FIELDS <= observation.keys()
