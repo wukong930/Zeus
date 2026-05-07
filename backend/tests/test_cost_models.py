@@ -389,6 +389,26 @@ def test_parse_cost_symbols_rejects_too_many_unique_values() -> None:
     assert "at most 40" in response.json()["detail"]
 
 
+def test_parse_cost_symbols_rejects_oversized_symbol() -> None:
+    app = create_app()
+    client = TestClient(app)
+
+    response = client.get(f"/api/cost-models/histories?symbols={'X' * 21}")
+
+    assert response.status_code == 400
+    assert "at most 20" in response.json()["detail"]
+
+
+def test_parse_cost_symbols_rejects_oversized_query() -> None:
+    app = create_app()
+    client = TestClient(app)
+    symbols = ",".join("RB" for _ in range(600))
+
+    response = client.get(f"/api/cost-models/histories?symbols={symbols}")
+
+    assert response.status_code == 422
+
+
 def cost_snapshot_row(symbol: str, snapshot_date: date) -> CostSnapshot:
     return CostSnapshot(
         id=uuid4(),

@@ -10,6 +10,7 @@ from app.schemas.common import (
     CostQualityReportRead,
     CostSimulationRequest,
     CostSnapshotRead,
+    MAX_COST_SIMULATION_SYMBOL_LENGTH,
     normalize_commodity_symbol,
 )
 from app.services.cost_models.cost_chain import calculate_cost_chain, chain_order_for_symbol
@@ -24,6 +25,7 @@ from app.services.cost_models.snapshots import (
 
 router = APIRouter(prefix="/api/cost-models", tags=["cost-models"])
 MAX_COST_HISTORY_SYMBOLS = 40
+MAX_COST_HISTORY_SYMBOL_QUERY_LENGTH = 1000
 
 
 @router.get("/quality/ferrous", response_model=CostQualityReportRead)
@@ -40,7 +42,7 @@ async def get_rubber_cost_quality_report(session: AsyncSession = Depends(get_db)
 
 @router.get("/histories", response_model=dict[str, list[CostSnapshotRead]])
 async def get_cost_model_histories(
-    symbols: str = Query(..., min_length=1),
+    symbols: str = Query(..., min_length=1, max_length=MAX_COST_HISTORY_SYMBOL_QUERY_LENGTH),
     limit: int = Query(default=30, ge=1, le=1000),
     session: AsyncSession = Depends(get_db),
 ) -> dict[str, list[CostSnapshot]]:
@@ -167,6 +169,16 @@ def _parse_cost_symbols(value: str) -> tuple[str, ...]:
         raise HTTPException(
             status_code=400,
             detail=f"symbols supports at most {MAX_COST_HISTORY_SYMBOLS} unique values",
+        )
+    if oversized := [
+        symbol for symbol in raw_symbols if len(symbol) > MAX_COST_SIMULATION_SYMBOL_LENGTH
+    ]:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "symbol entries can be at most "
+                f"{MAX_COST_SIMULATION_SYMBOL_LENGTH} characters: {','.join(oversized[:3])}"
+            ),
         )
     try:
         symbols = tuple(
