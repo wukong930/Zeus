@@ -96,6 +96,9 @@ services:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-zeus}:${POSTGRES_PASSWORD:-zeus}@postgres:5432/${POSTGRES_DB:-zeus}
       REDIS_URL: redis://redis:6379/1
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
+      PYTEST_ADDOPTS: -p no:cacheprovider
+    volumes:
+      - ./backend:/app
     depends_on:
       postgres:
         condition: service_healthy

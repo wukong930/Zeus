@@ -51,6 +51,8 @@ docker compose up --build
 docker compose run --rm backend-test
 ```
 
+`backend-test` 会挂载本地 `backend/` 目录，代码和测试变更会立即生效；只有修改后端依赖时才需要重新构建测试镜像。
+
 ## 设计文档
 
 | 文档 | 用途 |
