@@ -6,14 +6,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.models.contract_metadata import ContractMetadata
-from app.schemas.common import ContractCreate, ContractRead
+from app.schemas.common import ContractCreate, ContractRead, MAX_INGEST_SYMBOL_LENGTH
 
 router = APIRouter(prefix="/api/contracts", tags=["contracts"])
 
 
 @router.get("", response_model=list[ContractRead])
 async def list_contracts(
-    symbol: str | None = None,
+    symbol: str | None = Query(default=None, min_length=1, max_length=MAX_INGEST_SYMBOL_LENGTH),
     is_main: bool | None = None,
     limit: int = Query(default=200, ge=1, le=1000),
     session: AsyncSession = Depends(get_db),

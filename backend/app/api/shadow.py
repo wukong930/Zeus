@@ -34,6 +34,9 @@ MAX_SHADOW_CONFIG_NODES = 300
 MAX_SHADOW_CONFIG_BYTES = 16_384
 MAX_SHADOW_CONFIG_KEY_LENGTH = 80
 MAX_SHADOW_CONFIG_STRING_LENGTH = 500
+MAX_SHADOW_ACTOR_LENGTH = 80
+MAX_SHADOW_SIGNAL_TYPE_LENGTH = 30
+MAX_SHADOW_CATEGORY_LENGTH = 30
 
 
 class ShadowRunCreate(StrictInputModel):
@@ -43,7 +46,7 @@ class ShadowRunCreate(StrictInputModel):
         default_factory=dict,
         max_length=MAX_SHADOW_CONFIG_TOP_LEVEL_KEYS,
     )
-    created_by: str | None = Field(default=None, max_length=80)
+    created_by: str | None = Field(default=None, max_length=MAX_SHADOW_ACTOR_LENGTH)
     notes: str | None = Field(default=None, max_length=4000)
 
     @field_validator("config_diff")
@@ -115,7 +118,7 @@ async def list_initial_shadow_applications() -> list[dict[str, Any]]:
 
 @router.post("/applications/initial", status_code=status.HTTP_201_CREATED)
 async def create_initial_shadow_applications_endpoint(
-    created_by: str | None = None,
+    created_by: str | None = Query(default=None, min_length=1, max_length=MAX_SHADOW_ACTOR_LENGTH),
     days: int = Query(default=30, ge=1, le=120),
     session: AsyncSession = Depends(get_db),
 ) -> list[dict[str, Any]]:
@@ -188,8 +191,12 @@ async def get_shadow_run_report(
 
 @router.get("/calibration")
 async def get_threshold_calibration_report(
-    signal_type: str | None = None,
-    category: str | None = None,
+    signal_type: str | None = Query(
+        default=None,
+        min_length=1,
+        max_length=MAX_SHADOW_SIGNAL_TYPE_LENGTH,
+    ),
+    category: str | None = Query(default=None, min_length=1, max_length=MAX_SHADOW_CATEGORY_LENGTH),
     lookback_days: int = Query(default=180, ge=7, le=730),
     min_samples: int = Query(default=20, ge=1, le=500),
     session: AsyncSession = Depends(get_db),
@@ -206,8 +213,12 @@ async def get_threshold_calibration_report(
 
 @router.post("/calibration/reviews")
 async def enqueue_threshold_calibration_review(
-    signal_type: str | None = None,
-    category: str | None = None,
+    signal_type: str | None = Query(
+        default=None,
+        min_length=1,
+        max_length=MAX_SHADOW_SIGNAL_TYPE_LENGTH,
+    ),
+    category: str | None = Query(default=None, min_length=1, max_length=MAX_SHADOW_CATEGORY_LENGTH),
     lookback_days: int = Query(default=180, ge=7, le=730),
     min_samples: int = Query(default=20, ge=1, le=500),
     session: AsyncSession = Depends(get_db),
