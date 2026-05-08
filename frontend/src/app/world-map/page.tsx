@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { geoEqualEarth, geoGraticule, geoPath, type GeoPermissibleObjects, type GeoProjection } from "d3-geo";
 import type { ComponentType, ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -19,6 +20,10 @@ import {
   Sparkles,
   X,
 } from "lucide-react";
+import { feature, mesh } from "topojson-client";
+import type { GeometryObject, Topology } from "topojson-specification";
+import type { FeatureCollection, GeometryObject as GeoJsonGeometryObject, MultiLineString } from "geojson";
+import worldAtlas from "world-atlas/countries-110m.json";
 import { Badge } from "@/components/Badge";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
@@ -41,14 +46,22 @@ type CommodityFilter = "all" | string;
 const MAP_WIDTH = 1000;
 const MAP_HEIGHT = 560;
 
-const LAND_PATHS = [
-  "M105 143 C146 88 235 82 287 126 C319 154 331 210 299 249 C253 303 148 281 104 235 C76 206 73 174 105 143Z",
-  "M238 306 C286 290 347 316 368 371 C387 419 355 481 295 487 C234 493 186 447 188 388 C190 350 207 321 238 306Z",
-  "M458 126 C525 83 627 93 675 153 C720 210 695 280 631 304 C562 329 481 299 444 241 C413 192 420 151 458 126Z",
-  "M582 326 C642 319 708 360 722 422 C733 473 689 517 629 511 C578 506 543 466 547 413 C550 369 561 340 582 326Z",
-  "M706 180 C764 122 861 132 914 192 C959 243 942 316 884 344 C815 377 720 344 687 276 C670 242 676 210 706 180Z",
-  "M771 398 C818 370 898 389 922 442 C944 491 902 530 838 520 C786 512 752 470 760 429 C763 416 767 405 771 398Z",
-];
+type WorldAtlasTopology = Topology<{
+  countries: GeometryObject;
+  land: GeometryObject;
+}>;
+
+const WORLD_TOPOLOGY = worldAtlas as unknown as WorldAtlasTopology;
+const WORLD_COUNTRIES = feature(
+  WORLD_TOPOLOGY,
+  WORLD_TOPOLOGY.objects.countries
+) as FeatureCollection<GeoJsonGeometryObject>;
+const WORLD_BORDERS = mesh(
+  WORLD_TOPOLOGY,
+  WORLD_TOPOLOGY.objects.countries,
+  (a, b) => a !== b
+) as MultiLineString;
+const WORLD_GRATICULE = geoGraticule().step([30, 20])();
 
 export default function WorldMapPage() {
   const { lang, text } = useI18n();
@@ -277,12 +290,49 @@ function WorldMapCanvas({
   onSelect: (id: string) => void;
 }) {
   const { lang } = useI18n();
+  const projection = useMemo(
+    () =>
+      geoEqualEarth().fitExtent(
+        [
+          [30, 72],
+          [MAP_WIDTH - 30, MAP_HEIGHT - 24],
+        ],
+        WORLD_COUNTRIES as GeoPermissibleObjects
+      ),
+    []
+  );
+  const path = useMemo(() => geoPath(projection), [projection]);
+  const countryPaths = useMemo(
+    () =>
+      WORLD_COUNTRIES.features
+        .map((country, index) => ({
+          id: String(country.id ?? index),
+          d: path(country as GeoPermissibleObjects) ?? "",
+        }))
+        .filter((country) => country.d.length > 0),
+    [path]
+  );
+  const graticulePath = useMemo(() => path(WORLD_GRATICULE as GeoPermissibleObjects) ?? "", [path]);
+  const borderPath = useMemo(() => path(WORLD_BORDERS as GeoPermissibleObjects) ?? "", [path]);
+  const riskRoutes = useMemo(() => buildRiskRoutes(regions), [regions]);
+
   return (
     <svg className="absolute inset-0 h-full w-full" viewBox={`0 0 ${MAP_WIDTH} ${MAP_HEIGHT}`} role="img">
       <defs>
-        <linearGradient id="worldMapOceanLine" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%" stopColor="rgba(6,182,212,0.35)" />
-          <stop offset="100%" stopColor="rgba(16,185,129,0.18)" />
+        <radialGradient id="worldMapOceanGlow" cx="50%" cy="45%" r="62%">
+          <stop offset="0%" stopColor="rgba(8,145,178,0.22)" />
+          <stop offset="58%" stopColor="rgba(6,95,70,0.08)" />
+          <stop offset="100%" stopColor="rgba(0,0,0,0)" />
+        </radialGradient>
+        <linearGradient id="worldMapCountryFill" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stopColor="rgba(15,23,42,0.68)" />
+          <stop offset="55%" stopColor="rgba(10,18,24,0.58)" />
+          <stop offset="100%" stopColor="rgba(4,10,8,0.62)" />
+        </linearGradient>
+        <linearGradient id="worldMapRouteLine" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0%" stopColor="rgba(34,211,238,0.06)" />
+          <stop offset="48%" stopColor="rgba(16,185,129,0.55)" />
+          <stop offset="100%" stopColor="rgba(249,115,22,0.5)" />
         </linearGradient>
         <filter id="worldMapRiskGlow">
           <feGaussianBlur stdDeviation="10" result="blur" />
@@ -291,46 +341,66 @@ function WorldMapCanvas({
             <feMergeNode in="SourceGraphic" />
           </feMerge>
         </filter>
+        <filter id="worldMapLandGlow">
+          <feGaussianBlur stdDeviation="2.2" result="blur" />
+          <feMerge>
+            <feMergeNode in="blur" />
+            <feMergeNode in="SourceGraphic" />
+          </feMerge>
+        </filter>
       </defs>
 
-      {Array.from({ length: 9 }).map((_, index) => (
-        <line
-          key={`lat-${index}`}
-          x1="0"
-          x2={MAP_WIDTH}
-          y1={80 + index * 48}
-          y2={80 + index * 48}
-          stroke="rgba(148,163,184,0.08)"
-          strokeWidth="1"
-        />
-      ))}
-      {Array.from({ length: 12 }).map((_, index) => (
-        <line
-          key={`lon-${index}`}
-          x1={70 + index * 80}
-          x2={70 + index * 80}
-          y1="0"
-          y2={MAP_HEIGHT}
-          stroke="rgba(148,163,184,0.06)"
-          strokeWidth="1"
-        />
-      ))}
+      <rect x="0" y="0" width={MAP_WIDTH} height={MAP_HEIGHT} fill="url(#worldMapOceanGlow)" />
+      <path
+        d={graticulePath}
+        fill="none"
+        stroke="rgba(148,163,184,0.12)"
+        strokeWidth="0.7"
+        strokeDasharray="2 9"
+      />
+      <g filter="url(#worldMapLandGlow)" opacity="0.96">
+        {countryPaths.map((country) => (
+          <path
+            key={country.id}
+            data-map-layer="country"
+            d={country.d}
+            fill="url(#worldMapCountryFill)"
+            stroke="rgba(34,211,238,0.08)"
+            strokeWidth="0.45"
+            vectorEffect="non-scaling-stroke"
+          />
+        ))}
+      </g>
+      <path
+        d={borderPath}
+        fill="none"
+        stroke="rgba(148,163,184,0.14)"
+        strokeWidth="0.55"
+        vectorEffect="non-scaling-stroke"
+      />
 
-      {LAND_PATHS.map((path, index) => (
-        <path
-          key={index}
-          d={path}
-          fill="rgba(15,23,42,0.38)"
-          stroke="url(#worldMapOceanLine)"
-          strokeWidth="1"
-        />
-      ))}
+      {riskRoutes.map((route) => {
+        const d = arcPath(route.from, route.to, projection);
+        if (!d) return null;
+        return (
+          <path
+            key={route.id}
+            d={d}
+            fill="none"
+            stroke="url(#worldMapRouteLine)"
+            strokeWidth={1 + route.weight * 2.4}
+            strokeDasharray="8 10"
+            opacity={0.22 + route.weight * 0.34}
+            vectorEffect="non-scaling-stroke"
+          />
+        );
+      })}
 
       {regions.map((region) => {
-        const center = project(region.center);
+        const center = project(region.center, projection);
         const selected = region.id === selectedId;
         const color = riskColor(region.riskLevel);
-        const radius = 44 + region.riskScore * 0.55;
+        const radius = 22 + region.riskScore * 0.42;
         return (
           <g
             key={region.id}
@@ -343,11 +413,12 @@ function WorldMapCanvas({
             }}
           >
             <path
-              d={polygonPath(region.polygon)}
+              d={polygonPath(region.polygon, projection)}
               fill={color.fill}
               stroke={selected ? color.strokeStrong : color.stroke}
               strokeWidth={selected ? 2.8 : 1.2}
               filter={selected ? "url(#worldMapRiskGlow)" : undefined}
+              vectorEffect="non-scaling-stroke"
             />
             <circle
               cx={center.x}
@@ -358,8 +429,10 @@ function WorldMapCanvas({
               strokeWidth="1.5"
               strokeDasharray="3 8"
               opacity={selected ? 0.88 : 0.38}
+              vectorEffect="non-scaling-stroke"
             />
-            <circle cx={center.x} cy={center.y} r={8} fill={color.strokeStrong} filter="url(#worldMapRiskGlow)" />
+            <circle cx={center.x} cy={center.y} r={7} fill={color.strokeStrong} filter="url(#worldMapRiskGlow)" />
+            <circle cx={center.x} cy={center.y} r={2.8} fill="#fff" opacity="0.72" />
             <foreignObject x={center.x + 12} y={center.y - 22} width="152" height="54">
               <div className="rounded-sm border border-border-subtle bg-black/78 px-2 py-1.5 shadow-data-panel backdrop-blur-md">
                 <div className="flex items-center justify-between gap-2">
@@ -645,20 +718,60 @@ function WeatherMetric({
   );
 }
 
-function project(point: GeoPoint): { x: number; y: number } {
+function project(point: GeoPoint, projection: GeoProjection): { x: number; y: number } {
+  const projected = projection([point.lon, point.lat]);
+  if (!projected) {
+    return { x: MAP_WIDTH / 2, y: MAP_HEIGHT / 2 };
+  }
   return {
-    x: ((point.lon + 180) / 360) * MAP_WIDTH,
-    y: ((90 - point.lat) / 180) * MAP_HEIGHT,
+    x: projected[0],
+    y: projected[1],
   };
 }
 
-function polygonPath(points: GeoPoint[]): string {
+function polygonPath(points: GeoPoint[], projection: GeoProjection): string {
   return `${points
     .map((point, index) => {
-      const projected = project(point);
+      const projected = project(point, projection);
       return `${index === 0 ? "M" : "L"}${projected.x.toFixed(1)} ${projected.y.toFixed(1)}`;
     })
     .join(" ")} Z`;
+}
+
+function arcPath(from: GeoPoint, to: GeoPoint, projection: GeoProjection): string | null {
+  const start = project(from, projection);
+  const end = project(to, projection);
+  const midX = (start.x + end.x) / 2;
+  const midY = (start.y + end.y) / 2;
+  const distance = Math.hypot(end.x - start.x, end.y - start.y);
+  if (!Number.isFinite(distance) || distance < 24) return null;
+
+  const bend = Math.min(58, Math.max(22, distance * 0.16));
+  return `M${start.x.toFixed(1)} ${start.y.toFixed(1)} Q${midX.toFixed(1)} ${(midY - bend).toFixed(1)} ${end.x.toFixed(1)} ${end.y.toFixed(1)}`;
+}
+
+function buildRiskRoutes(regions: WorldMapRegion[]) {
+  const routes: Array<{ id: string; from: GeoPoint; to: GeoPoint; weight: number }> = [];
+
+  for (let index = 0; index < regions.length; index += 1) {
+    for (let nextIndex = index + 1; nextIndex < regions.length; nextIndex += 1) {
+      const source = regions[index];
+      const target = regions[nextIndex];
+      const sharedSymbols = source.symbols.filter((symbol) => target.symbols.includes(symbol));
+      const sharedCommodity =
+        source.commodityZh === target.commodityZh || source.commodityEn === target.commodityEn;
+      if (sharedSymbols.length === 0 && !sharedCommodity) continue;
+
+      routes.push({
+        id: `${source.id}-${target.id}`,
+        from: source.center,
+        to: target.center,
+        weight: Math.min(1, (source.riskScore + target.riskScore) / 200 + sharedSymbols.length * 0.1),
+      });
+    }
+  }
+
+  return routes.sort((a, b) => b.weight - a.weight).slice(0, 10);
 }
 
 function riskColor(level: WorldRiskLevel) {

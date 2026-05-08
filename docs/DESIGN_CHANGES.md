@@ -161,3 +161,9 @@ threshold_modifier、propagation_activator、risk_recalc、数据腐烂防护
 - `/api/world-map` 增加 `story`、`adaptiveAlerts`、`evidence`、`counterEvidence`，让区域弹窗展示动态商品传导链。
 - 增加 Commodity Lens：同一因素会按橡胶、原油、黑色、农产、农能联动生成不同解释路径。
 - 前端 `/world-map` 改成地图主视觉，区域详情改为点击弹窗，不再常驻右侧挤占地图面积。
+
+# 2026-05-08 — World Risk Map Phase B 真实地图层
+
+- 前端地图从手写大陆轮廓升级为 `world-atlas` Natural Earth 国家边界，并使用 `d3-geo` Equal Earth 投影。
+- 区域 polygon、热力圈、风险标签和同商品/同合约风险飞线统一由经纬度投影生成，视觉表达与真实地理位置对齐。
+- MapLibre/deck.gl 调整为 Phase B.2，用于后续天气栅格、瓦片热力和大规模交互增强。
