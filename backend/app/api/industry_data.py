@@ -6,7 +6,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.models.industry_data import IndustryData
-from app.schemas.common import IndustryDataCreate, IndustryDataRead
+from app.schemas.common import (
+    IndustryDataCreate,
+    IndustryDataRead,
+    MAX_INGEST_SYMBOL_LENGTH,
+)
 from app.services.etl.writers import append_industry_data
 from app.services.market_data.pit import get_industry_data_pit
 
@@ -15,8 +19,8 @@ router = APIRouter(prefix="/api/industry-data", tags=["industry-data"])
 
 @router.get("", response_model=list[IndustryDataRead])
 async def list_industry_data(
-    symbol: str,
-    data_type: str | None = None,
+    symbol: str = Query(min_length=1, max_length=MAX_INGEST_SYMBOL_LENGTH),
+    data_type: str | None = Query(default=None, min_length=1, max_length=30),
     as_of: datetime | None = None,
     start: datetime | None = None,
     end: datetime | None = None,

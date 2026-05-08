@@ -31,8 +31,16 @@ from app.services.data_sources.tushare_futures import (
 
 
 def test_parse_akshare_symbols_uses_defaults_when_blank() -> None:
-    assert parse_akshare_symbols(" RB0, nr0 ,, ") == ("RB0", "NR0")
+    assert parse_akshare_symbols(" RB0, nr0, RB0 ,, ") == ("RB0", "NR0")
     assert parse_akshare_symbols("")[:2] == ("RB0", "HC0")
+
+
+def test_parse_akshare_symbols_rejects_unbounded_settings() -> None:
+    with pytest.raises(ValueError, match="at most 50"):
+        parse_akshare_symbols(",".join(f"RB{i}" for i in range(51)))
+
+    with pytest.raises(ValueError, match="at most 32"):
+        parse_akshare_symbols("R" * 33)
 
 
 def test_akshare_rows_from_frame_normalizes_daily_prices() -> None:
@@ -454,6 +462,16 @@ def test_data_source_registry_marks_keyed_sources() -> None:
     assert statuses["open_meteo"].free_tier == "free_no_key"
 
 
+def test_tushare_csv_tuple_rejects_unbounded_settings() -> None:
+    assert parse_csv_tuple("rb, rb, sc", ("RB",)) == ("RB", "SC")
+
+    with pytest.raises(ValueError, match="at most 50"):
+        parse_csv_tuple(",".join(f"S{i}" for i in range(51)), ("RB",))
+
+    with pytest.raises(ValueError, match="at most 32"):
+        parse_csv_tuple("S" * 33, ("RB",))
+
+
 def test_data_sources_api_returns_registry_statuses(monkeypatch) -> None:
     def fake_statuses() -> list[DataSourceStatus]:
         return [
@@ -511,6 +529,18 @@ def test_data_sources_api_returns_registry_statuses(monkeypatch) -> None:
             "note": "key required",
         },
     ]
+
+
+def test_industry_data_api_rejects_unbounded_query_filters() -> None:
+    client = TestClient(create_app())
+
+    oversized_symbol = "S" * 33
+    response = client.get(f"/api/industry-data?symbol={oversized_symbol}")
+    assert response.status_code == 422
+
+    oversized_type = "x" * 31
+    response = client.get(f"/api/industry-data?symbol=SC&data_type={oversized_type}")
+    assert response.status_code == 422
 
 
 def json_from_request(request: httpx.Request) -> dict[str, object]:

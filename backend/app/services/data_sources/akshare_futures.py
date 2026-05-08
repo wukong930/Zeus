@@ -97,6 +97,8 @@ REQUIRED_FRAME_COLUMN_GROUPS = {
     "date": DATE_COLUMNS,
     "close": CLOSE_COLUMNS,
 }
+MAX_AKSHARE_SYMBOLS = 50
+MAX_AKSHARE_SYMBOL_LENGTH = 32
 
 AkshareFetcher = Callable[[str], Any]
 
@@ -182,7 +184,16 @@ def _rows_from_frame(frame: Any, *, query_symbol: str, limit: int) -> list[Marke
 def parse_akshare_symbols(value: str | None) -> tuple[str, ...]:
     if not value:
         return DEFAULT_AKSHARE_SYMBOLS
-    symbols = tuple(part.strip().upper() for part in value.split(",") if part.strip())
+    symbols = tuple(
+        dict.fromkeys(part.strip().upper() for part in value.split(",") if part.strip())
+    )
+    if len(symbols) > MAX_AKSHARE_SYMBOLS:
+        raise ValueError(f"AKShare symbols can contain at most {MAX_AKSHARE_SYMBOLS} entries")
+    oversized = [symbol for symbol in symbols if len(symbol) > MAX_AKSHARE_SYMBOL_LENGTH]
+    if oversized:
+        raise ValueError(
+            f"AKShare symbols can be at most {MAX_AKSHARE_SYMBOL_LENGTH} characters"
+        )
     return symbols or DEFAULT_AKSHARE_SYMBOLS
 
 

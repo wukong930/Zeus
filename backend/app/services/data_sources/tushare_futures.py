@@ -47,6 +47,8 @@ TUSHARE_EXCHANGE_SUFFIXES = {
     "INE": "INE",
     "GFEX": "GFE",
 }
+MAX_TUSHARE_CSV_ENTRIES = 50
+MAX_TUSHARE_CSV_ENTRY_LENGTH = 32
 
 
 @dataclass(frozen=True)
@@ -142,7 +144,18 @@ def dedupe_active_contracts(rows: list[MarketDataCreate]) -> list[MarketDataCrea
 def parse_csv_tuple(value: str | None, default: tuple[str, ...]) -> tuple[str, ...]:
     if not value:
         return default
-    parsed = tuple(part.strip().upper() for part in value.split(",") if part.strip())
+    parsed = tuple(
+        dict.fromkeys(part.strip().upper() for part in value.split(",") if part.strip())
+    )
+    if len(parsed) > MAX_TUSHARE_CSV_ENTRIES:
+        raise ValueError(
+            f"Tushare CSV settings can contain at most {MAX_TUSHARE_CSV_ENTRIES} entries"
+        )
+    oversized = [item for item in parsed if len(item) > MAX_TUSHARE_CSV_ENTRY_LENGTH]
+    if oversized:
+        raise ValueError(
+            f"Tushare CSV entries can be at most {MAX_TUSHARE_CSV_ENTRY_LENGTH} characters"
+        )
     return parsed or default
 
 
