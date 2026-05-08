@@ -78,6 +78,11 @@ def test_region_snapshot_links_runtime_sources() -> None:
     assert region.causalScope.hasDirectLinks is True
     assert any(event_id.startswith("alert:") for event_id in region.causalScope.eventIds)
     assert region.riskScore > WORLD_RISK_REGIONS[0].base_risk
+    assert region.story.triggerZh
+    assert region.story.chain
+    assert any(step.stage == "production" for step in region.story.chain)
+    assert region.adaptiveAlerts
+    assert region.adaptiveAlerts[0].source in {"alert", "news"}
 
 
 def test_region_snapshot_keeps_baseline_label_without_runtime_links() -> None:
@@ -92,6 +97,7 @@ def test_region_snapshot_keeps_baseline_label_without_runtime_links() -> None:
     assert region.dataQuality == "baseline"
     assert region.causalScope.hasDirectLinks is False
     assert region.weather.dataSource == "regional_baseline_seed"
+    assert region.story.evidence[0].kind == "weather"
 
 
 def test_region_snapshot_does_not_link_category_only_signals() -> None:
@@ -116,3 +122,35 @@ def test_region_snapshot_does_not_link_category_only_signals() -> None:
 
     assert region.runtime.signals == 0
     assert region.causalScope.hasDirectLinks is False
+
+
+def test_same_flood_factor_adapts_to_commodity_lens() -> None:
+    now = datetime.now(timezone.utc)
+    alert = Alert(
+        id=uuid4(),
+        title="I 澳洲港口暴雨影响运输",
+        summary="暴雨和港口运输扰动影响铁矿发运",
+        severity="medium",
+        category="ferrous",
+        type="weather",
+        status="active",
+        triggered_at=now,
+        confidence=0.68,
+        related_assets=["I"],
+        trigger_chain=[],
+        risk_items=[],
+        manual_check_items=[],
+    )
+
+    region = _build_region_snapshot(
+        WORLD_RISK_REGIONS[2],
+        alerts=[alert],
+        news=[],
+        signals=[],
+        positions=[],
+    )
+
+    labels = [step.labelZh for step in region.story.chain]
+    assert any("港口" in label or "运输" in label for label in labels)
+    assert region.story.triggerZh
+    assert region.adaptiveAlerts[0].mechanismZh

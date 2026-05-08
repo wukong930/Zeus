@@ -155,3 +155,9 @@ threshold_modifier、propagation_activator、risk_recalc、数据腐烂防护
 - 新增 `docs/WORLD_RISK_MAP.md`，明确世界风险地图的产品定位、分期技术方案和 `/api/world-map` 数据契约。
 - 架构文档补充 World Risk Map 作为 Causal Web 之外的空间解释层。
 - 执行计划升级为 v1.4，新增 Phase 9.5。
+
+# 2026-05-08 — World Risk Map 自适应风险故事
+
+- `/api/world-map` 增加 `story`、`adaptiveAlerts`、`evidence`、`counterEvidence`，让区域弹窗展示动态商品传导链。
+- 增加 Commodity Lens：同一因素会按橡胶、原油、黑色、农产、农能联动生成不同解释路径。
+- 前端 `/world-map` 改成地图主视觉，区域详情改为点击弹窗，不再常驻右侧挤占地图面积。

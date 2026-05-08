@@ -200,6 +200,18 @@ export interface CausalWebGraph {
 export type WorldRiskLevel = "low" | "watch" | "elevated" | "high" | "critical";
 export type WorldMapDataQuality = "runtime" | "partial" | "baseline";
 export type WorldMapLayerStatus = "ready" | "baseline" | "planned";
+export type WorldMapStoryStage =
+  | "climate"
+  | "weather_regime"
+  | "production"
+  | "logistics"
+  | "supply"
+  | "demand"
+  | "inventory"
+  | "policy"
+  | "cost"
+  | "market";
+export type WorldMapEvidenceKind = "weather" | "alert" | "news" | "signal" | "position" | "baseline";
 
 export interface GeoPoint {
   lat: number;
@@ -231,6 +243,45 @@ export interface WorldMapDriver {
   weight: number;
 }
 
+export interface WorldMapEvidenceItem {
+  kind: WorldMapEvidenceKind;
+  titleZh: string;
+  titleEn: string;
+  source: string;
+  weight: number;
+}
+
+export interface WorldMapStoryStep {
+  stage: WorldMapStoryStage;
+  labelZh: string;
+  labelEn: string;
+  confidence: number;
+  evidenceKind: WorldMapEvidenceKind;
+}
+
+export interface WorldMapRiskStory {
+  headlineZh: string;
+  headlineEn: string;
+  triggerZh: string;
+  triggerEn: string;
+  chain: WorldMapStoryStep[];
+  evidence: WorldMapEvidenceItem[];
+  counterEvidence: WorldMapEvidenceItem[];
+}
+
+export interface WorldMapAdaptiveAlert {
+  id: string;
+  titleZh: string;
+  titleEn: string;
+  severity: WorldRiskLevel;
+  triggerZh: string;
+  triggerEn: string;
+  mechanismZh: string;
+  mechanismEn: string;
+  confidence: number;
+  source: WorldMapEvidenceKind;
+}
+
 export interface WorldMapCausalScope {
   regionId: string;
   symbols: string[];
@@ -253,6 +304,8 @@ export interface WorldMapRegion {
   drivers: WorldMapDriver[];
   weather: WorldMapWeather;
   runtime: WorldMapRuntime;
+  story: WorldMapRiskStory;
+  adaptiveAlerts: WorldMapAdaptiveAlert[];
   causalScope: WorldMapCausalScope;
   narrativeZh: string;
   narrativeEn: string;
