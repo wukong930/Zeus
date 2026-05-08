@@ -2,8 +2,8 @@
 
 import Link from "next/link";
 import { geoEqualEarth, geoGraticule, geoPath, type GeoPermissibleObjects, type GeoProjection } from "d3-geo";
-import type { ComponentType, ReactNode } from "react";
-import { useEffect, useMemo, useState } from "react";
+import type { ComponentType, PointerEvent as ReactPointerEvent, ReactNode, WheelEvent as ReactWheelEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
   AlertTriangle,
@@ -14,7 +14,10 @@ import {
   Layers3,
   Link2,
   ListChecks,
+  Minus,
+  Plus,
   RefreshCw,
+  RotateCcw,
   Route,
   ShieldAlert,
   Sparkles,
@@ -45,11 +48,22 @@ type CommodityFilter = "all" | string;
 
 const MAP_WIDTH = 1000;
 const MAP_HEIGHT = 560;
+const WORLD_MAP_REFRESH_INTERVAL_MS = 30_000;
+const MIN_MAP_SCALE = 0.85;
+const MAX_MAP_SCALE = 3.25;
 
 type WorldAtlasTopology = Topology<{
   countries: GeometryObject;
   land: GeometryObject;
 }>;
+
+type MapViewTransform = {
+  scale: number;
+  x: number;
+  y: number;
+};
+
+const INITIAL_MAP_VIEW: MapViewTransform = { scale: 1, x: 0, y: 0 };
 
 const WORLD_TOPOLOGY = worldAtlas as unknown as WorldAtlasTopology;
 const WORLD_COUNTRIES = feature(
@@ -70,24 +84,68 @@ export default function WorldMapPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
   const [commodity, setCommodity] = useState<CommodityFilter>("all");
+  const [autoRefresh, setAutoRefresh] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
+  const [riskDeltas, setRiskDeltas] = useState<Record<string, number>>({});
+  const snapshotRef = useRef<WorldMapSnapshot | null>(null);
+  const riskScoresRef = useRef<Record<string, number>>({});
+  const mountedRef = useRef(false);
+  const refreshInFlightRef = useRef(false);
 
-  useEffect(() => {
-    let mounted = true;
-    fetchWorldMapSnapshot()
-      .then((next) => {
-        if (!mounted) return;
-        setSnapshot(next);
-        setSource(next.summary.runtimeLinkedRegions > 0 ? "api" : "partial");
-      })
-      .catch(() => {
-        if (!mounted) return;
+  const loadSnapshot = useCallback(async () => {
+    if (refreshInFlightRef.current) return;
+    refreshInFlightRef.current = true;
+    setIsRefreshing(true);
+    try {
+      const next = await fetchWorldMapSnapshot();
+      if (!mountedRef.current) return;
+
+      const previousScores = riskScoresRef.current;
+      const nextScores = Object.fromEntries(next.regions.map((region) => [region.id, region.riskScore]));
+      if (Object.keys(previousScores).length > 0) {
+        setRiskDeltas(
+          Object.fromEntries(
+            next.regions
+              .map((region) => [region.id, region.riskScore - (previousScores[region.id] ?? region.riskScore)] as const)
+              .filter(([, delta]) => delta !== 0)
+          )
+        );
+      }
+      riskScoresRef.current = nextScores;
+      snapshotRef.current = next;
+      setSnapshot(next);
+      setSource(next.summary.runtimeLinkedRegions > 0 ? "api" : "partial");
+      setLastUpdatedAt(new Date());
+    } catch {
+      if (!mountedRef.current) return;
+      if (!snapshotRef.current) {
         setSnapshot(null);
         setSource("fallback");
-      });
-    return () => {
-      mounted = false;
-    };
+      } else {
+        setSource("partial");
+      }
+    } finally {
+      refreshInFlightRef.current = false;
+      if (mountedRef.current) setIsRefreshing(false);
+    }
   }, []);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    void loadSnapshot();
+    return () => {
+      mountedRef.current = false;
+    };
+  }, [loadSnapshot]);
+
+  useEffect(() => {
+    if (!autoRefresh) return undefined;
+    const timer = window.setInterval(() => {
+      void loadSnapshot();
+    }, WORLD_MAP_REFRESH_INTERVAL_MS);
+    return () => window.clearInterval(timer);
+  }, [autoRefresh, loadSnapshot]);
 
   const regions = snapshot?.regions ?? [];
   const commodities = useMemo(
@@ -112,7 +170,7 @@ export default function WorldMapPage() {
             {text("按商品属性自适应解释天气、物流、供应和价格传导")}
           </p>
         </div>
-        <StatusStrip snapshot={snapshot} source={source} />
+        <StatusStrip snapshot={snapshot} source={source} lastUpdatedAt={lastUpdatedAt} />
       </header>
 
       <Card variant="flat" className="relative min-h-[740px] flex-1 overflow-hidden p-0">
@@ -130,9 +188,22 @@ export default function WorldMapPage() {
           </div>
           <div className="flex flex-wrap items-center gap-2 rounded-sm border border-border-subtle bg-black/72 p-1.5 shadow-data-panel backdrop-blur-md">
             <LayerLegend layers={snapshot?.layers ?? []} />
+            <LiveUpdateBadge
+              autoRefresh={autoRefresh}
+              isRefreshing={isRefreshing}
+              lastUpdatedAt={lastUpdatedAt}
+            />
             <DataSourceBadge state={source} />
-            <Button variant="secondary" size="sm" onClick={() => window.location.reload()}>
-              <RefreshCw className="h-4 w-4" />
+            <Button
+              variant={autoRefresh ? "primary" : "secondary"}
+              size="sm"
+              onClick={() => setAutoRefresh((value) => !value)}
+            >
+              <Activity className="h-4 w-4" />
+              {autoRefresh ? text("自动") : text("手动")}
+            </Button>
+            <Button variant="secondary" size="sm" onClick={() => void loadSnapshot()} disabled={isRefreshing}>
+              <RefreshCw className={cn("h-4 w-4", isRefreshing && "animate-spin")} />
               {text("刷新")}
             </Button>
           </div>
@@ -141,6 +212,7 @@ export default function WorldMapPage() {
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_48%_38%,rgba(6,182,212,0.16),transparent_28%),radial-gradient(circle_at_80%_65%,rgba(16,185,129,0.12),transparent_22%),linear-gradient(180deg,rgba(5,7,6,0.98),rgba(0,0,0,1))]" />
         <WorldMapCanvas
           regions={filteredRegions}
+          riskDeltas={riskDeltas}
           selectedId={selectedRegion?.id ?? null}
           onSelect={(id) => {
             setSelectedId(id);
@@ -177,9 +249,11 @@ export default function WorldMapPage() {
 function StatusStrip({
   snapshot,
   source,
+  lastUpdatedAt,
 }: {
   snapshot: WorldMapSnapshot | null;
   source: DataSourceState;
+  lastUpdatedAt: Date | null;
 }) {
   const { text } = useI18n();
   return (
@@ -196,9 +270,31 @@ function StatusStrip({
         value={String(snapshot?.summary.maxRiskScore ?? 0)}
       />
       <div className="flex items-center justify-between rounded-sm border border-border-subtle bg-bg-base px-3 py-2">
-        <span className="text-caption text-text-muted">{text("数据")}</span>
-        <DataSourceBadge state={source} compact />
+        <span className="text-caption text-text-muted">{text("更新")}</span>
+        <span className="flex items-center gap-2 font-mono text-xs text-text-primary">
+          <DataSourceBadge state={source} compact />
+          {lastUpdatedAt ? formatUpdateTime(lastUpdatedAt) : text("等待同步")}
+        </span>
       </div>
+    </div>
+  );
+}
+
+function LiveUpdateBadge({
+  autoRefresh,
+  isRefreshing,
+  lastUpdatedAt,
+}: {
+  autoRefresh: boolean;
+  isRefreshing: boolean;
+  lastUpdatedAt: Date | null;
+}) {
+  const { text } = useI18n();
+  return (
+    <div className="inline-flex h-7 items-center gap-2 rounded-xs border border-brand-emerald/25 bg-brand-emerald/10 px-2 text-caption text-brand-emerald-bright">
+      <span className={cn("h-1.5 w-1.5 rounded-full bg-brand-emerald-bright", autoRefresh && "animate-heartbeat")} />
+      <span>{isRefreshing ? text("同步中") : autoRefresh ? text("实时轮询") : text("手动刷新")}</span>
+      {lastUpdatedAt && <span className="font-mono text-text-muted">{formatUpdateTime(lastUpdatedAt)}</span>}
     </div>
   );
 }
@@ -282,14 +378,24 @@ function LayerLegend({ layers }: { layers: WorldMapLayer[] }) {
 
 function WorldMapCanvas({
   regions,
+  riskDeltas,
   selectedId,
   onSelect,
 }: {
   regions: WorldMapRegion[];
+  riskDeltas: Record<string, number>;
   selectedId: string | null;
   onSelect: (id: string) => void;
 }) {
   const { lang } = useI18n();
+  const [view, setView] = useState<MapViewTransform>(INITIAL_MAP_VIEW);
+  const dragRef = useRef<{
+    pointerId: number;
+    startX: number;
+    startY: number;
+    startView: MapViewTransform;
+  } | null>(null);
+  const [dragging, setDragging] = useState(false);
   const projection = useMemo(
     () =>
       geoEqualEarth().fitExtent(
@@ -316,143 +422,300 @@ function WorldMapCanvas({
   const borderPath = useMemo(() => path(WORLD_BORDERS as GeoPermissibleObjects) ?? "", [path]);
   const riskRoutes = useMemo(() => buildRiskRoutes(regions), [regions]);
 
+  const applyZoom = useCallback((factor: number, anchor = { x: MAP_WIDTH / 2, y: MAP_HEIGHT / 2 }) => {
+    setView((current) => {
+      const nextScale = clamp(current.scale * factor, MIN_MAP_SCALE, MAX_MAP_SCALE);
+      const ratio = nextScale / current.scale;
+      return clampMapView({
+        scale: nextScale,
+        x: anchor.x - (anchor.x - current.x) * ratio,
+        y: anchor.y - (anchor.y - current.y) * ratio,
+      });
+    });
+  }, []);
+
+  const handleWheel = useCallback((event: ReactWheelEvent<SVGSVGElement>) => {
+    event.preventDefault();
+    const bounds = event.currentTarget.getBoundingClientRect();
+    const anchor = {
+      x: ((event.clientX - bounds.left) / bounds.width) * MAP_WIDTH,
+      y: ((event.clientY - bounds.top) / bounds.height) * MAP_HEIGHT,
+    };
+    applyZoom(event.deltaY < 0 ? 1.16 : 0.86, anchor);
+  }, [applyZoom]);
+
+  const handlePointerDown = useCallback((event: ReactPointerEvent<SVGSVGElement>) => {
+    const target = event.target;
+    if (target instanceof Element && target.closest("[data-region-node='true']")) return;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    dragRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      startView: view,
+    };
+    setDragging(true);
+  }, [view]);
+
+  const handlePointerMove = useCallback((event: ReactPointerEvent<SVGSVGElement>) => {
+    const dragState = dragRef.current;
+    if (!dragState || dragState.pointerId !== event.pointerId) return;
+    const bounds = event.currentTarget.getBoundingClientRect();
+    const dx = ((event.clientX - dragState.startX) / bounds.width) * MAP_WIDTH;
+    const dy = ((event.clientY - dragState.startY) / bounds.height) * MAP_HEIGHT;
+    setView(
+      clampMapView({
+        scale: dragState.startView.scale,
+        x: dragState.startView.x + dx,
+        y: dragState.startView.y + dy,
+      })
+    );
+  }, []);
+
+  const handlePointerEnd = useCallback((event: ReactPointerEvent<SVGSVGElement>) => {
+    if (dragRef.current?.pointerId === event.pointerId) {
+      dragRef.current = null;
+      setDragging(false);
+    }
+  }, []);
+
   return (
-    <svg className="absolute inset-0 h-full w-full" viewBox={`0 0 ${MAP_WIDTH} ${MAP_HEIGHT}`} role="img">
-      <defs>
-        <radialGradient id="worldMapOceanGlow" cx="50%" cy="45%" r="62%">
-          <stop offset="0%" stopColor="rgba(8,145,178,0.22)" />
-          <stop offset="58%" stopColor="rgba(6,95,70,0.08)" />
-          <stop offset="100%" stopColor="rgba(0,0,0,0)" />
-        </radialGradient>
-        <linearGradient id="worldMapCountryFill" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%" stopColor="rgba(15,23,42,0.68)" />
-          <stop offset="55%" stopColor="rgba(10,18,24,0.58)" />
-          <stop offset="100%" stopColor="rgba(4,10,8,0.62)" />
-        </linearGradient>
-        <linearGradient id="worldMapRouteLine" x1="0" y1="0" x2="1" y2="0">
-          <stop offset="0%" stopColor="rgba(34,211,238,0.06)" />
-          <stop offset="48%" stopColor="rgba(16,185,129,0.55)" />
-          <stop offset="100%" stopColor="rgba(249,115,22,0.5)" />
-        </linearGradient>
-        <filter id="worldMapRiskGlow">
-          <feGaussianBlur stdDeviation="10" result="blur" />
-          <feMerge>
-            <feMergeNode in="blur" />
-            <feMergeNode in="SourceGraphic" />
-          </feMerge>
-        </filter>
-        <filter id="worldMapLandGlow">
-          <feGaussianBlur stdDeviation="2.2" result="blur" />
-          <feMerge>
-            <feMergeNode in="blur" />
-            <feMergeNode in="SourceGraphic" />
-          </feMerge>
-        </filter>
-      </defs>
+    <div className="absolute inset-0">
+      <svg
+        className={cn("h-full w-full touch-none select-none", dragging ? "cursor-grabbing" : "cursor-grab")}
+        viewBox={`0 0 ${MAP_WIDTH} ${MAP_HEIGHT}`}
+        role="img"
+        onWheel={handleWheel}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerEnd}
+        onPointerCancel={handlePointerEnd}
+      >
+        <defs>
+          <radialGradient id="worldMapOceanGlow" cx="50%" cy="45%" r="62%">
+            <stop offset="0%" stopColor="rgba(8,145,178,0.22)" />
+            <stop offset="58%" stopColor="rgba(6,95,70,0.08)" />
+            <stop offset="100%" stopColor="rgba(0,0,0,0)" />
+          </radialGradient>
+          <linearGradient id="worldMapCountryFill" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stopColor="rgba(15,23,42,0.68)" />
+            <stop offset="55%" stopColor="rgba(10,18,24,0.58)" />
+            <stop offset="100%" stopColor="rgba(4,10,8,0.62)" />
+          </linearGradient>
+          <linearGradient id="worldMapRouteLine" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0%" stopColor="rgba(34,211,238,0.06)" />
+            <stop offset="48%" stopColor="rgba(16,185,129,0.55)" />
+            <stop offset="100%" stopColor="rgba(249,115,22,0.5)" />
+          </linearGradient>
+          <filter id="worldMapRiskGlow">
+            <feGaussianBlur stdDeviation="10" result="blur" />
+            <feMerge>
+              <feMergeNode in="blur" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+          <filter id="worldMapLandGlow">
+            <feGaussianBlur stdDeviation="2.2" result="blur" />
+            <feMerge>
+              <feMergeNode in="blur" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+        </defs>
 
-      <rect x="0" y="0" width={MAP_WIDTH} height={MAP_HEIGHT} fill="url(#worldMapOceanGlow)" />
-      <path
-        d={graticulePath}
-        fill="none"
-        stroke="rgba(148,163,184,0.12)"
-        strokeWidth="0.7"
-        strokeDasharray="2 9"
-      />
-      <g filter="url(#worldMapLandGlow)" opacity="0.96">
-        {countryPaths.map((country) => (
+        <rect x="0" y="0" width={MAP_WIDTH} height={MAP_HEIGHT} fill="url(#worldMapOceanGlow)" />
+        <g transform={`translate(${view.x} ${view.y}) scale(${view.scale})`}>
           <path
-            key={country.id}
-            data-map-layer="country"
-            d={country.d}
-            fill="url(#worldMapCountryFill)"
-            stroke="rgba(34,211,238,0.08)"
-            strokeWidth="0.45"
-            vectorEffect="non-scaling-stroke"
-          />
-        ))}
-      </g>
-      <path
-        d={borderPath}
-        fill="none"
-        stroke="rgba(148,163,184,0.14)"
-        strokeWidth="0.55"
-        vectorEffect="non-scaling-stroke"
-      />
-
-      {riskRoutes.map((route) => {
-        const d = arcPath(route.from, route.to, projection);
-        if (!d) return null;
-        return (
-          <path
-            key={route.id}
-            d={d}
+            d={graticulePath}
             fill="none"
-            stroke="url(#worldMapRouteLine)"
-            strokeWidth={1 + route.weight * 2.4}
-            strokeDasharray="8 10"
-            opacity={0.22 + route.weight * 0.34}
+            stroke="rgba(148,163,184,0.12)"
+            strokeWidth="0.7"
+            strokeDasharray="2 9"
             vectorEffect="non-scaling-stroke"
           />
-        );
-      })}
-
-      {regions.map((region) => {
-        const center = project(region.center, projection);
-        const selected = region.id === selectedId;
-        const color = riskColor(region.riskLevel);
-        const radius = 22 + region.riskScore * 0.42;
-        return (
-          <g
-            key={region.id}
-            role="button"
-            tabIndex={0}
-            className="cursor-pointer outline-none"
-            onClick={() => onSelect(region.id)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" || event.key === " ") onSelect(region.id);
-            }}
-          >
-            <path
-              d={polygonPath(region.polygon, projection)}
-              fill={color.fill}
-              stroke={selected ? color.strokeStrong : color.stroke}
-              strokeWidth={selected ? 2.8 : 1.2}
-              filter={selected ? "url(#worldMapRiskGlow)" : undefined}
-              vectorEffect="non-scaling-stroke"
-            />
-            <circle
-              cx={center.x}
-              cy={center.y}
-              r={radius}
-              fill="none"
-              stroke={color.stroke}
-              strokeWidth="1.5"
-              strokeDasharray="3 8"
-              opacity={selected ? 0.88 : 0.38}
-              vectorEffect="non-scaling-stroke"
-            />
-            <circle cx={center.x} cy={center.y} r={7} fill={color.strokeStrong} filter="url(#worldMapRiskGlow)" />
-            <circle cx={center.x} cy={center.y} r={2.8} fill="#fff" opacity="0.72" />
-            <foreignObject x={center.x + 12} y={center.y - 22} width="152" height="54">
-              <div className="rounded-sm border border-border-subtle bg-black/78 px-2 py-1.5 shadow-data-panel backdrop-blur-md">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="truncate text-[11px] font-semibold text-text-primary">
-                    {lang === "zh" ? region.nameZh : region.nameEn}
-                  </div>
-                  <div className="font-mono text-[11px]" style={{ color: color.text }}>
-                    {region.riskScore}
-                  </div>
-                </div>
-                <div className="mt-0.5 truncate text-[10px] text-text-muted">
-                  {(lang === "zh" ? region.story.triggerZh : region.story.triggerEn)} ·{" "}
-                  {region.symbols.join("/")}
-                </div>
-              </div>
-            </foreignObject>
+          <g filter="url(#worldMapLandGlow)" opacity="0.96">
+            {countryPaths.map((country) => (
+              <path
+                key={country.id}
+                data-map-layer="country"
+                d={country.d}
+                fill="url(#worldMapCountryFill)"
+                stroke="rgba(34,211,238,0.08)"
+                strokeWidth="0.45"
+                vectorEffect="non-scaling-stroke"
+              />
+            ))}
           </g>
-        );
-      })}
-    </svg>
+          <path
+            d={borderPath}
+            fill="none"
+            stroke="rgba(148,163,184,0.14)"
+            strokeWidth="0.55"
+            vectorEffect="non-scaling-stroke"
+          />
+
+          {riskRoutes.map((route) => {
+            const d = arcPath(route.from, route.to, projection);
+            if (!d) return null;
+            return (
+              <path
+                key={route.id}
+                className="world-map-route-flow"
+                d={d}
+                fill="none"
+                stroke="url(#worldMapRouteLine)"
+                strokeWidth={1 + route.weight * 2.4}
+                strokeDasharray="8 10"
+                opacity={0.22 + route.weight * 0.34}
+                vectorEffect="non-scaling-stroke"
+              />
+            );
+          })}
+
+          {regions.map((region) => {
+            const center = project(region.center, projection);
+            const selected = region.id === selectedId;
+            const color = riskColor(region.riskLevel);
+            const radius = 22 + region.riskScore * 0.42;
+            const delta = riskDeltas[region.id] ?? 0;
+            return (
+              <g
+                key={region.id}
+                role="button"
+                tabIndex={0}
+                data-region-node="true"
+                className="cursor-pointer outline-none"
+                onClick={() => onSelect(region.id)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") onSelect(region.id);
+                }}
+              >
+                <path
+                  d={polygonPath(region.polygon, projection)}
+                  fill={color.fill}
+                  stroke={selected ? color.strokeStrong : color.stroke}
+                  strokeWidth={selected ? 2.8 : 1.2}
+                  filter={selected ? "url(#worldMapRiskGlow)" : undefined}
+                  vectorEffect="non-scaling-stroke"
+                />
+                <circle
+                  cx={center.x}
+                  cy={center.y}
+                  r={radius}
+                  fill="none"
+                  stroke={color.stroke}
+                  strokeWidth="1.5"
+                  strokeDasharray="3 8"
+                  opacity={selected ? 0.88 : 0.38}
+                  vectorEffect="non-scaling-stroke"
+                >
+                  <animate
+                    attributeName="r"
+                    values={`${radius};${radius + 12};${radius}`}
+                    dur={selected ? "2.2s" : "3.4s"}
+                    repeatCount="indefinite"
+                  />
+                </circle>
+                {delta !== 0 && (
+                  <circle
+                    key={`${region.id}-${delta}`}
+                    cx={center.x}
+                    cy={center.y}
+                    r="10"
+                    fill="none"
+                    stroke={delta > 0 ? "#ff4d4f" : "#10b981"}
+                    strokeWidth="2"
+                    vectorEffect="non-scaling-stroke"
+                  >
+                    <animate attributeName="r" values="10;68" dur="1.25s" repeatCount="1" />
+                    <animate attributeName="opacity" values="0.8;0" dur="1.25s" repeatCount="1" />
+                  </circle>
+                )}
+                <circle cx={center.x} cy={center.y} r={7} fill={color.strokeStrong} filter="url(#worldMapRiskGlow)" />
+                <circle cx={center.x} cy={center.y} r={2.8} fill="#fff" opacity="0.72" />
+                <foreignObject x={center.x + 12} y={center.y - 22} width="152" height="54">
+                  <div className="rounded-sm border border-border-subtle bg-black/78 px-2 py-1.5 shadow-data-panel backdrop-blur-md">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="truncate text-[11px] font-semibold text-text-primary">
+                        {lang === "zh" ? region.nameZh : region.nameEn}
+                      </div>
+                      <div className="font-mono text-[11px]" style={{ color: color.text }}>
+                        {region.riskScore}
+                      </div>
+                    </div>
+                    <div className="mt-0.5 flex items-center gap-1 truncate text-[10px] text-text-muted">
+                      {(lang === "zh" ? region.story.triggerZh : region.story.triggerEn)} ·{" "}
+                      {region.symbols.join("/")}
+                      {delta !== 0 && (
+                        <span className={cn("font-mono", delta > 0 ? "text-data-down" : "text-data-up")}>
+                          {delta > 0 ? "+" : ""}
+                          {delta}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </foreignObject>
+              </g>
+            );
+          })}
+        </g>
+      </svg>
+      <MapZoomControls
+        scale={view.scale}
+        onZoomIn={() => applyZoom(1.22)}
+        onZoomOut={() => applyZoom(0.82)}
+        onReset={() => setView(INITIAL_MAP_VIEW)}
+      />
+    </div>
+  );
+}
+
+function MapZoomControls({
+  scale,
+  onZoomIn,
+  onZoomOut,
+  onReset,
+}: {
+  scale: number;
+  onZoomIn: () => void;
+  onZoomOut: () => void;
+  onReset: () => void;
+}) {
+  const { text } = useI18n();
+  return (
+    <div
+      data-testid="world-map-zoom-controls"
+      className="absolute bottom-4 right-4 z-20 flex items-center gap-1 rounded-sm border border-border-subtle bg-black/72 p-1 shadow-data-panel backdrop-blur-md"
+    >
+      <button
+        type="button"
+        onClick={onZoomOut}
+        className="flex h-8 w-8 items-center justify-center rounded-xs text-text-secondary hover:bg-bg-surface-raised hover:text-text-primary"
+        aria-label={text("缩小")}
+        title={text("缩小")}
+      >
+        <Minus className="h-4 w-4" />
+      </button>
+      <div className="min-w-12 text-center font-mono text-caption text-text-muted">{Math.round(scale * 100)}%</div>
+      <button
+        type="button"
+        onClick={onZoomIn}
+        className="flex h-8 w-8 items-center justify-center rounded-xs text-text-secondary hover:bg-bg-surface-raised hover:text-text-primary"
+        aria-label={text("放大")}
+        title={text("放大")}
+      >
+        <Plus className="h-4 w-4" />
+      </button>
+      <button
+        type="button"
+        onClick={onReset}
+        className="flex h-8 w-8 items-center justify-center rounded-xs text-text-secondary hover:bg-bg-surface-raised hover:text-text-primary"
+        aria-label={text("重置视图")}
+        title={text("重置视图")}
+      >
+        <RotateCcw className="h-4 w-4" />
+      </button>
+    </div>
   );
 }
 
@@ -772,6 +1035,29 @@ function buildRiskRoutes(regions: WorldMapRegion[]) {
   }
 
   return routes.sort((a, b) => b.weight - a.weight).slice(0, 10);
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+
+function clampMapView(view: MapViewTransform): MapViewTransform {
+  const xLimit = MAP_WIDTH * Math.max(0.18, view.scale - 0.72);
+  const yLimit = MAP_HEIGHT * Math.max(0.18, view.scale - 0.72);
+  return {
+    scale: view.scale,
+    x: clamp(view.x, -xLimit, xLimit),
+    y: clamp(view.y, -yLimit, yLimit),
+  };
+}
+
+function formatUpdateTime(date: Date): string {
+  return date.toLocaleTimeString("zh-CN", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  });
 }
 
 function riskColor(level: WorldRiskLevel) {

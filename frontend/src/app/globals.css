@@ -211,6 +211,16 @@ body {
   }
 }
 
+.world-map-route-flow {
+  animation: world-map-route-flow 3.2s linear infinite;
+}
+
+@keyframes world-map-route-flow {
+  to {
+    stroke-dashoffset: -36;
+  }
+}
+
 /* Skeleton loading shimmer */
 .skeleton {
   background: linear-gradient(

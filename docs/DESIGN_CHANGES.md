@@ -167,3 +167,9 @@ threshold_modifier、propagation_activator、risk_recalc、数据腐烂防护
 - 前端地图从手写大陆轮廓升级为 `world-atlas` Natural Earth 国家边界，并使用 `d3-geo` Equal Earth 投影。
 - 区域 polygon、热力圈、风险标签和同商品/同合约风险飞线统一由经纬度投影生成，视觉表达与真实地理位置对齐。
 - MapLibre/deck.gl 调整为 Phase B.2，用于后续天气栅格、瓦片热力和大规模交互增强。
+
+# 2026-05-09 — World Risk Map Phase B.1 轻动态交互
+
+- `/world-map` 增加 30 秒自动轮询、实时/手动切换、最后更新时间和局部刷新，不再依赖整页 reload。
+- 地图增加风险热力脉冲、风险变化闪环、风险 delta 标记和流动飞线，让运行态变化有明确视觉反馈。
+- SVG 世界地图增加滚轮缩放、拖拽平移、按钮缩放和重置视图，在保持轻资源占用的前提下补齐地图基本交互。
