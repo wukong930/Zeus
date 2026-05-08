@@ -1,0 +1,123 @@
+# Zeus World Risk Map 设计与执行计划
+
+> 版本: 0.1 | 日期: 2026-05-08 | 状态: Phase A 执行中
+
+## 1. 产品定位
+
+World Risk Map 是 Zeus 的地理风险工作台，用来把预警、新闻事件、天气异常、产区暴露、持仓暴露和因果链路放到同一个空间视图中观察。
+
+它与现有视图的关系：
+
+- **Command Center**：全局运行态与任务入口。
+- **Causal Web**：解释事件之间的因果传导。
+- **World Risk Map**：解释风险发生在哪里、影响哪个商品、是否已经传导到信号/预警/持仓。
+
+核心使用场景：
+
+- 橡胶：东南亚/海南/云南降水异常、洪涝、割胶节奏、NR/RU 价差传导。
+- 原油：中东、俄罗斯、美国页岩油、航运节点和 SC 传导。
+- 黑色：澳洲铁矿、华北钢材、焦煤焦炭链路。
+- 农产：巴西/美国降水、干旱、物流和出口节奏。
+
+## 2. 交互原则
+
+- 默认显示风险最高的区域，不把世界地图做成装饰背景。
+- 地图点击后必须展示来源：预警数、新闻数、信号数、持仓数、天气数据质量。
+- 与 Causal Web 联动采用统一作用域：`region_id + symbols + event_ids + time_window`。
+- 没有直接关联时明确显示“暂无直接因果联动”，避免模拟关系造成误解。
+- 3D 是增强模式，不作为首版默认阅读模式。
+
+## 3. 技术方案
+
+### Phase A：自包含 2.5D 风险地图
+
+当前阶段不引入重型地图依赖，先用 React + SVG + 后端运行态聚合接口完成产品闭环：
+
+- 新增 `/api/world-map`：返回区域风险快照。
+- 新增 `/world-map` 页面：世界风险地图、区域热力、右侧详情、Causal Web 跳转。
+- 区域配置为可维护静态定义，运行态风险由 `alerts` / `news_events` / `signal_track` / `positions` 聚合。
+- 天气字段先标记为 `regional_baseline_seed`，不伪装为实时天气。
+
+### Phase B：MapLibre + deck.gl
+
+在 Phase A 数据契约稳定后引入：
+
+- MapLibre GL JS：底图、globe、terrain、heatmap 基础能力。
+- deck.gl：`GeoJsonLayer`、`HeatmapLayer`、`ArcLayer`、`ScatterplotLayer`、`TileLayer`。
+- 后端增加区域 polygon、时间序列风险瓦片、天气栅格聚合接口。
+
+### Phase C：天气与历史异常数据
+
+优先接入免费/公开源：
+
+- Open-Meteo：天气预报与历史天气原型。
+- NASA POWER：农业和气象历史日频数据。
+- NOAA CDO：更正式的历史气象补充。
+
+计算层：
+
+- 历史均值 baseline：按区域、商品、季节窗口聚合。
+- 当前异常：降水距平、温度距平、风速、干旱/洪涝评分。
+- 输出 `weather_anomaly_score`，进入区域综合风险。
+
+### Phase D：3D Globe 增强
+
+采用 three.js / React Three Fiber 做增强模式：
+
+- 全球风险脉冲。
+- 商品链路飞线。
+- 区域预警波纹。
+- 时间轴回放。
+
+默认仍保留 2.5D 运行态视图，3D 作为 “Globe Mode”。
+
+## 4. 后端数据契约
+
+`GET /api/world-map`
+
+返回：
+
+- `generated_at`
+- `summary`
+  - `regions`
+  - `elevated_regions`
+  - `max_risk_score`
+  - `runtime_linked_regions`
+- `layers`
+  - weather
+  - alerts
+  - causal
+  - positions
+- `regions[]`
+  - `id`
+  - `nameZh` / `nameEn`
+  - `commodity`
+  - `symbols`
+  - `center`
+  - `polygon`
+  - `riskScore`
+  - `riskLevel`
+  - `drivers`
+  - `weather`
+  - `runtime`
+  - `causalScope`
+  - `dataQuality`
+
+## 5. 执行清单
+
+- [x] 文档设计：产品定位、技术路径、数据契约。
+- [x] Phase A 后端接口：运行态聚合 + 区域风险评分。
+- [x] Phase A 前端页面：2.5D 地图 + 区域详情 + Causal Web 跳转。
+- [x] 导航/命令面板/i18n 同步。
+- [ ] Phase B 引入 MapLibre + deck.gl。
+- [ ] Phase C 接入 Open-Meteo / NASA POWER。
+- [ ] Phase D 3D Globe 增强。
+
+## 6. 审查优化接续
+
+World Risk Map 首版完成后，继续纳入此前一轮一轮的代码质量审查和性能优化计划。重点新增审查项：
+
+- 地理区域与事件/信号/持仓关联是否真实可追溯。
+- 天气 baseline 是否明确标注数据来源和时间窗口。
+- 大量区域/事件下的地图渲染性能。
+- 与 Causal Web 作用域传递的一致性。

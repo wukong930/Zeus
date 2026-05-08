@@ -1,6 +1,15 @@
 # Zeus 执行计划
 
-> 版本: 1.3 | 日期: 2026-05-01 | 总工期: ~19 周
+> 版本: 1.4 | 日期: 2026-05-08 | 总工期: ~20 周
+
+## 变更说明（v1.4 — World Risk Map）
+
+新增 **Phase 9.5 World Risk Map（世界风险地图）**：在 Causal Web 之外提供地理空间风险视图，展示各地区预警、天气异常、产区暴露、持仓暴露和因果链路作用域。
+
+- 首版采用 React + SVG 实现 2.5D 地图和运行态聚合，避免业务契约未稳定前引入过重 GIS 依赖。
+- 后续升级 MapLibre GL JS + deck.gl，three.js / React Three Fiber 作为 3D Globe 增强模式。
+- 数据层新增 `/api/world-map` 聚合接口，先复用现有 `alerts` / `news_events` / `signal_track` / `positions`。
+- 详细设计见 `docs/WORLD_RISK_MAP.md`。
 
 ## 变更说明（v1.3 — 回测正确性 + 向量检索方向调整）
 
@@ -54,6 +63,7 @@
 | P8 | 场景推演 | 1 周 | 低 | 异步场景模拟 |
 | P8.5 | 回测正确性收紧 | 1 周 | 中 | PIT 校准权重 + Deflated Sharpe + 滑点分档 + 背离监控 |
 | P9 | Shadow Mode + 阈值校准 + LLM 反思 Agent | 2 周 | 中 | A/B 框架 + 阈值二级校准 + 月度假设生成 |
+| P9.5 | World Risk Map | 1 周 | 中 | 地理风险地图 + 运行态聚合 + Causal Web 联动 |
 
 ## Phase 0: 项目初始化（2-3 天）
 

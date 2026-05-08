@@ -17,6 +17,7 @@ import {
   Sparkles,
   Plus,
   TrendingUp,
+  Globe2,
 } from "lucide-react";
 import { fetchContracts, type ContractMetadata } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
@@ -119,6 +120,7 @@ export function CommandPalette() {
       { id: "nav-al", group: "跳转", label: "预警", icon: Bell, action: () => go("/alerts") },
       { id: "nav-tp", group: "跳转", label: "交易计划", icon: Plane, action: () => go("/trade-plans") },
       { id: "nav-cw", group: "跳转", label: "因果网络", icon: Network, action: () => go("/causal-web") },
+      { id: "nav-wm", group: "跳转", label: "世界风险地图", icon: Globe2, action: () => go("/world-map") },
       { id: "nav-il", group: "跳转", label: "产业透镜", icon: Factory, action: () => go("/industry") },
       { id: "nav-sec", group: "跳转", label: "板块", icon: Layers, action: () => go("/sectors") },
       { id: "nav-fl", group: "跳转", label: "未来实验室", icon: Beaker, action: () => go("/future-lab") },

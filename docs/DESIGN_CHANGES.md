@@ -150,3 +150,8 @@ threshold_modifier、propagation_activator、risk_recalc、数据腐烂防护
 | 新增 | 9 项 | 校准循环、对抗引擎、混合决策、置信度分层、成本模型、持仓驱动行为、事件总线、人工仲裁、审计日志 |
 
 **设计哲学**：保留 Causa 中统计基础扎实的计算模块，删除架构层面的刚性和分裂，新增让系统能自我校准、自我质疑、与人协作的机制。
+# 2026-05-08 — World Risk Map 模块
+
+- 新增 `docs/WORLD_RISK_MAP.md`，明确世界风险地图的产品定位、分期技术方案和 `/api/world-map` 数据契约。
+- 架构文档补充 World Risk Map 作为 Causal Web 之外的空间解释层。
+- 执行计划升级为 v1.4，新增 Phase 9.5。

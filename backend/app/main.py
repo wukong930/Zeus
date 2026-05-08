@@ -27,6 +27,7 @@ from app.api.scheduler import router as scheduler_router
 from app.api.settings import router as settings_router
 from app.api.shadow import router as shadow_router
 from app.api.strategies import router as strategies_router
+from app.api.world_map import router as world_map_router
 from app.core.config import get_settings
 from app.core.redis import close_redis
 from app.scheduler.manager import get_scheduler
@@ -87,6 +88,7 @@ def create_app() -> FastAPI:
     app.include_router(strategies_router)
     app.include_router(scheduler_router)
     app.include_router(settings_router)
+    app.include_router(world_map_router)
     return app
 
 

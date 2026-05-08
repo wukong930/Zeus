@@ -197,6 +197,90 @@ export interface CausalWebGraph {
   source_counts: Record<string, number>;
 }
 
+export type WorldRiskLevel = "low" | "watch" | "elevated" | "high" | "critical";
+export type WorldMapDataQuality = "runtime" | "partial" | "baseline";
+export type WorldMapLayerStatus = "ready" | "baseline" | "planned";
+
+export interface GeoPoint {
+  lat: number;
+  lon: number;
+}
+
+export interface WorldMapWeather {
+  precipitationAnomalyPct: number;
+  rainfall7dMm: number;
+  temperatureAnomalyC: number;
+  floodRisk: number;
+  droughtRisk: number;
+  dataSource: string;
+  confidence: number;
+}
+
+export interface WorldMapRuntime {
+  alerts: number;
+  highSeverityAlerts: number;
+  newsEvents: number;
+  signals: number;
+  positions: number;
+  latestEventAt: string | null;
+}
+
+export interface WorldMapDriver {
+  labelZh: string;
+  labelEn: string;
+  weight: number;
+}
+
+export interface WorldMapCausalScope {
+  regionId: string;
+  symbols: string[];
+  eventIds: string[];
+  causalWebUrl: string;
+  hasDirectLinks: boolean;
+}
+
+export interface WorldMapRegion {
+  id: string;
+  nameZh: string;
+  nameEn: string;
+  commodityZh: string;
+  commodityEn: string;
+  symbols: string[];
+  center: GeoPoint;
+  polygon: GeoPoint[];
+  riskScore: number;
+  riskLevel: WorldRiskLevel;
+  drivers: WorldMapDriver[];
+  weather: WorldMapWeather;
+  runtime: WorldMapRuntime;
+  causalScope: WorldMapCausalScope;
+  narrativeZh: string;
+  narrativeEn: string;
+  dataQuality: WorldMapDataQuality;
+}
+
+export interface WorldMapLayer {
+  id: string;
+  labelZh: string;
+  labelEn: string;
+  status: WorldMapLayerStatus;
+  enabled: boolean;
+}
+
+export interface WorldMapSummary {
+  regions: number;
+  elevatedRegions: number;
+  maxRiskScore: number;
+  runtimeLinkedRegions: number;
+}
+
+export interface WorldMapSnapshot {
+  generatedAt: string;
+  summary: WorldMapSummary;
+  layers: WorldMapLayer[];
+  regions: WorldMapRegion[];
+}
+
 export interface DataSourceStatus {
   id: string;
   name: string;
@@ -786,6 +870,10 @@ export async function fetchTradePlansFromApi(): Promise<TradePlan[]> {
 
 export async function fetchCausalWebGraph(): Promise<CausalWebGraph> {
   return fetchJson<CausalWebGraph>("/api/causal-web?limit=10");
+}
+
+export async function fetchWorldMapSnapshot(): Promise<WorldMapSnapshot> {
+  return fetchJson<WorldMapSnapshot>("/api/world-map");
 }
 
 export async function fetchDataSourceStatuses(): Promise<DataSourceStatus[]> {

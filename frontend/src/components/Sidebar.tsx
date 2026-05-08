@@ -17,6 +17,7 @@ import {
   BarChart3,
   Settings,
   Newspaper,
+  Globe2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n";
@@ -29,6 +30,7 @@ const NAV_ITEMS = [
   { href: "/portfolio", label: "持仓地图", icon: MapIcon },
   { divider: true } as const,
   { href: "/causal-web", label: "因果网络", icon: Network },
+  { href: "/world-map", label: "世界风险地图", icon: Globe2 },
   { href: "/news", label: "新闻事件", icon: Newspaper },
   { href: "/industry", label: "产业透镜", icon: Factory },
   { href: "/sectors", label: "板块", icon: Layers },
