@@ -9,20 +9,21 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.events import ZeusEvent, iter_events
 from app.models.news_events import NewsEvent
-from app.schemas.common import NewsEventCreate, NewsEventRead
+from app.schemas.common import MAX_INGEST_SYMBOL_LENGTH, NewsEventCreate, NewsEventRead
 from app.services.news.event_publisher import record_and_publish_news_event
 from app.services.vector_search.embedder import DeterministicHashEmbedder
 
 router = APIRouter(prefix="/api/news-events", tags=["news-events"])
+NEWS_EVENT_TYPE_PATTERN = "^(policy|supply|demand|inventory|geopolitical|weather|breaking)$"
 
 
 @router.get("", response_model=list[NewsEventRead])
 async def list_news_events(
-    source: str | None = None,
-    symbol: str | None = None,
-    event_type: str | None = None,
+    source: str | None = Query(default=None, min_length=1, max_length=50),
+    symbol: str | None = Query(default=None, min_length=1, max_length=MAX_INGEST_SYMBOL_LENGTH),
+    event_type: str | None = Query(default=None, pattern=NEWS_EVENT_TYPE_PATTERN),
     min_severity: int | None = Query(default=None, ge=1, le=5),
-    verification_status: str | None = None,
+    verification_status: str | None = Query(default=None, min_length=1, max_length=30),
     limit: int = Query(default=100, ge=1, le=500),
     session: AsyncSession = Depends(get_db),
 ) -> list[NewsEvent]:
