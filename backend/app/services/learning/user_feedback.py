@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import rollback_if_possible
@@ -61,14 +61,32 @@ async def feedback_summary_by_signal_type(
     signal_type: str,
 ) -> FeedbackSummary:
     rows = (
-        await session.scalars(select(UserFeedback).where(UserFeedback.signal_type == signal_type))
+        await session.execute(
+            select(UserFeedback.agree, UserFeedback.will_trade, func.count(UserFeedback.id))
+            .where(UserFeedback.signal_type == signal_type)
+            .group_by(UserFeedback.agree, UserFeedback.will_trade)
+        )
     ).all()
+    agree_count = 0
+    disagree_count = 0
+    uncertain_count = 0
+    will_trade_count = 0
+    for agree, will_trade, count in rows:
+        row_count = int(count)
+        if agree == "agree":
+            agree_count += row_count
+        elif agree == "disagree":
+            disagree_count += row_count
+        elif agree == "uncertain":
+            uncertain_count += row_count
+        if will_trade == "will_trade":
+            will_trade_count += row_count
     return FeedbackSummary(
         signal_type=signal_type,
-        agree_count=sum(1 for row in rows if row.agree == "agree"),
-        disagree_count=sum(1 for row in rows if row.agree == "disagree"),
-        uncertain_count=sum(1 for row in rows if row.agree == "uncertain"),
-        will_trade_count=sum(1 for row in rows if row.will_trade == "will_trade"),
+        agree_count=agree_count,
+        disagree_count=disagree_count,
+        uncertain_count=uncertain_count,
+        will_trade_count=will_trade_count,
     )
 
 

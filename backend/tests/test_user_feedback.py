@@ -10,7 +10,7 @@ from app.models.recommendation import Recommendation
 from app.models.user_feedback import UserFeedback
 from app.schemas.common import UserFeedbackCreate
 from app.services.learning.feedback_report import generate_feedback_report
-from app.services.learning.user_feedback import record_user_feedback
+from app.services.learning.user_feedback import feedback_summary_by_signal_type, record_user_feedback
 
 
 class FakeSession:
@@ -35,15 +35,25 @@ class FakeSession:
 
 
 class FakeAggregateResult:
-    def __init__(self, rows: list[tuple[str | None, str, str, int]]) -> None:
+    def __init__(self, rows: list[tuple]) -> None:
         self.rows = rows
 
-    def all(self) -> list[tuple[str | None, str, str, int]]:
+    def all(self) -> list[tuple]:
         return self.rows
 
 
 class FakeFeedbackReportSession:
     def __init__(self, rows: list[tuple[str | None, str, str, int]]) -> None:
+        self.rows = rows
+        self.statement = None
+
+    async def execute(self, statement):
+        self.statement = statement
+        return FakeAggregateResult(self.rows)
+
+
+class FakeFeedbackSummarySession:
+    def __init__(self, rows: list[tuple[str, str, int]]) -> None:
         self.rows = rows
         self.statement = None
 
@@ -81,6 +91,25 @@ async def test_record_user_feedback_copies_alert_signal_metadata() -> None:
     assert row.signal_type == "news_event"
     assert row.category == "energy"
     assert session.flush_count == 1
+
+
+async def test_feedback_summary_aggregates_in_database() -> None:
+    session = FakeFeedbackSummarySession(
+        [
+            ("agree", "will_trade", 2),
+            ("disagree", "will_not_trade", 4),
+            ("uncertain", "partial", 1),
+        ]
+    )
+
+    summary = await feedback_summary_by_signal_type(session, signal_type="momentum")  # type: ignore[arg-type]
+
+    assert summary.signal_type == "momentum"
+    assert summary.agree_count == 2
+    assert summary.disagree_count == 4
+    assert summary.uncertain_count == 1
+    assert summary.will_trade_count == 2
+    assert "GROUP BY" in str(session.statement.compile()).upper()
 
 
 async def test_feedback_report_aggregates_in_database() -> None:
