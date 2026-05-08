@@ -15,6 +15,12 @@ from app.models.research import ResearchHypothesis, ResearchReport
 
 router = APIRouter(prefix="/api/notebook", tags=["notebook"])
 
+MAX_NOTEBOOK_REFERENCES_PER_ENTRY = 20
+MAX_NOTEBOOK_TAGS = 20
+MAX_NOTEBOOK_LIST_ITEMS = 20
+MAX_NOTEBOOK_LIST_ITEM_LENGTH = 300
+MAX_NOTEBOOK_UUID_REFERENCES = 100
+
 
 class NotebookReference(BaseModel):
     id: UUID
@@ -161,7 +167,7 @@ def entry_from_report(
             timestamp=alert.triggered_at,
             relation="related_alert",
         )
-        for alert in dedupe_alerts(alerts)
+        for alert in dedupe_alerts(alerts)[:MAX_NOTEBOOK_REFERENCES_PER_ENTRY]
     ]
     return NotebookEntry(
         id=row.id,
@@ -171,7 +177,7 @@ def entry_from_report(
         body=row.body,
         status="published",
         folder=report_folder(row.type),
-        tags=[tag for tag in [row.type, *string_list(row.hypotheses)] if tag],
+        tags=string_list([row.type, *(row.hypotheses or [])], max_items=MAX_NOTEBOOK_TAGS),
         symbols=[],
         references=references,
         created_at=row.published_at,
@@ -220,9 +226,15 @@ def entry_from_research_hypothesis(row: ResearchHypothesis) -> NotebookEntry:
     )
 
 
-def parse_uuid_list(values: list | None) -> list[UUID]:
+def parse_uuid_list(
+    values: list | None,
+    *,
+    max_items: int = MAX_NOTEBOOK_UUID_REFERENCES,
+) -> list[UUID]:
     parsed = []
     for value in values or []:
+        if len(parsed) >= max_items:
+            break
         try:
             parsed.append(value if isinstance(value, UUID) else UUID(str(value)))
         except (TypeError, ValueError):
@@ -230,8 +242,21 @@ def parse_uuid_list(values: list | None) -> list[UUID]:
     return parsed
 
 
-def string_list(values: list | None) -> list[str]:
-    return [str(value) for value in values or [] if value]
+def string_list(
+    values: list | None,
+    *,
+    max_items: int = MAX_NOTEBOOK_LIST_ITEMS,
+    max_length: int = MAX_NOTEBOOK_LIST_ITEM_LENGTH,
+) -> list[str]:
+    rows: list[str] = []
+    for value in values or []:
+        text = str(value).strip()
+        if not text:
+            continue
+        rows.append(text[:max_length])
+        if len(rows) >= max_items:
+            break
+    return rows
 
 
 def format_list_section(label: str, values: list | None) -> str:

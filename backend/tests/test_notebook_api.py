@@ -8,6 +8,7 @@ from app.api.notebook import (
     entry_from_report,
     load_notebook_snapshot,
     parse_uuid_list,
+    string_list,
 )
 from app.core.database import get_db
 from app.main import create_app
@@ -74,6 +75,34 @@ def test_parse_uuid_list_ignores_bad_values() -> None:
     valid = uuid4()
 
     assert parse_uuid_list([str(valid), "bad", None]) == [valid]
+
+
+def test_parse_uuid_list_caps_reference_count() -> None:
+    values = [str(uuid4()) for _ in range(105)]
+
+    assert len(parse_uuid_list(values)) == 100
+
+
+def test_notebook_entry_caps_tags_and_alert_references() -> None:
+    report = _report()
+    report.hypotheses = [f"hypothesis-{index}" for index in range(30)]
+    alerts = [_alert(related_research_id=report.id) for _ in range(25)]
+
+    entry = entry_from_report(report, {report.id: alerts})
+
+    assert len(entry.tags) == 20
+    assert entry.tags[0] == "daily"
+    assert len(entry.references) == 20
+
+
+def test_string_list_trims_truncates_and_caps_items() -> None:
+    values = ["  alpha  ", "", "x" * 350, *[f"item-{index}" for index in range(25)]]
+
+    rows = string_list(values)
+
+    assert rows[0] == "alpha"
+    assert len(rows[1]) == 300
+    assert len(rows) == 20
 
 
 def test_notebook_route_is_registered(monkeypatch) -> None:
