@@ -18,10 +18,15 @@ from app.services.vector_search.hybrid_search import hybrid_search
 
 router = APIRouter(prefix="/api/learning", tags=["learning"])
 
+MAX_LEARNING_STATUS_LENGTH = 20
+MAX_LEARNING_ACTOR_LENGTH = 80
+MAX_LEARNING_REASON_LENGTH = 4000
+MAX_VECTOR_CANDIDATE_NAME_LENGTH = 120
+
 
 @router.get("/hypotheses")
 async def list_learning_hypotheses(
-    status_filter: str | None = None,
+    status_filter: str | None = Query(default=None, max_length=MAX_LEARNING_STATUS_LENGTH),
     limit: int = Query(default=100, ge=1, le=500),
     session: AsyncSession = Depends(get_db),
 ) -> list[dict[str, Any]]:
@@ -48,7 +53,7 @@ async def run_learning_reflection(
 @router.post("/hypotheses/{hypothesis_id}/approve-shadow")
 async def approve_hypothesis_for_shadow(
     hypothesis_id: UUID,
-    reviewed_by: str | None = None,
+    reviewed_by: str | None = Query(default=None, max_length=MAX_LEARNING_ACTOR_LENGTH),
     session: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     row = await session.get(LearningHypothesis, hypothesis_id)
@@ -84,7 +89,7 @@ async def approve_hypothesis_for_shadow(
 @router.post("/hypotheses/{hypothesis_id}/reject")
 async def reject_learning_hypothesis(
     hypothesis_id: UUID,
-    reason: str | None = None,
+    reason: str | None = Query(default=None, max_length=MAX_LEARNING_REASON_LENGTH),
     session: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     row = await session.get(LearningHypothesis, hypothesis_id)
@@ -140,7 +145,7 @@ async def validate_learning_hypothesis(
 @router.post("/hypotheses/{hypothesis_id}/apply")
 async def apply_learning_hypothesis(
     hypothesis_id: UUID,
-    approved_by: str,
+    approved_by: str = Query(..., min_length=1, max_length=MAX_LEARNING_ACTOR_LENGTH),
     session: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     row = await session.get(LearningHypothesis, hypothesis_id)
@@ -172,7 +177,11 @@ async def get_vector_eval_report(
 
 @router.get("/vector-eval/shadow-compare")
 async def compare_vector_embedding_shadow(
-    candidate_name: str = "candidate",
+    candidate_name: str = Query(
+        default="candidate",
+        min_length=1,
+        max_length=MAX_VECTOR_CANDIDATE_NAME_LENGTH,
+    ),
     limit: int = Query(default=10, ge=1, le=50),
     min_ndcg_delta: float = Query(default=0.0, ge=-1.0, le=1.0),
     min_recall_delta: float = Query(default=0.0, ge=-1.0, le=1.0),
@@ -221,7 +230,7 @@ async def compare_vector_embedding_shadow(
 @router.post("/vector-eval/seed", status_code=status.HTTP_201_CREATED)
 async def seed_vector_eval_report(
     target_cases: int = Query(default=50, ge=1, le=200),
-    reviewed_by: str | None = None,
+    reviewed_by: str | None = Query(default=None, max_length=MAX_LEARNING_ACTOR_LENGTH),
     session: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     result = await seed_vector_eval_cases(

@@ -4,8 +4,11 @@ from uuid import uuid4
 
 import pytest
 from fastapi import HTTPException
+from fastapi.testclient import TestClient
 
 from app.api.learning import validate_learning_hypothesis, vector_shadow_candidate_config
+from app.core.database import get_db
+from app.main import create_app
 from app.models.change_review_queue import ChangeReviewQueue
 from app.models.drift_metrics import DriftMetric
 from app.models.learning_hypotheses import LearningHypothesis
@@ -27,6 +30,42 @@ from app.services.llm.types import LLMCompletionResult
 from app.services.vector_search.eval import compare_vector_search_candidate, evaluate_single_case
 from app.services.vector_search.eval_seed import seed_vector_eval_cases
 from app.services.vector_search.hybrid_search import VectorSearchResult, quality_weight
+
+
+def test_learning_api_bounds_query_text_fields() -> None:
+    async def fake_db():
+        yield object()
+
+    app = create_app()
+    app.dependency_overrides[get_db] = fake_db
+    client = TestClient(app)
+    hypothesis_id = uuid4()
+
+    cases = (
+        ("get", f"/api/learning/hypotheses?status_filter={'x' * 21}"),
+        (
+            "post",
+            f"/api/learning/hypotheses/{hypothesis_id}/approve-shadow?reviewed_by={'x' * 81}",
+        ),
+        (
+            "post",
+            f"/api/learning/hypotheses/{hypothesis_id}/reject?reason={'x' * 4001}",
+        ),
+        (
+            "post",
+            f"/api/learning/hypotheses/{hypothesis_id}/apply?approved_by={'x' * 81}",
+        ),
+        (
+            "get",
+            f"/api/learning/vector-eval/shadow-compare?candidate_name={'x' * 121}"
+            "&candidate_alpha=0.7",
+        ),
+        ("post", f"/api/learning/vector-eval/seed?reviewed_by={'x' * 81}"),
+    )
+
+    for method, path in cases:
+        response = getattr(client, method)(path)
+        assert response.status_code == 422
 
 
 class FakeScalars:
