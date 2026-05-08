@@ -16,7 +16,7 @@ router = APIRouter(prefix="/api/recommendations", tags=["recommendations"])
 
 @router.get("", response_model=list[RecommendationRead])
 async def list_recommendations(
-    status_filter: str | None = None,
+    status_filter: str | None = Query(default=None, max_length=20),
     limit: int = Query(default=100, ge=1, le=500),
     session: AsyncSession = Depends(get_db),
 ) -> list[Recommendation]:

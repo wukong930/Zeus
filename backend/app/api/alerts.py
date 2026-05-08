@@ -16,8 +16,8 @@ router = APIRouter(prefix="/api/alerts", tags=["alerts"])
 
 @router.get("", response_model=list[AlertRead])
 async def list_alerts(
-    status_filter: str | None = None,
-    category: str | None = None,
+    status_filter: str | None = Query(default=None, max_length=20),
+    category: str | None = Query(default=None, max_length=20),
     limit: int = Query(default=100, ge=1, le=500),
     session: AsyncSession = Depends(get_db),
 ) -> list[Alert]:

@@ -24,7 +24,7 @@ router = APIRouter(prefix="/api/strategies", tags=["strategies"])
 
 @router.get("", response_model=list[StrategyRead])
 async def list_strategies(
-    status_filter: str | None = None,
+    status_filter: str | None = Query(default=None, max_length=20),
     limit: int = Query(default=100, ge=1, le=500),
     session: AsyncSession = Depends(get_db),
 ) -> list[Strategy]:

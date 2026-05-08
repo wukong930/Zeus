@@ -21,7 +21,7 @@ router = APIRouter(prefix="/api/positions", tags=["positions"])
 
 @router.get("", response_model=list[PositionRead])
 async def list_positions(
-    status_filter: str | None = None,
+    status_filter: str | None = Query(default=None, max_length=20),
     limit: int = Query(default=100, ge=1, le=500),
     session: AsyncSession = Depends(get_db),
 ) -> list[Position]:
