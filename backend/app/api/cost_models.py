@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -54,7 +54,10 @@ async def get_cost_model_histories(
 
 
 @router.get("/{symbol}", response_model=CostModelRead)
-async def get_cost_model(symbol: str, session: AsyncSession = Depends(get_db)) -> dict:
+async def get_cost_model(
+    symbol: str = Path(..., min_length=1, max_length=MAX_COST_SIMULATION_SYMBOL_LENGTH),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
     try:
         result = await calculate_cost_snapshot(session, normalize_commodity_symbol(symbol))
     except ValueError as exc:
@@ -64,7 +67,7 @@ async def get_cost_model(symbol: str, session: AsyncSession = Depends(get_db)) -
 
 @router.get("/{symbol}/history", response_model=list[CostSnapshotRead])
 async def get_cost_model_history(
-    symbol: str,
+    symbol: str = Path(..., min_length=1, max_length=MAX_COST_SIMULATION_SYMBOL_LENGTH),
     limit: int = Query(default=120, ge=1, le=1000),
     session: AsyncSession = Depends(get_db),
 ) -> list[CostSnapshot]:
@@ -85,7 +88,10 @@ async def get_cost_model_history(
 
 
 @router.post("/{symbol}/simulate", response_model=CostModelRead)
-async def simulate_cost_model(symbol: str, payload: CostSimulationRequest) -> dict:
+async def simulate_cost_model(
+    payload: CostSimulationRequest,
+    symbol: str = Path(..., min_length=1, max_length=MAX_COST_SIMULATION_SYMBOL_LENGTH),
+) -> dict:
     try:
         normalized = normalize_commodity_symbol(symbol)
         current_prices = payload.current_prices
@@ -103,7 +109,10 @@ async def simulate_cost_model(symbol: str, payload: CostSimulationRequest) -> di
 
 
 @router.get("/{symbol}/chain", response_model=CostChainRead)
-async def get_cost_chain(symbol: str, session: AsyncSession = Depends(get_db)) -> dict:
+async def get_cost_chain(
+    symbol: str = Path(..., min_length=1, max_length=MAX_COST_SIMULATION_SYMBOL_LENGTH),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
     try:
         normalized = normalize_commodity_symbol(symbol)
         chain_order = chain_order_for_symbol(normalized)

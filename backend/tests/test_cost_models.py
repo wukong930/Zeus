@@ -409,6 +409,24 @@ def test_parse_cost_symbols_rejects_oversized_query() -> None:
     assert response.status_code == 422
 
 
+def test_cost_model_path_symbols_are_bounded() -> None:
+    app = create_app()
+    client = TestClient(app)
+    oversized = "X" * 21
+
+    responses = [
+        client.get(f"/api/cost-models/{oversized}"),
+        client.get(f"/api/cost-models/{oversized}/history"),
+        client.get(f"/api/cost-models/{oversized}/chain"),
+        client.post(
+            f"/api/cost-models/{oversized}/simulate",
+            json={"inputs_by_symbol": {}, "current_prices": {}},
+        ),
+    ]
+
+    assert {response.status_code for response in responses} == {422}
+
+
 def cost_snapshot_row(symbol: str, snapshot_date: date) -> CostSnapshot:
     return CostSnapshot(
         id=uuid4(),
