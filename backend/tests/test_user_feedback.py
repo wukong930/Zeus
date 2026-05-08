@@ -9,6 +9,7 @@ from app.models.alert import Alert
 from app.models.recommendation import Recommendation
 from app.models.user_feedback import UserFeedback
 from app.schemas.common import UserFeedbackCreate
+from app.services.learning.feedback_report import generate_feedback_report
 from app.services.learning.user_feedback import record_user_feedback
 
 
@@ -31,6 +32,24 @@ class FakeSession:
 
     async def flush(self) -> None:
         self.flush_count += 1
+
+
+class FakeAggregateResult:
+    def __init__(self, rows: list[tuple[str | None, str, str, int]]) -> None:
+        self.rows = rows
+
+    def all(self) -> list[tuple[str | None, str, str, int]]:
+        return self.rows
+
+
+class FakeFeedbackReportSession:
+    def __init__(self, rows: list[tuple[str | None, str, str, int]]) -> None:
+        self.rows = rows
+        self.statement = None
+
+    async def execute(self, statement):
+        self.statement = statement
+        return FakeAggregateResult(self.rows)
 
 
 async def test_record_user_feedback_copies_alert_signal_metadata() -> None:
@@ -62,6 +81,26 @@ async def test_record_user_feedback_copies_alert_signal_metadata() -> None:
     assert row.signal_type == "news_event"
     assert row.category == "energy"
     assert session.flush_count == 1
+
+
+async def test_feedback_report_aggregates_in_database() -> None:
+    session = FakeFeedbackReportSession(
+        [
+            ("momentum", "agree", "will_trade", 2),
+            ("momentum", "disagree", "will_not_trade", 4),
+            (None, "uncertain", "will_trade", 1),
+        ]
+    )
+
+    report = await generate_feedback_report(session)  # type: ignore[arg-type]
+
+    assert report.total_feedback == 7
+    assert report.by_signal_type == {
+        "momentum": {"agree": 2, "disagree": 4, "uncertain": 0, "will_trade": 2},
+        "unknown": {"agree": 0, "disagree": 0, "uncertain": 1, "will_trade": 1},
+    }
+    assert report.suggestions == ["momentum: review disagreement pattern"]
+    assert "GROUP BY" in str(session.statement.compile()).upper()
 
 
 def _feedback_payload(**overrides) -> UserFeedbackCreate:

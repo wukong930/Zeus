@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.change_review_queue import ChangeReviewQueue
@@ -16,17 +16,29 @@ class FeedbackReport:
 
 
 async def generate_feedback_report(session: AsyncSession) -> FeedbackReport:
-    rows = (await session.scalars(select(UserFeedback))).all()
+    rows = (
+        await session.execute(
+            select(
+                UserFeedback.signal_type,
+                UserFeedback.agree,
+                UserFeedback.will_trade,
+                func.count(UserFeedback.id),
+            ).group_by(UserFeedback.signal_type, UserFeedback.agree, UserFeedback.will_trade)
+        )
+    ).all()
     grouped: dict[str, dict[str, int]] = {}
-    for row in rows:
-        key = row.signal_type or "unknown"
+    total_feedback = 0
+    for signal_type, agree, will_trade, count in rows:
+        row_count = int(count)
+        total_feedback += row_count
+        key = signal_type or "unknown"
         bucket = grouped.setdefault(
             key,
             {"agree": 0, "disagree": 0, "uncertain": 0, "will_trade": 0},
         )
-        bucket[row.agree] = bucket.get(row.agree, 0) + 1
-        if row.will_trade == "will_trade":
-            bucket["will_trade"] += 1
+        bucket[agree] = bucket.get(agree, 0) + row_count
+        if will_trade == "will_trade":
+            bucket["will_trade"] += row_count
 
     suggestions = [
         f"{signal_type}: review disagreement pattern"
@@ -34,7 +46,7 @@ async def generate_feedback_report(session: AsyncSession) -> FeedbackReport:
         if stats.get("disagree", 0) >= 3 and stats.get("disagree", 0) > stats.get("agree", 0)
     ]
     return FeedbackReport(
-        total_feedback=len(rows),
+        total_feedback=total_feedback,
         by_signal_type=grouped,
         suggestions=suggestions,
     )
