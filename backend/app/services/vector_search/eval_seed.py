@@ -1,6 +1,6 @@
 from dataclasses import asdict, dataclass
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.vector_chunks import VectorChunk
@@ -47,22 +47,33 @@ async def seed_vector_eval_cases(
             )
         ).all()
     )
-    existing = list((await session.scalars(select(VectorEvalCase))).all())
-    existing_queries = {row.query_text for row in existing}
+    existing_cases = int(await session.scalar(select(func.count(VectorEvalCase.id))) or 0)
     if not chunks:
         return VectorEvalSeedResult(
             available_chunks=0,
-            existing_cases=len(existing),
+            existing_cases=existing_cases,
             created=0,
             target_cases=target_cases,
         )
 
+    seed_pairs = _seed_pairs(chunks, target_cases)
+    candidate_queries = [query for _, query in seed_pairs]
+    existing_queries = (
+        set(
+            (
+                await session.scalars(
+                    select(VectorEvalCase.query_text).where(
+                        VectorEvalCase.query_text.in_(candidate_queries)
+                    )
+                )
+            ).all()
+        )
+        if candidate_queries
+        else set()
+    )
+
     created = 0
-    for index in range(target_cases):
-        chunk = chunks[index % len(chunks)]
-        topic = _topic_for_chunk(chunk)
-        query = SEED_QUERY_TEMPLATES[index % len(SEED_QUERY_TEMPLATES)].format(topic=topic)
-        query = f"{query} #{index + 1:02d}"
+    for chunk, query in seed_pairs:
         if query in existing_queries:
             continue
         session.add(
@@ -79,10 +90,20 @@ async def seed_vector_eval_cases(
     await session.flush()
     return VectorEvalSeedResult(
         available_chunks=len(chunks),
-        existing_cases=len(existing),
+        existing_cases=existing_cases,
         created=created,
         target_cases=target_cases,
     )
+
+
+def _seed_pairs(chunks: list[VectorChunk], target_cases: int) -> list[tuple[VectorChunk, str]]:
+    pairs: list[tuple[VectorChunk, str]] = []
+    for index in range(target_cases):
+        chunk = chunks[index % len(chunks)]
+        topic = _topic_for_chunk(chunk)
+        query = SEED_QUERY_TEMPLATES[index % len(SEED_QUERY_TEMPLATES)].format(topic=topic)
+        pairs.append((chunk, f"{query} #{index + 1:02d}"))
+    return pairs
 
 
 def _topic_for_chunk(chunk: VectorChunk) -> str:

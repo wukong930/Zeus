@@ -81,15 +81,29 @@ class FakeScalars:
 
 
 class FakeSession:
-    def __init__(self, scalar_batches: list[list] | None = None) -> None:
+    def __init__(
+        self,
+        scalar_batches: list[list] | None = None,
+        scalar_values: list[int] | None = None,
+    ) -> None:
         self.scalar_batches = scalar_batches or []
+        self.scalar_values = scalar_values or []
+        self.scalar_statements: list[object] = []
+        self.scalar_value_statements: list[object] = []
         self.rows: list[object] = []
         self.flush_count = 0
 
-    async def scalars(self, _) -> FakeScalars:
+    async def scalars(self, statement) -> FakeScalars:
+        self.scalar_statements.append(statement)
         if self.scalar_batches:
             return FakeScalars(rows=self.scalar_batches.pop(0))
         return FakeScalars()
+
+    async def scalar(self, statement):
+        self.scalar_value_statements.append(statement)
+        if self.scalar_values:
+            return self.scalar_values.pop(0)
+        return 0
 
     def add(self, row: object) -> None:
         self.rows.append(row)
@@ -353,7 +367,7 @@ async def test_vector_eval_seed_creates_fifty_query_pairs() -> None:
         )
         for index in range(3)
     ]
-    session = FakeSession(scalar_batches=[chunks, []])
+    session = FakeSession(scalar_batches=[chunks, []], scalar_values=[0])
 
     result = await seed_vector_eval_cases(
         session,  # type: ignore[arg-type]
@@ -362,9 +376,35 @@ async def test_vector_eval_seed_creates_fifty_query_pairs() -> None:
     )
 
     cases = [row for row in session.rows if isinstance(row, VectorEvalCase)]
+    assert result.existing_cases == 0
     assert result.created == 50
     assert len(cases) == 50
     assert all(case.relevant_chunk_ids for case in cases)
+
+
+async def test_vector_eval_seed_checks_only_candidate_query_texts() -> None:
+    chunk = VectorChunk(
+        id=uuid4(),
+        chunk_type="news",
+        content_text="rubber supply disruption sample",
+        metadata_json={"symbol": "RU"},
+        quality_status="human_reviewed",
+    )
+    session = FakeSession(
+        scalar_batches=[[chunk], ["RU upstream driver #01"]],
+        scalar_values=[7],
+    )
+
+    result = await seed_vector_eval_cases(
+        session,  # type: ignore[arg-type]
+        target_cases=1,
+        reviewed_by="tester",
+    )
+
+    assert result.existing_cases == 7
+    assert result.created == 0
+    assert session.rows == []
+    assert "vector_eval_set.query_text" in str(session.scalar_statements[1])
 
 
 async def test_vector_shadow_comparison_reports_candidate_delta() -> None:
