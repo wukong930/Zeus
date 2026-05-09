@@ -308,6 +308,7 @@ const EN: Record<string, string> = {
   "离线运行": "Offline",
   "视图同步": "View Sync",
   "已同步": "Synced",
+  "图层联动": "Layer Sync",
   "MapLibre已就绪": "MapLibre Ready",
   "MapLibre异常": "MapLibre Error",
   "MapLibre加载中": "MapLibre Loading",

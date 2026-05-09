@@ -814,12 +814,13 @@ function WorldMapCanvas({
               className="pointer-events-none"
             >
               <div className="relative h-full w-full overflow-hidden opacity-70 mix-blend-screen">
-                <MapLibreBasemapPreview regions={regions} />
+                <MapLibreBasemapPreview regions={regions} showRiskRegions={visibleLayers.heat} />
                 <WorldMapWebGlPreview
                   densityCells={densityCells}
                   projection={projection}
                   regions={regions}
                   routes={riskRoutes}
+                  visibleLayers={visibleLayers}
                 />
               </div>
             </foreignObject>
@@ -1030,6 +1031,7 @@ function WorldMapCanvas({
       />
       {rendererMode === "webgl-ready" && (
         <WebGlReadinessPanel
+          activeEnhancedLayerCount={[visibleLayers.heat, visibleLayers.density, visibleLayers.routes].filter(Boolean).length}
           densityCellCount={densityCells.length}
           regionCount={regions.length}
           routeCount={riskRoutes.length}
@@ -1039,7 +1041,13 @@ function WorldMapCanvas({
   );
 }
 
-function MapLibreBasemapPreview({ regions }: { regions: WorldMapRegion[] }) {
+function MapLibreBasemapPreview({
+  regions,
+  showRiskRegions,
+}: {
+  regions: WorldMapRegion[];
+  showRiskRegions: boolean;
+}) {
   const { text } = useI18n();
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
@@ -1061,7 +1069,7 @@ function MapLibreBasemapPreview({ regions }: { regions: WorldMapRegion[] }) {
           fadeDuration: 0,
           interactive: false,
           pitch: 0,
-          style: buildMapLibreStyle(regionCollection),
+          style: buildMapLibreStyle(regionCollection, showRiskRegions),
           zoom: 0.45,
         });
 
@@ -1092,6 +1100,12 @@ function MapLibreBasemapPreview({ regions }: { regions: WorldMapRegion[] }) {
     source?.setData(regionCollection);
   }, [regionCollection]);
 
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !map.isStyleLoaded()) return;
+    setMapLibreLayerVisibility(map, ["risk-region-fill", "risk-region-line"], showRiskRegions);
+  }, [showRiskRegions]);
+
   return (
     <div
       data-testid="world-map-maplibre-basemap"
@@ -1114,11 +1128,13 @@ function WorldMapWebGlPreview({
   projection,
   regions,
   routes,
+  visibleLayers,
 }: {
   densityCells: RiskDensityCell[];
   projection: GeoProjection;
   regions: WorldMapRegion[];
   routes: RiskRoute[];
+  visibleLayers: VisibleMapLayers;
 }) {
   const regionPolygons = useMemo<WebGlRegionPolygon[]>(
     () =>
@@ -1150,50 +1166,72 @@ function WorldMapWebGlPreview({
       }),
     [projection, routes]
   );
-  const layers = useMemo(
-    () => [
-      new PolygonLayer<WebGlRegionPolygon>({
-        id: "world-map-webgl-polygons",
-        coordinateSystem: COORDINATE_SYSTEM.CARTESIAN,
-        data: regionPolygons,
-        filled: true,
-        getFillColor: (item) => item.fillColor,
-        getLineColor: (item) => item.lineColor,
-        getLineWidth: 1,
-        getPolygon: (item) => item.polygon,
-        lineWidthUnits: "pixels",
-        pickable: false,
-        stroked: true,
-      }),
-      new ScatterplotLayer<RiskDensityCell>({
-        id: "world-map-webgl-density",
-        coordinateSystem: COORDINATE_SYSTEM.CARTESIAN,
-        data: densityCells,
-        getFillColor: (cell) => colorToRgba(riskColor(cell.riskLevel).strokeStrong, 42 + cell.intensity * 96),
-        getLineColor: (cell) => colorToRgba(riskColor(cell.riskLevel).strokeStrong, 78),
-        getLineWidth: 0.7,
-        getPosition: (cell) => [cell.x, cell.y, 0],
-        getRadius: (cell) => cell.size * (0.74 + cell.intensity * 0.56),
-        lineWidthUnits: "pixels",
-        pickable: false,
-        radiusUnits: "pixels",
-        stroked: true,
-      }),
-      new ArcLayer<WebGlRoute>({
-        id: "world-map-webgl-arcs",
-        coordinateSystem: COORDINATE_SYSTEM.CARTESIAN,
-        data: projectedRoutes,
-        getSourceColor: [34, 211, 238, 92],
-        getSourcePosition: (route) => route.from,
-        getTargetColor: [249, 115, 22, 132],
-        getTargetPosition: (route) => route.to,
-        getWidth: (route) => 1 + route.weight * 2,
-        pickable: false,
-        widthUnits: "pixels",
-      }),
-    ],
-    [densityCells, projectedRoutes, regionPolygons]
-  );
+  const layers = useMemo(() => {
+    const nextLayers = [];
+
+    if (visibleLayers.heat) {
+      nextLayers.push(
+        new PolygonLayer<WebGlRegionPolygon>({
+          id: "world-map-webgl-polygons",
+          coordinateSystem: COORDINATE_SYSTEM.CARTESIAN,
+          data: regionPolygons,
+          filled: true,
+          getFillColor: (item) => item.fillColor,
+          getLineColor: (item) => item.lineColor,
+          getLineWidth: 1,
+          getPolygon: (item) => item.polygon,
+          lineWidthUnits: "pixels",
+          pickable: false,
+          stroked: true,
+        })
+      );
+    }
+
+    if (visibleLayers.density) {
+      nextLayers.push(
+        new ScatterplotLayer<RiskDensityCell>({
+          id: "world-map-webgl-density",
+          coordinateSystem: COORDINATE_SYSTEM.CARTESIAN,
+          data: densityCells,
+          getFillColor: (cell) => colorToRgba(riskColor(cell.riskLevel).strokeStrong, 42 + cell.intensity * 96),
+          getLineColor: (cell) => colorToRgba(riskColor(cell.riskLevel).strokeStrong, 78),
+          getLineWidth: 0.7,
+          getPosition: (cell) => [cell.x, cell.y, 0],
+          getRadius: (cell) => cell.size * (0.74 + cell.intensity * 0.56),
+          lineWidthUnits: "pixels",
+          pickable: false,
+          radiusUnits: "pixels",
+          stroked: true,
+        })
+      );
+    }
+
+    if (visibleLayers.routes) {
+      nextLayers.push(
+        new ArcLayer<WebGlRoute>({
+          id: "world-map-webgl-arcs",
+          coordinateSystem: COORDINATE_SYSTEM.CARTESIAN,
+          data: projectedRoutes,
+          getSourceColor: [34, 211, 238, 92],
+          getSourcePosition: (route) => route.from,
+          getTargetColor: [249, 115, 22, 132],
+          getTargetPosition: (route) => route.to,
+          getWidth: (route) => 1 + route.weight * 2,
+          pickable: false,
+          widthUnits: "pixels",
+        })
+      );
+    }
+
+    return nextLayers;
+  }, [
+    densityCells,
+    projectedRoutes,
+    regionPolygons,
+    visibleLayers.density,
+    visibleLayers.heat,
+    visibleLayers.routes,
+  ]);
 
   return (
     <div
@@ -1213,10 +1251,12 @@ function WorldMapWebGlPreview({
 }
 
 function WebGlReadinessPanel({
+  activeEnhancedLayerCount,
   densityCellCount,
   regionCount,
   routeCount,
 }: {
+  activeEnhancedLayerCount: number;
   densityCellCount: number;
   regionCount: number;
   routeCount: number;
@@ -1225,6 +1265,7 @@ function WebGlReadinessPanel({
   const rows = [
     { label: "MapLibre底图", value: text("离线运行"), status: "ready" },
     { label: "视图同步", value: text("已同步"), status: "ready" },
+    { label: "图层联动", value: `${activeEnhancedLayerCount}/3`, status: "ready" },
     { label: "GeoJson区域", value: regionCount, status: "ready" },
     { label: "Heatmap密度", value: densityCellCount, status: "ready" },
     { label: "Arc飞线", value: routeCount, status: "ready" },
@@ -1717,7 +1758,10 @@ function buildMapLibreRegionCollection(regions: WorldMapRegion[]): MapLibreRegio
   };
 }
 
-function buildMapLibreStyle(regionCollection: MapLibreRegionFeatureCollection): StyleSpecification {
+function buildMapLibreStyle(
+  regionCollection: MapLibreRegionFeatureCollection,
+  showRiskRegions: boolean
+): StyleSpecification {
   return {
     version: 8,
     sources: {
@@ -1760,6 +1804,9 @@ function buildMapLibreStyle(regionCollection: MapLibreRegionFeatureCollection): 
         id: "risk-region-fill",
         type: "fill",
         source: "risk-regions",
+        layout: {
+          visibility: showRiskRegions ? "visible" : "none",
+        },
         paint: {
           "fill-color": [
             "match",
@@ -1781,6 +1828,9 @@ function buildMapLibreStyle(regionCollection: MapLibreRegionFeatureCollection): 
         id: "risk-region-line",
         type: "line",
         source: "risk-regions",
+        layout: {
+          visibility: showRiskRegions ? "visible" : "none",
+        },
         paint: {
           "line-color": [
             "match",
@@ -1801,6 +1851,14 @@ function buildMapLibreStyle(regionCollection: MapLibreRegionFeatureCollection): 
       },
     ],
   } as StyleSpecification;
+}
+
+function setMapLibreLayerVisibility(map: MapLibreMap, layerIds: string[], visible: boolean): void {
+  for (const layerId of layerIds) {
+    if (map.getLayer(layerId)) {
+      map.setLayoutProperty(layerId, "visibility", visible ? "visible" : "none");
+    }
+  }
 }
 
 function buildRiskDensityCells(regions: WorldMapRegion[], projection: GeoProjection): RiskDensityCell[] {

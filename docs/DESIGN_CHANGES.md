@@ -228,6 +228,12 @@ threshold_modifier、propagation_activator、risk_recalc、数据腐烂防护
 - WebGL 预览层继续保持 `pointer-events: none`，不接管节点点击、区域索引、详情抽屉或缩放控件。
 - WebGL 准备面板新增“视图同步”状态，明确增强层已与 SVG 主地图共享视图变换。
 
+# 2026-05-09 — World Risk Map Phase B.2.6 增强层图层联动
+
+- deck.gl 预览层开始服从现有视觉图层开关：热力控制 PolygonLayer，密度控制 ScatterplotLayer，飞线控制 ArcLayer。
+- MapLibre 离线底图保留国家边界作为增强模式底座，风险区域 fill/line 会跟随热力图层开关隐藏或恢复。
+- WebGL 准备面板新增“图层联动”状态，显示当前启用的增强图层数量，方便排查 SVG 与增强层显示是否一致。
+
 # 2026-05-09 — Shell Navigation Phase 1
 
 - 全局侧边栏升级为半透明玻璃态外壳，保留 Zeus 现有导航信息架构，不改业务页面和世界风险地图数据逻辑。
