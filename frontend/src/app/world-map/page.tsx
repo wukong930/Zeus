@@ -732,41 +732,100 @@ function MapZoomControls({
 function RegionInsightModal({ region, onClose }: { region: WorldMapRegion; onClose: () => void }) {
   const { lang, text } = useI18n();
   const color = riskColor(region.riskLevel);
+  const closeButtonRef = useRef<HTMLButtonElement | null>(null);
+  const onCloseRef = useRef(onClose);
+  const headline = lang === "zh" ? region.story.headlineZh : region.story.headlineEn;
+  const regionName = lang === "zh" ? region.nameZh : region.nameEn;
+
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
+
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    const previousActiveElement = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    document.body.style.overflow = "hidden";
+
+    const focusFrame = window.requestAnimationFrame(() => {
+      closeButtonRef.current?.focus({ preventScroll: true });
+    });
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      onCloseRef.current();
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.cancelAnimationFrame(focusFrame);
+      window.removeEventListener("keydown", handleKeyDown);
+      document.body.style.overflow = previousOverflow;
+      if (previousActiveElement && document.contains(previousActiveElement)) {
+        previousActiveElement.focus({ preventScroll: true });
+      }
+    };
+  }, []);
+
   return (
-    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/78 px-4 py-6 backdrop-blur-sm">
-      <div className="max-h-[92vh] w-[min(980px,calc(100vw-32px))] overflow-hidden rounded-sm border border-border-default bg-[linear-gradient(180deg,rgba(18,20,19,0.98),rgba(3,5,4,0.99))] shadow-data-panel">
-        <div className="flex items-start justify-between gap-4 border-b border-border-subtle px-5 py-4">
-          <div>
-            <div className="flex flex-wrap items-center gap-2">
-              <Route className="h-4 w-4 text-brand-cyan" />
-              <h2 className="text-h2 text-text-primary">
-                {lang === "zh" ? region.story.headlineZh : region.story.headlineEn}
-              </h2>
-              <Badge variant={region.riskScore >= 72 ? "high" : region.riskScore >= 55 ? "medium" : "low"}>
-                {text(riskLabel(region.riskLevel))}
-              </Badge>
+    <div className="fixed inset-0 z-[80] overflow-hidden">
+      <button
+        type="button"
+        aria-label={text("关闭")}
+        className="absolute inset-0 bg-black/30 backdrop-blur-[2px]"
+        onClick={onClose}
+      />
+      <aside
+        role="dialog"
+        aria-modal="true"
+        aria-label={headline}
+        data-testid="world-map-region-dossier"
+        className="absolute bottom-3 left-3 right-3 max-h-[86vh] overflow-hidden rounded-sm border border-border-default bg-[linear-gradient(180deg,rgba(18,20,19,0.96),rgba(3,5,4,0.98))] shadow-[0_28px_90px_rgba(0,0,0,0.58),inset_1px_0_0_rgba(255,255,255,0.05)] backdrop-blur-2xl md:bottom-3 md:left-auto md:right-3 md:top-3 md:max-h-none md:w-[min(520px,calc(100vw-112px))]"
+      >
+        <div className="border-b border-border-subtle px-4 py-4">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="mb-2 flex items-center gap-2 text-caption font-semibold uppercase tracking-[0.18em] text-brand-cyan">
+                <Route className="h-3.5 w-3.5" />
+                {text("区域情报档案")}
+                <span className="text-text-muted">/</span>
+                <span className="truncate normal-case tracking-normal text-text-secondary">{regionName}</span>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="text-lg font-semibold leading-tight text-text-primary">{headline}</h2>
+                <Badge variant={region.riskScore >= 72 ? "high" : region.riskScore >= 55 ? "medium" : "low"}>
+                  {text(riskLabel(region.riskLevel))}
+                </Badge>
+              </div>
+              <p className="mt-2 text-xs leading-5 text-text-secondary">
+                {lang === "zh" ? region.narrativeZh : region.narrativeEn}
+              </p>
             </div>
-            <p className="mt-2 max-w-3xl text-sm text-text-secondary">
-              {lang === "zh" ? region.narrativeZh : region.narrativeEn}
-            </p>
+            <button
+              ref={closeButtonRef}
+              type="button"
+              onClick={onClose}
+              data-testid="world-map-region-dossier-close"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xs border border-border-subtle bg-black/45 text-text-muted hover:border-brand-cyan/35 hover:text-text-primary"
+              aria-label={text("关闭")}
+            >
+              <X className="h-4 w-4" />
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xs border border-border-subtle bg-bg-base text-text-muted hover:text-text-primary"
-            aria-label={text("关闭")}
-          >
-            <X className="h-4 w-4" />
-          </button>
         </div>
 
-        <div className="max-h-[calc(92vh-88px)] overflow-y-auto p-5">
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-[220px_minmax(0,1fr)]">
-            <div className="space-y-3">
-              <div className="rounded-sm border border-border-subtle bg-bg-base p-4">
-                <div className="text-caption text-text-muted">{text("区域综合风险")}</div>
-                <div className="mt-1 font-mono text-5xl font-semibold" style={{ color: color.text }}>
-                  {region.riskScore}
+        <div className="max-h-[calc(86vh-128px)] overflow-y-auto p-4 md:max-h-[calc(100vh-140px)]">
+          <div className="space-y-4">
+            <div className="grid gap-3 sm:grid-cols-[150px_minmax(0,1fr)] md:grid-cols-1">
+              <div className="rounded-sm border border-border-subtle bg-black/42 p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-caption text-text-muted">{text("区域综合风险")}</div>
+                    <div className="mt-1 font-mono text-5xl font-semibold" style={{ color: color.text }}>
+                      {region.riskScore}
+                    </div>
+                  </div>
+                  <Activity className="h-6 w-6" style={{ color: color.text }} />
                 </div>
                 <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-bg-surface-raised">
                   <div
@@ -775,66 +834,71 @@ function RegionInsightModal({ region, onClose }: { region: WorldMapRegion; onClo
                   />
                 </div>
               </div>
-              <RuntimeGrid region={region} />
-              <Link
-                href={region.causalScope.causalWebUrl}
-                className="flex h-10 items-center justify-center gap-2 rounded-sm border border-brand-cyan/35 bg-brand-cyan/10 text-sm font-semibold text-brand-cyan hover:bg-brand-cyan/15"
-              >
-                <Link2 className="h-4 w-4" />
-                {region.causalScope.hasDirectLinks
-                  ? text("打开关联因果网络")
-                  : text("打开同商品因果网络")}
-              </Link>
-            </div>
-
-            <div className="space-y-4">
-              <InsightSection icon={Sparkles} title={text("动态预警")}>
-                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                  {region.adaptiveAlerts.map((alert) => (
-                    <AdaptiveAlertCard key={alert.id} alert={alert} />
-                  ))}
+              <div className="space-y-3">
+                <div className="flex items-center gap-2 text-sm font-semibold text-text-primary">
+                  <DatabaseZap className="h-4 w-4 text-brand-emerald-bright" />
+                  {text("区域运行态")}
                 </div>
-              </InsightSection>
-
-              <InsightSection icon={Route} title={text("商品传导链")}>
-                <StoryChain steps={region.story.chain} />
-              </InsightSection>
-
-              <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-                <InsightSection icon={ListChecks} title={text("证据")} compact>
-                  <EvidenceList region={region} kind="evidence" />
-                </InsightSection>
-                <InsightSection icon={AlertTriangle} title={text("反证")} compact>
-                  <EvidenceList region={region} kind="counterEvidence" />
-                </InsightSection>
+                <RuntimeGrid region={region} />
               </div>
+            </div>
 
-              <InsightSection icon={CloudRain} title={text("天气异常")}>
-                <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-                  <WeatherMetric
-                    label={text("降水距平")}
-                    value={`${region.weather.precipitationAnomalyPct >= 0 ? "+" : ""}${region.weather.precipitationAnomalyPct.toFixed(1)}%`}
-                    tone={region.weather.precipitationAnomalyPct >= 0 ? "up" : "down"}
-                  />
-                  <WeatherMetric
-                    label={text("7日降水")}
-                    value={`${region.weather.rainfall7dMm.toFixed(0)} mm`}
-                    tone="neutral"
-                  />
-                  <WeatherMetric
-                    label={text("洪涝风险")}
-                    value={`${Math.round(region.weather.floodRisk * 100)}%`}
-                    tone={region.weather.floodRisk > 0.55 ? "warning" : "neutral"}
-                  />
-                </div>
-                <div className="mt-3 text-caption text-text-muted">
-                  {text("数据源")}：{region.weather.dataSource}
-                </div>
+            <Link
+              href={region.causalScope.causalWebUrl}
+              className="flex h-10 items-center justify-center gap-2 rounded-sm border border-brand-cyan/35 bg-brand-cyan/10 text-sm font-semibold text-brand-cyan hover:bg-brand-cyan/15"
+            >
+              <Link2 className="h-4 w-4" />
+              {region.causalScope.hasDirectLinks
+                ? text("打开关联因果网络")
+                : text("打开同商品因果网络")}
+            </Link>
+
+            <InsightSection icon={Route} title={text("商品传导链")}>
+              <StoryChain steps={region.story.chain} />
+            </InsightSection>
+
+            <InsightSection icon={Sparkles} title={text("动态预警")}>
+              <div className="grid grid-cols-1 gap-3">
+                {region.adaptiveAlerts.map((alert) => (
+                  <AdaptiveAlertCard key={alert.id} alert={alert} />
+                ))}
+              </div>
+            </InsightSection>
+
+            <div className="grid grid-cols-1 gap-4">
+              <InsightSection icon={ListChecks} title={text("证据")} compact>
+                <EvidenceList region={region} kind="evidence" />
+              </InsightSection>
+              <InsightSection icon={AlertTriangle} title={text("反证")} compact>
+                <EvidenceList region={region} kind="counterEvidence" />
               </InsightSection>
             </div>
+
+            <InsightSection icon={CloudRain} title={text("天气异常")}>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 md:grid-cols-1">
+                <WeatherMetric
+                  label={text("降水距平")}
+                  value={`${region.weather.precipitationAnomalyPct >= 0 ? "+" : ""}${region.weather.precipitationAnomalyPct.toFixed(1)}%`}
+                  tone={region.weather.precipitationAnomalyPct >= 0 ? "up" : "down"}
+                />
+                <WeatherMetric
+                  label={text("7日降水")}
+                  value={`${region.weather.rainfall7dMm.toFixed(0)} mm`}
+                  tone="neutral"
+                />
+                <WeatherMetric
+                  label={text("洪涝风险")}
+                  value={`${Math.round(region.weather.floodRisk * 100)}%`}
+                  tone={region.weather.floodRisk > 0.55 ? "warning" : "neutral"}
+                />
+              </div>
+              <div className="mt-3 text-caption text-text-muted">
+                {text("数据源")}：{region.weather.dataSource}
+              </div>
+            </InsightSection>
           </div>
         </div>
-      </div>
+      </aside>
     </div>
   );
 }
@@ -919,19 +983,29 @@ function AdaptiveAlertCard({ alert }: { alert: WorldMapAdaptiveAlert }) {
 function StoryChain({ steps }: { steps: WorldMapStoryStep[] }) {
   const { lang, text } = useI18n();
   return (
-    <div className="grid grid-cols-1 gap-2 md:grid-cols-4">
+    <div className="space-y-2">
       {steps.map((step, index) => (
-        <div key={`${step.stage}-${index}`} className="relative rounded-sm border border-border-subtle bg-black/35 p-3">
-          <div className="mb-2 flex items-center justify-between">
-            <span className="text-caption text-brand-cyan">{text(stageLabel(step.stage))}</span>
-            <span className="font-mono text-caption text-text-muted">
-              {Math.round(step.confidence * 100)}%
+        <div
+          key={`${step.stage}-${index}`}
+          className="relative grid grid-cols-[28px_minmax(0,1fr)] gap-3 rounded-sm border border-border-subtle bg-black/35 p-3"
+        >
+          <div className="relative flex justify-center">
+            <span className="z-10 flex h-6 w-6 items-center justify-center rounded-full border border-brand-cyan/35 bg-brand-cyan/10 font-mono text-[10px] text-brand-cyan">
+              {index + 1}
             </span>
+            {index < steps.length - 1 && (
+              <span className="absolute left-1/2 top-7 h-[calc(100%+8px)] w-px -translate-x-1/2 bg-brand-cyan/18" />
+            )}
           </div>
-          <div className="text-sm text-text-primary">{lang === "zh" ? step.labelZh : step.labelEn}</div>
-          {index < steps.length - 1 && (
-            <div className="pointer-events-none absolute -right-2 top-1/2 hidden h-px w-4 bg-brand-cyan/45 md:block" />
-          )}
+          <div className="min-w-0">
+            <div className="mb-1 flex items-center justify-between gap-2">
+              <span className="text-caption text-brand-cyan">{text(stageLabel(step.stage))}</span>
+              <span className="font-mono text-caption text-text-muted">
+                {Math.round(step.confidence * 100)}%
+              </span>
+            </div>
+            <div className="text-sm leading-5 text-text-primary">{lang === "zh" ? step.labelZh : step.labelEn}</div>
+          </div>
         </div>
       ))}
     </div>
