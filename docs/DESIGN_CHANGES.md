@@ -179,3 +179,9 @@ threshold_modifier、propagation_activator、risk_recalc、数据腐烂防护
 - 全局侧边栏升级为半透明玻璃态外壳，保留 Zeus 现有导航信息架构，不改业务页面和世界风险地图数据逻辑。
 - 新增展开/收起状态、`localStorage` 偏好记忆、收起态图标导航、告警角标和运行态状态灯。
 - 该阶段只处理全局导航容器；地图页默认沉浸模式、tooltip 增强和移动端抽屉导航留到后续阶段。
+
+# 2026-05-09 — Shell Navigation Phase 2
+
+- 侧边栏偏好升级为 `auto / collapsed / expanded` 三态；没有用户显式偏好时采用路由默认策略。
+- `/world-map` 与 `/causal-web` 默认进入沉浸式收起导航，普通后台页面默认展开，避免大画布页面被导航压缩。
+- 用户手动展开或收起后会保存显式偏好，后续页面继续尊重用户选择。

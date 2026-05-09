@@ -45,15 +45,21 @@ const NAV_ITEMS = [
   { href: "/settings", label: "设置", icon: Settings },
 ];
 
-const SIDEBAR_STORAGE_KEY = "zeus-sidebar-collapsed";
+type SidebarPreference = "auto" | "collapsed" | "expanded";
+
+const SIDEBAR_MODE_STORAGE_KEY = "zeus-sidebar-mode";
+const LEGACY_SIDEBAR_STORAGE_KEY = "zeus-sidebar-collapsed";
+const IMMERSIVE_ROUTES = ["/world-map", "/causal-web"];
 
 export function Sidebar() {
   const pathname = usePathname();
   const { lang, text } = useI18n();
   const [alertCount, setAlertCount] = useState<number | null>(null);
-  const [collapsed, setCollapsed] = useState(false);
+  const [preference, setPreference] = useState<SidebarPreference>("auto");
   const [ready, setReady] = useState(false);
   const brandTagline = lang === "zh" ? "交易胜于未始" : "Trades are won before they begin";
+  const routePrefersCollapsed = isImmersiveRoute(pathname);
+  const collapsed = preference === "auto" ? routePrefersCollapsed : preference === "collapsed";
 
   useEffect(() => {
     let cancelled = false;
@@ -72,16 +78,20 @@ export function Sidebar() {
   }, []);
 
   useEffect(() => {
-    const saved = window.localStorage.getItem(SIDEBAR_STORAGE_KEY);
-    if (saved === "true") setCollapsed(true);
-    if (saved === "false") setCollapsed(false);
+    const savedMode = window.localStorage.getItem(SIDEBAR_MODE_STORAGE_KEY);
+    if (isSidebarPreference(savedMode)) {
+      setPreference(savedMode);
+    } else {
+      const legacyCollapsed = window.localStorage.getItem(LEGACY_SIDEBAR_STORAGE_KEY);
+      setPreference(legacyCollapsed === "true" ? "collapsed" : "auto");
+    }
     setReady(true);
   }, []);
 
   useEffect(() => {
     if (!ready) return;
-    window.localStorage.setItem(SIDEBAR_STORAGE_KEY, String(collapsed));
-  }, [collapsed, ready]);
+    window.localStorage.setItem(SIDEBAR_MODE_STORAGE_KEY, preference);
+  }, [preference, ready]);
 
   return (
     <aside
@@ -90,6 +100,8 @@ export function Sidebar() {
         collapsed ? "w-[64px]" : "w-[188px]"
       )}
       data-sidebar-collapsed={collapsed}
+      data-sidebar-mode={preference}
+      data-sidebar-immersive={routePrefersCollapsed}
     >
       <div
         className={cn(
@@ -107,7 +119,7 @@ export function Sidebar() {
       </div>
       <button
         type="button"
-        onClick={() => setCollapsed((value) => !value)}
+        onClick={() => setPreference(collapsed ? "expanded" : "collapsed")}
         className="absolute -right-3 top-3 z-20 flex h-6 w-6 items-center justify-center rounded-full border border-white/[0.09] bg-black/78 text-text-muted shadow-data-panel backdrop-blur-md transition-colors hover:border-brand-emerald/35 hover:text-text-primary"
         aria-label={collapsed ? text("展开侧边栏") : text("收起侧边栏")}
         title={collapsed ? text("展开侧边栏") : text("收起侧边栏")}
@@ -198,6 +210,15 @@ export function Sidebar() {
 function formatAlertCount(count: number | null): string | null {
   if (count === null || count <= 0) return null;
   return count > 99 ? "99+" : String(count);
+}
+
+function isImmersiveRoute(pathname: string | null): boolean {
+  if (!pathname) return false;
+  return IMMERSIVE_ROUTES.some((route) => pathname === route || pathname.startsWith(`${route}/`));
+}
+
+function isSidebarPreference(value: string | null): value is SidebarPreference {
+  return value === "auto" || value === "collapsed" || value === "expanded";
 }
 
 function Logo({ collapsed }: { collapsed?: boolean }) {
