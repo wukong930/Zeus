@@ -4,6 +4,7 @@ import Link from "next/link";
 import DeckGL from "@deck.gl/react";
 import { COORDINATE_SYSTEM, OrthographicView } from "@deck.gl/core";
 import { ArcLayer, PolygonLayer, ScatterplotLayer } from "@deck.gl/layers";
+import type { GeoJSONSource, Map as MapLibreMap, StyleSpecification } from "maplibre-gl";
 import { geoEqualEarth, geoGraticule, geoPath, type GeoPermissibleObjects, type GeoProjection } from "d3-geo";
 import type { ComponentType, PointerEvent as ReactPointerEvent, ReactNode, WheelEvent as ReactWheelEvent } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -82,6 +83,15 @@ type WebGlRoute = {
   to: [number, number, number];
   weight: number;
 };
+type MapLibreRuntimeStatus = "loading" | "ready" | "error";
+type MapLibreRegionFeatureCollection = FeatureCollection<
+  GeoJsonGeometryObject,
+  {
+    id: string;
+    riskLevel: WorldRiskLevel;
+    riskScore: number;
+  }
+>;
 
 const MAP_WIDTH = 1000;
 const MAP_HEIGHT = 560;
@@ -751,8 +761,9 @@ function WorldMapCanvas({
 
   return (
     <div className="absolute inset-0">
+      {rendererMode === "webgl-ready" && <MapLibreBasemapPreview regions={regions} />}
       <svg
-        className={cn("h-full w-full touch-none select-none", dragging ? "cursor-grabbing" : "cursor-grab")}
+        className={cn("relative z-10 h-full w-full touch-none select-none", dragging ? "cursor-grabbing" : "cursor-grab")}
         viewBox={`0 0 ${MAP_WIDTH} ${MAP_HEIGHT}`}
         role="img"
         onWheel={handleWheel}
@@ -1018,6 +1029,76 @@ function WorldMapCanvas({
   );
 }
 
+function MapLibreBasemapPreview({ regions }: { regions: WorldMapRegion[] }) {
+  const { text } = useI18n();
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const mapRef = useRef<MapLibreMap | null>(null);
+  const [status, setStatus] = useState<MapLibreRuntimeStatus>("loading");
+  const regionCollection = useMemo(() => buildMapLibreRegionCollection(regions), [regions]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function mountMap() {
+      try {
+        const maplibre = await import("maplibre-gl");
+        if (cancelled || !containerRef.current) return;
+
+        const map = new maplibre.Map({
+          attributionControl: false,
+          center: [18, 10],
+          container: containerRef.current,
+          fadeDuration: 0,
+          interactive: false,
+          pitch: 0,
+          style: buildMapLibreStyle(regionCollection),
+          zoom: 0.45,
+        });
+
+        mapRef.current = map;
+        map.once("load", () => {
+          if (!cancelled) setStatus("ready");
+        });
+        map.on("error", () => {
+          if (!cancelled) setStatus("error");
+        });
+      } catch {
+        if (!cancelled) setStatus("error");
+      }
+    }
+
+    void mountMap();
+    return () => {
+      cancelled = true;
+      mapRef.current?.remove();
+      mapRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !map.isStyleLoaded()) return;
+    const source = map.getSource("risk-regions") as GeoJSONSource | undefined;
+    source?.setData(regionCollection);
+  }, [regionCollection]);
+
+  return (
+    <div
+      data-testid="world-map-maplibre-basemap"
+      className="pointer-events-none absolute inset-0 z-[1] overflow-hidden opacity-40 mix-blend-screen"
+      aria-hidden="true"
+    >
+      <div ref={containerRef} className="h-full w-full [&_.maplibregl-canvas]:!h-full [&_.maplibregl-canvas]:!w-full" />
+      <div
+        data-testid={`world-map-maplibre-status-${status}`}
+        className="absolute left-4 top-[118px] rounded-xs border border-brand-emerald/20 bg-black/58 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.12em] text-brand-emerald-bright"
+      >
+        {text(status === "ready" ? "MapLibre已就绪" : status === "error" ? "MapLibre异常" : "MapLibre加载中")}
+      </div>
+    </div>
+  );
+}
+
 function WorldMapWebGlPreview({
   densityCells,
   projection,
@@ -1132,7 +1213,7 @@ function WebGlReadinessPanel({
 }) {
   const { text } = useI18n();
   const rows = [
-    { label: "MapLibre底图", value: text("依赖已安装"), status: "ready" },
+    { label: "MapLibre底图", value: text("离线运行"), status: "ready" },
     { label: "GeoJson区域", value: regionCount, status: "ready" },
     { label: "Heatmap密度", value: densityCellCount, status: "ready" },
     { label: "Arc飞线", value: routeCount, status: "ready" },
@@ -1594,6 +1675,121 @@ function arcPath(from: GeoPoint, to: GeoPoint, projection: GeoProjection): strin
 
   const bend = Math.min(58, Math.max(22, distance * 0.16));
   return `M${start.x.toFixed(1)} ${start.y.toFixed(1)} Q${midX.toFixed(1)} ${(midY - bend).toFixed(1)} ${end.x.toFixed(1)} ${end.y.toFixed(1)}`;
+}
+
+function buildMapLibreRegionCollection(regions: WorldMapRegion[]): MapLibreRegionFeatureCollection {
+  return {
+    type: "FeatureCollection",
+    features: regions.map((region) => {
+      const coordinates = region.polygon.map((point) => [point.lon, point.lat]);
+      const first = coordinates[0];
+      const last = coordinates[coordinates.length - 1];
+      const closedCoordinates =
+        first && last && (first[0] !== last[0] || first[1] !== last[1])
+          ? [...coordinates, first]
+          : coordinates;
+
+      return {
+        type: "Feature",
+        id: region.id,
+        properties: {
+          id: region.id,
+          riskLevel: region.riskLevel,
+          riskScore: region.riskScore,
+        },
+        geometry: {
+          type: "Polygon",
+          coordinates: [closedCoordinates],
+        },
+      };
+    }),
+  };
+}
+
+function buildMapLibreStyle(regionCollection: MapLibreRegionFeatureCollection): StyleSpecification {
+  return {
+    version: 8,
+    sources: {
+      countries: {
+        type: "geojson",
+        data: WORLD_COUNTRIES,
+      },
+      "risk-regions": {
+        type: "geojson",
+        data: regionCollection,
+      },
+    },
+    layers: [
+      {
+        id: "ocean-background",
+        type: "background",
+        paint: {
+          "background-color": "#020504",
+        },
+      },
+      {
+        id: "country-fill",
+        type: "fill",
+        source: "countries",
+        paint: {
+          "fill-color": "#07211d",
+          "fill-opacity": 0.48,
+        },
+      },
+      {
+        id: "country-line",
+        type: "line",
+        source: "countries",
+        paint: {
+          "line-color": "rgba(34,211,238,0.24)",
+          "line-width": 0.45,
+        },
+      },
+      {
+        id: "risk-region-fill",
+        type: "fill",
+        source: "risk-regions",
+        paint: {
+          "fill-color": [
+            "match",
+            ["get", "riskLevel"],
+            "critical",
+            "#ff4d4f",
+            "high",
+            "#f97316",
+            "elevated",
+            "#f59e0b",
+            "watch",
+            "#22d3ee",
+            "#10b981",
+          ],
+          "fill-opacity": ["interpolate", ["linear"], ["get", "riskScore"], 0, 0.08, 100, 0.36],
+        },
+      },
+      {
+        id: "risk-region-line",
+        type: "line",
+        source: "risk-regions",
+        paint: {
+          "line-color": [
+            "match",
+            ["get", "riskLevel"],
+            "critical",
+            "#ff4d4f",
+            "high",
+            "#f97316",
+            "elevated",
+            "#f59e0b",
+            "watch",
+            "#22d3ee",
+            "#10b981",
+          ],
+          "line-opacity": 0.72,
+          "line-width": 1.25,
+        },
+      },
+    ],
+  } as StyleSpecification;
 }
 
 function buildRiskDensityCells(regions: WorldMapRegion[], projection: GeoProjection): RiskDensityCell[] {

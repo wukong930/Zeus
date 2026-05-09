@@ -216,6 +216,12 @@ threshold_modifier、propagation_activator、risk_recalc、数据腐烂防护
 - 增强模式下新增 `world-map-webgl-preview` 叠加层，用 deck.gl `PolygonLayer`、`ScatterplotLayer`、`ArcLayer` 复用现有区域、风险密度和飞线数据。
 - WebGL 预览层禁用事件接管并保持 `pointer-events: none`，默认 SVG 地图仍负责拖拽、缩放、点击和详情抽屉。
 
+# 2026-05-09 — World Risk Map Phase B.2.4 MapLibre 离线底图壳层
+
+- 增强模式新增 `world-map-maplibre-basemap`，动态初始化 MapLibre canvas，避免默认 SVG 页面承担额外 WebGL 成本。
+- MapLibre 使用本地 `world-atlas` 国家边界和当前风险区域 GeoJSON，不依赖外部瓦片、token 或第三方地图服务。
+- 底图壳层保持 `pointer-events: none`，仅验证 MapLibre 运行链路和离线 source/layer 契约，现有地图交互仍由 SVG 负责。
+
 # 2026-05-09 — Shell Navigation Phase 1
 
 - 全局侧边栏升级为半透明玻璃态外壳，保留 Zeus 现有导航信息架构，不改业务页面和世界风险地图数据逻辑。
