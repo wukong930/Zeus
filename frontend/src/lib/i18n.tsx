@@ -304,6 +304,8 @@ const EN: Record<string, string> = {
   "WebGL 预备": "WebGL Ready",
   "当前仍由 SVG 承载交互，GPU 图层按 deck.gl 口径组织":
     "Interaction still runs on SVG while GPU layers are organized for deck.gl",
+  "MapLibre底图": "MapLibre Basemap",
+  "依赖已安装": "Installed",
   "GeoJson区域": "GeoJson Regions",
   "Heatmap密度": "Heatmap Density",
   "Arc飞线": "Arc Flows",

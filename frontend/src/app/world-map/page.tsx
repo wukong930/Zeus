@@ -1,6 +1,9 @@
 "use client";
 
 import Link from "next/link";
+import DeckGL from "@deck.gl/react";
+import { COORDINATE_SYSTEM, OrthographicView } from "@deck.gl/core";
+import { ArcLayer, PolygonLayer, ScatterplotLayer } from "@deck.gl/layers";
 import { geoEqualEarth, geoGraticule, geoPath, type GeoPermissibleObjects, type GeoProjection } from "d3-geo";
 import type { ComponentType, PointerEvent as ReactPointerEvent, ReactNode, WheelEvent as ReactWheelEvent } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -60,6 +63,24 @@ type RiskDensityCell = {
   intensity: number;
   riskLevel: WorldRiskLevel;
   regionId: string;
+};
+type RiskRoute = {
+  id: string;
+  from: GeoPoint;
+  to: GeoPoint;
+  weight: number;
+};
+type WebGlRegionPolygon = {
+  id: string;
+  polygon: Array<[number, number, number]>;
+  fillColor: [number, number, number, number];
+  lineColor: [number, number, number, number];
+};
+type WebGlRoute = {
+  id: string;
+  from: [number, number, number];
+  to: [number, number, number];
+  weight: number;
 };
 
 const MAP_WIDTH = 1000;
@@ -979,12 +1000,123 @@ function WorldMapCanvas({
         onReset={() => setView(INITIAL_MAP_VIEW)}
       />
       {rendererMode === "webgl-ready" && (
-        <WebGlReadinessPanel
-          densityCellCount={densityCells.length}
-          regionCount={regions.length}
-          routeCount={riskRoutes.length}
-        />
+        <>
+          <WorldMapWebGlPreview
+            densityCells={densityCells}
+            projection={projection}
+            regions={regions}
+            routes={riskRoutes}
+          />
+          <WebGlReadinessPanel
+            densityCellCount={densityCells.length}
+            regionCount={regions.length}
+            routeCount={riskRoutes.length}
+          />
+        </>
       )}
+    </div>
+  );
+}
+
+function WorldMapWebGlPreview({
+  densityCells,
+  projection,
+  regions,
+  routes,
+}: {
+  densityCells: RiskDensityCell[];
+  projection: GeoProjection;
+  regions: WorldMapRegion[];
+  routes: RiskRoute[];
+}) {
+  const regionPolygons = useMemo<WebGlRegionPolygon[]>(
+    () =>
+      regions.map((region) => {
+        const color = riskColor(region.riskLevel);
+        return {
+          id: region.id,
+          polygon: region.polygon.map((point) => {
+            const projected = project(point, projection);
+            return [projected.x, projected.y, 0];
+          }),
+          fillColor: colorToRgba(color.strokeStrong, 32),
+          lineColor: colorToRgba(color.strokeStrong, 110),
+        };
+      }),
+    [projection, regions]
+  );
+  const projectedRoutes = useMemo<WebGlRoute[]>(
+    () =>
+      routes.map((route) => {
+        const from = project(route.from, projection);
+        const to = project(route.to, projection);
+        return {
+          id: route.id,
+          from: [from.x, from.y, 0],
+          to: [to.x, to.y, 0],
+          weight: route.weight,
+        };
+      }),
+    [projection, routes]
+  );
+  const layers = useMemo(
+    () => [
+      new PolygonLayer<WebGlRegionPolygon>({
+        id: "world-map-webgl-polygons",
+        coordinateSystem: COORDINATE_SYSTEM.CARTESIAN,
+        data: regionPolygons,
+        filled: true,
+        getFillColor: (item) => item.fillColor,
+        getLineColor: (item) => item.lineColor,
+        getLineWidth: 1,
+        getPolygon: (item) => item.polygon,
+        lineWidthUnits: "pixels",
+        pickable: false,
+        stroked: true,
+      }),
+      new ScatterplotLayer<RiskDensityCell>({
+        id: "world-map-webgl-density",
+        coordinateSystem: COORDINATE_SYSTEM.CARTESIAN,
+        data: densityCells,
+        getFillColor: (cell) => colorToRgba(riskColor(cell.riskLevel).strokeStrong, 42 + cell.intensity * 96),
+        getLineColor: (cell) => colorToRgba(riskColor(cell.riskLevel).strokeStrong, 78),
+        getLineWidth: 0.7,
+        getPosition: (cell) => [cell.x, cell.y, 0],
+        getRadius: (cell) => cell.size * (0.74 + cell.intensity * 0.56),
+        lineWidthUnits: "pixels",
+        pickable: false,
+        radiusUnits: "pixels",
+        stroked: true,
+      }),
+      new ArcLayer<WebGlRoute>({
+        id: "world-map-webgl-arcs",
+        coordinateSystem: COORDINATE_SYSTEM.CARTESIAN,
+        data: projectedRoutes,
+        getSourceColor: [34, 211, 238, 92],
+        getSourcePosition: (route) => route.from,
+        getTargetColor: [249, 115, 22, 132],
+        getTargetPosition: (route) => route.to,
+        getWidth: (route) => 1 + route.weight * 2,
+        pickable: false,
+        widthUnits: "pixels",
+      }),
+    ],
+    [densityCells, projectedRoutes, regionPolygons]
+  );
+
+  return (
+    <div
+      data-testid="world-map-webgl-preview"
+      className="pointer-events-none absolute inset-0 z-[2] opacity-70 mix-blend-screen"
+      aria-hidden="true"
+    >
+      <DeckGL
+        controller={false}
+        initialViewState={{ target: [MAP_WIDTH / 2, MAP_HEIGHT / 2, 0], zoom: 0 }}
+        layers={layers}
+        style={{ pointerEvents: "none" }}
+        views={new OrthographicView({ id: "world-map-webgl-view", flipY: false })}
+      />
     </div>
   );
 }
@@ -1000,6 +1132,7 @@ function WebGlReadinessPanel({
 }) {
   const { text } = useI18n();
   const rows = [
+    { label: "MapLibre底图", value: text("依赖已安装"), status: "ready" },
     { label: "GeoJson区域", value: regionCount, status: "ready" },
     { label: "Heatmap密度", value: densityCellCount, status: "ready" },
     { label: "Arc飞线", value: routeCount, status: "ready" },
@@ -1514,8 +1647,8 @@ function buildRiskDensityCells(regions: WorldMapRegion[], projection: GeoProject
     .slice(0, 180);
 }
 
-function buildRiskRoutes(regions: WorldMapRegion[]) {
-  const routes: Array<{ id: string; from: GeoPoint; to: GeoPoint; weight: number }> = [];
+function buildRiskRoutes(regions: WorldMapRegion[]): RiskRoute[] {
+  const routes: RiskRoute[] = [];
 
   for (let index = 0; index < regions.length; index += 1) {
     for (let nextIndex = index + 1; nextIndex < regions.length; nextIndex += 1) {
@@ -1599,6 +1732,13 @@ function riskColor(level: WorldRiskLevel) {
         strokeStrong: "#10b981",
       };
   }
+}
+
+function colorToRgba(hex: string, alpha: number): [number, number, number, number] {
+  const normalized = hex.replace("#", "");
+  const value = Number.parseInt(normalized, 16);
+  if (!Number.isFinite(value)) return [16, 185, 129, alpha];
+  return [(value >> 16) & 255, (value >> 8) & 255, value & 255, alpha];
 }
 
 function riskLabel(level: WorldRiskLevel): string {

@@ -210,6 +210,12 @@ threshold_modifier、propagation_activator、risk_recalc、数据腐烂防护
 - 增强模式下展示 WebGL 准备面板，按 deck.gl 目标层统计 GeoJson 区域、Heatmap 密度、Arc 飞线和待接入天气瓦片。
 - 该阶段只增加可见的渲染能力探测与回退入口，不替换现有地图交互，降低后续 MapLibre/deck.gl 接入风险。
 
+# 2026-05-09 — World Risk Map Phase B.2.3 deck.gl 预览层
+
+- 安装 `maplibre-gl` 与 `@deck.gl/*` 渲染依赖，为 Phase B.2 真正 WebGL 化建立构建链路。
+- 增强模式下新增 `world-map-webgl-preview` 叠加层，用 deck.gl `PolygonLayer`、`ScatterplotLayer`、`ArcLayer` 复用现有区域、风险密度和飞线数据。
+- WebGL 预览层禁用事件接管并保持 `pointer-events: none`，默认 SVG 地图仍负责拖拽、缩放、点击和详情抽屉。
+
 # 2026-05-09 — Shell Navigation Phase 1
 
 - 全局侧边栏升级为半透明玻璃态外壳，保留 Zeus 现有导航信息架构，不改业务页面和世界风险地图数据逻辑。
