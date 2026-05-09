@@ -20,6 +20,8 @@ from app.services.data_sources.free_ingest import (
     safe_error_message,
 )
 from app.services.data_sources.nasa_power import (
+    baseline_rows_from_power_payload,
+    collect_nasa_power_weather_baselines,
     collect_nasa_power_weather,
     rows_from_power_payload,
 )
@@ -187,6 +189,51 @@ def test_nasa_power_payload_rejects_missing_parameter_shape() -> None:
         rows_from_power_payload(location, {"properties": {"parameters": {}}})
 
 
+def test_nasa_power_payload_creates_weather_baseline_rows() -> None:
+    location = WeatherLocation("hat_yai", "Hat Yai", "NR", 7.0, 100.0)
+    rows = baseline_rows_from_power_payload(
+        location,
+        {
+            "properties": {
+                "parameter": {
+                    "PRECTOTCORR": {
+                        "20250501": 3.0,
+                        "20250502": 4.0,
+                        "20240501": 5.0,
+                        "20240502": 6.0,
+                    },
+                    "T2M_MAX": {
+                        "20250501": 30.0,
+                        "20250502": 32.0,
+                        "20240501": 34.0,
+                        "20240502": 36.0,
+                    },
+                    "T2M_MIN": {
+                        "20250501": 20.0,
+                        "20250502": 22.0,
+                        "20240501": 24.0,
+                        "20240502": 26.0,
+                    },
+                }
+            }
+        },
+        target_end=pd.Timestamp("2026-05-02").date(),
+        windows=(
+            (pd.Timestamp("2024-05-01").date(), pd.Timestamp("2024-05-02").date()),
+            (pd.Timestamp("2025-05-01").date(), pd.Timestamp("2025-05-02").date()),
+        ),
+        window_days=2,
+    )
+
+    assert {row.data_type for row in rows} == {
+        "weather_baseline_precip_7d",
+        "weather_baseline_temp_mean_7d",
+    }
+    assert rows[0].value == 9.0
+    assert rows[1].value == 28.0
+    assert rows[0].source == "nasa_power_baseline:hat_yai"
+
+
 async def test_nasa_power_collector_uses_daily_point_endpoint() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.url.path == "/api/temporal/daily/point"
@@ -218,6 +265,53 @@ async def test_nasa_power_collector_uses_daily_point_endpoint() -> None:
 
     assert len(rows) == 3
     assert rows[0].source_key == "nasa_power:hat_yai:precip:20260501-20260502"
+
+
+async def test_nasa_power_baseline_collector_uses_historical_window() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/api/temporal/daily/point"
+        assert request.url.params["start"] == "20240501"
+        assert request.url.params["end"] == "20250502"
+        return httpx.Response(
+            200,
+            json={
+                "properties": {
+                    "parameter": {
+                        "PRECTOTCORR": {
+                            "20240501": 5.0,
+                            "20240502": 6.0,
+                            "20250501": 3.0,
+                            "20250502": 4.0,
+                        },
+                        "T2M_MAX": {
+                            "20240501": 34.0,
+                            "20240502": 36.0,
+                            "20250501": 30.0,
+                            "20250502": 32.0,
+                        },
+                        "T2M_MIN": {
+                            "20240501": 24.0,
+                            "20240502": 26.0,
+                            "20250501": 20.0,
+                            "20250502": 22.0,
+                        },
+                    }
+                }
+            },
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        rows = await collect_nasa_power_weather_baselines(
+            locations=(WeatherLocation("hat_yai", "Hat Yai", "NR", 7.0, 100.0),),
+            end=pd.Timestamp("2026-05-02").date(),
+            years=2,
+            window_days=2,
+            base_url="https://power.test/api/temporal/daily/point",
+            client=client,
+        )
+
+    assert len(rows) == 2
+    assert rows[0].source_key == "nasa_power:hat_yai:baseline_precip:2024-2025:0502:2d"
 
 
 def test_fred_payload_skips_missing_values_and_uses_latest_numeric() -> None:
@@ -530,6 +624,7 @@ def test_data_source_registry_marks_keyed_sources() -> None:
     assert statuses["tushare"].status == "ready"
     assert statuses["open_meteo"].free_tier == "free_no_key"
     assert statuses["nasa_power"].free_tier == "free_no_key"
+    assert statuses["nasa_power_baseline"].free_tier == "free_no_key"
 
 
 def test_tushare_csv_tuple_rejects_unbounded_settings() -> None:

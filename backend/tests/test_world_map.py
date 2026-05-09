@@ -148,6 +148,69 @@ def test_region_snapshot_uses_runtime_weather_rows() -> None:
     assert region.story.evidence[0].source == "open_meteo+regional_baseline_seed"
 
 
+def test_region_snapshot_uses_historical_weather_baseline_rows() -> None:
+    now = datetime.now(timezone.utc)
+    region = _build_region_snapshot(
+        WORLD_RISK_REGIONS[0],
+        alerts=[],
+        news=[],
+        signals=[],
+        positions=[],
+        industry_weather=[
+            IndustryData(
+                symbol="NR",
+                data_type="weather_precip_7d",
+                value=180.0,
+                unit="mm",
+                source="open_meteo:hat_yai",
+                timestamp=now,
+                ingested_at=now,
+            ),
+            IndustryData(
+                symbol="NR",
+                data_type="weather_baseline_precip_7d",
+                value=90.0,
+                unit="mm",
+                source="nasa_power_baseline:hat_yai",
+                timestamp=now,
+                ingested_at=now,
+            ),
+            IndustryData(
+                symbol="NR",
+                data_type="weather_baseline_temp_mean_7d",
+                value=28.0,
+                unit="C",
+                source="nasa_power_baseline:hat_yai",
+                timestamp=now,
+                ingested_at=now,
+            ),
+            IndustryData(
+                symbol="NR",
+                data_type="weather_temp_max_7d",
+                value=34.0,
+                unit="C",
+                source="open_meteo:hat_yai",
+                timestamp=now,
+                ingested_at=now,
+            ),
+            IndustryData(
+                symbol="NR",
+                data_type="weather_temp_min_7d",
+                value=24.0,
+                unit="C",
+                source="open_meteo:hat_yai",
+                timestamp=now,
+                ingested_at=now,
+            ),
+        ],
+    )
+
+    assert region.weather.dataSource == "nasa_power_baseline+open_meteo"
+    assert region.weather.precipitationAnomalyPct == 100.0
+    assert region.weather.temperatureAnomalyC == 1.0
+    assert region.weather.confidence > 0.75
+
+
 def test_region_snapshot_keeps_weather_scoped_by_location_region() -> None:
     now = datetime.now(timezone.utc)
     region = _build_region_snapshot(

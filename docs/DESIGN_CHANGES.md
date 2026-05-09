@@ -258,6 +258,12 @@ threshold_modifier、propagation_activator、risk_recalc、数据腐烂防护
 - 新增 NASA POWER 日频 point API 客户端，输出统一的 `weather_precip_7d` / `weather_temp_max_7d` / `weather_temp_min_7d` 行，后续可沉淀历史 baseline。
 - `/api/world-map` 优先融合 `industry_data` 最新天气行，驱动区域天气、天气 tile 来源和风险故事；缺数据时继续显式回退 `regional_baseline_seed`。
 
+# 2026-05-09 — World Risk Map Phase C.2 历史季节 baseline
+
+- NASA POWER 增加同日历窗口历史 baseline 采集，输出 `weather_baseline_precip_7d` 和 `weather_baseline_temp_mean_7d`。
+- baseline 采集新增独立开关与年份/窗口配置，避免高频 ingest 默认重复拉取历史大窗口。
+- 世界地图天气融合改为按站点区域作用域优先匹配，并按来源站点聚合，降低跨区域商品代码造成的天气污染。
+
 # 2026-05-09 — Shell Navigation Phase 1
 
 - 全局侧边栏升级为半透明玻璃态外壳，保留 Zeus 现有导航信息架构，不改业务页面和世界风险地图数据逻辑。

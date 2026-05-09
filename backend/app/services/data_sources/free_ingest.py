@@ -16,7 +16,10 @@ from app.services.data_sources.akshare_futures import (
 )
 from app.services.data_sources.eia import collect_eia_indicators
 from app.services.data_sources.fred import collect_fred_indicators
-from app.services.data_sources.nasa_power import collect_nasa_power_weather
+from app.services.data_sources.nasa_power import (
+    collect_nasa_power_weather,
+    collect_nasa_power_weather_baselines,
+)
 from app.services.data_sources.open_meteo import collect_open_meteo_weather
 from app.services.data_sources.tushare_futures import (
     DEFAULT_TUSHARE_EXCHANGES,
@@ -113,6 +116,18 @@ async def run_free_data_ingest(
             source_counts["nasa_power"] = len(nasa_rows)
         except Exception as exc:
             errors.append({"source": "nasa_power", "error": safe_error_message(exc)})
+
+    if current.data_source_nasa_power_baseline_enabled:
+        try:
+            nasa_baseline_rows = await collect_nasa_power_weather_baselines(
+                base_url=current.nasa_power_base_url,
+                years=current.nasa_power_baseline_years,
+                window_days=current.nasa_power_baseline_window_days,
+            )
+            industry_payloads.extend(nasa_baseline_rows)
+            source_counts["nasa_power_baseline"] = len(nasa_baseline_rows)
+        except Exception as exc:
+            errors.append({"source": "nasa_power_baseline", "error": safe_error_message(exc)})
 
     if current.data_source_fred_enabled:
         if current.fred_api_key:

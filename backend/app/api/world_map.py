@@ -827,7 +827,7 @@ def _region_weather(
 def _latest_weather_rows(
     rows: list[IndustryData],
     definition: RegionDefinition,
-) -> dict[tuple[str, str], IndustryData]:
+) -> dict[tuple[str, str, str], IndustryData]:
     region_symbols = {_root_symbol(symbol) for symbol in definition.symbols}
     latest: dict[tuple[str, str], IndustryData] = {}
     for row in rows:
@@ -840,11 +840,15 @@ def _latest_weather_rows(
                 continue
         elif symbol not in region_symbols:
             continue
-        key = (symbol, row.data_type)
+        key = (_weather_row_source_key(row.source, symbol), symbol, row.data_type)
         previous = latest.get(key)
         if previous is None or _weather_row_key(row) > _weather_row_key(previous):
             latest[key] = row
     return latest
+
+
+def _weather_row_source_key(source: str, symbol: str) -> str:
+    return source or symbol
 
 
 def _weather_row_region(source: str) -> str | None:
@@ -859,10 +863,10 @@ def _weather_row_key(row: IndustryData) -> tuple[datetime, datetime]:
 
 
 def _rows_for_type(
-    rows: dict[tuple[str, str], IndustryData],
+    rows: dict[tuple[str, str, str], IndustryData],
     data_type: str,
 ) -> list[IndustryData]:
-    return [row for (_, row_type), row in rows.items() if row_type == data_type]
+    return [row for key, row in rows.items() if key[-1] == data_type]
 
 
 def _weather_source(rows: list[IndustryData], *, has_baseline_rows: bool) -> str:

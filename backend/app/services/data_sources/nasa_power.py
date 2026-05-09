@@ -54,6 +54,62 @@ async def collect_nasa_power_weather(
             await active_client.aclose()
 
 
+async def collect_nasa_power_weather_baselines(
+    *,
+    locations: tuple[WeatherLocation, ...] = DEFAULT_WEATHER_LOCATIONS,
+    end: date | None = None,
+    years: int = 5,
+    window_days: int = 7,
+    base_url: str = NASA_POWER_DAILY_API,
+    timeout: float = 30.0,
+    client: httpx.AsyncClient | None = None,
+) -> list[IndustryDataCreate]:
+    if years < 1:
+        raise ValueError("NASA POWER baseline years must be at least 1")
+    if window_days < 1:
+        raise ValueError("NASA POWER baseline window days must be at least 1")
+
+    target_end = end or (datetime.now(CHINA_TZ).date() - timedelta(days=1))
+    windows = _historical_windows(target_end, years=years, window_days=window_days)
+    if not windows:
+        return []
+
+    owns_client = client is None
+    active_client = client or httpx.AsyncClient(timeout=timeout)
+    try:
+        rows: list[IndustryDataCreate] = []
+        request_start = min(start for start, _ in windows)
+        request_end = max(stop for _, stop in windows)
+        for location in locations:
+            response = await active_client.get(
+                base_url,
+                params={
+                    "community": "AG",
+                    "longitude": location.longitude,
+                    "latitude": location.latitude,
+                    "start": request_start.strftime("%Y%m%d"),
+                    "end": request_end.strftime("%Y%m%d"),
+                    "parameters": ",".join(POWER_DAILY_PARAMETERS),
+                    "format": "JSON",
+                    "time-standard": "UTC",
+                },
+            )
+            response.raise_for_status()
+            rows.extend(
+                baseline_rows_from_power_payload(
+                    location,
+                    response.json(),
+                    target_end=target_end,
+                    windows=windows,
+                    window_days=window_days,
+                )
+            )
+        return rows
+    finally:
+        if owns_client:
+            await active_client.aclose()
+
+
 def rows_from_power_payload(
     location: WeatherLocation,
     payload: dict[str, Any],
@@ -114,6 +170,101 @@ def rows_from_power_payload(
     return rows
 
 
+def baseline_rows_from_power_payload(
+    location: WeatherLocation,
+    payload: dict[str, Any],
+    *,
+    target_end: date,
+    windows: tuple[tuple[date, date], ...],
+    window_days: int,
+) -> list[IndustryDataCreate]:
+    parameters = _parameter_payload(payload)
+    missing = [field for field in POWER_DAILY_PARAMETERS if field not in parameters]
+    if missing:
+        raise RuntimeError(f"NASA POWER payload missing daily fields: {', '.join(missing)}")
+
+    precipitation = _daily_mapping(parameters, "PRECTOTCORR")
+    temp_max = _daily_mapping(parameters, "T2M_MAX")
+    temp_min = _daily_mapping(parameters, "T2M_MIN")
+    precip_windows: list[float] = []
+    temp_windows: list[float] = []
+
+    for start, end in windows:
+        precip_values = _values_for_window(precipitation, start, end)
+        temp_max_values = _values_for_window(temp_max, start, end)
+        temp_min_values = _values_for_window(temp_min, start, end)
+        if _numbers(precip_values):
+            precip_windows.append(_sum_numbers(precip_values))
+        temp_values = [*temp_max_values, *temp_min_values]
+        temp_mean = _mean_number(temp_values)
+        if temp_mean is not None:
+            temp_windows.append(temp_mean)
+
+    timestamp = datetime.combine(target_end, datetime.min.time()).replace(tzinfo=CHINA_TZ)
+    year_range = f"{windows[0][0].year}-{windows[-1][1].year}"
+    rows: list[IndustryDataCreate] = []
+    if precip_windows:
+        rows.append(
+            IndustryDataCreate(
+                source_key=(
+                    f"nasa_power:{location.key}:baseline_precip:"
+                    f"{year_range}:{target_end.strftime('%m%d')}:{window_days}d"
+                ),
+                symbol=location.symbol,
+                data_type="weather_baseline_precip_7d",
+                value=round(sum(precip_windows) / len(precip_windows), 4),
+                unit="mm",
+                source=f"nasa_power_baseline:{location.key}",
+                timestamp=timestamp,
+            )
+        )
+    if temp_windows:
+        rows.append(
+            IndustryDataCreate(
+                source_key=(
+                    f"nasa_power:{location.key}:baseline_temp_mean:"
+                    f"{year_range}:{target_end.strftime('%m%d')}:{window_days}d"
+                ),
+                symbol=location.symbol,
+                data_type="weather_baseline_temp_mean_7d",
+                value=round(sum(temp_windows) / len(temp_windows), 4),
+                unit="C",
+                source=f"nasa_power_baseline:{location.key}",
+                timestamp=timestamp,
+            )
+        )
+    return rows
+
+
+def _historical_windows(
+    target_end: date,
+    *,
+    years: int,
+    window_days: int,
+) -> tuple[tuple[date, date], ...]:
+    windows: list[tuple[date, date]] = []
+    for year in range(target_end.year - years, target_end.year):
+        window_end = _same_month_day(target_end, year)
+        windows.append((window_end - timedelta(days=window_days - 1), window_end))
+    return tuple(windows)
+
+
+def _same_month_day(value: date, year: int) -> date:
+    try:
+        return value.replace(year=year)
+    except ValueError:
+        return date(year, 2, 28)
+
+
+def _values_for_window(values: dict[str, Any], start: date, end: date) -> list[Any]:
+    items: list[Any] = []
+    current = start
+    while current <= end:
+        items.append(values.get(current.strftime("%Y%m%d")))
+        current += timedelta(days=1)
+    return items
+
+
 def _parameter_payload(payload: dict[str, Any]) -> dict[str, Any]:
     properties = payload.get("properties")
     if not isinstance(properties, dict):
@@ -152,6 +303,11 @@ def _numbers(values: Any) -> list[float]:
 
 def _sum_numbers(values: Any) -> float:
     return round(sum(_numbers(values)), 4)
+
+
+def _mean_number(values: Any) -> float | None:
+    numbers = _numbers(values)
+    return round(sum(numbers) / len(numbers), 4) if numbers else None
 
 
 def _max_number(values: Any) -> float | None:

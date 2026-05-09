@@ -44,6 +44,9 @@ class Settings(BaseSettings):
     open_meteo_base_url: str = "https://api.open-meteo.com/v1/forecast"
     data_source_nasa_power_enabled: bool = False
     nasa_power_base_url: str = "https://power.larc.nasa.gov/api/temporal/daily/point"
+    data_source_nasa_power_baseline_enabled: bool = False
+    nasa_power_baseline_years: int = Field(default=5, ge=1, le=30)
+    nasa_power_baseline_window_days: int = Field(default=7, ge=1, le=45)
     data_source_fred_enabled: bool = False
     fred_api_key: str | None = None
     fred_base_url: str = "https://api.stlouisfed.org/fred"

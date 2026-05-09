@@ -58,6 +58,17 @@ def data_source_statuses(settings: Settings | None = None) -> list[DataSourceSta
             note="Daily agro-meteorological precipitation and temperature for regional baselines.",
         ),
         DataSourceStatus(
+            id="nasa_power_baseline",
+            name="NASA POWER seasonal baseline",
+            category="industry_data",
+            enabled=current.data_source_nasa_power_baseline_enabled,
+            configured=current.data_source_nasa_power_baseline_enabled,
+            requires_key=False,
+            free_tier="free_no_key",
+            status="ready" if current.data_source_nasa_power_baseline_enabled else "disabled",
+            note="Same-calendar historical weather windows for precipitation and temperature anomalies.",
+        ),
+        DataSourceStatus(
             id="fred",
             name="FRED",
             category="macro_data",
