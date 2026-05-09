@@ -43,6 +43,8 @@ const EN: Record<string, string> = {
   "搜索品种 / 跳转 / 执行...": "Search symbols / navigate / run...",
   "没找到匹配项": "No matches",
   "命令面板": "Command Palette",
+  "展开侧边栏": "Expand sidebar",
+  "收起侧边栏": "Collapse sidebar",
   "数据": "Data",
   "活跃": "Active",
   "漂移": "Drift",
