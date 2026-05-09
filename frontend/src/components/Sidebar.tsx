@@ -46,6 +46,11 @@ const NAV_ITEMS = [
 ];
 
 type SidebarPreference = "auto" | "collapsed" | "expanded";
+type SidebarTooltip = {
+  label: string;
+  badge: string | null;
+  top: number;
+};
 
 const SIDEBAR_MODE_STORAGE_KEY = "zeus-sidebar-mode";
 const LEGACY_SIDEBAR_STORAGE_KEY = "zeus-sidebar-collapsed";
@@ -56,6 +61,7 @@ export function Sidebar() {
   const { lang, text } = useI18n();
   const [alertCount, setAlertCount] = useState<number | null>(null);
   const [preference, setPreference] = useState<SidebarPreference>("auto");
+  const [tooltip, setTooltip] = useState<SidebarTooltip | null>(null);
   const [ready, setReady] = useState(false);
   const brandTagline = lang === "zh" ? "交易胜于未始" : "Trades are won before they begin";
   const routePrefersCollapsed = isImmersiveRoute(pathname);
@@ -92,6 +98,21 @@ export function Sidebar() {
     if (!ready) return;
     window.localStorage.setItem(SIDEBAR_MODE_STORAGE_KEY, preference);
   }, [preference, ready]);
+
+  useEffect(() => {
+    if (!collapsed) setTooltip(null);
+  }, [collapsed]);
+
+  function showTooltip(label: string, badge: string | null, target: HTMLElement) {
+    if (!collapsed) return;
+    const asideTop = target.closest("aside")?.getBoundingClientRect().top ?? 0;
+    const rect = target.getBoundingClientRect();
+    setTooltip({
+      label: text(label),
+      badge,
+      top: rect.top - asideTop + rect.height / 2,
+    });
+  }
 
   return (
     <aside
@@ -143,8 +164,11 @@ export function Sidebar() {
             <Link
               key={item.href}
               href={item.href}
-              title={collapsed ? text(item.label) : undefined}
               aria-label={text(item.label)}
+              onMouseEnter={(event) => showTooltip(item.label, badge, event.currentTarget)}
+              onMouseLeave={() => setTooltip(null)}
+              onFocus={(event) => showTooltip(item.label, badge, event.currentTarget)}
+              onBlur={() => setTooltip(null)}
               className={cn(
                 "group relative mb-0.5 flex h-8 items-center rounded-sm border text-xs font-medium transition-all duration-150",
                 collapsed ? "justify-center px-0" : "gap-2 px-2",
@@ -186,6 +210,21 @@ export function Sidebar() {
           );
         })}
       </nav>
+      {collapsed && tooltip && (
+        <div
+          data-testid="sidebar-collapsed-tooltip"
+          className="pointer-events-none absolute left-[calc(100%+10px)] z-50 flex items-center gap-2 rounded-sm border border-white/[0.09] bg-black/82 px-2.5 py-1.5 text-xs text-text-primary shadow-data-panel backdrop-blur-xl"
+          style={{ top: tooltip.top, transform: "translateY(-50%)" }}
+        >
+          <span className="absolute -left-1 h-2 w-2 rotate-45 border-b border-l border-white/[0.09] bg-black/82" />
+          <span className="relative whitespace-nowrap">{tooltip.label}</span>
+          {tooltip.badge && (
+            <span className="relative inline-flex h-4 items-center rounded-xs bg-brand-orange px-1.5 text-caption font-semibold text-white shadow-glow-orange">
+              {tooltip.badge}
+            </span>
+          )}
+        </div>
+      )}
       <div className="border-t border-white/[0.06] p-2">
         <div
           className={cn(
