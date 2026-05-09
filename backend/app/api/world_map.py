@@ -20,6 +20,15 @@ router = APIRouter(prefix="/api/world-map", tags=["world-map"])
 RiskLevel = Literal["low", "watch", "elevated", "high", "critical"]
 DataQuality = Literal["runtime", "partial", "baseline"]
 LayerStatus = Literal["ready", "baseline", "planned"]
+TileLayer = Literal["weather", "risk"]
+TileLayerFilter = Literal["all", "weather", "risk"]
+TileResolution = Literal["coarse", "medium"]
+TileMetric = Literal[
+    "precipitation_anomaly_pct",
+    "flood_risk",
+    "drought_risk",
+    "composite_risk",
+]
 RiskFactor = Literal[
     "rainfall_surplus",
     "drought_heat",
@@ -165,6 +174,35 @@ class WorldMapSnapshot(BaseModel):
     summary: WorldMapSummary
     layers: list[WorldMapLayer]
     regions: list[WorldMapRegion]
+
+
+class WorldMapTileCell(BaseModel):
+    id: str
+    layer: TileLayer
+    regionId: str
+    center: GeoPoint
+    polygon: list[GeoPoint]
+    metric: TileMetric
+    value: float
+    intensity: float = Field(ge=0, le=1)
+    riskLevel: RiskLevel
+    dataQuality: DataQuality
+    source: str
+
+
+class WorldMapTileSummary(BaseModel):
+    weatherCells: int
+    riskCells: int
+    maxIntensity: float = Field(ge=0, le=1)
+    dataSources: list[str]
+
+
+class WorldMapTileSnapshot(BaseModel):
+    generatedAt: datetime
+    resolution: TileResolution
+    layer: TileLayerFilter
+    summary: WorldMapTileSummary
+    cells: list[WorldMapTileCell]
 
 
 @dataclass(frozen=True)
@@ -507,6 +545,45 @@ async def get_world_map(
     limit: int = Query(default=200, ge=20, le=500),
     session: AsyncSession = Depends(get_db),
 ) -> WorldMapSnapshot:
+    regions = await _load_world_map_regions(session, limit=limit)
+    return WorldMapSnapshot(
+        generatedAt=datetime.now(timezone.utc),
+        summary=WorldMapSummary(
+            regions=len(regions),
+            elevatedRegions=sum(region.riskScore >= 55 for region in regions),
+            maxRiskScore=max((region.riskScore for region in regions), default=0),
+            runtimeLinkedRegions=sum(region.causalScope.hasDirectLinks for region in regions),
+        ),
+        layers=_world_map_layers(),
+        regions=regions,
+    )
+
+
+@router.get("/tiles", response_model=WorldMapTileSnapshot)
+async def get_world_map_tiles(
+    layer: TileLayerFilter = Query(default="all"),
+    resolution: TileResolution = Query(default="coarse"),
+    limit: int = Query(default=200, ge=20, le=500),
+    session: AsyncSession = Depends(get_db),
+) -> WorldMapTileSnapshot:
+    regions = await _load_world_map_regions(session, limit=limit)
+    cells = _build_world_map_tile_cells(regions, layer=layer, resolution=resolution)
+    data_sources = sorted({cell.source for cell in cells})
+    return WorldMapTileSnapshot(
+        generatedAt=datetime.now(timezone.utc),
+        resolution=resolution,
+        layer=layer,
+        summary=WorldMapTileSummary(
+            weatherCells=sum(cell.layer == "weather" for cell in cells),
+            riskCells=sum(cell.layer == "risk" for cell in cells),
+            maxIntensity=max((cell.intensity for cell in cells), default=0.0),
+            dataSources=data_sources,
+        ),
+        cells=cells,
+    )
+
+
+async def _load_world_map_regions(session: AsyncSession, *, limit: int) -> list[WorldMapRegion]:
     alerts = list(
         (
             await session.scalars(
@@ -552,17 +629,7 @@ async def get_world_map(
         for definition in WORLD_RISK_REGIONS
     ]
     regions.sort(key=lambda region: region.riskScore, reverse=True)
-    return WorldMapSnapshot(
-        generatedAt=datetime.now(timezone.utc),
-        summary=WorldMapSummary(
-            regions=len(regions),
-            elevatedRegions=sum(region.riskScore >= 55 for region in regions),
-            maxRiskScore=max((region.riskScore for region in regions), default=0),
-            runtimeLinkedRegions=sum(region.causalScope.hasDirectLinks for region in regions),
-        ),
-        layers=_world_map_layers(),
-        regions=regions,
-    )
+    return regions
 
 
 def _build_region_snapshot(
@@ -680,6 +747,179 @@ def _world_map_layers() -> list[WorldMapLayer]:
         WorldMapLayer(id="positions", labelZh="持仓暴露", labelEn="Position Exposure", status="ready", enabled=True),
         WorldMapLayer(id="globe", labelZh="3D 地球", labelEn="3D Globe", status="planned", enabled=False),
     ]
+
+
+def _build_world_map_tile_cells(
+    regions: list[WorldMapRegion],
+    *,
+    layer: TileLayerFilter,
+    resolution: TileResolution,
+) -> list[WorldMapTileCell]:
+    lat_step, lon_step, max_cells = _tile_resolution_spec(resolution)
+    cells: dict[tuple[str, int, int], WorldMapTileCell] = {}
+
+    for region in regions:
+        if layer in {"all", "weather"}:
+            _merge_tile_cells(
+                cells,
+                _region_weather_tile_cells(region, lat_step=lat_step, lon_step=lon_step),
+            )
+        if layer in {"all", "risk"}:
+            _merge_tile_cells(
+                cells,
+                _region_risk_tile_cells(region, lat_step=lat_step, lon_step=lon_step),
+            )
+
+    return sorted(cells.values(), key=lambda cell: cell.intensity, reverse=True)[:max_cells]
+
+
+def _tile_resolution_spec(resolution: TileResolution) -> tuple[float, float, int]:
+    if resolution == "medium":
+        return 4.0, 5.0, 520
+    return 6.0, 8.0, 320
+
+
+def _merge_tile_cells(
+    cells: dict[tuple[str, int, int], WorldMapTileCell],
+    next_cells: list[WorldMapTileCell],
+) -> None:
+    for cell in next_cells:
+        _, _, lat_index, lon_index = cell.id.split(":")
+        key = (cell.layer, int(lat_index), int(lon_index))
+        previous = cells.get(key)
+        if previous is None or previous.intensity < cell.intensity:
+            cells[key] = cell
+
+
+def _region_weather_tile_cells(
+    region: WorldMapRegion,
+    *,
+    lat_step: float,
+    lon_step: float,
+) -> list[WorldMapTileCell]:
+    anomaly_stress = min(abs(region.weather.precipitationAnomalyPct) / 85, 1.0)
+    weather_stress = max(anomaly_stress, region.weather.floodRisk, region.weather.droughtRisk)
+    radius = 1 + round(weather_stress * 2)
+    metric, value = _dominant_weather_metric(region)
+    cells: list[WorldMapTileCell] = []
+
+    for row in range(-radius, radius + 1):
+        for column in range(-radius, radius + 1):
+            distance = (row * row + column * column) ** 0.5
+            if distance > radius + 0.35:
+                continue
+            decay = 1 - distance / (radius + 0.85)
+            intensity = max(0.0, min(weather_stress * (0.45 + decay * 0.55), 1.0))
+            if intensity < 0.16:
+                continue
+            lat = region.center.lat + row * lat_step
+            lon = region.center.lon + column * lon_step
+            cells.append(
+                _tile_cell(
+                    layer="weather",
+                    region=region,
+                    lat=lat,
+                    lon=lon,
+                    lat_step=lat_step,
+                    lon_step=lon_step,
+                    metric=metric,
+                    value=value,
+                    intensity=intensity,
+                    source=region.weather.dataSource,
+                )
+            )
+    return cells
+
+
+def _region_risk_tile_cells(
+    region: WorldMapRegion,
+    *,
+    lat_step: float,
+    lon_step: float,
+) -> list[WorldMapTileCell]:
+    risk_weight = region.riskScore / 100
+    radius = 1 + round(risk_weight * 2)
+    cells: list[WorldMapTileCell] = []
+
+    for row in range(-radius, radius + 1):
+        for column in range(-radius, radius + 1):
+            distance = (row * row + column * column) ** 0.5
+            if distance > radius + 0.35:
+                continue
+            decay = 1 - distance / (radius + 0.85)
+            intensity = max(0.0, min(risk_weight * (0.5 + decay * 0.5), 1.0))
+            if intensity < 0.18:
+                continue
+            lat = region.center.lat + row * lat_step
+            lon = region.center.lon + column * lon_step
+            cells.append(
+                _tile_cell(
+                    layer="risk",
+                    region=region,
+                    lat=lat,
+                    lon=lon,
+                    lat_step=lat_step,
+                    lon_step=lon_step,
+                    metric="composite_risk",
+                    value=float(region.riskScore),
+                    intensity=intensity,
+                    source="world_map_runtime_score",
+                )
+            )
+    return cells
+
+
+def _dominant_weather_metric(region: WorldMapRegion) -> tuple[TileMetric, float]:
+    anomaly_stress = min(abs(region.weather.precipitationAnomalyPct) / 85, 1.0)
+    if region.weather.droughtRisk >= region.weather.floodRisk and region.weather.droughtRisk >= anomaly_stress:
+        return "drought_risk", region.weather.droughtRisk
+    if region.weather.floodRisk >= anomaly_stress:
+        return "flood_risk", region.weather.floodRisk
+    return "precipitation_anomaly_pct", region.weather.precipitationAnomalyPct
+
+
+def _tile_cell(
+    *,
+    layer: TileLayer,
+    region: WorldMapRegion,
+    lat: float,
+    lon: float,
+    lat_step: float,
+    lon_step: float,
+    metric: TileMetric,
+    value: float,
+    intensity: float,
+    source: str,
+) -> WorldMapTileCell:
+    lat_index = round(lat / lat_step)
+    lon_index = round(lon / lon_step)
+    center_lat = _clamp_float(lat_index * lat_step, -85.0, 85.0)
+    center_lon = _clamp_float(lon_index * lon_step, -180.0, 180.0)
+    half_lat = lat_step / 2
+    half_lon = lon_step / 2
+    south = _clamp_float(center_lat - half_lat, -85.0, 85.0)
+    north = _clamp_float(center_lat + half_lat, -85.0, 85.0)
+    west = _clamp_float(center_lon - half_lon, -180.0, 180.0)
+    east = _clamp_float(center_lon + half_lon, -180.0, 180.0)
+
+    return WorldMapTileCell(
+        id=f"{layer}:{region.id}:{lat_index}:{lon_index}",
+        layer=layer,
+        regionId=region.id,
+        center=GeoPoint(lat=center_lat, lon=center_lon),
+        polygon=[
+            GeoPoint(lat=south, lon=west),
+            GeoPoint(lat=south, lon=east),
+            GeoPoint(lat=north, lon=east),
+            GeoPoint(lat=north, lon=west),
+        ],
+        metric=metric,
+        value=value,
+        intensity=round(intensity, 4),
+        riskLevel=region.riskLevel,
+        dataQuality=region.dataQuality,
+        source=source,
+    )
 
 
 def _risk_level(score: int) -> RiskLevel:
@@ -1072,4 +1312,8 @@ def _latest_event_at(
 
 
 def _clamp_int(value: int, low: int, high: int) -> int:
+    return max(low, min(high, value))
+
+
+def _clamp_float(value: float, low: float, high: float) -> float:
     return max(low, min(high, value))

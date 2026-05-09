@@ -246,6 +246,12 @@ threshold_modifier、propagation_activator、risk_recalc、数据腐烂防护
 - WebGL 预备面板的 “Tile天气” 从 planned 改为 ready 计数，并把图层联动口径扩展为天气、热力、密度、飞线 4 个增强图层。
 - 天气瓦片继续使用现有天气图层开关，不改变默认 SVG 交互，也为后续 Open-Meteo / NASA POWER 栅格接入预留承载结构。
 
+# 2026-05-09 — World Risk Map Phase B.2.9 天气/风险瓦片后端契约
+
+- 后端新增 `GET /api/world-map/tiles`，支持 `layer=all|weather|risk` 与 `resolution=coarse|medium`，返回经纬度 tile polygon、强度、指标、数据质量和来源。
+- 前端增强模式优先使用后端 weather/risk tile 数据；接口失败时保留上一版本地生成回退，避免世界地图因为瓦片服务异常整体不可用。
+- 新增 world map tile 契约单测，覆盖天气/风险双层输出、polygon 结构、强度范围和天气层过滤。
+
 # 2026-05-09 — Shell Navigation Phase 1
 
 - 全局侧边栏升级为半透明玻璃态外壳，保留 Zeus 现有导航信息架构，不改业务页面和世界风险地图数据逻辑。

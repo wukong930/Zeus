@@ -334,6 +334,44 @@ export interface WorldMapSnapshot {
   regions: WorldMapRegion[];
 }
 
+export type WorldMapTileLayer = "weather" | "risk";
+export type WorldMapTileLayerFilter = "all" | WorldMapTileLayer;
+export type WorldMapTileResolution = "coarse" | "medium";
+export type WorldMapTileMetric =
+  | "precipitation_anomaly_pct"
+  | "flood_risk"
+  | "drought_risk"
+  | "composite_risk";
+
+export interface WorldMapTileCell {
+  id: string;
+  layer: WorldMapTileLayer;
+  regionId: string;
+  center: GeoPoint;
+  polygon: GeoPoint[];
+  metric: WorldMapTileMetric;
+  value: number;
+  intensity: number;
+  riskLevel: WorldRiskLevel;
+  dataQuality: WorldMapDataQuality;
+  source: string;
+}
+
+export interface WorldMapTileSummary {
+  weatherCells: number;
+  riskCells: number;
+  maxIntensity: number;
+  dataSources: string[];
+}
+
+export interface WorldMapTileSnapshot {
+  generatedAt: string;
+  resolution: WorldMapTileResolution;
+  layer: WorldMapTileLayerFilter;
+  summary: WorldMapTileSummary;
+  cells: WorldMapTileCell[];
+}
+
 export interface DataSourceStatus {
   id: string;
   name: string;
@@ -927,6 +965,14 @@ export async function fetchCausalWebGraph(): Promise<CausalWebGraph> {
 
 export async function fetchWorldMapSnapshot(): Promise<WorldMapSnapshot> {
   return fetchJson<WorldMapSnapshot>("/api/world-map");
+}
+
+export async function fetchWorldMapTiles(
+  layer: WorldMapTileLayerFilter = "all",
+  resolution: WorldMapTileResolution = "coarse"
+): Promise<WorldMapTileSnapshot> {
+  const params = new URLSearchParams({ layer, resolution });
+  return fetchJson<WorldMapTileSnapshot>(`/api/world-map/tiles?${params.toString()}`);
 }
 
 export async function fetchDataSourceStatuses(): Promise<DataSourceStatus[]> {

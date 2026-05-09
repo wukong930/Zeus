@@ -4,6 +4,7 @@ from uuid import uuid4
 from app.api.world_map import (
     WORLD_RISK_REGIONS,
     _build_region_snapshot,
+    _build_world_map_tile_cells,
     _risk_level,
 )
 from app.models.alert import Alert
@@ -154,3 +155,37 @@ def test_same_flood_factor_adapts_to_commodity_lens() -> None:
     assert any("港口" in label or "运输" in label for label in labels)
     assert region.story.triggerZh
     assert region.adaptiveAlerts[0].mechanismZh
+
+
+def test_world_map_tile_contract_covers_weather_and_risk_layers() -> None:
+    region = _build_region_snapshot(
+        WORLD_RISK_REGIONS[0],
+        alerts=[],
+        news=[],
+        signals=[],
+        positions=[],
+    )
+
+    cells = _build_world_map_tile_cells([region], layer="all", resolution="coarse")
+
+    assert {cell.layer for cell in cells} == {"weather", "risk"}
+    assert all(len(cell.polygon) == 4 for cell in cells)
+    assert all(0 <= cell.intensity <= 1 for cell in cells)
+    assert any(cell.metric in {"precipitation_anomaly_pct", "flood_risk", "drought_risk"} for cell in cells)
+    assert any(cell.metric == "composite_risk" for cell in cells)
+
+
+def test_world_map_tile_contract_can_filter_weather_layer() -> None:
+    region = _build_region_snapshot(
+        WORLD_RISK_REGIONS[0],
+        alerts=[],
+        news=[],
+        signals=[],
+        positions=[],
+    )
+
+    cells = _build_world_map_tile_cells([region], layer="weather", resolution="medium")
+
+    assert cells
+    assert {cell.layer for cell in cells} == {"weather"}
+    assert all(cell.source == "regional_baseline_seed" for cell in cells)

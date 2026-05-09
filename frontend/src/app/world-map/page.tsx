@@ -36,6 +36,7 @@ import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
 import { DataSourceBadge, type DataSourceState } from "@/components/DataSourceBadge";
 import {
+  fetchWorldMapTiles,
   fetchWorldMapSnapshot,
   type GeoPoint,
   type WorldMapAdaptiveAlert,
@@ -43,6 +44,8 @@ import {
   type WorldMapRegion,
   type WorldMapSnapshot,
   type WorldMapStoryStep,
+  type WorldMapTileCell,
+  type WorldMapTileSnapshot,
   type WorldRiskLevel,
 } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
@@ -64,6 +67,9 @@ type RiskDensityCell = {
   intensity: number;
   riskLevel: WorldRiskLevel;
   regionId: string;
+};
+type ProjectedTileCell = {
+  polygon: Array<[number, number, number]>;
 };
 type RiskRoute = {
   id: string;
@@ -169,6 +175,7 @@ const MAP_VISUAL_LAYER_OPTIONS: Array<{
 export default function WorldMapPage() {
   const { lang, text } = useI18n();
   const [snapshot, setSnapshot] = useState<WorldMapSnapshot | null>(null);
+  const [tileSnapshot, setTileSnapshot] = useState<WorldMapTileSnapshot | null>(null);
   const [source, setSource] = useState<DataSourceState>("loading");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
@@ -181,6 +188,7 @@ export default function WorldMapPage() {
   const [rendererMode, setRendererMode] = useState<WorldMapRendererMode>("svg");
   const [focusRequest, setFocusRequest] = useState<MapFocusRequest | null>(null);
   const snapshotRef = useRef<WorldMapSnapshot | null>(null);
+  const tileSnapshotRef = useRef<WorldMapTileSnapshot | null>(null);
   const riskScoresRef = useRef<Record<string, number>>({});
   const mountedRef = useRef(false);
   const refreshInFlightRef = useRef(false);
@@ -191,6 +199,7 @@ export default function WorldMapPage() {
     setIsRefreshing(true);
     try {
       const next = await fetchWorldMapSnapshot();
+      const nextTileSnapshot = await fetchWorldMapTiles().catch(() => tileSnapshotRef.current);
       if (!mountedRef.current) return;
 
       const previousScores = riskScoresRef.current;
@@ -206,7 +215,9 @@ export default function WorldMapPage() {
       }
       riskScoresRef.current = nextScores;
       snapshotRef.current = next;
+      tileSnapshotRef.current = nextTileSnapshot;
       setSnapshot(next);
+      setTileSnapshot(nextTileSnapshot);
       setSource(next.summary.runtimeLinkedRegions > 0 ? "api" : "partial");
       setLastUpdatedAt(new Date());
     } catch {
@@ -250,6 +261,14 @@ export default function WorldMapPage() {
         ? regions
         : regions.filter((region) => commodityLabel(region, lang) === commodity),
     [commodity, lang, regions]
+  );
+  const filteredRegionIds = useMemo(
+    () => new Set(filteredRegions.map((region) => region.id)),
+    [filteredRegions]
+  );
+  const filteredTileCells = useMemo(
+    () => tileSnapshot?.cells.filter((cell) => filteredRegionIds.has(cell.regionId)) ?? [],
+    [filteredRegionIds, tileSnapshot]
   );
   const indexedRegions = useMemo(
     () =>
@@ -338,6 +357,7 @@ export default function WorldMapPage() {
           regions={filteredRegions}
           riskDeltas={riskDeltas}
           selectedId={selectedRegion?.id ?? null}
+          tileCells={filteredTileCells}
           visibleLayers={visibleLayers}
           rendererMode={rendererMode}
           focusRequest={focusRequest}
@@ -792,6 +812,7 @@ function WorldMapCanvas({
   regions,
   riskDeltas,
   selectedId,
+  tileCells,
   visibleLayers,
   rendererMode,
   focusRequest,
@@ -800,6 +821,7 @@ function WorldMapCanvas({
   regions: WorldMapRegion[];
   riskDeltas: Record<string, number>;
   selectedId: string | null;
+  tileCells: WorldMapTileCell[];
   visibleLayers: VisibleMapLayers;
   rendererMode: WorldMapRendererMode;
   focusRequest: MapFocusRequest | null;
@@ -839,8 +861,14 @@ function WorldMapCanvas({
   const graticulePath = useMemo(() => path(WORLD_GRATICULE as GeoPermissibleObjects) ?? "", [path]);
   const borderPath = useMemo(() => path(WORLD_BORDERS as GeoPermissibleObjects) ?? "", [path]);
   const riskRoutes = useMemo(() => buildRiskRoutes(regions), [regions]);
-  const densityCells = useMemo(() => buildRiskDensityCells(regions, projection), [projection, regions]);
-  const weatherTileCells = useMemo(() => buildWeatherTileCells(regions, projection), [projection, regions]);
+  const densityCells = useMemo(
+    () => buildRiskDensityCells(regions, projection, tileCells),
+    [projection, regions, tileCells]
+  );
+  const weatherTileCells = useMemo(
+    () => buildWeatherTileCells(regions, projection, tileCells),
+    [projection, regions, tileCells]
+  );
 
   useEffect(() => {
     if (!focusRequest) return;
@@ -2047,7 +2075,45 @@ function setMapLibreLayerVisibility(map: MapLibreMap, layerIds: string[], visibl
   }
 }
 
-function buildWeatherTileCells(regions: WorldMapRegion[], projection: GeoProjection): WeatherTileCell[] {
+function projectTileCell(cell: WorldMapTileCell, projection: GeoProjection): ProjectedTileCell {
+  return {
+    polygon: cell.polygon.map((point) => {
+      const projected = project(point, projection);
+      return [projected.x, projected.y, 0];
+    }),
+  };
+}
+
+function weatherTileTone(cell: WorldMapTileCell): string {
+  if (cell.metric === "drought_risk") return "#f97316";
+  if (cell.metric === "precipitation_anomaly_pct" && cell.value < 0) return "#f97316";
+  return "#22d3ee";
+}
+
+function buildWeatherTileCells(
+  regions: WorldMapRegion[],
+  projection: GeoProjection,
+  tileCells: WorldMapTileCell[]
+): WeatherTileCell[] {
+  const backendCells = tileCells.filter((cell) => cell.layer === "weather");
+  if (backendCells.length > 0) {
+    return backendCells
+      .map((cell) => {
+        const projected = projectTileCell(cell, projection);
+        const tone = weatherTileTone(cell);
+        return {
+          id: cell.id,
+          polygon: projected.polygon,
+          fillColor: colorToRgba(tone, 26 + cell.intensity * 92),
+          lineColor: colorToRgba(tone, 24 + cell.intensity * 64),
+          intensity: cell.intensity,
+          regionId: cell.regionId,
+        };
+      })
+      .sort((left, right) => right.intensity - left.intensity)
+      .slice(0, 260);
+  }
+
   const cellSize = 20;
   const cells = new Map<string, WeatherTileCell>();
 
@@ -2107,7 +2173,30 @@ function buildWeatherTileCells(regions: WorldMapRegion[], projection: GeoProject
     .slice(0, 220);
 }
 
-function buildRiskDensityCells(regions: WorldMapRegion[], projection: GeoProjection): RiskDensityCell[] {
+function buildRiskDensityCells(
+  regions: WorldMapRegion[],
+  projection: GeoProjection,
+  tileCells: WorldMapTileCell[]
+): RiskDensityCell[] {
+  const backendCells = tileCells.filter((cell) => cell.layer === "risk");
+  if (backendCells.length > 0) {
+    return backendCells
+      .map((cell) => {
+        const center = project(cell.center, projection);
+        return {
+          id: cell.id,
+          x: center.x,
+          y: center.y,
+          size: 18 + cell.intensity * 14,
+          intensity: cell.intensity,
+          riskLevel: cell.riskLevel,
+          regionId: cell.regionId,
+        };
+      })
+      .sort((left, right) => right.intensity - left.intensity)
+      .slice(0, 220);
+  }
+
   const cellSize = 24;
   const cells = new Map<string, RiskDensityCell>();
 
