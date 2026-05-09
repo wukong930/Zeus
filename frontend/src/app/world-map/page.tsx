@@ -47,6 +47,10 @@ import { cn } from "@/lib/utils";
 type CommodityFilter = "all" | string;
 type WorldMapVisualLayer = "weather" | "heat" | "routes" | "labels";
 type VisibleMapLayers = Record<WorldMapVisualLayer, boolean>;
+type MapFocusRequest = {
+  nonce: number;
+  regionId: string;
+};
 
 const MAP_WIDTH = 1000;
 const MAP_HEIGHT = 560;
@@ -107,6 +111,7 @@ export default function WorldMapPage() {
   const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
   const [riskDeltas, setRiskDeltas] = useState<Record<string, number>>({});
   const [visibleLayers, setVisibleLayers] = useState<VisibleMapLayers>(DEFAULT_MAP_LAYERS);
+  const [focusRequest, setFocusRequest] = useState<MapFocusRequest | null>(null);
   const snapshotRef = useRef<WorldMapSnapshot | null>(null);
   const riskScoresRef = useRef<Record<string, number>>({});
   const mountedRef = useRef(false);
@@ -178,7 +183,19 @@ export default function WorldMapPage() {
         : regions.filter((region) => commodityLabel(region, lang) === commodity),
     [commodity, lang, regions]
   );
+  const indexedRegions = useMemo(
+    () =>
+      [...filteredRegions]
+        .sort((left, right) => right.riskScore - left.riskScore)
+        .slice(0, 5),
+    [filteredRegions]
+  );
   const selectedRegion = regions.find((region) => region.id === selectedId) ?? null;
+  const selectRegion = useCallback((id: string) => {
+    setSelectedId(id);
+    setDetailOpen(true);
+    setFocusRequest({ regionId: id, nonce: Date.now() });
+  }, []);
 
   return (
     <div className="flex min-h-full flex-col px-2 py-2 animate-fade-in sm:px-3 lg:px-4">
@@ -253,21 +270,15 @@ export default function WorldMapPage() {
           riskDeltas={riskDeltas}
           selectedId={selectedRegion?.id ?? null}
           visibleLayers={visibleLayers}
-          onSelect={(id) => {
-            setSelectedId(id);
-            setDetailOpen(true);
-          }}
+          focusRequest={focusRequest}
+          onSelect={selectRegion}
         />
 
-        <div className="absolute bottom-4 left-4 z-20 max-w-[min(520px,calc(100%-112px))] rounded-sm border border-border-subtle bg-black/70 px-3 py-2 text-sm text-text-secondary shadow-data-panel backdrop-blur-xl">
-          <div className="flex items-center gap-2 text-text-primary">
-            <Compass className="h-4 w-4 text-brand-cyan" />
-            {text("点击区域查看动态风险链")}
-          </div>
-          <p className="mt-1 text-caption text-text-muted">
-            {text("传导链由商品属性、天气 baseline、运行态预警、新闻、信号和持仓共同生成。")}
-          </p>
-        </div>
+        <RiskRegionIndex
+          regions={indexedRegions}
+          selectedId={selectedRegion?.id ?? null}
+          onSelect={selectRegion}
+        />
 
         {source === "fallback" && (
           <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/65">
@@ -455,17 +466,93 @@ function MapVisualLayerToggle({
   );
 }
 
+function RiskRegionIndex({
+  regions,
+  selectedId,
+  onSelect,
+}: {
+  regions: WorldMapRegion[];
+  selectedId: string | null;
+  onSelect: (id: string) => void;
+}) {
+  const { lang, text } = useI18n();
+  return (
+    <div
+      data-testid="world-map-region-index"
+      className="absolute bottom-4 left-4 z-20 w-[min(440px,calc(100%-112px))] rounded-sm border border-border-subtle bg-black/70 shadow-data-panel backdrop-blur-xl"
+    >
+      <div className="flex items-start justify-between gap-3 border-b border-border-subtle px-3 py-2">
+        <div>
+          <div className="flex items-center gap-2 text-sm font-semibold text-text-primary">
+            <Compass className="h-4 w-4 text-brand-cyan" />
+            {text("高风险索引")}
+          </div>
+          <p className="mt-0.5 text-caption text-text-muted">{text("按当前筛选排序")}</p>
+        </div>
+        <span className="rounded-xs border border-brand-cyan/25 bg-brand-cyan/10 px-2 py-0.5 font-mono text-caption text-brand-cyan">
+          {regions.length}
+        </span>
+      </div>
+      <div className="grid max-h-[238px] gap-1 overflow-y-auto p-2 sm:grid-cols-2">
+        {regions.length === 0 && (
+          <div className="col-span-full rounded-xs border border-border-subtle bg-black/28 px-3 py-2 text-caption text-text-muted">
+            {text("暂无区域")}
+          </div>
+        )}
+        {regions.map((region, index) => {
+          const active = region.id === selectedId;
+          const color = riskColor(region.riskLevel);
+          return (
+            <button
+              key={region.id}
+              type="button"
+              data-testid={`world-map-region-index-item-${region.id}`}
+              onClick={() => onSelect(region.id)}
+              className={cn(
+                "group min-w-0 rounded-xs border bg-black/32 px-2.5 py-2 text-left transition-colors",
+                active
+                  ? "border-brand-cyan/45 bg-brand-cyan/12"
+                  : "border-border-subtle hover:border-brand-cyan/25 hover:bg-white/[0.045]"
+              )}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="flex min-w-0 items-center gap-1.5">
+                  <span className="font-mono text-[10px] text-text-muted">#{index + 1}</span>
+                  <span className="truncate text-xs font-semibold text-text-primary">
+                    {lang === "zh" ? region.nameZh : region.nameEn}
+                  </span>
+                </span>
+                <span className="font-mono text-xs" style={{ color: color.text }}>
+                  {region.riskScore}
+                </span>
+              </div>
+              <div className="mt-1 truncate text-[10px] text-text-muted">
+                {(lang === "zh" ? region.story.triggerZh : region.story.triggerEn)} · {region.symbols.join("/")}
+              </div>
+            </button>
+          );
+        })}
+      </div>
+      <div className="border-t border-border-subtle px-3 py-2 text-caption text-text-muted">
+        {text("点击区域查看动态风险链")}
+      </div>
+    </div>
+  );
+}
+
 function WorldMapCanvas({
   regions,
   riskDeltas,
   selectedId,
   visibleLayers,
+  focusRequest,
   onSelect,
 }: {
   regions: WorldMapRegion[];
   riskDeltas: Record<string, number>;
   selectedId: string | null;
   visibleLayers: VisibleMapLayers;
+  focusRequest: MapFocusRequest | null;
   onSelect: (id: string) => void;
 }) {
   const { lang } = useI18n();
@@ -502,6 +589,21 @@ function WorldMapCanvas({
   const graticulePath = useMemo(() => path(WORLD_GRATICULE as GeoPermissibleObjects) ?? "", [path]);
   const borderPath = useMemo(() => path(WORLD_BORDERS as GeoPermissibleObjects) ?? "", [path]);
   const riskRoutes = useMemo(() => buildRiskRoutes(regions), [regions]);
+
+  useEffect(() => {
+    if (!focusRequest) return;
+    const region = regions.find((item) => item.id === focusRequest.regionId);
+    if (!region) return;
+    const center = project(region.center, projection);
+    const scale = 1.42;
+    setView(
+      clampMapView({
+        scale,
+        x: MAP_WIDTH / 2 - center.x * scale,
+        y: MAP_HEIGHT / 2 - center.y * scale,
+      })
+    );
+  }, [focusRequest, projection, regions]);
 
   const applyZoom = useCallback((factor: number, anchor = { x: MAP_WIDTH / 2, y: MAP_HEIGHT / 2 }) => {
     setView((current) => {
