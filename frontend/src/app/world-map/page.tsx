@@ -45,12 +45,20 @@ import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
 type CommodityFilter = "all" | string;
+type WorldMapVisualLayer = "weather" | "heat" | "routes" | "labels";
+type VisibleMapLayers = Record<WorldMapVisualLayer, boolean>;
 
 const MAP_WIDTH = 1000;
 const MAP_HEIGHT = 560;
 const WORLD_MAP_REFRESH_INTERVAL_MS = 30_000;
 const MIN_MAP_SCALE = 0.85;
 const MAX_MAP_SCALE = 3.25;
+const DEFAULT_MAP_LAYERS: VisibleMapLayers = {
+  weather: true,
+  heat: true,
+  routes: true,
+  labels: true,
+};
 
 type WorldAtlasTopology = Topology<{
   countries: GeometryObject;
@@ -76,6 +84,16 @@ const WORLD_BORDERS = mesh(
   (a, b) => a !== b
 ) as MultiLineString;
 const WORLD_GRATICULE = geoGraticule().step([30, 20])();
+const MAP_VISUAL_LAYER_OPTIONS: Array<{
+  id: WorldMapVisualLayer;
+  label: string;
+  icon: ComponentType<{ className?: string }>;
+}> = [
+  { id: "weather", label: "天气", icon: CloudRain },
+  { id: "heat", label: "热力", icon: AlertTriangle },
+  { id: "routes", label: "飞线", icon: Route },
+  { id: "labels", label: "地图标签", icon: ListChecks },
+];
 
 export default function WorldMapPage() {
   const { lang, text } = useI18n();
@@ -88,6 +106,7 @@ export default function WorldMapPage() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
   const [riskDeltas, setRiskDeltas] = useState<Record<string, number>>({});
+  const [visibleLayers, setVisibleLayers] = useState<VisibleMapLayers>(DEFAULT_MAP_LAYERS);
   const snapshotRef = useRef<WorldMapSnapshot | null>(null);
   const riskScoresRef = useRef<Record<string, number>>({});
   const mountedRef = useRef(false);
@@ -198,6 +217,15 @@ export default function WorldMapPage() {
 
           <div className="flex flex-wrap items-center gap-2 rounded-sm border border-border-subtle bg-black/68 p-1.5 shadow-data-panel backdrop-blur-xl xl:justify-self-end">
             <LayerLegend layers={snapshot?.layers ?? []} />
+            <MapVisualLayerToggle
+              layers={visibleLayers}
+              onToggle={(layer) =>
+                setVisibleLayers((current) => ({
+                  ...current,
+                  [layer]: !current[layer],
+                }))
+              }
+            />
             <LiveUpdateBadge
               autoRefresh={autoRefresh}
               isRefreshing={isRefreshing}
@@ -224,6 +252,7 @@ export default function WorldMapPage() {
           regions={filteredRegions}
           riskDeltas={riskDeltas}
           selectedId={selectedRegion?.id ?? null}
+          visibleLayers={visibleLayers}
           onSelect={(id) => {
             setSelectedId(id);
             setDetailOpen(true);
@@ -386,15 +415,57 @@ function LayerLegend({ layers }: { layers: WorldMapLayer[] }) {
   );
 }
 
+function MapVisualLayerToggle({
+  layers,
+  onToggle,
+}: {
+  layers: VisibleMapLayers;
+  onToggle: (layer: WorldMapVisualLayer) => void;
+}) {
+  const { text } = useI18n();
+  return (
+    <div
+      data-testid="world-map-layer-toggle"
+      className="flex max-w-full items-center gap-1 overflow-x-auto rounded-xs border border-white/[0.08] bg-black/30 p-0.5"
+      aria-label={text("视觉图层")}
+    >
+      {MAP_VISUAL_LAYER_OPTIONS.map(({ id, label, icon: Icon }) => {
+        const active = layers[id];
+        return (
+          <button
+            key={id}
+            type="button"
+            data-testid={`world-map-layer-toggle-${id}`}
+            aria-pressed={active}
+            onClick={() => onToggle(id)}
+            className={cn(
+              "inline-flex h-7 shrink-0 items-center gap-1.5 rounded-xs border px-2 text-caption font-semibold transition-colors",
+              active
+                ? "border-brand-cyan/35 bg-brand-cyan/12 text-brand-cyan"
+                : "border-transparent text-text-muted hover:bg-white/[0.05] hover:text-text-primary"
+            )}
+            title={text(label)}
+          >
+            <Icon className="h-3 w-3" />
+            {text(label)}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 function WorldMapCanvas({
   regions,
   riskDeltas,
   selectedId,
+  visibleLayers,
   onSelect,
 }: {
   regions: WorldMapRegion[];
   riskDeltas: Record<string, number>;
   selectedId: string | null;
+  visibleLayers: VisibleMapLayers;
   onSelect: (id: string) => void;
 }) {
   const { lang } = useI18n();
@@ -564,7 +635,43 @@ function WorldMapCanvas({
             vectorEffect="non-scaling-stroke"
           />
 
-          {riskRoutes.map((route) => {
+          {visibleLayers.weather &&
+            regions.map((region) => {
+              const center = project(region.center, projection);
+              const anomaly = region.weather.precipitationAnomalyPct;
+              const radius = clamp(28 + region.weather.floodRisk * 58 + Math.abs(anomaly) * 0.7, 34, 116);
+              const weatherColor =
+                anomaly >= 0 ? "rgba(34,211,238,0.24)" : "rgba(249,115,22,0.2)";
+              const weatherStroke =
+                anomaly >= 0 ? "rgba(34,211,238,0.42)" : "rgba(249,115,22,0.38)";
+              return (
+                <g key={`${region.id}-weather`} data-map-layer="weather">
+                  <circle
+                    cx={center.x}
+                    cy={center.y}
+                    r={radius}
+                    fill={weatherColor}
+                    stroke={weatherStroke}
+                    strokeWidth="1"
+                    opacity={0.18 + Math.min(0.38, region.weather.floodRisk * 0.38)}
+                    vectorEffect="non-scaling-stroke"
+                  />
+                  <circle
+                    cx={center.x}
+                    cy={center.y}
+                    r={Math.max(16, radius * 0.44)}
+                    fill="none"
+                    stroke={weatherStroke}
+                    strokeWidth="1"
+                    strokeDasharray="2 7"
+                    opacity="0.45"
+                    vectorEffect="non-scaling-stroke"
+                  />
+                </g>
+              );
+            })}
+
+          {visibleLayers.routes && riskRoutes.map((route) => {
             const d = arcPath(route.from, route.to, projection);
             if (!d) return null;
             return (
@@ -588,6 +695,7 @@ function WorldMapCanvas({
             const color = riskColor(region.riskLevel);
             const radius = 22 + region.riskScore * 0.42;
             const delta = riskDeltas[region.id] ?? 0;
+            const heatVisible = visibleLayers.heat;
             return (
               <g
                 key={region.id}
@@ -602,31 +710,33 @@ function WorldMapCanvas({
               >
                 <path
                   d={polygonPath(region.polygon, projection)}
-                  fill={color.fill}
-                  stroke={selected ? color.strokeStrong : color.stroke}
-                  strokeWidth={selected ? 2.8 : 1.2}
-                  filter={selected ? "url(#worldMapRiskGlow)" : undefined}
+                  fill={heatVisible ? color.fill : "rgba(0,0,0,0.05)"}
+                  stroke={selected ? color.strokeStrong : heatVisible ? color.stroke : "rgba(148,163,184,0.2)"}
+                  strokeWidth={selected ? 2.8 : heatVisible ? 1.2 : 0.85}
+                  filter={selected && heatVisible ? "url(#worldMapRiskGlow)" : undefined}
                   vectorEffect="non-scaling-stroke"
                 />
-                <circle
-                  cx={center.x}
-                  cy={center.y}
-                  r={radius}
-                  fill="none"
-                  stroke={color.stroke}
-                  strokeWidth="1.5"
-                  strokeDasharray="3 8"
-                  opacity={selected ? 0.88 : 0.38}
-                  vectorEffect="non-scaling-stroke"
-                >
-                  <animate
-                    attributeName="r"
-                    values={`${radius};${radius + 12};${radius}`}
-                    dur={selected ? "2.2s" : "3.4s"}
-                    repeatCount="indefinite"
-                  />
-                </circle>
-                {delta !== 0 && (
+                {heatVisible && (
+                  <circle
+                    cx={center.x}
+                    cy={center.y}
+                    r={radius}
+                    fill="none"
+                    stroke={color.stroke}
+                    strokeWidth="1.5"
+                    strokeDasharray="3 8"
+                    opacity={selected ? 0.88 : 0.38}
+                    vectorEffect="non-scaling-stroke"
+                  >
+                    <animate
+                      attributeName="r"
+                      values={`${radius};${radius + 12};${radius}`}
+                      dur={selected ? "2.2s" : "3.4s"}
+                      repeatCount="indefinite"
+                    />
+                  </circle>
+                )}
+                {heatVisible && delta !== 0 && (
                   <circle
                     key={`${region.id}-${delta}`}
                     cx={center.x}
@@ -643,28 +753,30 @@ function WorldMapCanvas({
                 )}
                 <circle cx={center.x} cy={center.y} r={7} fill={color.strokeStrong} filter="url(#worldMapRiskGlow)" />
                 <circle cx={center.x} cy={center.y} r={2.8} fill="#fff" opacity="0.72" />
-                <foreignObject x={center.x + 12} y={center.y - 22} width="152" height="54">
-                  <div className="rounded-sm border border-border-subtle bg-black/78 px-2 py-1.5 shadow-data-panel backdrop-blur-md">
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="truncate text-[11px] font-semibold text-text-primary">
-                        {lang === "zh" ? region.nameZh : region.nameEn}
+                {visibleLayers.labels && (
+                  <foreignObject x={center.x + 12} y={center.y - 22} width="152" height="54">
+                    <div className="rounded-sm border border-border-subtle bg-black/78 px-2 py-1.5 shadow-data-panel backdrop-blur-md">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="truncate text-[11px] font-semibold text-text-primary">
+                          {lang === "zh" ? region.nameZh : region.nameEn}
+                        </div>
+                        <div className="font-mono text-[11px]" style={{ color: color.text }}>
+                          {region.riskScore}
+                        </div>
                       </div>
-                      <div className="font-mono text-[11px]" style={{ color: color.text }}>
-                        {region.riskScore}
+                      <div className="mt-0.5 flex items-center gap-1 truncate text-[10px] text-text-muted">
+                        {(lang === "zh" ? region.story.triggerZh : region.story.triggerEn)} ·{" "}
+                        {region.symbols.join("/")}
+                        {delta !== 0 && (
+                          <span className={cn("font-mono", delta > 0 ? "text-data-down" : "text-data-up")}>
+                            {delta > 0 ? "+" : ""}
+                            {delta}
+                          </span>
+                        )}
                       </div>
                     </div>
-                    <div className="mt-0.5 flex items-center gap-1 truncate text-[10px] text-text-muted">
-                      {(lang === "zh" ? region.story.triggerZh : region.story.triggerEn)} ·{" "}
-                      {region.symbols.join("/")}
-                      {delta !== 0 && (
-                        <span className={cn("font-mono", delta > 0 ? "text-data-down" : "text-data-up")}>
-                          {delta > 0 ? "+" : ""}
-                          {delta}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </foreignObject>
+                  </foreignObject>
+                )}
               </g>
             );
           })}
