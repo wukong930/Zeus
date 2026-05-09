@@ -204,6 +204,12 @@ threshold_modifier、propagation_activator、risk_recalc、数据腐烂防护
 - 风险密度图层接入现有视觉图层开关，保持天气、热力、飞线和标签的独立开关能力。
 - 当前仍用轻量 SVG 渲染密度单元，避免在 MapLibre/deck.gl 完整接入前影响已稳定的地图交互链路。
 
+# 2026-05-09 — World Risk Map Phase B.2.2 渲染模式护栏
+
+- 顶部控制区新增“轻量 / 增强”渲染模式切换，默认继续使用稳定的 SVG 主渲染。
+- 增强模式下展示 WebGL 准备面板，按 deck.gl 目标层统计 GeoJson 区域、Heatmap 密度、Arc 飞线和待接入天气瓦片。
+- 该阶段只增加可见的渲染能力探测与回退入口，不替换现有地图交互，降低后续 MapLibre/deck.gl 接入风险。
+
 # 2026-05-09 — Shell Navigation Phase 1
 
 - 全局侧边栏升级为半透明玻璃态外壳，保留 Zeus 现有导航信息架构，不改业务页面和世界风险地图数据逻辑。

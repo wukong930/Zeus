@@ -46,6 +46,7 @@ import { cn } from "@/lib/utils";
 
 type CommodityFilter = "all" | string;
 type WorldMapVisualLayer = "weather" | "density" | "heat" | "routes" | "labels";
+type WorldMapRendererMode = "svg" | "webgl-ready";
 type VisibleMapLayers = Record<WorldMapVisualLayer, boolean>;
 type MapFocusRequest = {
   nonce: number;
@@ -73,6 +74,14 @@ const DEFAULT_MAP_LAYERS: VisibleMapLayers = {
   routes: true,
   labels: true,
 };
+const MAP_RENDERER_OPTIONS: Array<{
+  id: WorldMapRendererMode;
+  label: string;
+  detail: string;
+}> = [
+  { id: "svg", label: "轻量", detail: "SVG 主渲染" },
+  { id: "webgl-ready", label: "增强", detail: "WebGL 预备" },
+];
 
 type WorldAtlasTopology = Topology<{
   countries: GeometryObject;
@@ -122,6 +131,7 @@ export default function WorldMapPage() {
   const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
   const [riskDeltas, setRiskDeltas] = useState<Record<string, number>>({});
   const [visibleLayers, setVisibleLayers] = useState<VisibleMapLayers>(DEFAULT_MAP_LAYERS);
+  const [rendererMode, setRendererMode] = useState<WorldMapRendererMode>("svg");
   const [focusRequest, setFocusRequest] = useState<MapFocusRequest | null>(null);
   const snapshotRef = useRef<WorldMapSnapshot | null>(null);
   const riskScoresRef = useRef<Record<string, number>>({});
@@ -245,6 +255,7 @@ export default function WorldMapPage() {
 
           <div className="flex flex-wrap items-center gap-2 rounded-sm border border-border-subtle bg-black/68 p-1.5 shadow-data-panel backdrop-blur-xl xl:justify-self-end">
             <LayerLegend layers={snapshot?.layers ?? []} />
+            <RendererModeToggle value={rendererMode} onChange={setRendererMode} />
             <MapVisualLayerToggle
               layers={visibleLayers}
               onToggle={(layer) =>
@@ -281,6 +292,7 @@ export default function WorldMapPage() {
           riskDeltas={riskDeltas}
           selectedId={selectedRegion?.id ?? null}
           visibleLayers={visibleLayers}
+          rendererMode={rendererMode}
           focusRequest={focusRequest}
           onSelect={selectRegion}
         />
@@ -477,6 +489,46 @@ function MapVisualLayerToggle({
   );
 }
 
+function RendererModeToggle({
+  value,
+  onChange,
+}: {
+  value: WorldMapRendererMode;
+  onChange: (value: WorldMapRendererMode) => void;
+}) {
+  const { text } = useI18n();
+  return (
+    <div
+      data-testid="world-map-renderer-toggle"
+      className="flex max-w-full items-center gap-1 overflow-x-auto rounded-xs border border-white/[0.08] bg-black/30 p-0.5"
+      aria-label={text("渲染模式")}
+    >
+      {MAP_RENDERER_OPTIONS.map((option) => {
+        const active = value === option.id;
+        return (
+          <button
+            key={option.id}
+            type="button"
+            data-testid={`world-map-renderer-toggle-${option.id}`}
+            aria-pressed={active}
+            onClick={() => onChange(option.id)}
+            className={cn(
+              "inline-flex h-7 shrink-0 items-center gap-1.5 rounded-xs border px-2 text-caption font-semibold transition-colors",
+              active
+                ? "border-brand-emerald/35 bg-brand-emerald/12 text-brand-emerald-bright"
+                : "border-transparent text-text-muted hover:bg-white/[0.05] hover:text-text-primary"
+            )}
+            title={text(option.detail)}
+          >
+            <Sparkles className="h-3 w-3" />
+            {text(option.label)}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 function RiskRegionIndex({
   regions,
   selectedId,
@@ -556,6 +608,7 @@ function WorldMapCanvas({
   riskDeltas,
   selectedId,
   visibleLayers,
+  rendererMode,
   focusRequest,
   onSelect,
 }: {
@@ -563,6 +616,7 @@ function WorldMapCanvas({
   riskDeltas: Record<string, number>;
   selectedId: string | null;
   visibleLayers: VisibleMapLayers;
+  rendererMode: WorldMapRendererMode;
   focusRequest: MapFocusRequest | null;
   onSelect: (id: string) => void;
 }) {
@@ -924,6 +978,70 @@ function WorldMapCanvas({
         onZoomOut={() => applyZoom(0.82)}
         onReset={() => setView(INITIAL_MAP_VIEW)}
       />
+      {rendererMode === "webgl-ready" && (
+        <WebGlReadinessPanel
+          densityCellCount={densityCells.length}
+          regionCount={regions.length}
+          routeCount={riskRoutes.length}
+        />
+      )}
+    </div>
+  );
+}
+
+function WebGlReadinessPanel({
+  densityCellCount,
+  regionCount,
+  routeCount,
+}: {
+  densityCellCount: number;
+  regionCount: number;
+  routeCount: number;
+}) {
+  const { text } = useI18n();
+  const rows = [
+    { label: "GeoJson区域", value: regionCount, status: "ready" },
+    { label: "Heatmap密度", value: densityCellCount, status: "ready" },
+    { label: "Arc飞线", value: routeCount, status: "ready" },
+    { label: "Tile天气", value: text("待接入"), status: "planned" },
+  ];
+  return (
+    <div
+      data-testid="world-map-webgl-readiness"
+      className="pointer-events-none absolute right-4 top-[118px] z-20 hidden w-[260px] rounded-sm border border-brand-emerald/25 bg-black/72 p-3 shadow-data-panel backdrop-blur-xl xl:block"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="flex items-center gap-2 text-sm font-semibold text-text-primary">
+            <Sparkles className="h-4 w-4 text-brand-emerald-bright" />
+            {text("WebGL 预备")}
+          </div>
+          <p className="mt-1 text-caption leading-4 text-text-muted">
+            {text("当前仍由 SVG 承载交互，GPU 图层按 deck.gl 口径组织")}
+          </p>
+        </div>
+        <span className="rounded-xs border border-brand-emerald/25 bg-brand-emerald/10 px-2 py-0.5 font-mono text-caption text-brand-emerald-bright">
+          B.2
+        </span>
+      </div>
+      <div className="mt-3 grid gap-1.5">
+        {rows.map((row) => (
+          <div
+            key={row.label}
+            className="flex items-center justify-between gap-3 rounded-xs border border-border-subtle bg-black/35 px-2 py-1.5"
+          >
+            <span className="text-caption text-text-secondary">{text(row.label)}</span>
+            <span
+              className={cn(
+                "font-mono text-caption",
+                row.status === "ready" ? "text-brand-emerald-bright" : "text-text-muted"
+              )}
+            >
+              {row.value}
+            </span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
