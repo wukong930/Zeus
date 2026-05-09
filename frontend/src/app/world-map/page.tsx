@@ -45,10 +45,19 @@ import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
 type CommodityFilter = "all" | string;
-type WorldMapVisualLayer = "weather" | "heat" | "routes" | "labels";
+type WorldMapVisualLayer = "weather" | "density" | "heat" | "routes" | "labels";
 type VisibleMapLayers = Record<WorldMapVisualLayer, boolean>;
 type MapFocusRequest = {
   nonce: number;
+  regionId: string;
+};
+type RiskDensityCell = {
+  id: string;
+  x: number;
+  y: number;
+  size: number;
+  intensity: number;
+  riskLevel: WorldRiskLevel;
   regionId: string;
 };
 
@@ -59,6 +68,7 @@ const MIN_MAP_SCALE = 0.85;
 const MAX_MAP_SCALE = 3.25;
 const DEFAULT_MAP_LAYERS: VisibleMapLayers = {
   weather: true,
+  density: true,
   heat: true,
   routes: true,
   labels: true,
@@ -94,6 +104,7 @@ const MAP_VISUAL_LAYER_OPTIONS: Array<{
   icon: ComponentType<{ className?: string }>;
 }> = [
   { id: "weather", label: "天气", icon: CloudRain },
+  { id: "density", label: "密度", icon: Layers3 },
   { id: "heat", label: "热力", icon: AlertTriangle },
   { id: "routes", label: "飞线", icon: Route },
   { id: "labels", label: "地图标签", icon: ListChecks },
@@ -589,6 +600,7 @@ function WorldMapCanvas({
   const graticulePath = useMemo(() => path(WORLD_GRATICULE as GeoPermissibleObjects) ?? "", [path]);
   const borderPath = useMemo(() => path(WORLD_BORDERS as GeoPermissibleObjects) ?? "", [path]);
   const riskRoutes = useMemo(() => buildRiskRoutes(regions), [regions]);
+  const densityCells = useMemo(() => buildRiskDensityCells(regions, projection), [projection, regions]);
 
   useEffect(() => {
     if (!focusRequest) return;
@@ -736,6 +748,28 @@ function WorldMapCanvas({
             strokeWidth="0.55"
             vectorEffect="non-scaling-stroke"
           />
+
+          {visibleLayers.density && (
+            <g data-testid="world-map-density-layer" data-map-layer="density">
+              {densityCells.map((cell) => {
+                const color = riskColor(cell.riskLevel);
+                return (
+                  <rect
+                    key={cell.id}
+                    data-region-id={cell.regionId}
+                    x={cell.x - cell.size / 2}
+                    y={cell.y - cell.size / 2}
+                    width={cell.size}
+                    height={cell.size}
+                    rx={cell.size * 0.18}
+                    fill={color.strokeStrong}
+                    opacity={0.05 + cell.intensity * 0.32}
+                    vectorEffect="non-scaling-stroke"
+                  />
+                );
+              })}
+            </g>
+          )}
 
           {visibleLayers.weather &&
             regions.map((region) => {
@@ -1309,6 +1343,57 @@ function arcPath(from: GeoPoint, to: GeoPoint, projection: GeoProjection): strin
 
   const bend = Math.min(58, Math.max(22, distance * 0.16));
   return `M${start.x.toFixed(1)} ${start.y.toFixed(1)} Q${midX.toFixed(1)} ${(midY - bend).toFixed(1)} ${end.x.toFixed(1)} ${end.y.toFixed(1)}`;
+}
+
+function buildRiskDensityCells(regions: WorldMapRegion[], projection: GeoProjection): RiskDensityCell[] {
+  const cellSize = 24;
+  const cells = new Map<string, RiskDensityCell>();
+
+  for (const region of regions) {
+    const center = project(region.center, projection);
+    const weatherStress = Math.max(
+      region.weather.floodRisk,
+      region.weather.droughtRisk,
+      Math.min(1, Math.abs(region.weather.precipitationAnomalyPct) / 80)
+    );
+    const riskWeight = region.riskScore / 100;
+    const radius = 2 + Math.round(weatherStress * 2);
+
+    for (let column = -radius; column <= radius; column += 1) {
+      for (let row = -radius; row <= radius; row += 1) {
+        const distance = Math.hypot(column, row);
+        if (distance > radius + 0.35) continue;
+
+        const decay = 1 - distance / (radius + 0.85);
+        const intensity = clamp(riskWeight * (0.62 + weatherStress * 0.38) * decay, 0, 1);
+        if (intensity < 0.12) continue;
+
+        const x = center.x + column * cellSize;
+        const y = center.y + row * cellSize;
+        if (x < -cellSize || x > MAP_WIDTH + cellSize || y < -cellSize || y > MAP_HEIGHT + cellSize) continue;
+
+        const gridX = Math.round(x / cellSize);
+        const gridY = Math.round(y / cellSize);
+        const id = `${gridX}:${gridY}`;
+        const previous = cells.get(id);
+        if (!previous || previous.intensity < intensity) {
+          cells.set(id, {
+            id,
+            x: gridX * cellSize,
+            y: gridY * cellSize,
+            size: cellSize * (0.72 + intensity * 0.28),
+            intensity,
+            riskLevel: region.riskLevel,
+            regionId: region.id,
+          });
+        }
+      }
+    }
+  }
+
+  return Array.from(cells.values())
+    .sort((left, right) => right.intensity - left.intensity)
+    .slice(0, 180);
 }
 
 function buildRiskRoutes(regions: WorldMapRegion[]) {

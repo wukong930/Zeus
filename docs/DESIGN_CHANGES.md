@@ -198,6 +198,12 @@ threshold_modifier、propagation_activator、risk_recalc、数据腐烂防护
 - 点击索引项会选中区域、打开区域情报抽屉，并自动把地图平移/放大到目标区域。
 - 地图节点点击也复用同一聚焦逻辑，保持地图交互、索引交互和情报抽屉状态一致。
 
+# 2026-05-09 — World Risk Map Phase B.2.1 WebGL 图层准备层
+
+- 新增风险密度图层，把区域风险分、天气异常和风险等级聚合为网格热力单元，为后续 deck.gl HeatmapLayer / TileLayer 准备稳定的数据形态。
+- 风险密度图层接入现有视觉图层开关，保持天气、热力、飞线和标签的独立开关能力。
+- 当前仍用轻量 SVG 渲染密度单元，避免在 MapLibre/deck.gl 完整接入前影响已稳定的地图交互链路。
+
 # 2026-05-09 — Shell Navigation Phase 1
 
 - 全局侧边栏升级为半透明玻璃态外壳，保留 Zeus 现有导航信息架构，不改业务页面和世界风险地图数据逻辑。

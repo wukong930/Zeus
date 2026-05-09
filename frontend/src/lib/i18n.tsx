@@ -333,6 +333,7 @@ const EN: Record<string, string> = {
   "需求": "Demand",
   "政策": "Policy",
   "价格": "Price",
+  "密度": "Density",
   "热力": "Heat",
   "飞线": "Flows",
   "地图标签": "Labels",
