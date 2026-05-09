@@ -14,12 +14,14 @@ import {
   Layers,
   LayoutDashboard,
   Map as MapIcon,
+  Menu,
   Network,
   Newspaper,
   NotebookPen,
   Plane,
   Settings,
   Wrench,
+  X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n";
@@ -61,6 +63,7 @@ export function Sidebar() {
   const { lang, text } = useI18n();
   const [alertCount, setAlertCount] = useState<number | null>(null);
   const [preference, setPreference] = useState<SidebarPreference>("auto");
+  const [mobileOpen, setMobileOpen] = useState(false);
   const [tooltip, setTooltip] = useState<SidebarTooltip | null>(null);
   const [ready, setReady] = useState(false);
   const brandTagline = lang === "zh" ? "交易胜于未始" : "Trades are won before they begin";
@@ -103,6 +106,10 @@ export function Sidebar() {
     if (!collapsed) setTooltip(null);
   }, [collapsed]);
 
+  useEffect(() => {
+    setMobileOpen(false);
+  }, [pathname]);
+
   function showTooltip(label: string, badge: string | null, target: HTMLElement) {
     if (!collapsed) return;
     const asideTop = target.closest("aside")?.getBoundingClientRect().top ?? 0;
@@ -114,135 +121,215 @@ export function Sidebar() {
     });
   }
 
-  return (
-    <aside
-      className={cn(
-        "group/sidebar relative flex h-full shrink-0 flex-col border-r border-white/[0.07] bg-black/58 shadow-[0_18px_70px_rgba(0,0,0,0.42),inset_1px_0_0_rgba(255,255,255,0.035)] backdrop-blur-xl transition-[width] duration-200 ease-standard",
-        collapsed ? "w-[64px]" : "w-[188px]"
-      )}
-      data-sidebar-collapsed={collapsed}
-      data-sidebar-mode={preference}
-      data-sidebar-immersive={routePrefersCollapsed}
-    >
-      <div
-        className={cn(
-          "flex h-12 select-none items-center border-b border-white/[0.06] px-3",
-          collapsed ? "justify-center" : "gap-2.5"
-        )}
-      >
-        <Logo collapsed={collapsed} />
-        <div className={cn("min-w-0 flex-col leading-none", collapsed ? "hidden" : "flex")}>
-          <span className="text-sm font-bold tracking-wider text-text-primary">ZEUS</span>
-          <span className="max-w-[132px] text-[9px] font-medium leading-[1.08] text-text-muted" title={brandTagline}>
-            {brandTagline}
-          </span>
-        </div>
-      </div>
-      <button
-        type="button"
-        onClick={() => setPreference(collapsed ? "expanded" : "collapsed")}
-        className="absolute -right-3 top-3 z-20 flex h-6 w-6 items-center justify-center rounded-full border border-white/[0.09] bg-black/78 text-text-muted shadow-data-panel backdrop-blur-md transition-colors hover:border-brand-emerald/35 hover:text-text-primary"
-        aria-label={collapsed ? text("展开侧边栏") : text("收起侧边栏")}
-        title={collapsed ? text("展开侧边栏") : text("收起侧边栏")}
-      >
-        {collapsed ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronLeft className="h-3.5 w-3.5" />}
-      </button>
-      <nav className={cn("flex-1 overflow-y-auto py-2", collapsed ? "px-2" : "px-2")}>
-        {NAV_ITEMS.map((item, idx) => {
-          if ("divider" in item) {
-            return (
-              <div
-                key={idx}
-                className={cn("my-1.5 h-px bg-white/[0.07]", collapsed ? "mx-2" : "mx-2")}
-              />
-            );
-          }
-          const Icon = item.icon;
-          const active = pathname === item.href;
-          const badge = item.href === "/alerts" ? formatAlertCount(alertCount) : null;
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              aria-label={text(item.label)}
-              onMouseEnter={(event) => showTooltip(item.label, badge, event.currentTarget)}
-              onMouseLeave={() => setTooltip(null)}
-              onFocus={(event) => showTooltip(item.label, badge, event.currentTarget)}
-              onBlur={() => setTooltip(null)}
+  function renderNavLinks({
+    collapsedNav,
+    closeOnSelect = false,
+    mobile = false,
+  }: {
+    collapsedNav: boolean;
+    closeOnSelect?: boolean;
+    mobile?: boolean;
+  }) {
+    return NAV_ITEMS.map((item, idx) => {
+      if ("divider" in item) {
+        return (
+          <div
+            key={idx}
+            className={cn("bg-white/[0.07]", mobile ? "my-2 h-px" : "my-1.5 mx-2 h-px")}
+          />
+        );
+      }
+      const Icon = item.icon;
+      const active = pathname === item.href;
+      const badge = item.href === "/alerts" ? formatAlertCount(alertCount) : null;
+      const enableTooltip = collapsedNav && !mobile;
+      return (
+        <Link
+          key={item.href}
+          href={item.href}
+          aria-label={text(item.label)}
+          onClick={closeOnSelect ? () => setMobileOpen(false) : undefined}
+          onMouseEnter={enableTooltip ? (event) => showTooltip(item.label, badge, event.currentTarget) : undefined}
+          onMouseLeave={enableTooltip ? () => setTooltip(null) : undefined}
+          onFocus={enableTooltip ? (event) => showTooltip(item.label, badge, event.currentTarget) : undefined}
+          onBlur={enableTooltip ? () => setTooltip(null) : undefined}
+          className={cn(
+            "group relative mb-0.5 flex items-center rounded-sm border font-medium transition-all duration-150",
+            mobile ? "h-10 text-sm" : "h-8 text-xs",
+            collapsedNav ? "justify-center px-0" : mobile ? "gap-2.5 px-2.5" : "gap-2 px-2",
+            active
+              ? "border-brand-emerald/35 bg-brand-emerald/14 text-text-primary shadow-[inset_0_1px_0_rgba(255,255,255,0.045),0_0_18px_rgba(16,185,129,0.1)]"
+              : "border-transparent text-text-secondary hover:border-white/[0.08] hover:bg-white/[0.055] hover:text-text-primary"
+          )}
+        >
+          {active && (
+            <span
               className={cn(
-                "group relative mb-0.5 flex h-8 items-center rounded-sm border text-xs font-medium transition-all duration-150",
-                collapsed ? "justify-center px-0" : "gap-2 px-2",
-                active
-                  ? "border-brand-emerald/35 bg-brand-emerald/14 text-text-primary shadow-[inset_0_1px_0_rgba(255,255,255,0.045),0_0_18px_rgba(16,185,129,0.1)]"
-                  : "border-transparent text-text-secondary hover:border-white/[0.08] hover:bg-white/[0.055] hover:text-text-primary"
+                "absolute rounded-r-sm bg-brand-emerald",
+                collapsedNav ? "left-0 top-2 bottom-2 w-[2px]" : "left-0 top-1.5 bottom-1.5 w-[2px]"
+              )}
+            />
+          )}
+          <span
+            className={cn(
+              "flex shrink-0 items-center justify-center rounded-xs border",
+              mobile ? "h-6 w-6" : "h-5 w-5",
+              active
+                ? "border-brand-emerald/35 bg-brand-emerald/15 text-brand-emerald-bright"
+                : "border-white/[0.08] bg-black/42 text-text-muted group-hover:text-text-primary"
+            )}
+          >
+            <Icon className={mobile ? "h-3.5 w-3.5" : "h-3 w-3"} strokeWidth={1.75} />
+          </span>
+          <span className={cn("min-w-0 flex-1 truncate", collapsedNav && "hidden")}>{text(item.label)}</span>
+          {badge && (
+            <span
+              className={cn(
+                "inline-flex h-4 items-center rounded-xs bg-brand-orange px-1.5 text-caption font-semibold text-white shadow-glow-orange",
+                collapsedNav && "absolute -right-1 -top-1 h-4 min-w-4 justify-center px-1"
               )}
             >
-              {active && (
-                <span
-                  className={cn(
-                    "absolute rounded-r-sm bg-brand-emerald",
-                    collapsed ? "left-0 top-2 bottom-2 w-[2px]" : "left-0 top-1.5 bottom-1.5 w-[2px]"
-                  )}
-                />
-              )}
-              <span
-                className={cn(
-                  "flex h-5 w-5 shrink-0 items-center justify-center rounded-xs border",
-                  active
-                    ? "border-brand-emerald/35 bg-brand-emerald/15 text-brand-emerald-bright"
-                    : "border-white/[0.08] bg-black/42 text-text-muted group-hover:text-text-primary"
-                )}
-              >
-                <Icon className="h-3 w-3" strokeWidth={1.75} />
-              </span>
-              <span className={cn("min-w-0 flex-1 truncate", collapsed && "hidden")}>{text(item.label)}</span>
-              {badge && (
-                <span
-                  className={cn(
-                    "inline-flex h-4 items-center rounded-xs bg-brand-orange px-1.5 text-caption font-semibold text-white shadow-glow-orange",
-                    collapsed && "absolute -right-1 -top-1 h-4 min-w-4 justify-center px-1"
-                  )}
-                >
-                  {badge}
-                </span>
-              )}
-            </Link>
-          );
-        })}
-      </nav>
-      {collapsed && tooltip && (
-        <div
-          data-testid="sidebar-collapsed-tooltip"
-          className="pointer-events-none absolute left-[calc(100%+10px)] z-50 flex items-center gap-2 rounded-sm border border-white/[0.09] bg-black/82 px-2.5 py-1.5 text-xs text-text-primary shadow-data-panel backdrop-blur-xl"
-          style={{ top: tooltip.top, transform: "translateY(-50%)" }}
-        >
-          <span className="absolute -left-1 h-2 w-2 rotate-45 border-b border-l border-white/[0.09] bg-black/82" />
-          <span className="relative whitespace-nowrap">{tooltip.label}</span>
-          {tooltip.badge && (
-            <span className="relative inline-flex h-4 items-center rounded-xs bg-brand-orange px-1.5 text-caption font-semibold text-white shadow-glow-orange">
-              {tooltip.badge}
+              {badge}
             </span>
           )}
+        </Link>
+      );
+    });
+  }
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setMobileOpen(true)}
+        className="fixed left-3 top-10 z-[70] flex h-9 w-9 items-center justify-center rounded-sm border border-white/[0.09] bg-black/72 text-text-primary shadow-data-panel backdrop-blur-xl transition-colors hover:border-brand-emerald/35 hover:text-brand-emerald-bright md:hidden"
+        aria-label={text("打开导航")}
+        aria-expanded={mobileOpen}
+        aria-controls="mobile-sidebar-drawer"
+      >
+        <Menu className="h-4 w-4" />
+        {alertCount !== null && alertCount > 0 && (
+          <span className="absolute -right-1.5 -top-1.5 inline-flex h-4 min-w-4 items-center justify-center rounded-xs bg-brand-orange px-1 text-[9px] font-semibold text-white shadow-glow-orange">
+            {formatAlertCount(alertCount)}
+          </span>
+        )}
+      </button>
+
+      {mobileOpen && (
+        <div className="fixed inset-0 z-[80] md:hidden">
+          <button
+            type="button"
+            className="absolute inset-0 bg-black/64 backdrop-blur-sm"
+            aria-label={text("关闭导航")}
+            onClick={() => setMobileOpen(false)}
+          />
+          <aside
+            id="mobile-sidebar-drawer"
+            data-sidebar-mobile="true"
+            className="absolute bottom-0 left-0 top-0 flex w-[min(82vw,300px)] flex-col border-r border-white/[0.08] bg-black/82 shadow-[24px_0_80px_rgba(0,0,0,0.48),inset_1px_0_0_rgba(255,255,255,0.04)] backdrop-blur-2xl"
+          >
+            <div className="flex h-14 select-none items-center gap-2.5 border-b border-white/[0.06] px-4">
+              <Logo />
+              <div className="min-w-0 flex-1 leading-none">
+                <span className="block text-sm font-bold tracking-wider text-text-primary">ZEUS</span>
+                <span className="block truncate text-[10px] font-medium leading-[1.2] text-text-muted" title={brandTagline}>
+                  {brandTagline}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setMobileOpen(false)}
+                className="flex h-8 w-8 items-center justify-center rounded-sm border border-white/[0.08] bg-black/45 text-text-muted transition-colors hover:border-brand-emerald/35 hover:text-text-primary"
+                aria-label={text("关闭导航")}
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <nav className="flex-1 overflow-y-auto p-3">{renderNavLinks({ collapsedNav: false, closeOnSelect: true, mobile: true })}</nav>
+            <div className="border-t border-white/[0.06] p-3">
+              <div className="rounded-sm border border-white/[0.08] bg-black/42 px-2.5 py-2.5 shadow-inner-panel">
+                <div className="flex items-center gap-2 text-caption text-text-muted">
+                  <div className="h-1.5 w-1.5 rounded-full bg-brand-emerald-bright shadow-glow-emerald animate-heartbeat" />
+                  <span>v0.1.0 {text("运行态")}</span>
+                </div>
+                <div className="mt-2 h-1 overflow-hidden rounded-full bg-bg-surface-raised">
+                  <div className="h-full w-2/3 rounded-full bg-brand-emerald" />
+                </div>
+              </div>
+            </div>
+          </aside>
         </div>
       )}
-      <div className="border-t border-white/[0.06] p-2">
+
+      <aside
+        className={cn(
+          "group/sidebar relative hidden h-full shrink-0 flex-col border-r border-white/[0.07] bg-black/58 shadow-[0_18px_70px_rgba(0,0,0,0.42),inset_1px_0_0_rgba(255,255,255,0.035)] backdrop-blur-xl transition-[width] duration-200 ease-standard md:flex",
+          collapsed ? "w-[64px]" : "w-[188px]"
+        )}
+        data-sidebar-collapsed={collapsed}
+        data-sidebar-mode={preference}
+        data-sidebar-immersive={routePrefersCollapsed}
+      >
         <div
           className={cn(
-            "rounded-sm border border-white/[0.08] bg-black/42 shadow-inner-panel",
-            collapsed ? "flex h-10 items-center justify-center" : "px-2 py-2"
+            "flex h-12 select-none items-center border-b border-white/[0.06] px-3",
+            collapsed ? "justify-center" : "gap-2.5"
           )}
-          title={collapsed ? `v0.1.0 ${text("运行态")}` : undefined}
         >
-          <div className={cn("flex items-center text-caption text-text-muted", collapsed ? "justify-center" : "gap-2")}>
-            <div className="h-1.5 w-1.5 rounded-full bg-brand-emerald-bright shadow-glow-emerald animate-heartbeat" />
-            <span className={cn(collapsed && "hidden")}>v0.1.0 {text("运行态")}</span>
-          </div>
-          <div className={cn("mt-2 h-1 overflow-hidden rounded-full bg-bg-surface-raised", collapsed && "hidden")}>
-            <div className="h-full w-2/3 rounded-full bg-brand-emerald" />
+          <Logo collapsed={collapsed} />
+          <div className={cn("min-w-0 flex-col leading-none", collapsed ? "hidden" : "flex")}>
+            <span className="text-sm font-bold tracking-wider text-text-primary">ZEUS</span>
+            <span className="max-w-[132px] text-[9px] font-medium leading-[1.08] text-text-muted" title={brandTagline}>
+              {brandTagline}
+            </span>
           </div>
         </div>
-      </div>
-    </aside>
+        <button
+          type="button"
+          onClick={() => setPreference(collapsed ? "expanded" : "collapsed")}
+          className="absolute -right-3 top-3 z-20 flex h-6 w-6 items-center justify-center rounded-full border border-white/[0.09] bg-black/78 text-text-muted shadow-data-panel backdrop-blur-md transition-colors hover:border-brand-emerald/35 hover:text-text-primary"
+          aria-label={collapsed ? text("展开侧边栏") : text("收起侧边栏")}
+          title={collapsed ? text("展开侧边栏") : text("收起侧边栏")}
+        >
+          {collapsed ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronLeft className="h-3.5 w-3.5" />}
+        </button>
+        <nav className={cn("flex-1 overflow-y-auto py-2", collapsed ? "px-2" : "px-2")}>
+          {renderNavLinks({ collapsedNav: collapsed })}
+        </nav>
+        {collapsed && tooltip && (
+          <div
+            data-testid="sidebar-collapsed-tooltip"
+            className="pointer-events-none absolute left-[calc(100%+10px)] z-50 flex items-center gap-2 rounded-sm border border-white/[0.09] bg-black/82 px-2.5 py-1.5 text-xs text-text-primary shadow-data-panel backdrop-blur-xl"
+            style={{ top: tooltip.top, transform: "translateY(-50%)" }}
+          >
+            <span className="absolute -left-1 h-2 w-2 rotate-45 border-b border-l border-white/[0.09] bg-black/82" />
+            <span className="relative whitespace-nowrap">{tooltip.label}</span>
+            {tooltip.badge && (
+              <span className="relative inline-flex h-4 items-center rounded-xs bg-brand-orange px-1.5 text-caption font-semibold text-white shadow-glow-orange">
+                {tooltip.badge}
+              </span>
+            )}
+          </div>
+        )}
+        <div className="border-t border-white/[0.06] p-2">
+          <div
+            className={cn(
+              "rounded-sm border border-white/[0.08] bg-black/42 shadow-inner-panel",
+              collapsed ? "flex h-10 items-center justify-center" : "px-2 py-2"
+            )}
+            title={collapsed ? `v0.1.0 ${text("运行态")}` : undefined}
+          >
+            <div className={cn("flex items-center text-caption text-text-muted", collapsed ? "justify-center" : "gap-2")}>
+              <div className="h-1.5 w-1.5 rounded-full bg-brand-emerald-bright shadow-glow-emerald animate-heartbeat" />
+              <span className={cn(collapsed && "hidden")}>v0.1.0 {text("运行态")}</span>
+            </div>
+            <div className={cn("mt-2 h-1 overflow-hidden rounded-full bg-bg-surface-raised", collapsed && "hidden")}>
+              <div className="h-full w-2/3 rounded-full bg-brand-emerald" />
+            </div>
+          </div>
+        </div>
+      </aside>
+    </>
   );
 }
 
