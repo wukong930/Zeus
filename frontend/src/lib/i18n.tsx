@@ -32,6 +32,7 @@ const EN: Record<string, string> = {
   "分析": "Analytics",
   "设置": "Settings",
   "交易胜于未始": "Trades are won before they begin",
+  "导航": "Navigation",
   "跳转": "Navigation",
   "品种": "Symbols",
   "合约同步中": "Syncing contracts",

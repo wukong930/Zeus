@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   BarChart3,
   Beaker,
@@ -66,6 +66,9 @@ export function Sidebar() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [tooltip, setTooltip] = useState<SidebarTooltip | null>(null);
   const [ready, setReady] = useState(false);
+  const mobileMenuButtonRef = useRef<HTMLButtonElement | null>(null);
+  const mobileCloseButtonRef = useRef<HTMLButtonElement | null>(null);
+  const mobileDrawerRef = useRef<HTMLElement | null>(null);
   const brandTagline = lang === "zh" ? "交易胜于未始" : "Trades are won before they begin";
   const routePrefersCollapsed = isImmersiveRoute(pathname);
   const collapsed = preference === "auto" ? routePrefersCollapsed : preference === "collapsed";
@@ -109,6 +112,62 @@ export function Sidebar() {
   useEffect(() => {
     setMobileOpen(false);
   }, [pathname]);
+
+  useEffect(() => {
+    const desktopQuery = window.matchMedia("(min-width: 768px)");
+    const closeDrawerOnDesktop = () => {
+      if (desktopQuery.matches) setMobileOpen(false);
+    };
+
+    closeDrawerOnDesktop();
+    desktopQuery.addEventListener("change", closeDrawerOnDesktop);
+    return () => desktopQuery.removeEventListener("change", closeDrawerOnDesktop);
+  }, []);
+
+  useEffect(() => {
+    if (!mobileOpen) return;
+
+    const previousOverflow = document.body.style.overflow;
+    const previousActiveElement = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    document.body.style.overflow = "hidden";
+
+    const focusFrame = window.requestAnimationFrame(() => {
+      mobileCloseButtonRef.current?.focus({ preventScroll: true });
+    });
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setMobileOpen(false);
+        return;
+      }
+
+      if (event.key !== "Tab" || !mobileDrawerRef.current) return;
+      const focusableItems = getFocusableElements(mobileDrawerRef.current);
+      if (focusableItems.length === 0) return;
+
+      const firstItem = focusableItems[0];
+      const lastItem = focusableItems[focusableItems.length - 1];
+      if (event.shiftKey && document.activeElement === firstItem) {
+        event.preventDefault();
+        lastItem.focus({ preventScroll: true });
+      } else if (!event.shiftKey && document.activeElement === lastItem) {
+        event.preventDefault();
+        firstItem.focus({ preventScroll: true });
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.cancelAnimationFrame(focusFrame);
+      window.removeEventListener("keydown", handleKeyDown);
+      document.body.style.overflow = previousOverflow;
+      const focusTarget = previousActiveElement ?? mobileMenuButtonRef.current;
+      if (focusTarget && document.contains(focusTarget)) {
+        focusTarget.focus({ preventScroll: true });
+      }
+    };
+  }, [mobileOpen]);
 
   function showTooltip(label: string, badge: string | null, target: HTMLElement) {
     if (!collapsed) return;
@@ -200,6 +259,7 @@ export function Sidebar() {
   return (
     <>
       <button
+        ref={mobileMenuButtonRef}
         type="button"
         onClick={() => setMobileOpen(true)}
         className="fixed left-3 top-10 z-[70] flex h-9 w-9 items-center justify-center rounded-sm border border-white/[0.09] bg-black/72 text-text-primary shadow-data-panel backdrop-blur-xl transition-colors hover:border-brand-emerald/35 hover:text-brand-emerald-bright md:hidden"
@@ -224,8 +284,12 @@ export function Sidebar() {
             onClick={() => setMobileOpen(false)}
           />
           <aside
+            ref={mobileDrawerRef}
             id="mobile-sidebar-drawer"
             data-sidebar-mobile="true"
+            role="dialog"
+            aria-modal="true"
+            aria-label={text("导航")}
             className="absolute bottom-0 left-0 top-0 flex w-[min(82vw,300px)] flex-col border-r border-white/[0.08] bg-black/82 shadow-[24px_0_80px_rgba(0,0,0,0.48),inset_1px_0_0_rgba(255,255,255,0.04)] backdrop-blur-2xl"
           >
             <div className="flex h-14 select-none items-center gap-2.5 border-b border-white/[0.06] px-4">
@@ -237,6 +301,7 @@ export function Sidebar() {
                 </span>
               </div>
               <button
+                ref={mobileCloseButtonRef}
                 type="button"
                 onClick={() => setMobileOpen(false)}
                 className="flex h-8 w-8 items-center justify-center rounded-sm border border-white/[0.08] bg-black/45 text-text-muted transition-colors hover:border-brand-emerald/35 hover:text-text-primary"
@@ -345,6 +410,22 @@ function isImmersiveRoute(pathname: string | null): boolean {
 
 function isSidebarPreference(value: string | null): value is SidebarPreference {
   return value === "auto" || value === "collapsed" || value === "expanded";
+}
+
+function getFocusableElements(container: HTMLElement): HTMLElement[] {
+  const focusableSelector = [
+    "a[href]",
+    "button:not([disabled])",
+    "input:not([disabled])",
+    "select:not([disabled])",
+    "textarea:not([disabled])",
+    '[tabindex]:not([tabindex="-1"])',
+  ].join(",");
+
+  return Array.from(container.querySelectorAll<HTMLElement>(focusableSelector)).filter((element) => {
+    const style = window.getComputedStyle(element);
+    return style.display !== "none" && style.visibility !== "hidden" && element.offsetParent !== null;
+  });
 }
 
 function Logo({ collapsed }: { collapsed?: boolean }) {
