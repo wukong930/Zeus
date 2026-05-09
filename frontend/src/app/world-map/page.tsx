@@ -71,6 +71,14 @@ type RiskRoute = {
   to: GeoPoint;
   weight: number;
 };
+type RiskBridge = {
+  id: string;
+  source: WorldMapRegion;
+  target: WorldMapRegion;
+  sharedSymbols: string[];
+  sharedCommodity: boolean;
+  weight: number;
+};
 type WebGlRegionPolygon = {
   id: string;
   polygon: Array<[number, number, number]>;
@@ -334,6 +342,10 @@ export default function WorldMapPage() {
           onSelect={selectRegion}
         />
 
+        {rendererMode === "webgl-ready" && (
+          <EnhancedReadingPanel regions={filteredRegions} visibleLayers={visibleLayers} />
+        )}
+
         {source === "fallback" && (
           <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/65">
             <div className="rounded-sm border border-border-default bg-bg-surface px-5 py-4 text-sm text-text-secondary shadow-data-panel">
@@ -346,6 +358,140 @@ export default function WorldMapPage() {
       {detailOpen && selectedRegion && (
         <RegionInsightModal region={selectedRegion} onClose={() => setDetailOpen(false)} />
       )}
+    </div>
+  );
+}
+
+function EnhancedReadingPanel({
+  regions,
+  visibleLayers,
+}: {
+  regions: WorldMapRegion[];
+  visibleLayers: VisibleMapLayers;
+}) {
+  const { lang, text } = useI18n();
+  const topRegion = useMemo(
+    () => [...regions].sort((left, right) => right.riskScore - left.riskScore)[0] ?? null,
+    [regions]
+  );
+  const topBridge = useMemo(() => buildRiskBridges(regions)[0] ?? null, [regions]);
+  const runtimeEvidenceCount = useMemo(
+    () =>
+      regions.reduce(
+        (total, region) =>
+          total +
+          region.runtime.alerts +
+          region.runtime.newsEvents +
+          region.runtime.signals +
+          region.runtime.positions,
+        0
+      ),
+    [regions]
+  );
+  const storyEvidenceCount = useMemo(
+    () => regions.reduce((total, region) => total + region.story.evidence.length + region.adaptiveAlerts.length, 0),
+    [regions]
+  );
+  const linkedRegionCount = useMemo(
+    () => regions.filter((region) => region.causalScope.hasDirectLinks).length,
+    [regions]
+  );
+  const activeLayerLabels = MAP_VISUAL_LAYER_OPTIONS.filter((layer) => visibleLayers[layer.id]).map((layer) =>
+    text(layer.label)
+  );
+
+  if (!topRegion) return null;
+
+  const topColor = riskColor(topRegion.riskLevel);
+  const topRegionName = lang === "zh" ? topRegion.nameZh : topRegion.nameEn;
+  const topTrigger = lang === "zh" ? topRegion.story.triggerZh : topRegion.story.triggerEn;
+  const bridgeLabel = topBridge
+    ? `${lang === "zh" ? topBridge.source.nameZh : topBridge.source.nameEn} → ${
+        lang === "zh" ? topBridge.target.nameZh : topBridge.target.nameEn
+      }`
+    : text("暂无传导");
+  const bridgeDetail = topBridge
+    ? topBridge.sharedSymbols.length > 0
+      ? `${text("共享合约")} ${topBridge.sharedSymbols.slice(0, 3).join("/")}`
+      : text("同商品")
+    : text("当前筛选下暂无跨区飞线");
+
+  return (
+    <div
+      data-testid="world-map-enhanced-reading-panel"
+      className="pointer-events-none absolute bottom-4 right-[88px] z-20 hidden w-[360px] rounded-sm border border-brand-emerald/25 bg-black/72 p-3 shadow-data-panel backdrop-blur-xl xl:block"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="flex items-center gap-2 text-sm font-semibold text-text-primary">
+            <Sparkles className="h-4 w-4 text-brand-emerald-bright" />
+            {text("增强阅读层")}
+          </div>
+          <p className="mt-1 text-caption leading-4 text-text-muted">
+            {text("先读最高风险，再看跨区传导和证据密度")}
+          </p>
+        </div>
+        <span className="rounded-xs border border-brand-emerald/25 bg-brand-emerald/10 px-2 py-0.5 font-mono text-caption text-brand-emerald-bright">
+          B.2.7
+        </span>
+      </div>
+
+      <div className="mt-3 rounded-sm border border-border-subtle bg-black/40 p-3">
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-caption text-text-muted">{text("主读区")}</span>
+          <span className="font-mono text-sm" style={{ color: topColor.text }}>
+            {topRegion.riskScore}
+          </span>
+        </div>
+        <div className="mt-1 truncate text-sm font-semibold text-text-primary">{topRegionName}</div>
+        <div className="mt-1 line-clamp-2 text-caption leading-4 text-text-secondary">{topTrigger}</div>
+      </div>
+
+      <div className="mt-2 grid gap-2">
+        <ReadingMetric
+          icon={Route}
+          label={text("跨区传导")}
+          value={bridgeLabel}
+          detail={bridgeDetail}
+        />
+        <ReadingMetric
+          icon={DatabaseZap}
+          label={text("证据密度")}
+          value={`${runtimeEvidenceCount + storyEvidenceCount}`}
+          detail={`${text("运行态证据")} ${runtimeEvidenceCount} / ${text("故事证据")} ${storyEvidenceCount}`}
+        />
+        <ReadingMetric
+          icon={Link2}
+          label={text("联动区域")}
+          value={`${linkedRegionCount}/${regions.length}`}
+          detail={`${text("活跃图层")}：${activeLayerLabels.length > 0 ? activeLayerLabels.join(" / ") : text("暂无")}`}
+        />
+      </div>
+    </div>
+  );
+}
+
+function ReadingMetric({
+  icon: Icon,
+  label,
+  value,
+  detail,
+}: {
+  icon: ComponentType<{ className?: string }>;
+  label: string;
+  value: string;
+  detail: string;
+}) {
+  return (
+    <div className="rounded-xs border border-border-subtle bg-black/32 px-2.5 py-2">
+      <div className="flex items-center justify-between gap-2">
+        <span className="flex min-w-0 items-center gap-1.5 text-caption text-text-muted">
+          <Icon className="h-3.5 w-3.5 shrink-0 text-brand-cyan" />
+          {label}
+        </span>
+      </div>
+      <div className="mt-1 truncate text-xs font-semibold text-text-primary">{value}</div>
+      <div className="mt-0.5 truncate text-[10px] text-text-muted">{detail}</div>
     </div>
   );
 }
@@ -1913,8 +2059,18 @@ function buildRiskDensityCells(regions: WorldMapRegion[], projection: GeoProject
 }
 
 function buildRiskRoutes(regions: WorldMapRegion[]): RiskRoute[] {
-  const routes: RiskRoute[] = [];
+  return buildRiskBridges(regions)
+    .slice(0, 10)
+    .map((bridge) => ({
+      id: bridge.id,
+      from: bridge.source.center,
+      to: bridge.target.center,
+      weight: bridge.weight,
+    }));
+}
 
+function buildRiskBridges(regions: WorldMapRegion[]): RiskBridge[] {
+  const bridges: RiskBridge[] = [];
   for (let index = 0; index < regions.length; index += 1) {
     for (let nextIndex = index + 1; nextIndex < regions.length; nextIndex += 1) {
       const source = regions[index];
@@ -1924,16 +2080,18 @@ function buildRiskRoutes(regions: WorldMapRegion[]): RiskRoute[] {
         source.commodityZh === target.commodityZh || source.commodityEn === target.commodityEn;
       if (sharedSymbols.length === 0 && !sharedCommodity) continue;
 
-      routes.push({
+      bridges.push({
         id: `${source.id}-${target.id}`,
-        from: source.center,
-        to: target.center,
+        source,
+        target,
+        sharedSymbols,
+        sharedCommodity,
         weight: Math.min(1, (source.riskScore + target.riskScore) / 200 + sharedSymbols.length * 0.1),
       });
     }
   }
 
-  return routes.sort((a, b) => b.weight - a.weight).slice(0, 10);
+  return bridges.sort((a, b) => b.weight - a.weight);
 }
 
 function clamp(value: number, min: number, max: number): number {
