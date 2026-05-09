@@ -240,6 +240,12 @@ threshold_modifier、propagation_activator、risk_recalc、数据腐烂防护
 - 跨区传导逻辑沉淀为 `RiskBridge`，同时服务 SVG 飞线和阅读摘要，避免视觉链路与文字说明各算一套。
 - 面板只在增强模式展示，不改变默认轻量 SVG 模式，也不接管地图点击、缩放或详情弹窗。
 
+# 2026-05-09 — World Risk Map Phase B.2.8 天气瓦片预览层
+
+- 增强模式新增 deck.gl 天气 tile-like 栅格层，使用区域降水距平、洪涝风险和干旱风险生成局部天气压力网格。
+- WebGL 预备面板的 “Tile天气” 从 planned 改为 ready 计数，并把图层联动口径扩展为天气、热力、密度、飞线 4 个增强图层。
+- 天气瓦片继续使用现有天气图层开关，不改变默认 SVG 交互，也为后续 Open-Meteo / NASA POWER 栅格接入预留承载结构。
+
 # 2026-05-09 — Shell Navigation Phase 1
 
 - 全局侧边栏升级为半透明玻璃态外壳，保留 Zeus 现有导航信息架构，不改业务页面和世界风险地图数据逻辑。

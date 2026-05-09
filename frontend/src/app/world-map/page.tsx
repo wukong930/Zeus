@@ -79,6 +79,14 @@ type RiskBridge = {
   sharedCommodity: boolean;
   weight: number;
 };
+type WeatherTileCell = {
+  id: string;
+  polygon: Array<[number, number, number]>;
+  fillColor: [number, number, number, number];
+  lineColor: [number, number, number, number];
+  intensity: number;
+  regionId: string;
+};
 type WebGlRegionPolygon = {
   id: string;
   polygon: Array<[number, number, number]>;
@@ -832,6 +840,7 @@ function WorldMapCanvas({
   const borderPath = useMemo(() => path(WORLD_BORDERS as GeoPermissibleObjects) ?? "", [path]);
   const riskRoutes = useMemo(() => buildRiskRoutes(regions), [regions]);
   const densityCells = useMemo(() => buildRiskDensityCells(regions, projection), [projection, regions]);
+  const weatherTileCells = useMemo(() => buildWeatherTileCells(regions, projection), [projection, regions]);
 
   useEffect(() => {
     if (!focusRequest) return;
@@ -967,6 +976,7 @@ function WorldMapCanvas({
                   regions={regions}
                   routes={riskRoutes}
                   visibleLayers={visibleLayers}
+                  weatherTileCells={weatherTileCells}
                 />
               </div>
             </foreignObject>
@@ -1177,10 +1187,16 @@ function WorldMapCanvas({
       />
       {rendererMode === "webgl-ready" && (
         <WebGlReadinessPanel
-          activeEnhancedLayerCount={[visibleLayers.heat, visibleLayers.density, visibleLayers.routes].filter(Boolean).length}
+          activeEnhancedLayerCount={[
+            visibleLayers.weather,
+            visibleLayers.heat,
+            visibleLayers.density,
+            visibleLayers.routes,
+          ].filter(Boolean).length}
           densityCellCount={densityCells.length}
           regionCount={regions.length}
           routeCount={riskRoutes.length}
+          weatherTileCount={weatherTileCells.length}
         />
       )}
     </div>
@@ -1275,12 +1291,14 @@ function WorldMapWebGlPreview({
   regions,
   routes,
   visibleLayers,
+  weatherTileCells,
 }: {
   densityCells: RiskDensityCell[];
   projection: GeoProjection;
   regions: WorldMapRegion[];
   routes: RiskRoute[];
   visibleLayers: VisibleMapLayers;
+  weatherTileCells: WeatherTileCell[];
 }) {
   const regionPolygons = useMemo<WebGlRegionPolygon[]>(
     () =>
@@ -1314,6 +1332,24 @@ function WorldMapWebGlPreview({
   );
   const layers = useMemo(() => {
     const nextLayers = [];
+
+    if (visibleLayers.weather) {
+      nextLayers.push(
+        new PolygonLayer<WeatherTileCell>({
+          id: "world-map-webgl-weather-tiles",
+          coordinateSystem: COORDINATE_SYSTEM.CARTESIAN,
+          data: weatherTileCells,
+          filled: true,
+          getFillColor: (item) => item.fillColor,
+          getLineColor: (item) => item.lineColor,
+          getLineWidth: 0.5,
+          getPolygon: (item) => item.polygon,
+          lineWidthUnits: "pixels",
+          pickable: false,
+          stroked: true,
+        })
+      );
+    }
 
     if (visibleLayers.heat) {
       nextLayers.push(
@@ -1377,6 +1413,8 @@ function WorldMapWebGlPreview({
     visibleLayers.density,
     visibleLayers.heat,
     visibleLayers.routes,
+    visibleLayers.weather,
+    weatherTileCells,
   ]);
 
   return (
@@ -1401,21 +1439,23 @@ function WebGlReadinessPanel({
   densityCellCount,
   regionCount,
   routeCount,
+  weatherTileCount,
 }: {
   activeEnhancedLayerCount: number;
   densityCellCount: number;
   regionCount: number;
   routeCount: number;
+  weatherTileCount: number;
 }) {
   const { text } = useI18n();
   const rows = [
     { label: "MapLibre底图", value: text("离线运行"), status: "ready" },
     { label: "视图同步", value: text("已同步"), status: "ready" },
-    { label: "图层联动", value: `${activeEnhancedLayerCount}/3`, status: "ready" },
+    { label: "图层联动", value: `${activeEnhancedLayerCount}/4`, status: "ready" },
     { label: "GeoJson区域", value: regionCount, status: "ready" },
     { label: "Heatmap密度", value: densityCellCount, status: "ready" },
     { label: "Arc飞线", value: routeCount, status: "ready" },
-    { label: "Tile天气", value: text("待接入"), status: "planned" },
+    { label: "Tile天气", value: weatherTileCount, status: "ready" },
   ];
   return (
     <div
@@ -2005,6 +2045,66 @@ function setMapLibreLayerVisibility(map: MapLibreMap, layerIds: string[], visibl
       map.setLayoutProperty(layerId, "visibility", visible ? "visible" : "none");
     }
   }
+}
+
+function buildWeatherTileCells(regions: WorldMapRegion[], projection: GeoProjection): WeatherTileCell[] {
+  const cellSize = 20;
+  const cells = new Map<string, WeatherTileCell>();
+
+  for (const region of regions) {
+    const center = project(region.center, projection);
+    const anomalyStress = Math.min(1, Math.abs(region.weather.precipitationAnomalyPct) / 85);
+    const floodStress = region.weather.floodRisk;
+    const droughtStress = region.weather.droughtRisk;
+    const weatherStress = Math.max(anomalyStress, floodStress, droughtStress);
+    const radius = 1 + Math.round(weatherStress * 2);
+    const tone =
+      droughtStress > floodStress && region.weather.precipitationAnomalyPct < 0 ? "#f97316" : "#22d3ee";
+
+    for (let column = -radius; column <= radius; column += 1) {
+      for (let row = -radius; row <= radius; row += 1) {
+        const distance = Math.hypot(column, row);
+        if (distance > radius + 0.35) continue;
+
+        const decay = 1 - distance / (radius + 0.85);
+        const intensity = clamp(weatherStress * (0.45 + decay * 0.55), 0, 1);
+        if (intensity < 0.16) continue;
+
+        const x = center.x + column * cellSize;
+        const y = center.y + row * cellSize;
+        if (x < -cellSize || x > MAP_WIDTH + cellSize || y < -cellSize || y > MAP_HEIGHT + cellSize) continue;
+
+        const gridX = Math.round(x / cellSize);
+        const gridY = Math.round(y / cellSize);
+        const id = `${gridX}:${gridY}`;
+        const alpha = 26 + intensity * 92;
+        const previous = cells.get(id);
+        if (!previous || previous.intensity < intensity) {
+          const left = gridX * cellSize - cellSize / 2;
+          const top = gridY * cellSize - cellSize / 2;
+          const right = left + cellSize;
+          const bottom = top + cellSize;
+          cells.set(id, {
+            id,
+            polygon: [
+              [left, top, 0],
+              [right, top, 0],
+              [right, bottom, 0],
+              [left, bottom, 0],
+            ],
+            fillColor: colorToRgba(tone, alpha),
+            lineColor: colorToRgba(tone, 24 + intensity * 64),
+            intensity,
+            regionId: region.id,
+          });
+        }
+      }
+    }
+  }
+
+  return Array.from(cells.values())
+    .sort((left, right) => right.intensity - left.intensity)
+    .slice(0, 220);
 }
 
 function buildRiskDensityCells(regions: WorldMapRegion[], projection: GeoProjection): RiskDensityCell[] {
