@@ -306,6 +306,8 @@ const EN: Record<string, string> = {
     "Interaction still runs on SVG while GPU layers are organized for deck.gl",
   "MapLibre底图": "MapLibre Basemap",
   "离线运行": "Offline",
+  "视图同步": "View Sync",
+  "已同步": "Synced",
   "MapLibre已就绪": "MapLibre Ready",
   "MapLibre异常": "MapLibre Error",
   "MapLibre加载中": "MapLibre Loading",

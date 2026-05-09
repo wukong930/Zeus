@@ -222,6 +222,12 @@ threshold_modifier、propagation_activator、risk_recalc、数据腐烂防护
 - MapLibre 使用本地 `world-atlas` 国家边界和当前风险区域 GeoJSON，不依赖外部瓦片、token 或第三方地图服务。
 - 底图壳层保持 `pointer-events: none`，仅验证 MapLibre 运行链路和离线 source/layer 契约，现有地图交互仍由 SVG 负责。
 
+# 2026-05-09 — World Risk Map Phase B.2.5 WebGL 视图同步
+
+- 将 MapLibre 底图壳层和 deck.gl 预览层移入 SVG `viewBox` 坐标系内，通过同一个 `translate/scale` 变换跟随地图拖拽与缩放。
+- WebGL 预览层继续保持 `pointer-events: none`，不接管节点点击、区域索引、详情抽屉或缩放控件。
+- WebGL 准备面板新增“视图同步”状态，明确增强层已与 SVG 主地图共享视图变换。
+
 # 2026-05-09 — Shell Navigation Phase 1
 
 - 全局侧边栏升级为半透明玻璃态外壳，保留 Zeus 现有导航信息架构，不改业务页面和世界风险地图数据逻辑。

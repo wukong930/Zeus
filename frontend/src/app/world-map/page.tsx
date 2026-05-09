@@ -761,7 +761,6 @@ function WorldMapCanvas({
 
   return (
     <div className="absolute inset-0">
-      {rendererMode === "webgl-ready" && <MapLibreBasemapPreview regions={regions} />}
       <svg
         className={cn("relative z-10 h-full w-full touch-none select-none", dragging ? "cursor-grabbing" : "cursor-grab")}
         viewBox={`0 0 ${MAP_WIDTH} ${MAP_HEIGHT}`}
@@ -806,6 +805,25 @@ function WorldMapCanvas({
 
         <rect x="0" y="0" width={MAP_WIDTH} height={MAP_HEIGHT} fill="url(#worldMapOceanGlow)" />
         <g transform={`translate(${view.x} ${view.y}) scale(${view.scale})`}>
+          {rendererMode === "webgl-ready" && (
+            <foreignObject
+              x="0"
+              y="0"
+              width={MAP_WIDTH}
+              height={MAP_HEIGHT}
+              className="pointer-events-none"
+            >
+              <div className="relative h-full w-full overflow-hidden opacity-70 mix-blend-screen">
+                <MapLibreBasemapPreview regions={regions} />
+                <WorldMapWebGlPreview
+                  densityCells={densityCells}
+                  projection={projection}
+                  regions={regions}
+                  routes={riskRoutes}
+                />
+              </div>
+            </foreignObject>
+          )}
           <path
             d={graticulePath}
             fill="none"
@@ -1011,19 +1029,11 @@ function WorldMapCanvas({
         onReset={() => setView(INITIAL_MAP_VIEW)}
       />
       {rendererMode === "webgl-ready" && (
-        <>
-          <WorldMapWebGlPreview
-            densityCells={densityCells}
-            projection={projection}
-            regions={regions}
-            routes={riskRoutes}
-          />
-          <WebGlReadinessPanel
-            densityCellCount={densityCells.length}
-            regionCount={regions.length}
-            routeCount={riskRoutes.length}
-          />
-        </>
+        <WebGlReadinessPanel
+          densityCellCount={densityCells.length}
+          regionCount={regions.length}
+          routeCount={riskRoutes.length}
+        />
       )}
     </div>
   );
@@ -1214,6 +1224,7 @@ function WebGlReadinessPanel({
   const { text } = useI18n();
   const rows = [
     { label: "MapLibre底图", value: text("离线运行"), status: "ready" },
+    { label: "视图同步", value: text("已同步"), status: "ready" },
     { label: "GeoJson区域", value: regionCount, status: "ready" },
     { label: "Heatmap密度", value: densityCellCount, status: "ready" },
     { label: "Arc飞线", value: routeCount, status: "ready" },
