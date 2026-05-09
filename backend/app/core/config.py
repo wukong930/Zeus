@@ -41,6 +41,9 @@ class Settings(BaseSettings):
     data_source_gdelt_enabled: bool = False
     data_source_gdelt_query: str = "commodities futures OR supply chain OR inventory"
     data_source_open_meteo_enabled: bool = False
+    open_meteo_base_url: str = "https://api.open-meteo.com/v1/forecast"
+    data_source_nasa_power_enabled: bool = False
+    nasa_power_base_url: str = "https://power.larc.nasa.gov/api/temporal/daily/point"
     data_source_fred_enabled: bool = False
     fred_api_key: str | None = None
     fred_base_url: str = "https://api.stlouisfed.org/fred"

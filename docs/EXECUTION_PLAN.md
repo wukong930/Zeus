@@ -1,6 +1,14 @@
 # Zeus 执行计划
 
-> 版本: 1.4 | 日期: 2026-05-08 | 总工期: ~20 周
+> 版本: 1.5 | 日期: 2026-05-09 | 总工期: ~20 周
+
+## 变更说明（v1.5 — World Risk Map Phase C.1）
+
+世界风险地图进入真实天气数据接入阶段：
+
+- Open-Meteo 天气采集配置化，并扩展到主要商品区域。
+- NASA POWER 日频天气客户端落地，作为历史 baseline 的公开数据源入口。
+- `/api/world-map` 开始融合 `industry_data` 最新天气行；没有真实天气时仍明确标注 `regional_baseline_seed`。
 
 ## 变更说明（v1.4 — World Risk Map）
 

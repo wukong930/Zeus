@@ -8,6 +8,7 @@ from app.api.world_map import (
     _risk_level,
 )
 from app.models.alert import Alert
+from app.models.industry_data import IndustryData
 from app.models.news_events import NewsEvent
 from app.models.signal import SignalTrack
 
@@ -99,6 +100,78 @@ def test_region_snapshot_keeps_baseline_label_without_runtime_links() -> None:
     assert region.causalScope.hasDirectLinks is False
     assert region.weather.dataSource == "regional_baseline_seed"
     assert region.story.evidence[0].kind == "weather"
+
+
+def test_region_snapshot_uses_runtime_weather_rows() -> None:
+    now = datetime.now(timezone.utc)
+    region = _build_region_snapshot(
+        WORLD_RISK_REGIONS[0],
+        alerts=[],
+        news=[],
+        signals=[],
+        positions=[],
+        industry_weather=[
+            IndustryData(
+                symbol="NR",
+                data_type="weather_precip_7d",
+                value=180.0,
+                unit="mm",
+                source="open_meteo:hat_yai",
+                timestamp=now,
+                ingested_at=now,
+            ),
+            IndustryData(
+                symbol="NR",
+                data_type="weather_temp_max_7d",
+                value=34.0,
+                unit="C",
+                source="open_meteo:hat_yai",
+                timestamp=now,
+                ingested_at=now,
+            ),
+            IndustryData(
+                symbol="NR",
+                data_type="weather_temp_min_7d",
+                value=24.0,
+                unit="C",
+                source="open_meteo:hat_yai",
+                timestamp=now,
+                ingested_at=now,
+            ),
+        ],
+    )
+
+    assert region.dataQuality == "partial"
+    assert region.weather.dataSource == "open_meteo+regional_baseline_seed"
+    assert region.weather.rainfall7dMm == 180.0
+    assert region.weather.precipitationAnomalyPct > 0
+    assert region.story.evidence[0].source == "open_meteo+regional_baseline_seed"
+
+
+def test_region_snapshot_keeps_weather_scoped_by_location_region() -> None:
+    now = datetime.now(timezone.utc)
+    region = _build_region_snapshot(
+        WORLD_RISK_REGIONS[4],
+        alerts=[],
+        news=[],
+        signals=[],
+        positions=[],
+        industry_weather=[
+            IndustryData(
+                symbol="M",
+                data_type="weather_precip_7d",
+                value=200.0,
+                unit="mm",
+                source="open_meteo:ames_iowa",
+                timestamp=now,
+                ingested_at=now,
+            ),
+        ],
+    )
+
+    assert region.id == "brazil_soy_agri"
+    assert region.dataQuality == "baseline"
+    assert region.weather.dataSource == "regional_baseline_seed"
 
 
 def test_region_snapshot_does_not_link_category_only_signals() -> None:

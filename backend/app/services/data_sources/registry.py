@@ -47,6 +47,17 @@ def data_source_statuses(settings: Settings | None = None) -> list[DataSourceSta
             note="Weather forecast and historical weather for origin-market shock detection.",
         ),
         DataSourceStatus(
+            id="nasa_power",
+            name="NASA POWER",
+            category="industry_data",
+            enabled=current.data_source_nasa_power_enabled,
+            configured=current.data_source_nasa_power_enabled,
+            requires_key=False,
+            free_tier="free_no_key",
+            status="ready" if current.data_source_nasa_power_enabled else "disabled",
+            note="Daily agro-meteorological precipitation and temperature for regional baselines.",
+        ),
+        DataSourceStatus(
             id="fred",
             name="FRED",
             category="macro_data",

@@ -11,9 +11,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.models.alert import Alert
+from app.models.industry_data import IndustryData
 from app.models.news_events import NewsEvent
 from app.models.position import Position
 from app.models.signal import SignalTrack
+from app.services.data_sources.open_meteo import DEFAULT_WEATHER_LOCATIONS
 
 router = APIRouter(prefix="/api/world-map", tags=["world-map"])
 
@@ -539,6 +541,22 @@ WORLD_RISK_REGIONS: tuple[RegionDefinition, ...] = (
     ),
 )
 
+WORLD_MAP_WEATHER_DATA_TYPES = frozenset(
+    {
+        "weather_precip_7d",
+        "weather_temp_max_7d",
+        "weather_temp_min_7d",
+        "weather_baseline_precip_7d",
+        "weather_baseline_temp_mean_7d",
+    }
+)
+BASELINE_WEATHER_SOURCE = "regional_baseline_seed"
+WEATHER_REGION_BY_LOCATION_KEY = {
+    location.key: location.region_id
+    for location in DEFAULT_WEATHER_LOCATIONS
+    if location.region_id is not None
+}
+
 
 @router.get("", response_model=WorldMapSnapshot)
 async def get_world_map(
@@ -554,7 +572,9 @@ async def get_world_map(
             maxRiskScore=max((region.riskScore for region in regions), default=0),
             runtimeLinkedRegions=sum(region.causalScope.hasDirectLinks for region in regions),
         ),
-        layers=_world_map_layers(),
+        layers=_world_map_layers(
+            weather_runtime=any(region.weather.dataSource != BASELINE_WEATHER_SOURCE for region in regions)
+        ),
         regions=regions,
     )
 
@@ -618,6 +638,16 @@ async def _load_world_map_regions(session: AsyncSession, *, limit: int) -> list[
             )
         ).all()
     )
+    weather_rows = list(
+        (
+            await session.scalars(
+                select(IndustryData)
+                .where(IndustryData.data_type.in_(WORLD_MAP_WEATHER_DATA_TYPES))
+                .order_by(IndustryData.timestamp.desc(), IndustryData.ingested_at.desc())
+                .limit(min(max(limit * 8, 200), 4000))
+            )
+        ).all()
+    )
     regions = [
         _build_region_snapshot(
             definition,
@@ -625,6 +655,7 @@ async def _load_world_map_regions(session: AsyncSession, *, limit: int) -> list[
             news=news,
             signals=signals,
             positions=positions,
+            industry_weather=weather_rows,
         )
         for definition in WORLD_RISK_REGIONS
     ]
@@ -639,6 +670,7 @@ def _build_region_snapshot(
     news: list[NewsEvent],
     signals: list[SignalTrack],
     positions: list[Position],
+    industry_weather: list[IndustryData] | None = None,
 ) -> WorldMapRegion:
     region_symbols = set(definition.symbols)
     matched_alerts = [row for row in alerts if _symbols_intersect(_alert_symbols(row), region_symbols)]
@@ -650,10 +682,11 @@ def _build_region_snapshot(
     matched_positions = [row for row in positions if _symbols_intersect(_position_symbols(row), region_symbols)]
     latest_event_at = _latest_event_at(matched_alerts, matched_news, matched_signals)
     high_severity_alerts = sum(row.severity in {"critical", "high"} for row in matched_alerts)
+    weather = _region_weather(definition, industry_weather or [])
     weather_risk = max(
-        abs(definition.baseline_weather.precipitation_anomaly_pct) / 40,
-        definition.baseline_weather.flood_risk,
-        definition.baseline_weather.drought_risk,
+        abs(weather.precipitationAnomalyPct) / 40,
+        weather.floodRisk,
+        weather.droughtRisk,
     )
     lens = _commodity_lens(definition)
     factor_signals = _factor_signals(
@@ -663,6 +696,7 @@ def _build_region_snapshot(
         matched_news=matched_news,
         matched_signals=matched_signals,
         matched_positions=matched_positions,
+        weather=weather,
         weather_risk=weather_risk,
     )
     avg_signal_confidence = (
@@ -714,15 +748,7 @@ def _build_region_snapshot(
         riskScore=risk_score,
         riskLevel=_risk_level(risk_score),
         drivers=_region_drivers(definition, runtime, factor_signals),
-        weather=WorldMapWeather(
-            precipitationAnomalyPct=definition.baseline_weather.precipitation_anomaly_pct,
-            rainfall7dMm=definition.baseline_weather.rainfall_7d_mm,
-            temperatureAnomalyC=definition.baseline_weather.temperature_anomaly_c,
-            floodRisk=definition.baseline_weather.flood_risk,
-            droughtRisk=definition.baseline_weather.drought_risk,
-            dataSource="regional_baseline_seed",
-            confidence=definition.baseline_weather.confidence,
-        ),
+        weather=weather,
         runtime=runtime,
         story=story,
         adaptiveAlerts=adaptive_alerts,
@@ -735,13 +761,180 @@ def _build_region_snapshot(
         ),
         narrativeZh=definition.narrative_zh,
         narrativeEn=definition.narrative_en,
-        dataQuality=_data_quality(runtime),
+        dataQuality=_data_quality(runtime, weather),
     )
 
 
-def _world_map_layers() -> list[WorldMapLayer]:
+def _region_weather(
+    definition: RegionDefinition,
+    industry_weather: list[IndustryData],
+) -> WorldMapWeather:
+    seed = definition.baseline_weather
+    latest = _latest_weather_rows(industry_weather, definition)
+    recent_precip_rows = _rows_for_type(latest, "weather_precip_7d")
+    if not recent_precip_rows:
+        return WorldMapWeather(
+            precipitationAnomalyPct=seed.precipitation_anomaly_pct,
+            rainfall7dMm=seed.rainfall_7d_mm,
+            temperatureAnomalyC=seed.temperature_anomaly_c,
+            floodRisk=seed.flood_risk,
+            droughtRisk=seed.drought_risk,
+            dataSource=BASELINE_WEATHER_SOURCE,
+            confidence=seed.confidence,
+        )
+
+    rainfall_7d_mm = _mean([row.value for row in recent_precip_rows])
+    baseline_precip_rows = _rows_for_type(latest, "weather_baseline_precip_7d")
+    baseline_precip = _mean([row.value for row in baseline_precip_rows])
+    baseline_precip = baseline_precip if baseline_precip is not None and baseline_precip > 0 else seed.rainfall_7d_mm
+    precipitation_anomaly_pct = _bounded_pct_change(rainfall_7d_mm, baseline_precip)
+
+    temp_max = _mean([row.value for row in _rows_for_type(latest, "weather_temp_max_7d")])
+    temp_min = _mean([row.value for row in _rows_for_type(latest, "weather_temp_min_7d")])
+    baseline_temp = _mean([row.value for row in _rows_for_type(latest, "weather_baseline_temp_mean_7d")])
+    if temp_max is not None and temp_min is not None and baseline_temp is not None:
+        temperature_anomaly_c = round(((temp_max + temp_min) / 2) - baseline_temp, 2)
+    else:
+        temperature_anomaly_c = seed.temperature_anomaly_c
+
+    source_rows = [
+        *recent_precip_rows,
+        *_rows_for_type(latest, "weather_temp_max_7d"),
+        *_rows_for_type(latest, "weather_temp_min_7d"),
+        *_rows_for_type(latest, "weather_baseline_precip_7d"),
+        *_rows_for_type(latest, "weather_baseline_temp_mean_7d"),
+    ]
+    has_baseline_rows = bool(baseline_precip_rows)
+    source = _weather_source(source_rows, has_baseline_rows=has_baseline_rows)
+    confidence = _weather_confidence(
+        seed.confidence,
+        has_precip=True,
+        has_temperature=temp_max is not None and temp_min is not None,
+        has_baseline_rows=has_baseline_rows,
+    )
+
+    return WorldMapWeather(
+        precipitationAnomalyPct=precipitation_anomaly_pct,
+        rainfall7dMm=round(rainfall_7d_mm, 2),
+        temperatureAnomalyC=temperature_anomaly_c,
+        floodRisk=_runtime_flood_risk(seed, precipitation_anomaly_pct, rainfall_7d_mm, baseline_precip),
+        droughtRisk=_runtime_drought_risk(seed, precipitation_anomaly_pct, rainfall_7d_mm, baseline_precip),
+        dataSource=source,
+        confidence=confidence,
+    )
+
+
+def _latest_weather_rows(
+    rows: list[IndustryData],
+    definition: RegionDefinition,
+) -> dict[tuple[str, str], IndustryData]:
+    region_symbols = {_root_symbol(symbol) for symbol in definition.symbols}
+    latest: dict[tuple[str, str], IndustryData] = {}
+    for row in rows:
+        symbol = _root_symbol(row.symbol)
+        if row.data_type not in WORLD_MAP_WEATHER_DATA_TYPES:
+            continue
+        source_region = _weather_row_region(row.source)
+        if source_region is not None:
+            if source_region != definition.id:
+                continue
+        elif symbol not in region_symbols:
+            continue
+        key = (symbol, row.data_type)
+        previous = latest.get(key)
+        if previous is None or _weather_row_key(row) > _weather_row_key(previous):
+            latest[key] = row
+    return latest
+
+
+def _weather_row_region(source: str) -> str | None:
+    if ":" not in source:
+        return None
+    _, location_key = source.split(":", 1)
+    return WEATHER_REGION_BY_LOCATION_KEY.get(location_key)
+
+
+def _weather_row_key(row: IndustryData) -> tuple[datetime, datetime]:
+    return row.timestamp, row.ingested_at or row.timestamp
+
+
+def _rows_for_type(
+    rows: dict[tuple[str, str], IndustryData],
+    data_type: str,
+) -> list[IndustryData]:
+    return [row for (_, row_type), row in rows.items() if row_type == data_type]
+
+
+def _weather_source(rows: list[IndustryData], *, has_baseline_rows: bool) -> str:
+    sources = sorted({_source_family(row.source) for row in rows if row.source})
+    if not has_baseline_rows:
+        sources.append(BASELINE_WEATHER_SOURCE)
+    return "+".join(dict.fromkeys(sources)) if sources else BASELINE_WEATHER_SOURCE
+
+
+def _source_family(source: str) -> str:
+    return source.split(":", 1)[0]
+
+
+def _weather_confidence(
+    seed_confidence: float,
+    *,
+    has_precip: bool,
+    has_temperature: bool,
+    has_baseline_rows: bool,
+) -> float:
+    confidence = max(seed_confidence, 0.5)
+    if has_precip:
+        confidence += 0.1
+    if has_temperature:
+        confidence += 0.06
+    if has_baseline_rows:
+        confidence += 0.08
+    return round(_clamp_float(confidence, 0.0, 0.86), 2)
+
+
+def _runtime_flood_risk(
+    seed: WeatherBaseline,
+    anomaly_pct: float,
+    rainfall_7d_mm: float,
+    baseline_precip: float,
+) -> float:
+    positive_anomaly = max(anomaly_pct, 0.0) / 100
+    rain_load = min(rainfall_7d_mm / max(baseline_precip * 1.8, 1.0), 1.0)
+    return round(_clamp_float(seed.flood_risk * 0.35 + positive_anomaly * 0.72 + rain_load * 0.18, 0.0, 1.0), 2)
+
+
+def _runtime_drought_risk(
+    seed: WeatherBaseline,
+    anomaly_pct: float,
+    rainfall_7d_mm: float,
+    baseline_precip: float,
+) -> float:
+    negative_anomaly = max(-anomaly_pct, 0.0) / 100
+    dryness = max(0.0, 1 - rainfall_7d_mm / max(baseline_precip * 0.85, 1.0))
+    return round(_clamp_float(seed.drought_risk * 0.35 + negative_anomaly * 0.72 + dryness * 0.2, 0.0, 1.0), 2)
+
+
+def _bounded_pct_change(value: float, baseline: float) -> float:
+    if baseline <= 0:
+        return 0.0 if value <= 0 else 100.0
+    return round(_clamp_float(((value - baseline) / baseline) * 100, -95.0, 180.0), 2)
+
+
+def _mean(values: list[float]) -> float | None:
+    numbers = [value for value in values if value is not None]
+    return sum(numbers) / len(numbers) if numbers else None
+
+
+def _world_map_layers(*, weather_runtime: bool = False) -> list[WorldMapLayer]:
     return [
-        WorldMapLayer(id="weather", labelZh="天气异常", labelEn="Weather Anomaly", status="baseline", enabled=True),
+        WorldMapLayer(
+            id="weather",
+            labelZh="天气异常",
+            labelEn="Weather Anomaly",
+            status="ready" if weather_runtime else "baseline",
+            enabled=True,
+        ),
         WorldMapLayer(id="alerts", labelZh="预警热力", labelEn="Alert Heat", status="ready", enabled=True),
         WorldMapLayer(id="causal", labelZh="因果联动", labelEn="Causal Linkage", status="ready", enabled=True),
         WorldMapLayer(id="positions", labelZh="持仓暴露", labelEn="Position Exposure", status="ready", enabled=True),
@@ -956,10 +1149,11 @@ def _factor_signals(
     matched_news: list[NewsEvent],
     matched_signals: list[SignalTrack],
     matched_positions: list[Position],
+    weather: WorldMapWeather,
     weather_risk: float,
 ) -> list[FactorSignal]:
     signals: list[FactorSignal] = []
-    weather_factor = _weather_factor(definition, lens.default_factor)
+    weather_factor = _weather_factor(definition, weather, lens.default_factor)
     signals.append(
         FactorSignal(
             factor=weather_factor,
@@ -967,7 +1161,7 @@ def _factor_signals(
             evidence_kind="weather",
             label_zh=_factor_label_zh(weather_factor),
             label_en=_factor_label_en(weather_factor),
-            source="regional_baseline_seed",
+            source=weather.dataSource,
         )
     )
     for row in matched_alerts[:8]:
@@ -1022,14 +1216,17 @@ def _factor_signals(
     return _dedupe_factor_signals(signals)
 
 
-def _weather_factor(definition: RegionDefinition, fallback: RiskFactor) -> RiskFactor:
-    weather = definition.baseline_weather
+def _weather_factor(
+    definition: RegionDefinition,
+    weather: WorldMapWeather,
+    fallback: RiskFactor,
+) -> RiskFactor:
     text = f"{definition.id} {definition.narrative_zh} {definition.narrative_en}"
     if "el_nino" in text or "厄尔尼诺" in text:
         return "el_nino"
-    if weather.flood_risk >= 0.5 or weather.precipitation_anomaly_pct >= 10:
+    if weather.floodRisk >= 0.5 or weather.precipitationAnomalyPct >= 10:
         return "rainfall_surplus"
-    if weather.drought_risk >= 0.5 or weather.precipitation_anomaly_pct <= -10:
+    if weather.droughtRisk >= 0.5 or weather.precipitationAnomalyPct <= -10:
         return "drought_heat"
     return fallback
 
@@ -1212,9 +1409,11 @@ def _region_drivers(
     return drivers[:4]
 
 
-def _data_quality(runtime: WorldMapRuntime) -> DataQuality:
+def _data_quality(runtime: WorldMapRuntime, weather: WorldMapWeather) -> DataQuality:
     if runtime.alerts or runtime.newsEvents or runtime.signals or runtime.positions:
         return "runtime"
+    if weather.dataSource != BASELINE_WEATHER_SOURCE:
+        return "partial"
     return "baseline"
 
 

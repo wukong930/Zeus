@@ -55,6 +55,9 @@ services:
       DATA_SOURCE_GDELT_ENABLED: ${DATA_SOURCE_GDELT_ENABLED:-false}
       DATA_SOURCE_GDELT_QUERY: ${DATA_SOURCE_GDELT_QUERY:-commodities futures OR supply chain OR inventory}
       DATA_SOURCE_OPEN_METEO_ENABLED: ${DATA_SOURCE_OPEN_METEO_ENABLED:-false}
+      OPEN_METEO_BASE_URL: ${OPEN_METEO_BASE_URL:-https://api.open-meteo.com/v1/forecast}
+      DATA_SOURCE_NASA_POWER_ENABLED: ${DATA_SOURCE_NASA_POWER_ENABLED:-false}
+      NASA_POWER_BASE_URL: ${NASA_POWER_BASE_URL:-https://power.larc.nasa.gov/api/temporal/daily/point}
       DATA_SOURCE_FRED_ENABLED: ${DATA_SOURCE_FRED_ENABLED:-false}
       FRED_API_KEY: ${FRED_API_KEY:-}
       FRED_BASE_URL: ${FRED_BASE_URL:-https://api.stlouisfed.org/fred}

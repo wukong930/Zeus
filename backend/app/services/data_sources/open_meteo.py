@@ -26,20 +26,26 @@ class WeatherLocation:
     symbol: str
     latitude: float
     longitude: float
+    region_id: str | None = None
 
 
 DEFAULT_WEATHER_LOCATIONS: tuple[WeatherLocation, ...] = (
-    WeatherLocation("hat_yai", "Hat Yai", "NR", 7.0084, 100.4767),
-    WeatherLocation("songkhla", "Songkhla", "NR", 7.1898, 100.5951),
-    WeatherLocation("hainan", "Hainan", "RU", 19.5664, 109.9497),
-    WeatherLocation("yunnan", "Yunnan", "RU", 22.0094, 100.7974),
-    WeatherLocation("qingdao", "Qingdao", "RU", 36.0671, 120.3826),
+    WeatherLocation("hat_yai", "Hat Yai", "NR", 7.0084, 100.4767, "southeast_asia_rubber"),
+    WeatherLocation("songkhla", "Songkhla", "NR", 7.1898, 100.5951, "southeast_asia_rubber"),
+    WeatherLocation("hainan", "Hainan", "RU", 19.5664, 109.9497, "southeast_asia_rubber"),
+    WeatherLocation("yunnan", "Yunnan", "RU", 22.0094, 100.7974, "southeast_asia_rubber"),
+    WeatherLocation("ras_tanura", "Ras Tanura", "SC", 26.6423, 50.1597, "middle_east_crude"),
+    WeatherLocation("port_hedland", "Port Hedland", "I", -20.3107, 118.5878, "australia_iron_ore"),
+    WeatherLocation("tangshan", "Tangshan", "RB", 39.6309, 118.1802, "north_china_ferrous"),
+    WeatherLocation("sorriso", "Sorriso", "M", -12.5429, -55.7211, "brazil_soy_agri"),
+    WeatherLocation("ames_iowa", "Ames Iowa", "Y", 42.0308, -93.6319, "us_grains_energy"),
 )
 
 
 async def collect_open_meteo_weather(
     *,
     locations: tuple[WeatherLocation, ...] = DEFAULT_WEATHER_LOCATIONS,
+    base_url: str = OPEN_METEO_FORECAST_API,
     timeout: float = 15.0,
     client: httpx.AsyncClient | None = None,
 ) -> list[IndustryDataCreate]:
@@ -49,7 +55,7 @@ async def collect_open_meteo_weather(
         rows: list[IndustryDataCreate] = []
         for location in locations:
             response = await active_client.get(
-                OPEN_METEO_FORECAST_API,
+                base_url,
                 params={
                     "latitude": location.latitude,
                     "longitude": location.longitude,

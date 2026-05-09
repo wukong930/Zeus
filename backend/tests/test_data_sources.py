@@ -19,6 +19,10 @@ from app.services.data_sources.free_ingest import (
     run_free_data_ingest,
     safe_error_message,
 )
+from app.services.data_sources.nasa_power import (
+    collect_nasa_power_weather,
+    rows_from_power_payload,
+)
 from app.services.data_sources.open_meteo import WeatherLocation, rows_from_weather_payload
 from app.services.data_sources.registry import data_source_statuses
 from app.services.data_sources.types import DataSourceStatus
@@ -149,6 +153,71 @@ def test_open_meteo_payload_rejects_non_list_daily_field() -> None:
                 }
             },
         )
+
+
+def test_nasa_power_payload_creates_weather_industry_rows() -> None:
+    location = WeatherLocation("hat_yai", "Hat Yai", "NR", 7.0, 100.0)
+    rows = rows_from_power_payload(
+        location,
+        {
+            "properties": {
+                "parameter": {
+                    "PRECTOTCORR": {"20260501": 8.0, "20260502": 4.5},
+                    "T2M_MAX": {"20260501": 31.0, "20260502": 33.0},
+                    "T2M_MIN": {"20260501": 24.0, "20260502": 23.0},
+                }
+            }
+        },
+    )
+
+    assert {row.data_type for row in rows} == {
+        "weather_precip_7d",
+        "weather_temp_max_7d",
+        "weather_temp_min_7d",
+    }
+    assert rows[0].source == "nasa_power:hat_yai"
+    assert rows[0].value == 12.5
+    assert rows[0].timestamp.date().isoformat() == "2026-05-02"
+
+
+def test_nasa_power_payload_rejects_missing_parameter_shape() -> None:
+    location = WeatherLocation("hat_yai", "Hat Yai", "NR", 7.0, 100.0)
+
+    with pytest.raises(RuntimeError, match="properties.parameter"):
+        rows_from_power_payload(location, {"properties": {"parameters": {}}})
+
+
+async def test_nasa_power_collector_uses_daily_point_endpoint() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/api/temporal/daily/point"
+        assert request.url.params["community"] == "AG"
+        assert request.url.params["parameters"] == "PRECTOTCORR,T2M_MAX,T2M_MIN"
+        assert request.url.params["start"] == "20260501"
+        assert request.url.params["end"] == "20260502"
+        return httpx.Response(
+            200,
+            json={
+                "properties": {
+                    "parameter": {
+                        "PRECTOTCORR": {"20260501": 1.0, "20260502": 2.0},
+                        "T2M_MAX": {"20260501": 30.0, "20260502": 31.0},
+                        "T2M_MIN": {"20260501": 20.0, "20260502": 21.0},
+                    }
+                }
+            },
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        rows = await collect_nasa_power_weather(
+            locations=(WeatherLocation("hat_yai", "Hat Yai", "NR", 7.0, 100.0),),
+            start=pd.Timestamp("2026-05-01").date(),
+            end=pd.Timestamp("2026-05-02").date(),
+            base_url="https://power.test/api/temporal/daily/point",
+            client=client,
+        )
+
+    assert len(rows) == 3
+    assert rows[0].source_key == "nasa_power:hat_yai:precip:20260501-20260502"
 
 
 def test_fred_payload_skips_missing_values_and_uses_latest_numeric() -> None:
@@ -460,6 +529,7 @@ def test_data_source_registry_marks_keyed_sources() -> None:
     assert statuses["eia"].status == "missing_key"
     assert statuses["tushare"].status == "ready"
     assert statuses["open_meteo"].free_tier == "free_no_key"
+    assert statuses["nasa_power"].free_tier == "free_no_key"
 
 
 def test_tushare_csv_tuple_rejects_unbounded_settings() -> None:
