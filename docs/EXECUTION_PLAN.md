@@ -10,6 +10,7 @@
 - NASA POWER 日频天气客户端落地，作为历史 baseline 的公开数据源入口。
 - `/api/world-map` 开始融合 `industry_data` 最新天气行；没有真实天气时仍明确标注 `regional_baseline_seed`。
 - NASA POWER 历史季节 baseline 已支持按同日历窗口生成降水/温度均值，供世界风险地图计算距平。
+- 天气 baseline 增加历史分位数与低频调度任务；NOAA CDO / AccuWeather 作为可选天气源进入配置层。
 
 ## 变更说明（v1.4 — World Risk Map）
 

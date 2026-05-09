@@ -14,12 +14,10 @@ from app.services.data_sources.akshare_futures import (
     collect_akshare_market_data,
     parse_akshare_symbols,
 )
+from app.services.data_sources.accuweather import collect_accuweather_current_conditions
 from app.services.data_sources.eia import collect_eia_indicators
 from app.services.data_sources.fred import collect_fred_indicators
-from app.services.data_sources.nasa_power import (
-    collect_nasa_power_weather,
-    collect_nasa_power_weather_baselines,
-)
+from app.services.data_sources.nasa_power import collect_nasa_power_weather
 from app.services.data_sources.open_meteo import collect_open_meteo_weather
 from app.services.data_sources.tushare_futures import (
     DEFAULT_TUSHARE_EXCHANGES,
@@ -117,17 +115,20 @@ async def run_free_data_ingest(
         except Exception as exc:
             errors.append({"source": "nasa_power", "error": safe_error_message(exc)})
 
-    if current.data_source_nasa_power_baseline_enabled:
-        try:
-            nasa_baseline_rows = await collect_nasa_power_weather_baselines(
-                base_url=current.nasa_power_base_url,
-                years=current.nasa_power_baseline_years,
-                window_days=current.nasa_power_baseline_window_days,
-            )
-            industry_payloads.extend(nasa_baseline_rows)
-            source_counts["nasa_power_baseline"] = len(nasa_baseline_rows)
-        except Exception as exc:
-            errors.append({"source": "nasa_power_baseline", "error": safe_error_message(exc)})
+    if current.data_source_accuweather_enabled:
+        if current.accuweather_api_key:
+            try:
+                accuweather_rows = await collect_accuweather_current_conditions(
+                    api_key=current.accuweather_api_key,
+                    base_url=current.accuweather_base_url,
+                )
+                industry_payloads.extend(accuweather_rows)
+                source_counts["accuweather"] = len(accuweather_rows)
+            except Exception as exc:
+                errors.append({"source": "accuweather", "error": safe_error_message(exc, current.accuweather_api_key)})
+        else:
+            source_counts["accuweather"] = 0
+            errors.append({"source": "accuweather", "error": "enabled source missing ACCUWEATHER_API_KEY"})
 
     if current.data_source_fred_enabled:
         if current.fred_api_key:

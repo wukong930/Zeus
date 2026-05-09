@@ -224,6 +224,8 @@ export interface WorldMapWeather {
   temperatureAnomalyC: number;
   floodRisk: number;
   droughtRisk: number;
+  precipitationPercentile?: number | null;
+  temperaturePercentile?: number | null;
   dataSource: string;
   confidence: number;
 }

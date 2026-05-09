@@ -264,6 +264,12 @@ threshold_modifier、propagation_activator、risk_recalc、数据腐烂防护
 - baseline 采集新增独立开关与年份/窗口配置，避免高频 ingest 默认重复拉取历史大窗口。
 - 世界地图天气融合改为按站点区域作用域优先匹配，并按来源站点聚合，降低跨区域商品代码造成的天气污染。
 
+# 2026-05-09 — World Risk Map Phase C.3 异常分位数与低频调度
+
+- NASA POWER baseline 增加降水/温度历史分位数，世界地图天气风险评分开始吸收极端分位信息。
+- 新增 `weather-baseline` 低频调度任务，默认关闭，避免高频行情 ingest 重复拉取历史窗口。
+- 新增 NOAA CDO 与 AccuWeather 配置/数据源状态入口；AccuWeather 当前天气客户端接入 free ingest，NOAA 等 token 限额保护后再深接。
+
 # 2026-05-09 — Shell Navigation Phase 1
 
 - 全局侧边栏升级为半透明玻璃态外壳，保留 Zeus 现有导航信息架构，不改业务页面和世界风险地图数据逻辑。

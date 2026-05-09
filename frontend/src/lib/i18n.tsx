@@ -344,6 +344,8 @@ const EN: Record<string, string> = {
   "部分数据": "Partial Data",
   "天气异常": "Weather Anomaly",
   "降水距平": "Precipitation Anomaly",
+  "降水分位": "Rainfall Percentile",
+  "温度分位": "Temperature Percentile",
   "7日降水": "7D Rainfall",
   "洪涝风险": "Flood Risk",
   "主要驱动": "Primary Drivers",

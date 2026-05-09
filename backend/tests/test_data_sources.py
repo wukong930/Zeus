@@ -12,6 +12,10 @@ from app.services.data_sources.akshare_futures import (
     collect_akshare_market_data,
     parse_akshare_symbols,
 )
+from app.services.data_sources.accuweather import (
+    collect_accuweather_current_conditions,
+    rows_from_current_conditions_payload,
+)
 from app.services.data_sources.eia import EiaSeries, collect_eia_indicators, row_from_eia_payload
 from app.services.data_sources.fred import FredSeries, collect_fred_indicators, row_from_fred_payload
 from app.services.data_sources.free_ingest import (
@@ -197,18 +201,24 @@ def test_nasa_power_payload_creates_weather_baseline_rows() -> None:
             "properties": {
                 "parameter": {
                     "PRECTOTCORR": {
+                        "20260501": 8.0,
+                        "20260502": 10.0,
                         "20250501": 3.0,
                         "20250502": 4.0,
                         "20240501": 5.0,
                         "20240502": 6.0,
                     },
                     "T2M_MAX": {
+                        "20260501": 38.0,
+                        "20260502": 40.0,
                         "20250501": 30.0,
                         "20250502": 32.0,
                         "20240501": 34.0,
                         "20240502": 36.0,
                     },
                     "T2M_MIN": {
+                        "20260501": 28.0,
+                        "20260502": 30.0,
                         "20250501": 20.0,
                         "20250502": 22.0,
                         "20240501": 24.0,
@@ -228,9 +238,13 @@ def test_nasa_power_payload_creates_weather_baseline_rows() -> None:
     assert {row.data_type for row in rows} == {
         "weather_baseline_precip_7d",
         "weather_baseline_temp_mean_7d",
+        "weather_precip_pctile_7d",
+        "weather_temp_pctile_7d",
     }
     assert rows[0].value == 9.0
     assert rows[1].value == 28.0
+    assert rows[2].value == 100.0
+    assert rows[3].value == 100.0
     assert rows[0].source == "nasa_power_baseline:hat_yai"
 
 
@@ -271,7 +285,7 @@ async def test_nasa_power_baseline_collector_uses_historical_window() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.url.path == "/api/temporal/daily/point"
         assert request.url.params["start"] == "20240501"
-        assert request.url.params["end"] == "20250502"
+        assert request.url.params["end"] == "20260502"
         return httpx.Response(
             200,
             json={
@@ -282,18 +296,24 @@ async def test_nasa_power_baseline_collector_uses_historical_window() -> None:
                             "20240502": 6.0,
                             "20250501": 3.0,
                             "20250502": 4.0,
+                            "20260501": 8.0,
+                            "20260502": 10.0,
                         },
                         "T2M_MAX": {
                             "20240501": 34.0,
                             "20240502": 36.0,
                             "20250501": 30.0,
                             "20250502": 32.0,
+                            "20260501": 38.0,
+                            "20260502": 40.0,
                         },
                         "T2M_MIN": {
                             "20240501": 24.0,
                             "20240502": 26.0,
                             "20250501": 20.0,
                             "20250502": 22.0,
+                            "20260501": 28.0,
+                            "20260502": 30.0,
                         },
                     }
                 }
@@ -310,8 +330,63 @@ async def test_nasa_power_baseline_collector_uses_historical_window() -> None:
             client=client,
         )
 
-    assert len(rows) == 2
+    assert len(rows) == 4
     assert rows[0].source_key == "nasa_power:hat_yai:baseline_precip:2024-2025:0502:2d"
+    assert rows[2].data_type == "weather_precip_pctile_7d"
+
+
+def test_accuweather_current_conditions_payload_creates_rows() -> None:
+    location = WeatherLocation("hat_yai", "Hat Yai", "NR", 7.0, 100.0)
+    rows = rows_from_current_conditions_payload(
+        location,
+        [
+            {
+                "LocalObservationDateTime": "2026-05-09T12:00:00+07:00",
+                "Temperature": {"Metric": {"Value": 31.5}},
+                "Precip1hr": {"Metric": {"Value": 2.4}},
+                "RelativeHumidity": 83,
+                "Wind": {"Speed": {"Metric": {"Value": 18.0}}},
+            }
+        ],
+    )
+
+    assert {row.data_type for row in rows} == {
+        "weather_temp_current_c",
+        "weather_precip_1h",
+        "weather_humidity_pct",
+        "weather_wind_kph",
+    }
+    assert rows[0].source == "accuweather:hat_yai"
+
+
+async def test_accuweather_collector_uses_geoposition_and_current_conditions() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.headers["authorization"] == "Bearer accuweather-test"
+        if request.url.path == "/locations/v1/cities/geoposition/search":
+            assert request.url.params["q"] == "7.0,100.0"
+            return httpx.Response(200, json={"Key": "12345"})
+        if request.url.path == "/currentconditions/v1/12345":
+            return httpx.Response(
+                200,
+                json=[
+                    {
+                        "LocalObservationDateTime": "2026-05-09T12:00:00+07:00",
+                        "Temperature": {"Metric": {"Value": 31.5}},
+                    }
+                ],
+            )
+        raise AssertionError(f"unexpected path {request.url.path}")
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        rows = await collect_accuweather_current_conditions(
+            api_key="accuweather-test",
+            locations=(WeatherLocation("hat_yai", "Hat Yai", "NR", 7.0, 100.0),),
+            base_url="https://accuweather.test",
+            client=client,
+        )
+
+    assert len(rows) == 1
+    assert rows[0].data_type == "weather_temp_current_c"
 
 
 def test_fred_payload_skips_missing_values_and_uses_latest_numeric() -> None:
@@ -625,6 +700,23 @@ def test_data_source_registry_marks_keyed_sources() -> None:
     assert statuses["open_meteo"].free_tier == "free_no_key"
     assert statuses["nasa_power"].free_tier == "free_no_key"
     assert statuses["nasa_power_baseline"].free_tier == "free_no_key"
+    assert statuses["noaa_cdo"].status == "disabled"
+    assert statuses["accuweather"].status == "disabled"
+
+
+def test_data_source_registry_marks_weather_keyed_sources() -> None:
+    settings = Settings(
+        data_source_noaa_cdo_enabled=True,
+        noaa_cdo_api_key="noaa-test",
+        data_source_accuweather_enabled=True,
+        accuweather_api_key="",
+        _env_file=None,
+    )
+
+    statuses = {status.id: status for status in data_source_statuses(settings)}
+
+    assert statuses["noaa_cdo"].status == "ready"
+    assert statuses["accuweather"].status == "missing_key"
 
 
 def test_tushare_csv_tuple_rejects_unbounded_settings() -> None:

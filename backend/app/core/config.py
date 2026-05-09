@@ -47,6 +47,12 @@ class Settings(BaseSettings):
     data_source_nasa_power_baseline_enabled: bool = False
     nasa_power_baseline_years: int = Field(default=5, ge=1, le=30)
     nasa_power_baseline_window_days: int = Field(default=7, ge=1, le=45)
+    data_source_noaa_cdo_enabled: bool = False
+    noaa_cdo_api_key: str | None = None
+    noaa_cdo_base_url: str = "https://www.ncei.noaa.gov/cdo-web/api/v2"
+    data_source_accuweather_enabled: bool = False
+    accuweather_api_key: str | None = None
+    accuweather_base_url: str = "https://dataservice.accuweather.com"
     data_source_fred_enabled: bool = False
     fred_api_key: str | None = None
     fred_base_url: str = "https://api.stlouisfed.org/fred"

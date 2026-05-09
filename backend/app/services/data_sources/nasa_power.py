@@ -79,7 +79,7 @@ async def collect_nasa_power_weather_baselines(
     try:
         rows: list[IndustryDataCreate] = []
         request_start = min(start for start, _ in windows)
-        request_end = max(stop for _, stop in windows)
+        request_end = target_end
         for location in locations:
             response = await active_client.get(
                 base_url,
@@ -188,6 +188,14 @@ def baseline_rows_from_power_payload(
     temp_min = _daily_mapping(parameters, "T2M_MIN")
     precip_windows: list[float] = []
     temp_windows: list[float] = []
+    target_start = target_end - timedelta(days=window_days - 1)
+    target_precip_values = _values_for_window(precipitation, target_start, target_end)
+    target_temp_values = [
+        *_values_for_window(temp_max, target_start, target_end),
+        *_values_for_window(temp_min, target_start, target_end),
+    ]
+    target_precip = _sum_numbers(target_precip_values) if _numbers(target_precip_values) else None
+    target_temp = _mean_number(target_temp_values)
 
     for start, end in windows:
         precip_values = _values_for_window(precipitation, start, end)
@@ -229,6 +237,36 @@ def baseline_rows_from_power_payload(
                 data_type="weather_baseline_temp_mean_7d",
                 value=round(sum(temp_windows) / len(temp_windows), 4),
                 unit="C",
+                source=f"nasa_power_baseline:{location.key}",
+                timestamp=timestamp,
+            )
+        )
+    if target_precip is not None and precip_windows:
+        rows.append(
+            IndustryDataCreate(
+                source_key=(
+                    f"nasa_power:{location.key}:precip_pctile:"
+                    f"{year_range}:{target_end.strftime('%m%d')}:{window_days}d"
+                ),
+                symbol=location.symbol,
+                data_type="weather_precip_pctile_7d",
+                value=_percentile_rank(target_precip, precip_windows),
+                unit="pctile",
+                source=f"nasa_power_baseline:{location.key}",
+                timestamp=timestamp,
+            )
+        )
+    if target_temp is not None and temp_windows:
+        rows.append(
+            IndustryDataCreate(
+                source_key=(
+                    f"nasa_power:{location.key}:temp_pctile:"
+                    f"{year_range}:{target_end.strftime('%m%d')}:{window_days}d"
+                ),
+                symbol=location.symbol,
+                data_type="weather_temp_pctile_7d",
+                value=_percentile_rank(target_temp, temp_windows),
+                unit="pctile",
                 source=f"nasa_power_baseline:{location.key}",
                 timestamp=timestamp,
             )
@@ -308,6 +346,14 @@ def _sum_numbers(values: Any) -> float:
 def _mean_number(values: Any) -> float | None:
     numbers = _numbers(values)
     return round(sum(numbers) / len(numbers), 4) if numbers else None
+
+
+def _percentile_rank(value: float, sample: list[float]) -> float:
+    if not sample:
+        return 50.0
+    less = sum(1 for item in sample if item < value)
+    equal = sum(1 for item in sample if item == value)
+    return round(((less + equal * 0.5) / len(sample)) * 100, 2)
 
 
 def _max_number(values: Any) -> float | None:

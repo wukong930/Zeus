@@ -68,6 +68,8 @@ class WorldMapWeather(BaseModel):
     temperatureAnomalyC: float
     floodRisk: float = Field(ge=0, le=1)
     droughtRisk: float = Field(ge=0, le=1)
+    precipitationPercentile: float | None = Field(default=None, ge=0, le=100)
+    temperaturePercentile: float | None = Field(default=None, ge=0, le=100)
     dataSource: str
     confidence: float = Field(ge=0, le=1)
 
@@ -548,6 +550,12 @@ WORLD_MAP_WEATHER_DATA_TYPES = frozenset(
         "weather_temp_min_7d",
         "weather_baseline_precip_7d",
         "weather_baseline_temp_mean_7d",
+        "weather_precip_pctile_7d",
+        "weather_temp_pctile_7d",
+        "weather_precip_1h",
+        "weather_temp_current_c",
+        "weather_humidity_pct",
+        "weather_wind_kph",
     }
 )
 BASELINE_WEATHER_SOURCE = "regional_baseline_seed"
@@ -779,6 +787,8 @@ def _region_weather(
             temperatureAnomalyC=seed.temperature_anomaly_c,
             floodRisk=seed.flood_risk,
             droughtRisk=seed.drought_risk,
+            precipitationPercentile=None,
+            temperaturePercentile=None,
             dataSource=BASELINE_WEATHER_SOURCE,
             confidence=seed.confidence,
         )
@@ -788,6 +798,7 @@ def _region_weather(
     baseline_precip = _mean([row.value for row in baseline_precip_rows])
     baseline_precip = baseline_precip if baseline_precip is not None and baseline_precip > 0 else seed.rainfall_7d_mm
     precipitation_anomaly_pct = _bounded_pct_change(rainfall_7d_mm, baseline_precip)
+    precipitation_percentile = _mean([row.value for row in _rows_for_type(latest, "weather_precip_pctile_7d")])
 
     temp_max = _mean([row.value for row in _rows_for_type(latest, "weather_temp_max_7d")])
     temp_min = _mean([row.value for row in _rows_for_type(latest, "weather_temp_min_7d")])
@@ -796,6 +807,7 @@ def _region_weather(
         temperature_anomaly_c = round(((temp_max + temp_min) / 2) - baseline_temp, 2)
     else:
         temperature_anomaly_c = seed.temperature_anomaly_c
+    temperature_percentile = _mean([row.value for row in _rows_for_type(latest, "weather_temp_pctile_7d")])
 
     source_rows = [
         *recent_precip_rows,
@@ -803,22 +815,40 @@ def _region_weather(
         *_rows_for_type(latest, "weather_temp_min_7d"),
         *_rows_for_type(latest, "weather_baseline_precip_7d"),
         *_rows_for_type(latest, "weather_baseline_temp_mean_7d"),
+        *_rows_for_type(latest, "weather_precip_pctile_7d"),
+        *_rows_for_type(latest, "weather_temp_pctile_7d"),
     ]
     has_baseline_rows = bool(baseline_precip_rows)
+    has_percentile_rows = precipitation_percentile is not None or temperature_percentile is not None
     source = _weather_source(source_rows, has_baseline_rows=has_baseline_rows)
     confidence = _weather_confidence(
         seed.confidence,
         has_precip=True,
         has_temperature=temp_max is not None and temp_min is not None,
         has_baseline_rows=has_baseline_rows,
+        has_percentile_rows=has_percentile_rows,
     )
 
     return WorldMapWeather(
         precipitationAnomalyPct=precipitation_anomaly_pct,
         rainfall7dMm=round(rainfall_7d_mm, 2),
         temperatureAnomalyC=temperature_anomaly_c,
-        floodRisk=_runtime_flood_risk(seed, precipitation_anomaly_pct, rainfall_7d_mm, baseline_precip),
-        droughtRisk=_runtime_drought_risk(seed, precipitation_anomaly_pct, rainfall_7d_mm, baseline_precip),
+        floodRisk=_runtime_flood_risk(
+            seed,
+            precipitation_anomaly_pct,
+            rainfall_7d_mm,
+            baseline_precip,
+            precipitation_percentile=precipitation_percentile,
+        ),
+        droughtRisk=_runtime_drought_risk(
+            seed,
+            precipitation_anomaly_pct,
+            rainfall_7d_mm,
+            baseline_precip,
+            precipitation_percentile=precipitation_percentile,
+        ),
+        precipitationPercentile=round(precipitation_percentile, 2) if precipitation_percentile is not None else None,
+        temperaturePercentile=round(temperature_percentile, 2) if temperature_percentile is not None else None,
         dataSource=source,
         confidence=confidence,
     )
@@ -829,7 +859,7 @@ def _latest_weather_rows(
     definition: RegionDefinition,
 ) -> dict[tuple[str, str, str], IndustryData]:
     region_symbols = {_root_symbol(symbol) for symbol in definition.symbols}
-    latest: dict[tuple[str, str], IndustryData] = {}
+    latest: dict[tuple[str, str, str], IndustryData] = {}
     for row in rows:
         symbol = _root_symbol(row.symbol)
         if row.data_type not in WORLD_MAP_WEATHER_DATA_TYPES:
@@ -886,6 +916,7 @@ def _weather_confidence(
     has_precip: bool,
     has_temperature: bool,
     has_baseline_rows: bool,
+    has_percentile_rows: bool,
 ) -> float:
     confidence = max(seed_confidence, 0.5)
     if has_precip:
@@ -894,6 +925,8 @@ def _weather_confidence(
         confidence += 0.06
     if has_baseline_rows:
         confidence += 0.08
+    if has_percentile_rows:
+        confidence += 0.04
     return round(_clamp_float(confidence, 0.0, 0.86), 2)
 
 
@@ -902,10 +935,20 @@ def _runtime_flood_risk(
     anomaly_pct: float,
     rainfall_7d_mm: float,
     baseline_precip: float,
+    *,
+    precipitation_percentile: float | None = None,
 ) -> float:
     positive_anomaly = max(anomaly_pct, 0.0) / 100
     rain_load = min(rainfall_7d_mm / max(baseline_precip * 1.8, 1.0), 1.0)
-    return round(_clamp_float(seed.flood_risk * 0.35 + positive_anomaly * 0.72 + rain_load * 0.18, 0.0, 1.0), 2)
+    percentile_stress = _upper_percentile_stress(precipitation_percentile)
+    return round(
+        _clamp_float(
+            seed.flood_risk * 0.3 + positive_anomaly * 0.62 + rain_load * 0.16 + percentile_stress * 0.42,
+            0.0,
+            1.0,
+        ),
+        2,
+    )
 
 
 def _runtime_drought_risk(
@@ -913,10 +956,32 @@ def _runtime_drought_risk(
     anomaly_pct: float,
     rainfall_7d_mm: float,
     baseline_precip: float,
+    *,
+    precipitation_percentile: float | None = None,
 ) -> float:
     negative_anomaly = max(-anomaly_pct, 0.0) / 100
     dryness = max(0.0, 1 - rainfall_7d_mm / max(baseline_precip * 0.85, 1.0))
-    return round(_clamp_float(seed.drought_risk * 0.35 + negative_anomaly * 0.72 + dryness * 0.2, 0.0, 1.0), 2)
+    percentile_stress = _lower_percentile_stress(precipitation_percentile)
+    return round(
+        _clamp_float(
+            seed.drought_risk * 0.3 + negative_anomaly * 0.62 + dryness * 0.18 + percentile_stress * 0.42,
+            0.0,
+            1.0,
+        ),
+        2,
+    )
+
+
+def _upper_percentile_stress(value: float | None) -> float:
+    if value is None:
+        return 0.0
+    return _clamp_float((value - 70) / 30, 0.0, 1.0)
+
+
+def _lower_percentile_stress(value: float | None) -> float:
+    if value is None:
+        return 0.0
+    return _clamp_float((30 - value) / 30, 0.0, 1.0)
 
 
 def _bounded_pct_change(value: float, baseline: float) -> float:

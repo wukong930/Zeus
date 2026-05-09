@@ -186,6 +186,24 @@ def test_region_snapshot_uses_historical_weather_baseline_rows() -> None:
             ),
             IndustryData(
                 symbol="NR",
+                data_type="weather_precip_pctile_7d",
+                value=95.0,
+                unit="pctile",
+                source="nasa_power_baseline:hat_yai",
+                timestamp=now,
+                ingested_at=now,
+            ),
+            IndustryData(
+                symbol="NR",
+                data_type="weather_temp_pctile_7d",
+                value=75.0,
+                unit="pctile",
+                source="nasa_power_baseline:hat_yai",
+                timestamp=now,
+                ingested_at=now,
+            ),
+            IndustryData(
+                symbol="NR",
                 data_type="weather_temp_max_7d",
                 value=34.0,
                 unit="C",
@@ -208,6 +226,9 @@ def test_region_snapshot_uses_historical_weather_baseline_rows() -> None:
     assert region.weather.dataSource == "nasa_power_baseline+open_meteo"
     assert region.weather.precipitationAnomalyPct == 100.0
     assert region.weather.temperatureAnomalyC == 1.0
+    assert region.weather.precipitationPercentile == 95.0
+    assert region.weather.temperaturePercentile == 75.0
+    assert region.weather.floodRisk > 0.8
     assert region.weather.confidence > 0.75
 
 

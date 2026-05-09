@@ -1737,6 +1737,20 @@ function RegionInsightModal({ region, onClose }: { region: WorldMapRegion; onClo
                   value={`${Math.round(region.weather.floodRisk * 100)}%`}
                   tone={region.weather.floodRisk > 0.55 ? "warning" : "neutral"}
                 />
+                {region.weather.precipitationPercentile != null && (
+                  <WeatherMetric
+                    label={text("降水分位")}
+                    value={`${region.weather.precipitationPercentile.toFixed(0)}%`}
+                    tone={region.weather.precipitationPercentile >= 70 ? "warning" : "neutral"}
+                  />
+                )}
+                {region.weather.temperaturePercentile != null && (
+                  <WeatherMetric
+                    label={text("温度分位")}
+                    value={`${region.weather.temperaturePercentile.toFixed(0)}%`}
+                    tone={region.weather.temperaturePercentile >= 70 ? "warning" : "neutral"}
+                  />
+                )}
               </div>
               <div className="mt-3 text-caption text-text-muted">
                 {text("数据源")}：{region.weather.dataSource}

@@ -203,6 +203,13 @@ def test_rubber_cost_snapshots_job_is_registered() -> None:
     assert DEFAULT_JOB_HANDLERS["rubber-cost-snapshots"].__name__ == "rubber_cost_snapshots_job"
 
 
+def test_weather_baseline_job_is_registered_but_disabled_by_default() -> None:
+    definition = next(item for item in DEFAULT_JOB_DEFINITIONS if item.id == "weather-baseline")
+
+    assert definition.enabled is False
+    assert DEFAULT_JOB_HANDLERS["weather-baseline"].__name__ == "weather_baseline_job"
+
+
 def test_default_jobs_are_registered_or_explicitly_unconfigured() -> None:
     for definition in DEFAULT_JOB_DEFINITIONS:
         assert definition.id in DEFAULT_JOB_HANDLERS or definition.enabled is False

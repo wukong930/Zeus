@@ -22,6 +22,8 @@ from app.services.learning.drift_monitor import run_drift_monitor
 from app.services.learning.reflection_agent import run_reflection_agent
 from app.services.learning.recommendation_attribution import update_open_recommendation_excursions
 from app.services.data_sources.free_ingest import run_free_data_ingest
+from app.services.data_sources.nasa_power import collect_nasa_power_weather_baselines
+from app.services.etl.writers import append_industry_data
 from app.services.news.collectors import (
     CailiansheCollector,
     ExchangeAnnouncementsCollector,
@@ -66,6 +68,7 @@ DEFAULT_JOB_DEFINITIONS: tuple[JobDefinition, ...] = (
     JobDefinition("cost-snapshots", "黑色系成本快照", "45 16 * * 1-5"),
     JobDefinition("rubber-cost-snapshots", "橡胶成本快照", "50 16 * * 1-5"),
     JobDefinition("learning-reflection", "月度反思 Agent", "0 6 1 * *"),
+    JobDefinition("weather-baseline", "天气历史基线", "20 3 * * 0", enabled=False),
 )
 
 
@@ -420,6 +423,33 @@ async def learning_reflection_job() -> dict[str, Any]:
     }
 
 
+async def weather_baseline_job() -> dict[str, Any]:
+    settings = get_settings()
+    if not settings.data_source_nasa_power_baseline_enabled:
+        return {
+            "status": "skipped",
+            "reason": "DATA_SOURCE_NASA_POWER_BASELINE_ENABLED is disabled",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+
+    rows = await collect_nasa_power_weather_baselines(
+        base_url=settings.nasa_power_base_url,
+        years=settings.nasa_power_baseline_years,
+        window_days=settings.nasa_power_baseline_window_days,
+    )
+    async with AsyncSessionLocal() as session:
+        await append_industry_data(session, rows)
+        await session.commit()
+    return {
+        "status": "completed",
+        "source": "nasa_power_baseline",
+        "rows": len(rows),
+        "years": settings.nasa_power_baseline_years,
+        "window_days": settings.nasa_power_baseline_window_days,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+
 DEFAULT_JOB_HANDLERS: dict[str, JobHandler] = {
     "ingest": ingest_job,
     "track-outcomes": track_outcomes_job,
@@ -434,4 +464,5 @@ DEFAULT_JOB_HANDLERS: dict[str, JobHandler] = {
     "cost-snapshots": cost_snapshots_job,
     "rubber-cost-snapshots": rubber_cost_snapshots_job,
     "learning-reflection": learning_reflection_job,
+    "weather-baseline": weather_baseline_job,
 }
