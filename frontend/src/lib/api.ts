@@ -226,6 +226,10 @@ export interface WorldMapWeather {
   droughtRisk: number;
   precipitationPercentile?: number | null;
   temperaturePercentile?: number | null;
+  currentTemperatureC?: number | null;
+  precipitation1hMm?: number | null;
+  humidityPct?: number | null;
+  windKph?: number | null;
   dataSource: string;
   confidence: number;
 }

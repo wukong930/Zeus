@@ -18,6 +18,7 @@ from app.services.data_sources.accuweather import collect_accuweather_current_co
 from app.services.data_sources.eia import collect_eia_indicators
 from app.services.data_sources.fred import collect_fred_indicators
 from app.services.data_sources.nasa_power import collect_nasa_power_weather
+from app.services.data_sources.noaa_cdo import collect_noaa_cdo_daily_summaries
 from app.services.data_sources.open_meteo import collect_open_meteo_weather
 from app.services.data_sources.tushare_futures import (
     DEFAULT_TUSHARE_EXCHANGES,
@@ -121,6 +122,7 @@ async def run_free_data_ingest(
                 accuweather_rows = await collect_accuweather_current_conditions(
                     api_key=current.accuweather_api_key,
                     base_url=current.accuweather_base_url,
+                    max_locations=current.accuweather_max_locations_per_run,
                 )
                 industry_payloads.extend(accuweather_rows)
                 source_counts["accuweather"] = len(accuweather_rows)
@@ -129,6 +131,24 @@ async def run_free_data_ingest(
         else:
             source_counts["accuweather"] = 0
             errors.append({"source": "accuweather", "error": "enabled source missing ACCUWEATHER_API_KEY"})
+
+    if current.data_source_noaa_cdo_enabled:
+        if current.noaa_cdo_api_key:
+            try:
+                noaa_rows = await collect_noaa_cdo_daily_summaries(
+                    api_key=current.noaa_cdo_api_key,
+                    base_url=current.noaa_cdo_base_url,
+                    max_locations=current.noaa_cdo_max_locations_per_run,
+                    station_radius_degrees=current.noaa_cdo_station_radius_degrees,
+                    max_station_candidates=current.noaa_cdo_max_station_candidates,
+                )
+                industry_payloads.extend(noaa_rows)
+                source_counts["noaa_cdo"] = len(noaa_rows)
+            except Exception as exc:
+                errors.append({"source": "noaa_cdo", "error": safe_error_message(exc, current.noaa_cdo_api_key)})
+        else:
+            source_counts["noaa_cdo"] = 0
+            errors.append({"source": "noaa_cdo", "error": "enabled source missing NOAA_CDO_API_KEY"})
 
     if current.data_source_fred_enabled:
         if current.fred_api_key:

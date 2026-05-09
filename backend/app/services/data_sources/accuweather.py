@@ -16,6 +16,7 @@ async def collect_accuweather_current_conditions(
     api_key: str,
     locations: tuple[WeatherLocation, ...] = DEFAULT_WEATHER_LOCATIONS,
     base_url: str = ACCUWEATHER_BASE_URL,
+    max_locations: int | None = None,
     timeout: float = 20.0,
     client: httpx.AsyncClient | None = None,
 ) -> list[IndustryDataCreate]:
@@ -30,7 +31,8 @@ async def collect_accuweather_current_conditions(
             "Authorization": f"Bearer {api_key}",
             "Accept-Encoding": "gzip,deflate",
         }
-        for location in locations:
+        scoped_locations = locations[:max_locations] if max_locations is not None else locations
+        for location in scoped_locations:
             location_key = await _location_key_for_coordinates(
                 active_client,
                 base_url=base_url,

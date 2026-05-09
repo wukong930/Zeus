@@ -70,6 +70,10 @@ class WorldMapWeather(BaseModel):
     droughtRisk: float = Field(ge=0, le=1)
     precipitationPercentile: float | None = Field(default=None, ge=0, le=100)
     temperaturePercentile: float | None = Field(default=None, ge=0, le=100)
+    currentTemperatureC: float | None = None
+    precipitation1hMm: float | None = None
+    humidityPct: float | None = Field(default=None, ge=0, le=100)
+    windKph: float | None = Field(default=None, ge=0)
     dataSource: str
     confidence: float = Field(ge=0, le=1)
 
@@ -779,8 +783,19 @@ def _region_weather(
 ) -> WorldMapWeather:
     seed = definition.baseline_weather
     latest = _latest_weather_rows(industry_weather, definition)
+    current_temperature = _mean([row.value for row in _rows_for_type(latest, "weather_temp_current_c")])
+    precipitation_1h = _mean([row.value for row in _rows_for_type(latest, "weather_precip_1h")])
+    humidity = _mean([row.value for row in _rows_for_type(latest, "weather_humidity_pct")])
+    wind = _mean([row.value for row in _rows_for_type(latest, "weather_wind_kph")])
+    current_source_rows = [
+        *_rows_for_type(latest, "weather_temp_current_c"),
+        *_rows_for_type(latest, "weather_precip_1h"),
+        *_rows_for_type(latest, "weather_humidity_pct"),
+        *_rows_for_type(latest, "weather_wind_kph"),
+    ]
     recent_precip_rows = _rows_for_type(latest, "weather_precip_7d")
     if not recent_precip_rows:
+        has_current_rows = bool(current_source_rows)
         return WorldMapWeather(
             precipitationAnomalyPct=seed.precipitation_anomaly_pct,
             rainfall7dMm=seed.rainfall_7d_mm,
@@ -789,8 +804,27 @@ def _region_weather(
             droughtRisk=seed.drought_risk,
             precipitationPercentile=None,
             temperaturePercentile=None,
-            dataSource=BASELINE_WEATHER_SOURCE,
-            confidence=seed.confidence,
+            currentTemperatureC=round(current_temperature, 2) if current_temperature is not None else None,
+            precipitation1hMm=round(precipitation_1h, 2) if precipitation_1h is not None else None,
+            humidityPct=round(humidity, 2) if humidity is not None else None,
+            windKph=round(wind, 2) if wind is not None else None,
+            dataSource=(
+                _weather_source(current_source_rows, has_baseline_rows=False)
+                if has_current_rows
+                else BASELINE_WEATHER_SOURCE
+            ),
+            confidence=(
+                _weather_confidence(
+                    seed.confidence,
+                    has_precip=False,
+                    has_temperature=False,
+                    has_baseline_rows=False,
+                    has_percentile_rows=False,
+                    has_current_rows=True,
+                )
+                if has_current_rows
+                else seed.confidence
+            ),
         )
 
     rainfall_7d_mm = _mean([row.value for row in recent_precip_rows])
@@ -817,9 +851,11 @@ def _region_weather(
         *_rows_for_type(latest, "weather_baseline_temp_mean_7d"),
         *_rows_for_type(latest, "weather_precip_pctile_7d"),
         *_rows_for_type(latest, "weather_temp_pctile_7d"),
+        *current_source_rows,
     ]
     has_baseline_rows = bool(baseline_precip_rows)
     has_percentile_rows = precipitation_percentile is not None or temperature_percentile is not None
+    has_current_rows = bool(current_source_rows)
     source = _weather_source(source_rows, has_baseline_rows=has_baseline_rows)
     confidence = _weather_confidence(
         seed.confidence,
@@ -827,6 +863,7 @@ def _region_weather(
         has_temperature=temp_max is not None and temp_min is not None,
         has_baseline_rows=has_baseline_rows,
         has_percentile_rows=has_percentile_rows,
+        has_current_rows=has_current_rows,
     )
 
     return WorldMapWeather(
@@ -849,6 +886,10 @@ def _region_weather(
         ),
         precipitationPercentile=round(precipitation_percentile, 2) if precipitation_percentile is not None else None,
         temperaturePercentile=round(temperature_percentile, 2) if temperature_percentile is not None else None,
+        currentTemperatureC=round(current_temperature, 2) if current_temperature is not None else None,
+        precipitation1hMm=round(precipitation_1h, 2) if precipitation_1h is not None else None,
+        humidityPct=round(humidity, 2) if humidity is not None else None,
+        windKph=round(wind, 2) if wind is not None else None,
         dataSource=source,
         confidence=confidence,
     )
@@ -917,6 +958,7 @@ def _weather_confidence(
     has_temperature: bool,
     has_baseline_rows: bool,
     has_percentile_rows: bool,
+    has_current_rows: bool,
 ) -> float:
     confidence = max(seed_confidence, 0.5)
     if has_precip:
@@ -927,6 +969,8 @@ def _weather_confidence(
         confidence += 0.08
     if has_percentile_rows:
         confidence += 0.04
+    if has_current_rows:
+        confidence += 0.03
     return round(_clamp_float(confidence, 0.0, 0.86), 2)
 
 

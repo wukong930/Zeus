@@ -29,6 +29,11 @@ from app.services.data_sources.nasa_power import (
     collect_nasa_power_weather,
     rows_from_power_payload,
 )
+from app.services.data_sources.noaa_cdo import (
+    NoaaStationCandidate,
+    collect_noaa_cdo_daily_summaries,
+    rows_from_cdo_daily_payload,
+)
 from app.services.data_sources.open_meteo import WeatherLocation, rows_from_weather_payload
 from app.services.data_sources.registry import data_source_statuses
 from app.services.data_sources.types import DataSourceStatus
@@ -360,7 +365,10 @@ def test_accuweather_current_conditions_payload_creates_rows() -> None:
 
 
 async def test_accuweather_collector_uses_geoposition_and_current_conditions() -> None:
+    requests: list[str] = []
+
     def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request.url.path)
         assert request.headers["authorization"] == "Bearer accuweather-test"
         if request.url.path == "/locations/v1/cities/geoposition/search":
             assert request.url.params["q"] == "7.0,100.0"
@@ -380,13 +388,118 @@ async def test_accuweather_collector_uses_geoposition_and_current_conditions() -
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
         rows = await collect_accuweather_current_conditions(
             api_key="accuweather-test",
-            locations=(WeatherLocation("hat_yai", "Hat Yai", "NR", 7.0, 100.0),),
+            locations=(
+                WeatherLocation("hat_yai", "Hat Yai", "NR", 7.0, 100.0),
+                WeatherLocation("songkhla", "Songkhla", "NR", 7.2, 100.6),
+            ),
             base_url="https://accuweather.test",
+            max_locations=1,
             client=client,
         )
 
     assert len(rows) == 1
     assert rows[0].data_type == "weather_temp_current_c"
+    assert requests == ["/locations/v1/cities/geoposition/search", "/currentconditions/v1/12345"]
+
+
+def test_noaa_cdo_payload_creates_weather_industry_rows() -> None:
+    location = WeatherLocation("ames_iowa", "Ames Iowa", "Y", 42.0, -93.6)
+    station = NoaaStationCandidate(
+        id="GHCND:USC00130200",
+        name="AMES",
+        latitude=42.0,
+        longitude=-93.6,
+        datacoverage=0.9,
+        distance_km=2.0,
+    )
+    rows = rows_from_cdo_daily_payload(
+        location,
+        station,
+        {
+            "results": [
+                {"date": "2026-05-01T00:00:00", "datatype": "PRCP", "value": 4.5},
+                {"date": "2026-05-02T00:00:00", "datatype": "PRCP", "value": 8.0},
+                {"date": "2026-05-01T00:00:00", "datatype": "TMAX", "value": 28.0},
+                {"date": "2026-05-02T00:00:00", "datatype": "TMAX", "value": 31.0},
+                {"date": "2026-05-01T00:00:00", "datatype": "TMIN", "value": 17.0},
+                {"date": "2026-05-02T00:00:00", "datatype": "TMIN", "value": 15.0},
+            ]
+        },
+    )
+
+    assert {row.data_type for row in rows} == {
+        "weather_precip_7d",
+        "weather_temp_max_7d",
+        "weather_temp_min_7d",
+    }
+    assert rows[0].source == "noaa_cdo:ames_iowa"
+    assert rows[0].source_key == "noaa_cdo:ames_iowa:GHCND-USC00130200:precip:2026-05-02"
+    assert rows[0].value == 12.5
+    assert rows[1].value == 31.0
+    assert rows[2].value == 15.0
+
+
+async def test_noaa_cdo_collector_maps_location_to_station_and_data() -> None:
+    requests: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request.url.path)
+        assert request.headers["token"] == "noaa-test"
+        if request.url.path == "/stations":
+            assert request.url.params["datasetid"] == "GHCND"
+            assert request.url.params["limit"] == "2"
+            assert request.url.params["startdate"] == "2026-05-01"
+            assert request.url.params["enddate"] == "2026-05-02"
+            assert "41.0000,-94.6000,43.0000,-92.6000" in str(request.url.params["extent"])
+            return httpx.Response(
+                200,
+                json={
+                    "results": [
+                        {
+                            "id": "GHCND:USC00130200",
+                            "name": "AMES",
+                            "latitude": 42.03,
+                            "longitude": -93.63,
+                            "datacoverage": 0.95,
+                        }
+                    ]
+                },
+            )
+        if request.url.path == "/data":
+            assert request.url.params["stationid"] == "GHCND:USC00130200"
+            assert request.url.params["units"] == "metric"
+            assert request.url.params["startdate"] == "2026-05-01"
+            assert request.url.params["enddate"] == "2026-05-02"
+            return httpx.Response(
+                200,
+                json={
+                    "results": [
+                        {"date": "2026-05-01T00:00:00", "datatype": "PRCP", "value": 1.0},
+                        {"date": "2026-05-02T00:00:00", "datatype": "PRCP", "value": 2.0},
+                    ]
+                },
+            )
+        raise AssertionError(f"unexpected path {request.url.path}")
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        rows = await collect_noaa_cdo_daily_summaries(
+            api_key="noaa-test",
+            locations=(
+                WeatherLocation("ames_iowa", "Ames Iowa", "Y", 42.0, -93.6),
+                WeatherLocation("sorriso", "Sorriso", "M", -12.5, -55.7),
+            ),
+            end=pd.Timestamp("2026-05-02").date(),
+            days=2,
+            base_url="https://noaa.test",
+            max_locations=1,
+            station_radius_degrees=1.0,
+            max_station_candidates=2,
+            client=client,
+        )
+
+    assert [row.data_type for row in rows] == ["weather_precip_7d"]
+    assert rows[0].value == 3.0
+    assert requests == ["/stations", "/data"]
 
 
 def test_fred_payload_skips_missing_values_and_uses_latest_numeric() -> None:
@@ -663,6 +776,10 @@ def test_market_context_payloads_group_rows_by_symbol() -> None:
 
 async def test_free_data_ingest_reports_enabled_keyed_sources_without_keys() -> None:
     settings = Settings(
+        data_source_noaa_cdo_enabled=True,
+        noaa_cdo_api_key="",
+        data_source_accuweather_enabled=True,
+        accuweather_api_key="",
         data_source_fred_enabled=True,
         fred_api_key="",
         data_source_eia_enabled=True,
@@ -676,8 +793,20 @@ async def test_free_data_ingest_reports_enabled_keyed_sources_without_keys() -> 
 
     assert result.status == "degraded"
     assert result.to_dict()["degraded"] is True
-    assert result.source_counts == {"fred": 0, "eia": 0, "tushare": 0}
-    assert [error["source"] for error in result.errors] == ["fred", "eia", "tushare"]
+    assert result.source_counts == {
+        "accuweather": 0,
+        "noaa_cdo": 0,
+        "fred": 0,
+        "eia": 0,
+        "tushare": 0,
+    }
+    assert [error["source"] for error in result.errors] == [
+        "accuweather",
+        "noaa_cdo",
+        "fred",
+        "eia",
+        "tushare",
+    ]
     assert all("missing" in error["error"] for error in result.errors)
 
 

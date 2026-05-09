@@ -232,6 +232,62 @@ def test_region_snapshot_uses_historical_weather_baseline_rows() -> None:
     assert region.weather.confidence > 0.75
 
 
+def test_region_snapshot_surfaces_current_weather_rows_without_7d_precip() -> None:
+    now = datetime.now(timezone.utc)
+    region = _build_region_snapshot(
+        WORLD_RISK_REGIONS[0],
+        alerts=[],
+        news=[],
+        signals=[],
+        positions=[],
+        industry_weather=[
+            IndustryData(
+                symbol="NR",
+                data_type="weather_temp_current_c",
+                value=32.6,
+                unit="C",
+                source="accuweather:hat_yai",
+                timestamp=now,
+                ingested_at=now,
+            ),
+            IndustryData(
+                symbol="NR",
+                data_type="weather_precip_1h",
+                value=6.1,
+                unit="mm",
+                source="accuweather:hat_yai",
+                timestamp=now,
+                ingested_at=now,
+            ),
+            IndustryData(
+                symbol="NR",
+                data_type="weather_humidity_pct",
+                value=88.0,
+                unit="pct",
+                source="accuweather:hat_yai",
+                timestamp=now,
+                ingested_at=now,
+            ),
+            IndustryData(
+                symbol="NR",
+                data_type="weather_wind_kph",
+                value=18.4,
+                unit="km/h",
+                source="accuweather:hat_yai",
+                timestamp=now,
+                ingested_at=now,
+            ),
+        ],
+    )
+
+    assert region.dataQuality == "partial"
+    assert region.weather.dataSource == "accuweather+regional_baseline_seed"
+    assert region.weather.currentTemperatureC == 32.6
+    assert region.weather.precipitation1hMm == 6.1
+    assert region.weather.humidityPct == 88.0
+    assert region.weather.windKph == 18.4
+
+
 def test_region_snapshot_keeps_weather_scoped_by_location_region() -> None:
     now = datetime.now(timezone.utc)
     region = _build_region_snapshot(

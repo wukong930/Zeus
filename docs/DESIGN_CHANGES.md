@@ -270,6 +270,12 @@ threshold_modifier、propagation_activator、risk_recalc、数据腐烂防护
 - 新增 `weather-baseline` 低频调度任务，默认关闭，避免高频行情 ingest 重复拉取历史窗口。
 - 新增 NOAA CDO 与 AccuWeather 配置/数据源状态入口；AccuWeather 当前天气客户端接入 free ingest，NOAA 等 token 限额保护后再深接。
 
+# 2026-05-10 — World Risk Map Phase C.4 NOAA/AccuWeather 深接
+
+- NOAA CDO 新增 station mapping 客户端：按默认产区经纬度搜索 GHCND 站点，再拉取近 7 日 PRCP/TMAX/TMIN，输出统一天气行业数据。
+- free ingest 接入 NOAA CDO，并为 NOAA/AccuWeather 增加每轮地点上限配置，保护免费额度和本地开发体验。
+- World Risk Map 天气卡片新增当前气温、1 小时降水、湿度和风速字段；当前天气可增强可读性，但不会替代 NASA POWER 历史 baseline。
+
 # 2026-05-09 — Shell Navigation Phase 1
 
 - 全局侧边栏升级为半透明玻璃态外壳，保留 Zeus 现有导航信息架构，不改业务页面和世界风险地图数据逻辑。

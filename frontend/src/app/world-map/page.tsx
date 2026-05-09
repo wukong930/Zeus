@@ -1737,6 +1737,34 @@ function RegionInsightModal({ region, onClose }: { region: WorldMapRegion; onClo
                   value={`${Math.round(region.weather.floodRisk * 100)}%`}
                   tone={region.weather.floodRisk > 0.55 ? "warning" : "neutral"}
                 />
+                {region.weather.currentTemperatureC != null && (
+                  <WeatherMetric
+                    label={text("当前气温")}
+                    value={`${region.weather.currentTemperatureC.toFixed(1)} C`}
+                    tone={region.weather.currentTemperatureC >= 32 ? "warning" : "neutral"}
+                  />
+                )}
+                {region.weather.precipitation1hMm != null && (
+                  <WeatherMetric
+                    label={text("1小时降水")}
+                    value={`${region.weather.precipitation1hMm.toFixed(1)} mm`}
+                    tone={region.weather.precipitation1hMm >= 5 ? "warning" : "neutral"}
+                  />
+                )}
+                {region.weather.humidityPct != null && (
+                  <WeatherMetric
+                    label={text("湿度")}
+                    value={`${region.weather.humidityPct.toFixed(0)}%`}
+                    tone="neutral"
+                  />
+                )}
+                {region.weather.windKph != null && (
+                  <WeatherMetric
+                    label={text("风速")}
+                    value={`${region.weather.windKph.toFixed(0)} km/h`}
+                    tone={region.weather.windKph >= 35 ? "warning" : "neutral"}
+                  />
+                )}
                 {region.weather.precipitationPercentile != null && (
                   <WeatherMetric
                     label={text("降水分位")}

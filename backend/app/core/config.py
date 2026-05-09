@@ -50,9 +50,13 @@ class Settings(BaseSettings):
     data_source_noaa_cdo_enabled: bool = False
     noaa_cdo_api_key: str | None = None
     noaa_cdo_base_url: str = "https://www.ncei.noaa.gov/cdo-web/api/v2"
+    noaa_cdo_max_locations_per_run: int = Field(default=3, ge=1, le=20)
+    noaa_cdo_station_radius_degrees: float = Field(default=1.5, ge=0.1, le=10.0)
+    noaa_cdo_max_station_candidates: int = Field(default=5, ge=1, le=50)
     data_source_accuweather_enabled: bool = False
     accuweather_api_key: str | None = None
     accuweather_base_url: str = "https://dataservice.accuweather.com"
+    accuweather_max_locations_per_run: int = Field(default=4, ge=1, le=20)
     data_source_fred_enabled: bool = False
     fred_api_key: str | None = None
     fred_base_url: str = "https://api.stlouisfed.org/fred"
