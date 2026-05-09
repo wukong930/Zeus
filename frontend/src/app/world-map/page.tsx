@@ -162,20 +162,29 @@ export default function WorldMapPage() {
   const selectedRegion = regions.find((region) => region.id === selectedId) ?? null;
 
   return (
-    <div className="flex min-h-full flex-col gap-3 px-4 py-3 animate-fade-in sm:px-6 lg:px-8">
-      <header className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-        <div>
-          <h1 className="text-h1 text-text-primary">{text("世界风险地图")}</h1>
-          <p className="mt-1 text-sm text-text-secondary">
-            {text("按商品属性自适应解释天气、物流、供应和价格传导")}
-          </p>
-        </div>
-        <StatusStrip snapshot={snapshot} source={source} lastUpdatedAt={lastUpdatedAt} />
-      </header>
+    <div className="flex min-h-full flex-col px-2 py-2 animate-fade-in sm:px-3 lg:px-4">
+      <Card
+        variant="flat"
+        className="relative h-[calc(100vh-88px)] min-h-[560px] flex-1 overflow-hidden p-0 md:min-h-[620px]"
+      >
+        <div className="absolute left-3 right-3 top-3 z-20 grid gap-2 lg:left-4 lg:right-4 lg:top-4 xl:grid-cols-[minmax(320px,420px)_minmax(0,1fr)_auto] xl:items-start">
+          <div className="rounded-sm border border-border-subtle bg-black/70 px-3 py-2 shadow-data-panel backdrop-blur-xl">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="flex items-center gap-2 text-text-primary">
+                  <Globe2 className="h-4 w-4 text-brand-cyan" />
+                  <h1 className="text-xl font-semibold leading-tight">{text("世界风险地图")}</h1>
+                </div>
+                <p className="mt-1 line-clamp-2 text-xs text-text-secondary">
+                  {text("按商品属性自适应解释天气、物流、供应和价格传导")}
+                </p>
+              </div>
+              <DataSourceBadge state={source} compact />
+            </div>
+            <StatusStrip snapshot={snapshot} source={source} lastUpdatedAt={lastUpdatedAt} />
+          </div>
 
-      <Card variant="flat" className="relative min-h-[740px] flex-1 overflow-hidden p-0">
-        <div className="absolute left-4 right-4 top-4 z-20 flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
-          <div className="max-w-full rounded-sm border border-border-subtle bg-black/72 p-1 shadow-data-panel backdrop-blur-md">
+          <div className="min-w-0 max-w-full rounded-sm border border-border-subtle bg-black/68 p-1 shadow-data-panel backdrop-blur-xl xl:justify-self-center">
             <CommodityToggle
               value={commodity}
               options={commodities}
@@ -186,14 +195,14 @@ export default function WorldMapPage() {
               }}
             />
           </div>
-          <div className="flex flex-wrap items-center gap-2 rounded-sm border border-border-subtle bg-black/72 p-1.5 shadow-data-panel backdrop-blur-md">
+
+          <div className="flex flex-wrap items-center gap-2 rounded-sm border border-border-subtle bg-black/68 p-1.5 shadow-data-panel backdrop-blur-xl xl:justify-self-end">
             <LayerLegend layers={snapshot?.layers ?? []} />
             <LiveUpdateBadge
               autoRefresh={autoRefresh}
               isRefreshing={isRefreshing}
               lastUpdatedAt={lastUpdatedAt}
             />
-            <DataSourceBadge state={source} />
             <Button
               variant={autoRefresh ? "primary" : "secondary"}
               size="sm"
@@ -209,7 +218,8 @@ export default function WorldMapPage() {
           </div>
         </div>
 
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_48%_38%,rgba(6,182,212,0.16),transparent_28%),radial-gradient(circle_at_80%_65%,rgba(16,185,129,0.12),transparent_22%),linear-gradient(180deg,rgba(5,7,6,0.98),rgba(0,0,0,1))]" />
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_48%_38%,rgba(6,182,212,0.18),transparent_30%),radial-gradient(circle_at_80%_65%,rgba(16,185,129,0.13),transparent_24%),linear-gradient(180deg,rgba(5,7,6,0.98),rgba(0,0,0,1))]" />
+        <div className="pointer-events-none absolute inset-0 z-10 opacity-[0.08] [background-image:linear-gradient(rgba(255,255,255,0.45)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.45)_1px,transparent_1px)] [background-size:48px_48px]" />
         <WorldMapCanvas
           regions={filteredRegions}
           riskDeltas={riskDeltas}
@@ -220,7 +230,7 @@ export default function WorldMapPage() {
           }}
         />
 
-        <div className="absolute bottom-4 left-4 z-20 max-w-[520px] rounded-sm border border-border-subtle bg-black/72 px-4 py-3 text-sm text-text-secondary shadow-data-panel backdrop-blur-md">
+        <div className="absolute bottom-4 left-4 z-20 max-w-[min(520px,calc(100%-112px))] rounded-sm border border-border-subtle bg-black/70 px-3 py-2 text-sm text-text-secondary shadow-data-panel backdrop-blur-xl">
           <div className="flex items-center gap-2 text-text-primary">
             <Compass className="h-4 w-4 text-brand-cyan" />
             {text("点击区域查看动态风险链")}
@@ -257,7 +267,7 @@ function StatusStrip({
 }) {
   const { text } = useI18n();
   return (
-    <div className="grid grid-cols-2 gap-2 md:grid-cols-4 xl:min-w-[640px]">
+    <div className="mt-2 grid grid-cols-2 gap-1.5 sm:grid-cols-4">
       <StatusPill icon={Globe2} label={text("覆盖")} value={String(snapshot?.summary.regions ?? 0)} />
       <StatusPill
         icon={ShieldAlert}
@@ -269,8 +279,8 @@ function StatusStrip({
         label={text("最高")}
         value={String(snapshot?.summary.maxRiskScore ?? 0)}
       />
-      <div className="flex items-center justify-between rounded-sm border border-border-subtle bg-bg-base px-3 py-2">
-        <span className="text-caption text-text-muted">{text("更新")}</span>
+      <div className="flex min-w-0 items-center justify-between gap-2 rounded-xs border border-border-subtle bg-black/38 px-2 py-1.5">
+        <span className="text-[10px] text-text-muted">{text("更新")}</span>
         <span className="flex items-center gap-2 font-mono text-xs text-text-primary">
           <DataSourceBadge state={source} compact />
           {lastUpdatedAt ? formatUpdateTime(lastUpdatedAt) : text("等待同步")}
@@ -309,12 +319,12 @@ function StatusPill({
   value: string;
 }) {
   return (
-    <div className="flex items-center justify-between rounded-sm border border-border-subtle bg-bg-base px-3 py-2">
-      <span className="flex items-center gap-1.5 text-caption text-text-muted">
-        <Icon className="h-3.5 w-3.5" />
+    <div className="flex min-w-0 items-center justify-between gap-2 rounded-xs border border-border-subtle bg-black/38 px-2 py-1.5">
+      <span className="flex min-w-0 items-center gap-1.5 truncate text-[10px] text-text-muted">
+        <Icon className="h-3 w-3 shrink-0" />
         {label}
       </span>
-      <span className="font-mono text-sm text-text-primary">{value}</span>
+      <span className="font-mono text-xs text-text-primary">{value}</span>
     </div>
   );
 }
