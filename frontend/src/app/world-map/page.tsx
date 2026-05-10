@@ -34,7 +34,7 @@ import worldAtlas from "world-atlas/countries-110m.json";
 import { Badge } from "@/components/Badge";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
-import { DataSourceBadge, type DataSourceState } from "@/components/DataSourceBadge";
+import type { DataSourceState } from "@/components/DataSourceBadge";
 import {
   fetchWorldMapTiles,
   fetchWorldMapSnapshot,
@@ -291,7 +291,7 @@ export default function WorldMapPage() {
         className="relative h-[calc(100vh-88px)] min-h-[560px] flex-1 overflow-hidden p-0 md:min-h-[620px]"
       >
         <div className="absolute left-3 right-3 top-3 z-20 grid gap-2 lg:left-4 lg:right-4 lg:top-4 xl:grid-cols-[minmax(280px,380px)_minmax(0,1fr)] xl:items-start">
-          <div className="rounded-sm border border-border-subtle bg-black/62 px-3 py-2 shadow-data-panel backdrop-blur-xl">
+          <div className="rounded-sm border border-white/[0.12] bg-black/45 px-3 py-2 shadow-data-panel backdrop-blur-2xl">
             <div className="flex items-start justify-between gap-3">
               <div>
                 <div className="flex items-center gap-2 text-text-primary">
@@ -302,13 +302,12 @@ export default function WorldMapPage() {
                   {text("按商品属性自适应解释天气、物流、供应和价格传导")}
                 </p>
               </div>
-              <DataSourceBadge state={source} compact />
             </div>
-            <StatusStrip snapshot={snapshot} source={source} lastUpdatedAt={lastUpdatedAt} />
+            <StatusStrip snapshot={snapshot} lastUpdatedAt={lastUpdatedAt} />
           </div>
 
           <div className="grid min-w-0 gap-2 xl:justify-items-end">
-            <div className="min-w-0 max-w-full rounded-sm border border-border-subtle bg-black/60 p-1 shadow-data-panel backdrop-blur-xl xl:max-w-[620px]">
+            <div className="min-w-0 max-w-full rounded-sm border border-white/[0.12] bg-black/42 p-1 shadow-data-panel backdrop-blur-2xl xl:max-w-[620px]">
               <CommodityToggle
                 value={commodity}
                 options={commodities}
@@ -320,7 +319,7 @@ export default function WorldMapPage() {
               />
             </div>
 
-            <div className="flex max-w-full flex-wrap items-center justify-end gap-1.5 rounded-sm border border-border-subtle bg-black/60 p-1.5 shadow-data-panel backdrop-blur-xl">
+            <div className="flex max-w-full flex-wrap items-center justify-end gap-1.5 rounded-sm border border-white/[0.12] bg-black/42 p-1.5 shadow-data-panel backdrop-blur-2xl">
               <span className="hidden h-7 items-center gap-1.5 rounded-xs border border-brand-emerald/20 bg-brand-emerald/10 px-2 text-caption text-brand-emerald-bright 2xl:inline-flex">
                 <Layers3 className="h-3 w-3" />
                 {text("活跃图层")} {snapshot?.layers.filter((layer) => layer.enabled).length ?? 0}
@@ -374,10 +373,6 @@ export default function WorldMapPage() {
           selectedId={selectedRegion?.id ?? null}
           onSelect={selectRegion}
         />
-
-        {rendererMode === "webgl-ready" && (
-          <EnhancedReadingPanel regions={filteredRegions} visibleLayers={visibleLayers} />
-        )}
 
         {source === "fallback" && (
           <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/65">
@@ -531,11 +526,9 @@ function ReadingMetric({
 
 function StatusStrip({
   snapshot,
-  source,
   lastUpdatedAt,
 }: {
   snapshot: WorldMapSnapshot | null;
-  source: DataSourceState;
   lastUpdatedAt: Date | null;
 }) {
   const { text } = useI18n();
@@ -552,10 +545,9 @@ function StatusStrip({
         label={text("最高")}
         value={String(snapshot?.summary.maxRiskScore ?? 0)}
       />
-      <div className="flex min-w-0 items-center justify-between gap-2 rounded-xs border border-border-subtle bg-black/38 px-2 py-1.5">
+      <div className="flex min-w-0 items-center justify-between gap-2 rounded-xs border border-white/[0.10] bg-white/[0.04] px-2 py-1.5 backdrop-blur-xl">
         <span className="text-[10px] text-text-muted">{text("更新")}</span>
-        <span className="flex items-center gap-2 font-mono text-xs text-text-primary">
-          <DataSourceBadge state={source} compact />
+        <span className="font-mono text-xs text-text-primary">
           {lastUpdatedAt ? formatUpdateTime(lastUpdatedAt) : text("等待同步")}
         </span>
       </div>
@@ -574,9 +566,9 @@ function LiveUpdateBadge({
 }) {
   const { text } = useI18n();
   return (
-    <div className="inline-flex h-7 items-center gap-2 rounded-xs border border-brand-emerald/25 bg-brand-emerald/10 px-2 text-caption text-brand-emerald-bright">
+    <div className="inline-flex h-7 items-center gap-2 rounded-xs border border-brand-emerald/25 bg-brand-emerald/10 px-2 text-caption text-brand-emerald-bright backdrop-blur-xl">
       <span className={cn("h-1.5 w-1.5 rounded-full bg-brand-emerald-bright", autoRefresh && "animate-heartbeat")} />
-      <span>{isRefreshing ? text("同步中") : autoRefresh ? text("实时轮询") : text("手动刷新")}</span>
+      <span>{isRefreshing ? text("同步中") : autoRefresh ? text("轮询中") : text("手动刷新")}</span>
       {lastUpdatedAt && <span className="font-mono text-text-muted">{formatUpdateTime(lastUpdatedAt)}</span>}
     </div>
   );
@@ -592,7 +584,7 @@ function StatusPill({
   value: string;
 }) {
   return (
-    <div className="flex min-w-0 items-center justify-between gap-2 rounded-xs border border-border-subtle bg-black/38 px-2 py-1.5">
+    <div className="flex min-w-0 items-center justify-between gap-2 rounded-xs border border-white/[0.10] bg-white/[0.04] px-2 py-1.5 backdrop-blur-xl">
       <span className="flex min-w-0 items-center gap-1.5 truncate text-[10px] text-text-muted">
         <Icon className="h-3 w-3 shrink-0" />
         {label}
@@ -752,7 +744,7 @@ function RiskRegionIndex({
   return (
     <div
       data-testid="world-map-region-index"
-      className="absolute bottom-4 left-4 z-20 w-[min(360px,calc(100%-112px))] rounded-sm border border-border-subtle bg-black/64 shadow-data-panel backdrop-blur-xl"
+      className="absolute bottom-4 left-4 z-20 w-[min(360px,calc(100%-112px))] rounded-sm border border-white/[0.12] bg-black/42 shadow-data-panel backdrop-blur-2xl"
     >
       <div className="flex items-start justify-between gap-3 border-b border-border-subtle px-3 py-2">
         <div>
@@ -782,7 +774,7 @@ function RiskRegionIndex({
               data-testid={`world-map-region-index-item-${region.id}`}
               onClick={() => onSelect(region.id)}
               className={cn(
-                "group min-w-0 rounded-xs border bg-black/32 px-2.5 py-2 text-left transition-colors",
+                "group min-w-0 rounded-xs border bg-black/24 px-2.5 py-2 text-left backdrop-blur-xl transition-colors",
                 active
                   ? "border-brand-cyan/45 bg-brand-cyan/12"
                   : "border-border-subtle hover:border-brand-cyan/25 hover:bg-white/[0.045]"
@@ -1185,7 +1177,7 @@ function WorldMapCanvas({
                 <circle cx={center.x} cy={center.y} r={2.8} fill="#fff" opacity="0.72" />
                 {visibleLayers.labels && (
                   <foreignObject x={center.x + 12} y={center.y - 18} width="132" height="38">
-                    <div className="rounded-sm border border-border-subtle bg-black/70 px-2 py-1 shadow-data-panel backdrop-blur-md">
+                    <div className="rounded-sm border border-white/[0.12] bg-black/46 px-2 py-1 shadow-data-panel backdrop-blur-2xl">
                       <div className="flex items-center justify-between gap-2">
                         <div className="truncate text-[11px] font-semibold text-text-primary">
                           {lang === "zh" ? region.nameZh : region.nameEn}
@@ -1217,20 +1209,6 @@ function WorldMapCanvas({
         onZoomOut={() => applyZoom(0.82)}
         onReset={() => setView(INITIAL_MAP_VIEW)}
       />
-      {rendererMode === "webgl-ready" && (
-        <WebGlReadinessPanel
-          activeEnhancedLayerCount={[
-            visibleLayers.weather,
-            visibleLayers.heat,
-            visibleLayers.density,
-            visibleLayers.routes,
-          ].filter(Boolean).length}
-          densityCellCount={densityCells.length}
-          regionCount={regions.length}
-          routeCount={riskRoutes.length}
-          weatherTileCount={weatherTileCells.length}
-        />
-      )}
     </div>
   );
 }
@@ -1545,7 +1523,7 @@ function MapZoomControls({
   return (
     <div
       data-testid="world-map-zoom-controls"
-      className="absolute bottom-4 right-4 z-20 flex items-center gap-1 rounded-sm border border-border-subtle bg-black/72 p-1 shadow-data-panel backdrop-blur-md"
+      className="absolute bottom-4 right-4 z-20 flex items-center gap-1 rounded-sm border border-white/[0.12] bg-black/42 p-1 shadow-data-panel backdrop-blur-2xl"
     >
       <button
         type="button"
@@ -1630,7 +1608,7 @@ function RegionInsightModal({ region, onClose }: { region: WorldMapRegion; onClo
         aria-modal="true"
         aria-label={headline}
         data-testid="world-map-region-dossier"
-        className="absolute bottom-3 left-3 right-3 max-h-[86vh] overflow-hidden rounded-sm border border-border-default bg-[linear-gradient(180deg,rgba(18,20,19,0.96),rgba(3,5,4,0.98))] shadow-[0_28px_90px_rgba(0,0,0,0.58),inset_1px_0_0_rgba(255,255,255,0.05)] backdrop-blur-2xl md:bottom-3 md:left-auto md:right-3 md:top-3 md:max-h-none md:w-[min(520px,calc(100vw-112px))]"
+        className="absolute bottom-3 left-3 right-3 max-h-[86vh] overflow-hidden rounded-sm border border-white/[0.13] bg-black/54 shadow-[0_28px_90px_rgba(0,0,0,0.52),inset_1px_0_0_rgba(255,255,255,0.07)] backdrop-blur-2xl md:bottom-3 md:left-auto md:right-3 md:top-3 md:max-h-none md:w-[min(520px,calc(100vw-112px))]"
       >
         <div className="border-b border-border-subtle px-4 py-4">
           <div className="flex items-start justify-between gap-3">
@@ -1667,7 +1645,7 @@ function RegionInsightModal({ region, onClose }: { region: WorldMapRegion; onClo
         <div className="max-h-[calc(86vh-128px)] overflow-y-auto p-4 md:max-h-[calc(100vh-140px)]">
           <div className="space-y-4">
             <div className="grid gap-3 sm:grid-cols-[150px_minmax(0,1fr)] md:grid-cols-1">
-              <div className="rounded-sm border border-border-subtle bg-black/42 p-4">
+              <div className="rounded-sm border border-white/[0.12] bg-white/[0.045] p-4 backdrop-blur-xl">
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <div className="text-caption text-text-muted">{text("区域综合风险")}</div>
@@ -1839,7 +1817,7 @@ function InsightSection({
   children: ReactNode;
 }) {
   return (
-    <section className={cn("rounded-sm border border-border-subtle bg-bg-base p-4", compact && "h-full")}>
+    <section className={cn("rounded-sm border border-white/[0.12] bg-white/[0.045] p-4 backdrop-blur-xl", compact && "h-full")}>
       <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-text-primary">
         <Icon className="h-4 w-4 text-brand-emerald-bright" />
         {title}
@@ -1853,7 +1831,7 @@ function AdaptiveAlertCard({ alert }: { alert: WorldMapAdaptiveAlert }) {
   const { lang, text } = useI18n();
   const color = riskColor(alert.severity);
   return (
-    <div className="rounded-sm border border-border-subtle bg-black/35 p-3">
+    <div className="rounded-sm border border-white/[0.12] bg-white/[0.045] p-3 backdrop-blur-xl">
       <div className="flex items-start justify-between gap-2">
         <div className="text-sm font-semibold text-text-primary">
           {lang === "zh" ? alert.titleZh : alert.titleEn}
@@ -1879,7 +1857,7 @@ function StoryChain({ steps }: { steps: WorldMapStoryStep[] }) {
       {steps.map((step, index) => (
         <div
           key={`${step.stage}-${index}`}
-          className="relative grid grid-cols-[28px_minmax(0,1fr)] gap-3 rounded-sm border border-border-subtle bg-black/35 p-3"
+          className="relative grid grid-cols-[28px_minmax(0,1fr)] gap-3 rounded-sm border border-white/[0.12] bg-white/[0.045] p-3 backdrop-blur-xl"
         >
           <div className="relative flex justify-center">
             <span className="z-10 flex h-6 w-6 items-center justify-center rounded-full border border-brand-cyan/35 bg-brand-cyan/10 font-mono text-[10px] text-brand-cyan">
@@ -1916,7 +1894,7 @@ function EvidenceList({
   return (
     <div className="space-y-2">
       {rows.map((row) => (
-        <div key={`${row.source}-${row.titleZh}`} className="rounded-xs border border-border-subtle bg-black/30 px-3 py-2">
+        <div key={`${row.source}-${row.titleZh}`} className="rounded-xs border border-white/[0.12] bg-white/[0.04] px-3 py-2 backdrop-blur-xl">
           <div className="flex items-center justify-between gap-2">
             <span className="text-xs text-text-primary">{lang === "zh" ? row.titleZh : row.titleEn}</span>
             <span className="font-mono text-caption text-text-muted">{Math.round(row.weight * 100)}%</span>
@@ -1940,7 +1918,7 @@ function WeatherMetric({
   tone: "up" | "down" | "warning" | "neutral";
 }) {
   return (
-    <div className="rounded-sm border border-border-subtle bg-black/35 px-3 py-2">
+    <div className="rounded-sm border border-white/[0.12] bg-white/[0.045] px-3 py-2 backdrop-blur-xl">
       <div className="text-caption text-text-muted">{label}</div>
       <div
         className={cn(

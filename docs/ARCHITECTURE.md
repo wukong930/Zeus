@@ -96,6 +96,28 @@ World Risk Map 是 Causal Web 之外的空间解释层，位置为 `frontend/src
 - 后续渲染层升级为 MapLibre GL JS + deck.gl，3D Globe 作为 three.js / React Three Fiber 增强模式。
 - 与 Causal Web 的联动通过 `region_id + symbols + event_ids + time_window` 传递，未发现直接关联时必须显式展示空态。
 
+### 4.2 事件智能引擎（Event Intelligence Engine）
+
+Event Intelligence Engine 是 World Risk Map 与 Causal Web 之上的语义组织层，目标是把外部事件动态转成商品影响链，而不是把新闻、天气、社媒和航运信息做成固定展示卡片。
+
+核心输入：
+
+- 结构化新闻事件、社媒/公告文本、天气异常、航运/港口扰动、库存/持仓变化、行情异常。
+- 商品属性：产区、成本链、物流节点、政策敏感度、替代关系、历史事件样例。
+
+核心输出：
+
+- `event_id`：可追溯的统一事件。
+- `entities`：人物、国家/地区、港口、企业、商品、合约和政策关键词。
+- `mechanisms`：供给、需求、物流、政策、库存、成本、风险偏好、地缘冲突。
+- `impact_links`：`event -> mechanism -> symbol/region`，带方向、置信度、证据、反证和新鲜度。
+
+治理约束：
+
+- 引擎判断默认只进入 Shadow / review，不直接修改生产阈值或自动发交易指令。
+- 单源高影响事件必须人工确认。
+- Causal Web 与 World Risk Map 必须消费同一 `event_id` 作用域，避免同一事件在不同页面被解释成不同链路。
+
 ## 5. 主链路事件流
 
 ```

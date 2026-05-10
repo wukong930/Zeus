@@ -384,6 +384,7 @@ const EN: Record<string, string> = {
   "自动": "Auto",
   "手动": "Manual",
   "实时轮询": "Live polling",
+  "轮询中": "Polling",
   "手动刷新": "Manual refresh",
   "缩小": "Zoom out",
   "放大": "Zoom in",

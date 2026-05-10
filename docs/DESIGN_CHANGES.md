@@ -276,6 +276,12 @@ threshold_modifier、propagation_activator、risk_recalc、数据腐烂防护
 - free ingest 接入 NOAA CDO，并为 NOAA/AccuWeather 增加每轮地点上限配置，保护免费额度和本地开发体验。
 - World Risk Map 天气卡片新增当前气温、1 小时降水、湿度和风速字段；当前天气可增强可读性，但不会替代 NASA POWER 历史 baseline。
 
+# 2026-05-10 — World Risk Map 玻璃态收敛与事件智能计划
+
+- 世界风险地图移除重复“实时”状态提示，增强模式不再展示右侧 WebGL 预备和增强阅读两块信息卡。
+- 左侧导航栏收起/展开按钮改为内嵌玻璃态侧边把手，并统一导航栏、地图 HUD、索引、标签和详情卡片的半透明毛玻璃质感。
+- Event Intelligence Engine / 事件智能引擎正式列入 Phase 10，用于把外部信息动态组织为商品影响链，并与 Causal Web / World Risk Map 共用事件作用域。
+
 # 2026-05-09 — Shell Navigation Phase 1
 
 - 全局侧边栏升级为半透明玻璃态外壳，保留 Zeus 现有导航信息架构，不改业务页面和世界风险地图数据逻辑。

@@ -328,7 +328,7 @@ export function Sidebar() {
 
       <aside
         className={cn(
-          "group/sidebar relative hidden h-full shrink-0 flex-col border-r border-white/[0.07] bg-black/58 shadow-[0_18px_70px_rgba(0,0,0,0.42),inset_1px_0_0_rgba(255,255,255,0.035)] backdrop-blur-xl transition-[width] duration-200 ease-standard md:flex",
+          "group/sidebar relative hidden h-full shrink-0 flex-col border-r border-white/[0.11] bg-black/42 shadow-[0_18px_70px_rgba(0,0,0,0.38),inset_1px_0_0_rgba(255,255,255,0.06)] backdrop-blur-2xl transition-[width] duration-200 ease-standard md:flex",
           collapsed ? "w-[64px]" : "w-[188px]"
         )}
         data-sidebar-collapsed={collapsed}
@@ -352,11 +352,11 @@ export function Sidebar() {
         <button
           type="button"
           onClick={() => setPreference(collapsed ? "expanded" : "collapsed")}
-          className="absolute -right-3 top-3 z-20 flex h-6 w-6 items-center justify-center rounded-full border border-white/[0.09] bg-black/78 text-text-muted shadow-data-panel backdrop-blur-md transition-colors hover:border-brand-emerald/35 hover:text-text-primary"
+          className="absolute -right-2 top-4 z-20 flex h-9 w-4 items-center justify-center rounded-r-sm border border-l-0 border-white/[0.12] bg-white/[0.055] text-text-muted shadow-[0_10px_24px_rgba(0,0,0,0.28),inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur-2xl transition-colors hover:border-brand-emerald/35 hover:bg-brand-emerald/10 hover:text-brand-emerald-bright"
           aria-label={collapsed ? text("展开侧边栏") : text("收起侧边栏")}
           title={collapsed ? text("展开侧边栏") : text("收起侧边栏")}
         >
-          {collapsed ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronLeft className="h-3.5 w-3.5" />}
+          {collapsed ? <ChevronRight className="h-3 w-3" /> : <ChevronLeft className="h-3 w-3" />}
         </button>
         <nav className={cn("flex-1 overflow-y-auto py-2", collapsed ? "px-2" : "px-2")}>
           {renderNavLinks({ collapsedNav: collapsed })}
