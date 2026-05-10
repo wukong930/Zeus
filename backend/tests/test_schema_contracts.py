@@ -16,6 +16,7 @@ from app.schemas.common import (
     StrategyCreate,
     UserFeedbackCreate,
 )
+from app.schemas.event_intelligence import EventIntelligenceCreate
 
 
 def test_common_write_payloads_reject_unknown_fields() -> None:
@@ -76,6 +77,17 @@ def test_common_write_payloads_reject_unknown_fields() -> None:
         ),
         (HumanDecisionCreate, {"decision": "approve"}),
         (UserFeedbackCreate, {"agree": "agree", "will_trade": "will_trade"}),
+        (
+            EventIntelligenceCreate,
+            {
+                "source_type": "news_event",
+                "source_id": "news-1",
+                "title": "Rubber weather risk",
+                "summary": "Rainfall affects tapping.",
+                "event_type": "weather",
+                "event_timestamp": now,
+            },
+        ),
         (CostSimulationRequest, {"inputs_by_symbol": {"RB": {"ore": 1.0}}}),
         (StrategyCreate, {"name": "s", "description": "d"}),
         (

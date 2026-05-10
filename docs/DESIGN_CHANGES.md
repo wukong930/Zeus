@@ -311,3 +311,11 @@ threshold_modifier、propagation_activator、risk_recalc、数据腐烂防护
 - 移动端抽屉升级为完整模态导航：打开时锁定页面滚动，关闭后恢复原焦点。
 - 支持 `Esc` 关闭和 `Tab` 焦点限制，键盘用户不会误跳到抽屉背后的地图、图表或命令按钮。
 - 监听桌面断点变化，窗口从移动宽度切回桌面时自动清理移动抽屉状态，避免残留遮罩影响大画布交互。
+
+# 2026-05-10 — Event Intelligence Engine Phase 10.1
+
+- 新增 `event_intelligence_items` 与 `event_impact_links`，把结构化新闻事件持久化为统一事件智能对象和商品/区域影响链。
+- 新增 `services/event_intelligence`：首版 Commodity Lens 覆盖橡胶、原油、黑色、农产和有色，按天气、供应、物流、政策、库存、成本、宏观、地缘等机制生成候选链路。
+- 新增 `/api/event-intelligence`、`/api/event-intelligence/impact-links` 与 `/api/event-intelligence/from-news/{news_event_id}`，事件影响判断默认进入 Shadow / review，高影响单源或低置信事件进入人工复核。
+- 新闻事件写入后会同步生成事件智能对象，避免新新闻只停留在 `news_events` 表而没有 Phase 10 作用域。
+- 新增 `/event-intelligence` 前端工作台，并同步侧边栏、命令面板和中英文文案，用于查看事件池、影响链、证据和反证。

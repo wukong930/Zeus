@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.events import ZeusEvent, publish
 from app.models.news_events import NewsEvent
 from app.models.vector_chunks import VectorChunk
+from app.services.event_intelligence import resolve_news_event_impacts
 from app.services.news.dedup import news_dedup_hash
 from app.services.news.extractor import StructuredNewsEvent
 from app.services.news.quality import (
@@ -36,6 +37,7 @@ async def record_and_publish_news_event(
     publisher=publish,
 ) -> NewsEventWriteResult:
     row, created, should_publish = await upsert_news_event(session, payload)
+    await resolve_news_event_impacts(session, row.id)
     if created:
         store_vector_chunk(session, row, embedding=embedding)
 

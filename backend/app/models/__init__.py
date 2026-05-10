@@ -9,6 +9,7 @@ from app.models.contract_metadata import ContractMetadata
 from app.models.cost_snapshot import CostSnapshot
 from app.models.drift_metrics import DriftMetric
 from app.models.event_log import EventLog
+from app.models.event_intelligence import EventImpactLink, EventIntelligenceItem
 from app.models.graph import CommodityNode, RelationshipEdge
 from app.models.industry_data import IndustryData
 from app.models.live_divergence_metrics import LiveDivergenceMetric
@@ -47,6 +48,8 @@ __all__ = [
     "CostSnapshot",
     "DriftMetric",
     "EventLog",
+    "EventImpactLink",
+    "EventIntelligenceItem",
     "IndustryData",
     "LiveDivergenceMetric",
     "HumanDecision",

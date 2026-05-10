@@ -937,22 +937,25 @@ Causa 的 `event_driven` 评估器实际上是纯技术面（gap + volume），*
 
 ### 开发任务
 
-- [ ] **事件规范化层**
-  - [ ] 定义 `event_intelligence_items` / `event_impact_links` 数据模型。
-  - [ ] 将新闻事件、天气异常、宏观数据、航运和行情异常统一映射为 `event_id`。
-  - [ ] 建立 source reliability、新鲜度、重复事件去重字段。
+- [x] **Phase 10.1 事件规范化层**
+  - [x] 定义 `event_intelligence_items` / `event_impact_links` 数据模型。
+  - [x] 将新闻事件映射为统一事件智能对象，并保留 `source_type/source_id` 去重约束。
+  - [x] 新闻写入链路自动生成事件智能对象，历史新闻可通过 `/from-news/{news_event_id}` 回放生成。
+  - [x] 建立 source reliability、新鲜度、人工复核和影响分字段。
 - [ ] **商品影响引擎**
-  - [ ] 基于 Commodity Lens 维护商品属性：产区、主要成本、物流节点、政策敏感度、替代关系。
+  - [x] 基于 Commodity Lens 维护首批商品属性：产区、成本、物流、政策和天气敏感度。
+  - [x] 首版规则 resolver 输出 `event -> mechanism -> symbol/region` 影响链。
   - [ ] LLM 负责语义抽取与假设生成，规则层负责边界约束和可解释字段校验。
-  - [ ] 同一因素可影响多个商品，输出多条 `event → mechanism → symbol/region` 链路。
+  - [x] 同一因素可影响多个商品，输出多条 `event → mechanism → symbol/region` 链路。
 - [ ] **治理与安全**
-  - [ ] 事件影响判断默认进入 Shadow / review，不直接改生产阈值。
-  - [ ] 高影响、单源、低置信度事件必须要求人工确认。
-  - [ ] 每条链路保留原始证据引用、反证和模型版本。
+  - [x] 事件影响判断默认进入 Shadow / review，不直接改生产阈值。
+  - [x] 高影响、单源、低置信度事件必须要求人工确认。
+  - [x] 每条链路保留原始证据引用、反证、数据新鲜度和置信度。
+  - [ ] 模型版本、LLM 提示版本和治理审计表。
 - [ ] **前端联动**
   - [ ] Causal Web 支持按事件智能链路高亮上下游。
   - [ ] World Risk Map 支持按事件源筛选区域、商品和影响机制。
-  - [ ] 新增 Event Intelligence 页面：事件池、影响链、证据/反证、人工确认队列。
+  - [x] 新增 Event Intelligence 页面：事件池、影响链、证据/反证、人工确认队列。
 
 ### 验证
 

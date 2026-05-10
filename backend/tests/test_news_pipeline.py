@@ -6,7 +6,12 @@ from app.services.news.collectors.gdelt import GdeltCollector
 from app.models.news_events import NewsEvent
 from app.services.news.collectors.rubber_supply import RubberSupplyCollector
 from app.services.news.dedup import news_dedup_hash, normalize_title
-from app.services.news.event_publisher import event_row_is_evaluable, jsonable_news_payload, upsert_news_event
+from app.services.news.event_publisher import (
+    event_row_is_evaluable,
+    jsonable_news_payload,
+    record_and_publish_news_event,
+    upsert_news_event,
+)
 from app.services.news.extractor import extract_news_event_sync
 from app.services.news.quality import is_evaluable_news_event, requires_manual_confirmation
 from app.services.news.types import RawNewsItem
@@ -248,3 +253,39 @@ async def test_new_manual_confirmation_event_is_not_published() -> None:
     assert created is True
     assert row.requires_manual_confirmation is True
     assert should_publish is False
+
+
+async def test_record_news_event_creates_event_intelligence(monkeypatch) -> None:
+    session = FakeSession()
+    called: dict[str, object] = {}
+
+    async def fake_resolve_news_event_impacts(fake_session, news_event_id):  # noqa: ANN001
+        called["session"] = fake_session
+        called["news_event_id"] = news_event_id
+        return None, [], True
+
+    monkeypatch.setattr(
+        "app.services.news.event_publisher.resolve_news_event_impacts",
+        fake_resolve_news_event_impacts,
+    )
+
+    result = await record_and_publish_news_event(
+        session,  # type: ignore[arg-type]
+        {
+            "source": "exchange_announcements",
+            "title": "交易所提示铁矿石合约交易风险",
+            "summary": "单源事件等待确认。",
+            "published_at": datetime(2026, 5, 3, tzinfo=timezone.utc),
+            "event_type": "policy",
+            "affected_symbols": ["I"],
+            "direction": "mixed",
+            "severity": 4,
+            "time_horizon": "immediate",
+            "llm_confidence": 0.68,
+            "source_count": 1,
+            "verification_status": "single_source",
+        },
+    )
+
+    assert result.should_publish is False
+    assert called == {"session": session, "news_event_id": result.row.id}

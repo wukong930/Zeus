@@ -722,6 +722,52 @@ export interface NewsEvent {
   requiresManualConfirmation: boolean;
 }
 
+export type EventIntelligenceStatus = "shadow_review" | "human_review" | "confirmed" | "rejected";
+export type EventImpactDirection = "bullish" | "bearish" | "mixed" | "watch";
+
+export interface EventIntelligenceItem {
+  id: string;
+  sourceType: string;
+  sourceId: string | null;
+  title: string;
+  summary: string;
+  eventType: string;
+  eventTimestamp: string;
+  entities: string[];
+  symbols: string[];
+  regions: string[];
+  mechanisms: string[];
+  evidence: string[];
+  counterevidence: string[];
+  confidence: number;
+  impactScore: number;
+  status: EventIntelligenceStatus;
+  requiresManualConfirmation: boolean;
+  sourceReliability: number;
+  freshnessScore: number;
+  sourcePayload: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface EventImpactLink {
+  id: string;
+  eventItemId: string;
+  symbol: string;
+  regionId: string | null;
+  mechanism: string;
+  direction: EventImpactDirection;
+  confidence: number;
+  impactScore: number;
+  horizon: string;
+  rationale: string;
+  evidence: string[];
+  counterevidence: string[];
+  status: EventIntelligenceStatus;
+  createdAt: string;
+  updatedAt: string;
+}
+
 interface BackendAlert {
   id: string;
   title: string;
@@ -759,6 +805,49 @@ interface BackendNewsEvent {
   source_count: number;
   verification_status: string;
   requires_manual_confirmation: boolean;
+}
+
+interface BackendEventIntelligenceItem {
+  id: string;
+  source_type: string;
+  source_id: string | null;
+  title: string;
+  summary: string;
+  event_type: string;
+  event_timestamp: string;
+  entities: string[];
+  symbols: string[];
+  regions: string[];
+  mechanisms: string[];
+  evidence: string[];
+  counterevidence: string[];
+  confidence: number;
+  impact_score: number;
+  status: EventIntelligenceStatus;
+  requires_manual_confirmation: boolean;
+  source_reliability: number;
+  freshness_score: number;
+  source_payload: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+interface BackendEventImpactLink {
+  id: string;
+  event_item_id: string;
+  symbol: string;
+  region_id: string | null;
+  mechanism: string;
+  direction: EventImpactDirection;
+  confidence: number;
+  impact_score: number;
+  horizon: string;
+  rationale: string;
+  evidence: string[];
+  counterevidence: string[];
+  status: EventIntelligenceStatus;
+  created_at: string;
+  updated_at: string;
 }
 
 interface BackendNotebookEntry {
@@ -946,6 +1035,32 @@ export async function fetchSectorSnapshot(baseSectors: SectorData[]): Promise<Se
 export async function fetchNewsEventsFromApi(): Promise<NewsEvent[]> {
   const rows = await fetchJson<BackendNewsEvent[]>("/api/news-events?limit=200");
   return rows.map(mapNewsEvent);
+}
+
+export async function fetchEventIntelligenceItems(limit = 100): Promise<EventIntelligenceItem[]> {
+  const rows = await fetchJson<BackendEventIntelligenceItem[]>(
+    `/api/event-intelligence?limit=${limit}`
+  );
+  return rows.map(mapEventIntelligenceItem);
+}
+
+export async function fetchEventImpactLinks(params: {
+  symbol?: string;
+  regionId?: string;
+  mechanism?: string;
+  status?: EventIntelligenceStatus;
+  limit?: number;
+} = {}): Promise<EventImpactLink[]> {
+  const query = new URLSearchParams();
+  query.set("limit", String(params.limit ?? 200));
+  if (params.symbol) query.set("symbol", params.symbol);
+  if (params.regionId) query.set("region_id", params.regionId);
+  if (params.mechanism) query.set("mechanism", params.mechanism);
+  if (params.status) query.set("status", params.status);
+  const rows = await fetchJson<BackendEventImpactLink[]>(
+    `/api/event-intelligence/impact-links?${query.toString()}`
+  );
+  return rows.map(mapEventImpactLink);
 }
 
 export async function fetchTradePlansFromApi(): Promise<TradePlan[]> {
@@ -1357,6 +1472,53 @@ function mapNewsEvent(event: BackendNewsEvent): NewsEvent {
     sourceCount: event.source_count,
     verificationStatus: event.verification_status,
     requiresManualConfirmation: event.requires_manual_confirmation,
+  };
+}
+
+function mapEventIntelligenceItem(event: BackendEventIntelligenceItem): EventIntelligenceItem {
+  return {
+    id: event.id,
+    sourceType: event.source_type,
+    sourceId: event.source_id,
+    title: event.title,
+    summary: event.summary,
+    eventType: event.event_type,
+    eventTimestamp: event.event_timestamp,
+    entities: event.entities,
+    symbols: event.symbols,
+    regions: event.regions,
+    mechanisms: event.mechanisms,
+    evidence: event.evidence,
+    counterevidence: event.counterevidence,
+    confidence: event.confidence,
+    impactScore: event.impact_score,
+    status: event.status,
+    requiresManualConfirmation: event.requires_manual_confirmation,
+    sourceReliability: event.source_reliability,
+    freshnessScore: event.freshness_score,
+    sourcePayload: event.source_payload,
+    createdAt: event.created_at,
+    updatedAt: event.updated_at,
+  };
+}
+
+function mapEventImpactLink(link: BackendEventImpactLink): EventImpactLink {
+  return {
+    id: link.id,
+    eventItemId: link.event_item_id,
+    symbol: link.symbol,
+    regionId: link.region_id,
+    mechanism: link.mechanism,
+    direction: link.direction,
+    confidence: link.confidence,
+    impactScore: link.impact_score,
+    horizon: link.horizon,
+    rationale: link.rationale,
+    evidence: link.evidence,
+    counterevidence: link.counterevidence,
+    status: link.status,
+    createdAt: link.created_at,
+    updatedAt: link.updated_at,
   };
 }
 
