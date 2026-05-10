@@ -274,7 +274,7 @@ export default function WorldMapPage() {
     () =>
       [...filteredRegions]
         .sort((left, right) => right.riskScore - left.riskScore)
-        .slice(0, 5),
+        .slice(0, 3),
     [filteredRegions]
   );
   const selectedRegion = regions.find((region) => region.id === selectedId) ?? null;
@@ -290,8 +290,8 @@ export default function WorldMapPage() {
         variant="flat"
         className="relative h-[calc(100vh-88px)] min-h-[560px] flex-1 overflow-hidden p-0 md:min-h-[620px]"
       >
-        <div className="absolute left-3 right-3 top-3 z-20 grid gap-2 lg:left-4 lg:right-4 lg:top-4 xl:grid-cols-[minmax(320px,420px)_minmax(0,1fr)_auto] xl:items-start">
-          <div className="rounded-sm border border-border-subtle bg-black/70 px-3 py-2 shadow-data-panel backdrop-blur-xl">
+        <div className="absolute left-3 right-3 top-3 z-20 grid gap-2 lg:left-4 lg:right-4 lg:top-4 xl:grid-cols-[minmax(280px,380px)_minmax(0,1fr)] xl:items-start">
+          <div className="rounded-sm border border-border-subtle bg-black/62 px-3 py-2 shadow-data-panel backdrop-blur-xl">
             <div className="flex items-start justify-between gap-3">
               <div>
                 <div className="flex items-center gap-2 text-text-primary">
@@ -307,47 +307,52 @@ export default function WorldMapPage() {
             <StatusStrip snapshot={snapshot} source={source} lastUpdatedAt={lastUpdatedAt} />
           </div>
 
-          <div className="min-w-0 max-w-full rounded-sm border border-border-subtle bg-black/68 p-1 shadow-data-panel backdrop-blur-xl xl:justify-self-center">
-            <CommodityToggle
-              value={commodity}
-              options={commodities}
-              onChange={(value) => {
-                setCommodity(value);
-                setSelectedId(null);
-                setDetailOpen(false);
-              }}
-            />
-          </div>
+          <div className="grid min-w-0 gap-2 xl:justify-items-end">
+            <div className="min-w-0 max-w-full rounded-sm border border-border-subtle bg-black/60 p-1 shadow-data-panel backdrop-blur-xl xl:max-w-[620px]">
+              <CommodityToggle
+                value={commodity}
+                options={commodities}
+                onChange={(value) => {
+                  setCommodity(value);
+                  setSelectedId(null);
+                  setDetailOpen(false);
+                }}
+              />
+            </div>
 
-          <div className="flex flex-wrap items-center gap-2 rounded-sm border border-border-subtle bg-black/68 p-1.5 shadow-data-panel backdrop-blur-xl xl:justify-self-end">
-            <LayerLegend layers={snapshot?.layers ?? []} />
-            <RendererModeToggle value={rendererMode} onChange={setRendererMode} />
-            <MapVisualLayerToggle
-              layers={visibleLayers}
-              onToggle={(layer) =>
-                setVisibleLayers((current) => ({
-                  ...current,
-                  [layer]: !current[layer],
-                }))
-              }
-            />
-            <LiveUpdateBadge
-              autoRefresh={autoRefresh}
-              isRefreshing={isRefreshing}
-              lastUpdatedAt={lastUpdatedAt}
-            />
-            <Button
-              variant={autoRefresh ? "primary" : "secondary"}
-              size="sm"
-              onClick={() => setAutoRefresh((value) => !value)}
-            >
-              <Activity className="h-4 w-4" />
-              {autoRefresh ? text("自动") : text("手动")}
-            </Button>
-            <Button variant="secondary" size="sm" onClick={() => void loadSnapshot()} disabled={isRefreshing}>
-              <RefreshCw className={cn("h-4 w-4", isRefreshing && "animate-spin")} />
-              {text("刷新")}
-            </Button>
+            <div className="flex max-w-full flex-wrap items-center justify-end gap-1.5 rounded-sm border border-border-subtle bg-black/60 p-1.5 shadow-data-panel backdrop-blur-xl">
+              <span className="hidden h-7 items-center gap-1.5 rounded-xs border border-brand-emerald/20 bg-brand-emerald/10 px-2 text-caption text-brand-emerald-bright 2xl:inline-flex">
+                <Layers3 className="h-3 w-3" />
+                {text("活跃图层")} {snapshot?.layers.filter((layer) => layer.enabled).length ?? 0}
+              </span>
+              <RendererModeToggle value={rendererMode} onChange={setRendererMode} />
+              <MapVisualLayerToggle
+                layers={visibleLayers}
+                onToggle={(layer) =>
+                  setVisibleLayers((current) => ({
+                    ...current,
+                    [layer]: !current[layer],
+                  }))
+                }
+              />
+              <LiveUpdateBadge
+                autoRefresh={autoRefresh}
+                isRefreshing={isRefreshing}
+                lastUpdatedAt={lastUpdatedAt}
+              />
+              <Button
+                variant={autoRefresh ? "primary" : "secondary"}
+                size="sm"
+                onClick={() => setAutoRefresh((value) => !value)}
+              >
+                <Activity className="h-4 w-4" />
+                {autoRefresh ? text("自动") : text("手动")}
+              </Button>
+              <Button variant="secondary" size="sm" onClick={() => void loadSnapshot()} disabled={isRefreshing}>
+                <RefreshCw className={cn("h-4 w-4", isRefreshing && "animate-spin")} />
+                {text("刷新")}
+              </Button>
+            </div>
           </div>
         </div>
 
@@ -447,7 +452,7 @@ function EnhancedReadingPanel({
   return (
     <div
       data-testid="world-map-enhanced-reading-panel"
-      className="pointer-events-none absolute bottom-4 right-[88px] z-20 hidden w-[360px] rounded-sm border border-brand-emerald/25 bg-black/72 p-3 shadow-data-panel backdrop-blur-xl xl:block"
+      className="pointer-events-none absolute bottom-4 right-[88px] z-20 hidden w-[300px] rounded-sm border border-brand-emerald/25 bg-black/66 p-2.5 shadow-data-panel backdrop-blur-xl xl:block"
     >
       <div className="flex items-start justify-between gap-3">
         <div>
@@ -455,7 +460,7 @@ function EnhancedReadingPanel({
             <Sparkles className="h-4 w-4 text-brand-emerald-bright" />
             {text("增强阅读层")}
           </div>
-          <p className="mt-1 text-caption leading-4 text-text-muted">
+          <p className="mt-0.5 text-caption leading-4 text-text-muted">
             {text("先读最高风险，再看跨区传导和证据密度")}
           </p>
         </div>
@@ -464,7 +469,7 @@ function EnhancedReadingPanel({
         </span>
       </div>
 
-      <div className="mt-3 rounded-sm border border-border-subtle bg-black/40 p-3">
+      <div className="mt-2 rounded-sm border border-border-subtle bg-black/36 p-2.5">
         <div className="flex items-center justify-between gap-3">
           <span className="text-caption text-text-muted">{text("主读区")}</span>
           <span className="font-mono text-sm" style={{ color: topColor.text }}>
@@ -472,10 +477,10 @@ function EnhancedReadingPanel({
           </span>
         </div>
         <div className="mt-1 truncate text-sm font-semibold text-text-primary">{topRegionName}</div>
-        <div className="mt-1 line-clamp-2 text-caption leading-4 text-text-secondary">{topTrigger}</div>
+        <div className="mt-1 line-clamp-1 text-caption leading-4 text-text-secondary">{topTrigger}</div>
       </div>
 
-      <div className="mt-2 grid gap-2">
+      <div className="mt-2 grid gap-1.5">
         <ReadingMetric
           icon={Route}
           label={text("跨区传导")}
@@ -511,7 +516,7 @@ function ReadingMetric({
   detail: string;
 }) {
   return (
-    <div className="rounded-xs border border-border-subtle bg-black/32 px-2.5 py-2">
+    <div className="rounded-xs border border-border-subtle bg-black/28 px-2.5 py-1.5">
       <div className="flex items-center justify-between gap-2">
         <span className="flex min-w-0 items-center gap-1.5 text-caption text-text-muted">
           <Icon className="h-3.5 w-3.5 shrink-0 text-brand-cyan" />
@@ -747,7 +752,7 @@ function RiskRegionIndex({
   return (
     <div
       data-testid="world-map-region-index"
-      className="absolute bottom-4 left-4 z-20 w-[min(440px,calc(100%-112px))] rounded-sm border border-border-subtle bg-black/70 shadow-data-panel backdrop-blur-xl"
+      className="absolute bottom-4 left-4 z-20 w-[min(360px,calc(100%-112px))] rounded-sm border border-border-subtle bg-black/64 shadow-data-panel backdrop-blur-xl"
     >
       <div className="flex items-start justify-between gap-3 border-b border-border-subtle px-3 py-2">
         <div>
@@ -761,7 +766,7 @@ function RiskRegionIndex({
           {regions.length}
         </span>
       </div>
-      <div className="grid max-h-[238px] gap-1 overflow-y-auto p-2 sm:grid-cols-2">
+      <div className="grid max-h-[178px] gap-1 overflow-y-auto p-2">
         {regions.length === 0 && (
           <div className="col-span-full rounded-xs border border-border-subtle bg-black/28 px-3 py-2 text-caption text-text-muted">
             {text("暂无区域")}
@@ -801,7 +806,7 @@ function RiskRegionIndex({
           );
         })}
       </div>
-      <div className="border-t border-border-subtle px-3 py-2 text-caption text-text-muted">
+      <div className="border-t border-border-subtle px-3 py-1.5 text-caption text-text-muted">
         {text("点击区域查看动态风险链")}
       </div>
     </div>
@@ -1179,8 +1184,8 @@ function WorldMapCanvas({
                 <circle cx={center.x} cy={center.y} r={7} fill={color.strokeStrong} filter="url(#worldMapRiskGlow)" />
                 <circle cx={center.x} cy={center.y} r={2.8} fill="#fff" opacity="0.72" />
                 {visibleLayers.labels && (
-                  <foreignObject x={center.x + 12} y={center.y - 22} width="152" height="54">
-                    <div className="rounded-sm border border-border-subtle bg-black/78 px-2 py-1.5 shadow-data-panel backdrop-blur-md">
+                  <foreignObject x={center.x + 12} y={center.y - 18} width="132" height="38">
+                    <div className="rounded-sm border border-border-subtle bg-black/70 px-2 py-1 shadow-data-panel backdrop-blur-md">
                       <div className="flex items-center justify-between gap-2">
                         <div className="truncate text-[11px] font-semibold text-text-primary">
                           {lang === "zh" ? region.nameZh : region.nameEn}
@@ -1190,7 +1195,6 @@ function WorldMapCanvas({
                         </div>
                       </div>
                       <div className="mt-0.5 flex items-center gap-1 truncate text-[10px] text-text-muted">
-                        {(lang === "zh" ? region.story.triggerZh : region.story.triggerEn)} ·{" "}
                         {region.symbols.join("/")}
                         {delta !== 0 && (
                           <span className={cn("font-mono", delta > 0 ? "text-data-down" : "text-data-up")}>
@@ -1488,7 +1492,7 @@ function WebGlReadinessPanel({
   return (
     <div
       data-testid="world-map-webgl-readiness"
-      className="pointer-events-none absolute right-4 top-[118px] z-20 hidden w-[260px] rounded-sm border border-brand-emerald/25 bg-black/72 p-3 shadow-data-panel backdrop-blur-xl xl:block"
+      className="pointer-events-none absolute right-4 top-[132px] z-20 hidden w-[210px] rounded-sm border border-brand-emerald/25 bg-black/58 p-2.5 shadow-data-panel backdrop-blur-xl xl:block"
     >
       <div className="flex items-start justify-between gap-3">
         <div>
@@ -1496,24 +1500,24 @@ function WebGlReadinessPanel({
             <Sparkles className="h-4 w-4 text-brand-emerald-bright" />
             {text("WebGL 预备")}
           </div>
-          <p className="mt-1 text-caption leading-4 text-text-muted">
-            {text("当前仍由 SVG 承载交互，GPU 图层按 deck.gl 口径组织")}
+          <p className="mt-0.5 text-caption leading-4 text-text-muted">
+            {text("GPU 图层按 deck.gl 口径组织")}
           </p>
         </div>
         <span className="rounded-xs border border-brand-emerald/25 bg-brand-emerald/10 px-2 py-0.5 font-mono text-caption text-brand-emerald-bright">
           B.2
         </span>
       </div>
-      <div className="mt-3 grid gap-1.5">
-        {rows.map((row) => (
+      <div className="mt-2 grid grid-cols-2 gap-1">
+        {rows.slice(0, 4).map((row) => (
           <div
             key={row.label}
-            className="flex items-center justify-between gap-3 rounded-xs border border-border-subtle bg-black/35 px-2 py-1.5"
+            className="min-w-0 rounded-xs border border-border-subtle bg-black/30 px-2 py-1.5"
           >
-            <span className="text-caption text-text-secondary">{text(row.label)}</span>
+            <span className="block truncate text-[10px] text-text-secondary">{text(row.label)}</span>
             <span
               className={cn(
-                "font-mono text-caption",
+                "block truncate font-mono text-caption",
                 row.status === "ready" ? "text-brand-emerald-bright" : "text-text-muted"
               )}
             >
