@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import {
   AlertTriangle,
   ArrowRight,
@@ -10,8 +10,11 @@ import {
   Gauge,
   GitBranch,
   Layers3,
+  Pencil,
+  Save,
   Search,
   ShieldQuestion,
+  X,
   XCircle,
 } from "lucide-react";
 import { Badge } from "@/components/Badge";
@@ -23,9 +26,11 @@ import {
   fetchEventIntelligenceDetail,
   fetchEventIntelligenceItems,
   fetchEventIntelligenceQualitySummary,
+  updateEventImpactLink,
   type EventIntelligenceDecision,
   type EventImpactDirection,
   type EventImpactLink,
+  type EventImpactLinkUpdateInput,
   type EventIntelligenceItem,
   type EventIntelligenceQualityReport,
   type EventIntelligenceQualityStatus,
@@ -46,6 +51,22 @@ interface SemanticHypothesisPayload {
   rationale: string;
 }
 
+const IMPACT_DIRECTION_OPTIONS: EventImpactDirection[] = ["bullish", "bearish", "mixed", "watch"];
+const IMPACT_MECHANISM_OPTIONS = [
+  "supply",
+  "demand",
+  "logistics",
+  "policy",
+  "inventory",
+  "cost",
+  "risk_sentiment",
+  "geopolitical",
+  "weather",
+  "macro",
+];
+const IMPACT_EDIT_INPUT_CLASS =
+  "w-full rounded-sm border border-border-subtle bg-black/42 px-2.5 py-2 text-sm text-text-primary outline-none transition-colors placeholder:text-text-muted focus:border-brand-cyan/55 focus:shadow-focus-ring";
+
 export default function EventIntelligencePage() {
   const { text } = useI18n();
   const [items, setItems] = useState<EventIntelligenceItem[]>([]);
@@ -55,6 +76,8 @@ export default function EventIntelligencePage() {
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [decisionPending, setDecisionPending] = useState<EventIntelligenceDecision | null>(null);
+  const [linkEditPendingId, setLinkEditPendingId] = useState<string | null>(null);
+  const [linkEditError, setLinkEditError] = useState<string | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -167,6 +190,35 @@ export default function EventIntelligencePage() {
     }
   };
 
+  const handleUpdateImpactLink = async (
+    linkId: string,
+    payload: EventImpactLinkUpdateInput
+  ): Promise<boolean> => {
+    setLinkEditPendingId(linkId);
+    setLinkEditError(null);
+    try {
+      const result = await updateEventImpactLink(linkId, payload);
+      setItems((current) =>
+        current.map((item) => (item.id === result.event.id ? result.event : item))
+      );
+      setLinks((current) =>
+        current.map((link) =>
+          link.id === result.impactLink.id ? result.impactLink : link
+        )
+      );
+      const qualitySummary = await fetchEventIntelligenceQualitySummary(200).catch(() => null);
+      if (qualitySummary) {
+        setQualityReports(qualitySummary.reports);
+      }
+      return true;
+    } catch (error) {
+      setLinkEditError(error instanceof Error ? error.message : "影响链修改失败");
+      return false;
+    } finally {
+      setLinkEditPendingId(null);
+    }
+  };
+
   return (
     <div className="h-full overflow-y-auto px-7 py-6 animate-fade-in">
       <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
@@ -236,6 +288,9 @@ export default function EventIntelligencePage() {
               quality={selectedQuality}
               onDecision={handleDecision}
               decisionPending={decisionPending}
+              onUpdateImpactLink={handleUpdateImpactLink}
+              linkEditPendingId={linkEditPendingId}
+              linkEditError={linkEditError}
             />
           ) : (
             <Card variant="flat" className="flex min-h-[420px] items-center justify-center text-sm text-text-secondary">
@@ -305,17 +360,28 @@ function EventDetail({
   quality,
   onDecision,
   decisionPending,
+  onUpdateImpactLink,
+  linkEditPendingId,
+  linkEditError,
 }: {
   item: EventIntelligenceItem;
   links: EventImpactLink[];
   quality: EventIntelligenceQualityReport | null;
   onDecision: (decision: EventIntelligenceDecision) => void;
   decisionPending: EventIntelligenceDecision | null;
+  onUpdateImpactLink: (linkId: string, payload: EventImpactLinkUpdateInput) => Promise<boolean>;
+  linkEditPendingId: string | null;
+  linkEditError: string | null;
 }) {
   const { text } = useI18n();
+  const [editingLinkId, setEditingLinkId] = useState<string | null>(null);
   const semanticHypotheses = readSemanticHypotheses(item.sourcePayload);
   const semanticModel = readPayloadString(item.sourcePayload, "semantic_model");
   const semanticPrompt = readPayloadString(item.sourcePayload, "semantic_prompt_version");
+
+  useEffect(() => {
+    setEditingLinkId(null);
+  }, [item.id]);
 
   return (
     <div className="space-y-5">
@@ -440,11 +506,34 @@ function EventDetail({
                 </span>
               </div>
               <p className="text-sm text-text-secondary">{text(link.rationale)}</p>
-              <div className="mt-2 flex flex-wrap gap-2 text-caption text-text-muted">
+              <div className="mt-2 flex flex-wrap items-center gap-2 text-caption text-text-muted">
                 <span>{text("区域")}：{link.regionId ?? "global"}</span>
                 <span>{text("周期")}：{text(link.horizon)}</span>
                 <span>{text("置信度")}：{formatPercent(link.confidence * 100, 0, false)}</span>
+                <button
+                  type="button"
+                  disabled={linkEditPendingId !== null}
+                  onClick={() =>
+                    setEditingLinkId((current) => (current === link.id ? null : link.id))
+                  }
+                  className="ml-auto inline-flex h-7 items-center gap-1.5 rounded-sm border border-brand-cyan/30 bg-brand-cyan/10 px-2 text-caption text-brand-cyan transition-colors hover:bg-brand-cyan/16 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                  {text("修改链路")}
+                </button>
               </div>
+              {editingLinkId === link.id && (
+                <ImpactLinkEditForm
+                  link={link}
+                  pending={linkEditPendingId === link.id}
+                  error={linkEditError}
+                  onCancel={() => setEditingLinkId(null)}
+                  onSubmit={async (payload) => {
+                    const ok = await onUpdateImpactLink(link.id, payload);
+                    if (ok) setEditingLinkId(null);
+                  }}
+                />
+              )}
             </div>
           ))}
           {links.length === 0 && (
@@ -460,6 +549,228 @@ function EventDetail({
         <EvidencePanel title="反证" values={item.counterevidence} />
       </div>
     </div>
+  );
+}
+
+function ImpactLinkEditForm({
+  link,
+  pending,
+  error,
+  onCancel,
+  onSubmit,
+}: {
+  link: EventImpactLink;
+  pending: boolean;
+  error: string | null;
+  onCancel: () => void;
+  onSubmit: (payload: EventImpactLinkUpdateInput) => Promise<void>;
+}) {
+  const { text } = useI18n();
+  const [symbol, setSymbol] = useState(link.symbol);
+  const [regionId, setRegionId] = useState(link.regionId ?? "");
+  const [mechanism, setMechanism] = useState(link.mechanism);
+  const [direction, setDirection] = useState<EventImpactDirection>(link.direction);
+  const [confidence, setConfidence] = useState(String(Math.round(link.confidence * 100)));
+  const [impactScore, setImpactScore] = useState(String(Math.round(link.impactScore)));
+  const [horizon, setHorizon] = useState(link.horizon);
+  const [rationale, setRationale] = useState(link.rationale);
+  const [evidence, setEvidence] = useState(link.evidence.join("\n"));
+  const [counterevidence, setCounterevidence] = useState(link.counterevidence.join("\n"));
+  const [note, setNote] = useState("");
+  const [localError, setLocalError] = useState<string | null>(null);
+
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setLocalError(null);
+    if (!symbol.trim() || !horizon.trim() || !rationale.trim()) {
+      setLocalError("品种、周期和机制说明不能为空");
+      return;
+    }
+    const payload = buildImpactLinkPatch(link, {
+      symbol,
+      regionId,
+      mechanism,
+      direction,
+      confidence,
+      impactScore,
+      horizon,
+      rationale,
+      evidence,
+      counterevidence,
+      note,
+    });
+    if (Object.keys(payload).filter((key) => key !== "note").length === 0) {
+      setLocalError("没有可保存的链路修改");
+      return;
+    }
+    await onSubmit(payload);
+  };
+
+  return (
+    <form
+      onSubmit={submit}
+      className="mt-3 rounded-sm border border-brand-cyan/22 bg-brand-cyan/8 p-3"
+    >
+      <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="text-sm font-semibold text-text-primary">{text("人工修改影响链")}</div>
+          <p className="mt-1 text-caption text-text-muted">
+            {text("修改后回到人工复核，不改变生产阈值。")}
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={pending}
+            className="inline-flex h-8 items-center gap-1.5 rounded-sm border border-border-default bg-black/24 px-2.5 text-caption text-text-secondary transition-colors hover:bg-white/[0.05] disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <X className="h-3.5 w-3.5" />
+            {text("取消")}
+          </button>
+          <button
+            type="submit"
+            disabled={pending}
+            className="inline-flex h-8 items-center gap-1.5 rounded-sm border border-brand-emerald/35 bg-brand-emerald/12 px-2.5 text-caption text-brand-emerald-bright transition-colors hover:bg-brand-emerald/18 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <Save className="h-3.5 w-3.5" />
+            {text(pending ? "保存中" : "保存修改")}
+          </button>
+        </div>
+      </div>
+
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <ImpactEditField label="品种">
+          <input
+            value={symbol}
+            onChange={(event) => setSymbol(event.target.value)}
+            className={cn(IMPACT_EDIT_INPUT_CLASS, "font-mono uppercase")}
+          />
+        </ImpactEditField>
+        <ImpactEditField label="区域">
+          <input
+            value={regionId}
+            onChange={(event) => setRegionId(event.target.value)}
+            placeholder="global"
+            className={IMPACT_EDIT_INPUT_CLASS}
+          />
+        </ImpactEditField>
+        <ImpactEditField label="机制">
+          <select
+            value={mechanism}
+            onChange={(event) => setMechanism(event.target.value)}
+            className={IMPACT_EDIT_INPUT_CLASS}
+          >
+            {IMPACT_MECHANISM_OPTIONS.map((option) => (
+              <option key={option} value={option}>
+                {text(mechanismLabel(option))}
+              </option>
+            ))}
+          </select>
+        </ImpactEditField>
+        <ImpactEditField label="方向">
+          <select
+            value={direction}
+            onChange={(event) => setDirection(event.target.value as EventImpactDirection)}
+            className={IMPACT_EDIT_INPUT_CLASS}
+          >
+            {IMPACT_DIRECTION_OPTIONS.map((option) => (
+              <option key={option} value={option}>
+                {text(directionLabel(option))}
+              </option>
+            ))}
+          </select>
+        </ImpactEditField>
+        <ImpactEditField label="置信度">
+          <input
+            type="number"
+            min="0"
+            max="100"
+            step="1"
+            value={confidence}
+            onChange={(event) => setConfidence(event.target.value)}
+            className={cn(IMPACT_EDIT_INPUT_CLASS, "font-mono")}
+          />
+        </ImpactEditField>
+        <ImpactEditField label="影响分">
+          <input
+            type="number"
+            min="0"
+            max="100"
+            step="1"
+            value={impactScore}
+            onChange={(event) => setImpactScore(event.target.value)}
+            className={cn(IMPACT_EDIT_INPUT_CLASS, "font-mono")}
+          />
+        </ImpactEditField>
+        <ImpactEditField label="周期">
+          <input
+            value={horizon}
+            onChange={(event) => setHorizon(event.target.value)}
+            className={IMPACT_EDIT_INPUT_CLASS}
+          />
+        </ImpactEditField>
+        <ImpactEditField label="编辑备注">
+          <input
+            value={note}
+            onChange={(event) => setNote(event.target.value)}
+            placeholder={text("说明本次修改原因")}
+            className={IMPACT_EDIT_INPUT_CLASS}
+          />
+        </ImpactEditField>
+      </div>
+
+      <div className="mt-3 grid gap-3 lg:grid-cols-3">
+        <ImpactEditField label="机制说明">
+          <textarea
+            value={rationale}
+            onChange={(event) => setRationale(event.target.value)}
+            rows={4}
+            className={cn(IMPACT_EDIT_INPUT_CLASS, "min-h-[96px] resize-y leading-5")}
+          />
+        </ImpactEditField>
+        <ImpactEditField label="支持证据">
+          <textarea
+            value={evidence}
+            onChange={(event) => setEvidence(event.target.value)}
+            placeholder={text("每行一条证据")}
+            rows={4}
+            className={cn(IMPACT_EDIT_INPUT_CLASS, "min-h-[96px] resize-y leading-5")}
+          />
+        </ImpactEditField>
+        <ImpactEditField label="反证线索">
+          <textarea
+            value={counterevidence}
+            onChange={(event) => setCounterevidence(event.target.value)}
+            placeholder={text("每行一条反证")}
+            rows={4}
+            className={cn(IMPACT_EDIT_INPUT_CLASS, "min-h-[96px] resize-y leading-5")}
+          />
+        </ImpactEditField>
+      </div>
+
+      {(localError || error) && (
+        <div className="mt-3 rounded-sm border border-data-down/25 bg-data-down/10 p-2 text-caption text-data-down">
+          {text(localError ?? error ?? "影响链修改失败")}
+        </div>
+      )}
+    </form>
+  );
+}
+
+function ImpactEditField({
+  label,
+  children,
+}: {
+  label: string;
+  children: ReactNode;
+}) {
+  const { text } = useI18n();
+  return (
+    <label className="block">
+      <span className="mb-1 block text-caption text-text-muted">{text(label)}</span>
+      {children}
+    </label>
   );
 }
 
@@ -783,6 +1094,84 @@ function mechanismLabel(mechanism: string): string {
     weather: "天气",
     macro: "宏观",
   }[mechanism] ?? mechanism;
+}
+
+interface ImpactLinkDraft {
+  symbol: string;
+  regionId: string;
+  mechanism: string;
+  direction: EventImpactDirection;
+  confidence: string;
+  impactScore: string;
+  horizon: string;
+  rationale: string;
+  evidence: string;
+  counterevidence: string;
+  note: string;
+}
+
+function buildImpactLinkPatch(
+  link: EventImpactLink,
+  draft: ImpactLinkDraft
+): EventImpactLinkUpdateInput {
+  const payload: EventImpactLinkUpdateInput = {};
+  const nextSymbol = draft.symbol.trim().toUpperCase();
+  const nextRegionId = draft.regionId.trim() || null;
+  const nextConfidence = clampNumber(
+    numericDraftValue(draft.confidence, link.confidence * 100),
+    0,
+    100
+  ) / 100;
+  const nextImpactScore = clampNumber(
+    numericDraftValue(draft.impactScore, link.impactScore),
+    0,
+    100
+  );
+  const nextHorizon = draft.horizon.trim();
+  const nextRationale = draft.rationale.trim();
+  const nextEvidence = splitLines(draft.evidence);
+  const nextCounterevidence = splitLines(draft.counterevidence);
+  const nextNote = draft.note.trim();
+
+  if (nextSymbol !== link.symbol) payload.symbol = nextSymbol;
+  if (nextRegionId !== link.regionId) payload.regionId = nextRegionId;
+  if (draft.mechanism !== link.mechanism) payload.mechanism = draft.mechanism;
+  if (draft.direction !== link.direction) payload.direction = draft.direction;
+  if (!nearlyEqual(nextConfidence, link.confidence, 0.0001)) payload.confidence = nextConfidence;
+  if (!nearlyEqual(nextImpactScore, link.impactScore, 0.01)) payload.impactScore = nextImpactScore;
+  if (nextHorizon !== link.horizon) payload.horizon = nextHorizon;
+  if (nextRationale !== link.rationale) payload.rationale = nextRationale;
+  if (!sameStringList(nextEvidence, link.evidence)) payload.evidence = nextEvidence;
+  if (!sameStringList(nextCounterevidence, link.counterevidence)) {
+    payload.counterevidence = nextCounterevidence;
+  }
+  if (nextNote) payload.note = nextNote;
+  return payload;
+}
+
+function splitLines(value: string): string[] {
+  return value
+    .split(/\r?\n/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function numericDraftValue(value: string, fallback: number): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function clampNumber(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+
+function nearlyEqual(left: number, right: number, tolerance: number): boolean {
+  return Math.abs(left - right) <= tolerance;
+}
+
+function sameStringList(left: string[], right: string[]): boolean {
+  if (left.length !== right.length) return false;
+  return left.every((item, index) => item === right[index]);
 }
 
 function readPayloadString(payload: Record<string, unknown>, key: string): string | null {

@@ -1,6 +1,7 @@
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -18,6 +19,8 @@ from app.schemas.event_intelligence import (
     EventIntelligenceEvalCaseRead,
     EventIntelligenceQualitySummary,
     EventImpactLinkRead,
+    EventImpactLinkUpdate,
+    EventImpactLinkUpdateResponse,
     EventIntelligenceRead,
     EventIntelligenceResolveResponse,
 )
@@ -27,6 +30,7 @@ from app.services.event_intelligence import (
     enhance_news_event_impacts_with_semantics,
     resolve_news_event_impacts,
     summarize_event_intelligence_quality,
+    update_event_impact_link,
 )
 from app.services.event_intelligence.eval_cases import EVENT_INTELLIGENCE_EVAL_CASES
 from app.services.llm.types import LLMConfigurationError
@@ -83,6 +87,40 @@ async def list_event_impact_links(
     if status_filter is not None:
         statement = statement.where(EventImpactLink.status == status_filter)
     return list((await session.scalars(statement.limit(limit))).all())
+
+
+@router.patch("/impact-links/{link_id}", response_model=EventImpactLinkUpdateResponse)
+async def update_event_intelligence_impact_link(
+    link_id: UUID,
+    payload: EventImpactLinkUpdate,
+    session: AsyncSession = Depends(get_db),
+) -> EventImpactLinkUpdateResponse:
+    patch = payload.model_dump(exclude_unset=True, exclude={"edited_by", "note"})
+    try:
+        event_item, link, audit_log = await update_event_impact_link(
+            session,
+            link_id,
+            edited_by=payload.edited_by,
+            note=payload.note,
+            changes=patch,
+        )
+        await session.commit()
+    except IntegrityError as exc:
+        await session.rollback()
+        raise HTTPException(status_code=409, detail="Impact link scope already exists") from exc
+    except ValueError as exc:
+        if "not found" in str(exc):
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    await session.refresh(event_item)
+    await session.refresh(link)
+    await session.refresh(audit_log)
+    return EventImpactLinkUpdateResponse(
+        event=EventIntelligenceRead.model_validate(event_item),
+        impact_link=EventImpactLinkRead.model_validate(link),
+        audit_log=EventIntelligenceAuditLogRead.model_validate(audit_log),
+    )
 
 
 @router.get("/audit-logs", response_model=list[EventIntelligenceAuditLogRead])

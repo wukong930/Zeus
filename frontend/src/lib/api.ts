@@ -817,6 +817,20 @@ export interface EventImpactLink {
   updatedAt: string;
 }
 
+export interface EventImpactLinkUpdateInput {
+  symbol?: string | null;
+  regionId?: string | null;
+  mechanism?: string | null;
+  direction?: EventImpactDirection | null;
+  confidence?: number | null;
+  impactScore?: number | null;
+  horizon?: string | null;
+  rationale?: string | null;
+  evidence?: string[] | null;
+  counterevidence?: string[] | null;
+  note?: string | null;
+}
+
 export interface EventIntelligenceDecisionResult {
   event: EventIntelligenceItem;
   auditLog: {
@@ -835,6 +849,12 @@ export interface EventIntelligenceResolveResult {
   event: EventIntelligenceItem;
   impactLinks: EventImpactLink[];
   created: boolean;
+}
+
+export interface EventImpactLinkUpdateResult {
+  event: EventIntelligenceItem;
+  impactLink: EventImpactLink;
+  auditLog: EventIntelligenceDecisionResult["auditLog"];
 }
 
 export interface EventIntelligenceQualityIssue {
@@ -969,6 +989,12 @@ interface BackendEventIntelligenceAuditLog {
 
 interface BackendEventIntelligenceDecisionResponse {
   event: BackendEventIntelligenceItem;
+  audit_log: BackendEventIntelligenceAuditLog;
+}
+
+interface BackendEventImpactLinkUpdateResponse {
+  event: BackendEventIntelligenceItem;
+  impact_link: BackendEventImpactLink;
   audit_log: BackendEventIntelligenceAuditLog;
 }
 
@@ -1281,16 +1307,39 @@ export async function decideEventIntelligence(
   );
   return {
     event: mapEventIntelligenceItem(row.event),
-    auditLog: {
-      id: row.audit_log.id,
-      eventItemId: row.audit_log.event_item_id,
-      action: row.audit_log.action,
-      actor: row.audit_log.actor,
-      beforeStatus: row.audit_log.before_status,
-      afterStatus: row.audit_log.after_status,
-      note: row.audit_log.note,
-      createdAt: row.audit_log.created_at,
-    },
+    auditLog: mapEventIntelligenceAuditLog(row.audit_log),
+  };
+}
+
+export async function updateEventImpactLink(
+  linkId: string,
+  payload: EventImpactLinkUpdateInput
+): Promise<EventImpactLinkUpdateResult> {
+  const row = await fetchJson<BackendEventImpactLinkUpdateResponse>(
+    `/api/event-intelligence/impact-links/${encodeURIComponent(linkId)}`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        symbol: payload.symbol,
+        region_id: payload.regionId,
+        mechanism: payload.mechanism,
+        direction: payload.direction,
+        confidence: payload.confidence,
+        impact_score: payload.impactScore,
+        horizon: payload.horizon,
+        rationale: payload.rationale,
+        evidence: payload.evidence,
+        counterevidence: payload.counterevidence,
+        edited_by: "zeus-ui",
+        note: payload.note,
+      }),
+    }
+  );
+  return {
+    event: mapEventIntelligenceItem(row.event),
+    impactLink: mapEventImpactLink(row.impact_link),
+    auditLog: mapEventIntelligenceAuditLog(row.audit_log),
   };
 }
 
@@ -1776,6 +1825,21 @@ function mapEventImpactLink(link: BackendEventImpactLink): EventImpactLink {
     status: link.status,
     createdAt: link.created_at,
     updatedAt: link.updated_at,
+  };
+}
+
+function mapEventIntelligenceAuditLog(
+  auditLog: BackendEventIntelligenceAuditLog
+): EventIntelligenceDecisionResult["auditLog"] {
+  return {
+    id: auditLog.id,
+    eventItemId: auditLog.event_item_id,
+    action: auditLog.action,
+    actor: auditLog.actor,
+    beforeStatus: auditLog.before_status,
+    afterStatus: auditLog.after_status,
+    note: auditLog.note,
+    createdAt: auditLog.created_at,
   };
 }
 

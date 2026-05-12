@@ -112,6 +112,54 @@ class EventImpactLinkRead(ORMModel):
     updated_at: datetime
 
 
+class EventImpactLinkUpdate(StrictInputModel):
+    symbol: str | None = Field(default=None, min_length=1, max_length=MAX_INGEST_SYMBOL_LENGTH)
+    region_id: str | None = Field(default=None, max_length=MAX_EVENT_INTELLIGENCE_REGION_LENGTH)
+    mechanism: str | None = Field(default=None, pattern=EVENT_IMPACT_MECHANISM_PATTERN)
+    direction: str | None = Field(default=None, pattern=EVENT_IMPACT_DIRECTION_PATTERN)
+    confidence: float | None = Field(default=None, ge=0, le=1)
+    impact_score: float | None = Field(default=None, ge=0, le=100)
+    horizon: str | None = Field(default=None, min_length=1, max_length=20)
+    rationale: str | None = Field(default=None, max_length=MAX_GOVERNANCE_TEXT_LENGTH)
+    evidence: list[str] | None = Field(
+        default=None,
+        max_length=MAX_EVENT_INTELLIGENCE_LIST_ITEMS,
+    )
+    counterevidence: list[str] | None = Field(
+        default=None,
+        max_length=MAX_EVENT_INTELLIGENCE_LIST_ITEMS,
+    )
+    edited_by: str | None = Field(default=None, max_length=80)
+    note: str | None = Field(default=None, max_length=MAX_GOVERNANCE_TEXT_LENGTH)
+
+    @field_validator("symbol")
+    @classmethod
+    def normalize_symbol(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return value.strip().upper()
+
+    @field_validator("region_id", "mechanism", "direction", "horizon", "rationale", "note")
+    @classmethod
+    def normalize_optional_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        text = value.strip()
+        return text or None
+
+    @field_validator("evidence", "counterevidence")
+    @classmethod
+    def validate_optional_evidence(cls, value: list[str] | None) -> list[str] | None:
+        if value is None:
+            return None
+        for item in value:
+            if len(item) > MAX_GOVERNANCE_TEXT_LENGTH:
+                raise ValueError(
+                    f"evidence entries can be at most {MAX_GOVERNANCE_TEXT_LENGTH} characters"
+                )
+        return _normalize_text_list(value, max_length=MAX_GOVERNANCE_TEXT_LENGTH)
+
+
 class EventIntelligenceResolveResponse(BaseModel):
     event: EventIntelligenceRead
     impact_links: list[EventImpactLinkRead]
@@ -148,6 +196,12 @@ class EventIntelligenceDecisionCreate(StrictInputModel):
 
 class EventIntelligenceDecisionResponse(BaseModel):
     event: EventIntelligenceRead
+    audit_log: EventIntelligenceAuditLogRead
+
+
+class EventImpactLinkUpdateResponse(BaseModel):
+    event: EventIntelligenceRead
+    impact_link: EventImpactLinkRead
     audit_log: EventIntelligenceAuditLogRead
 
 

@@ -338,6 +338,12 @@ threshold_modifier、propagation_activator、risk_recalc、数据腐烂防护
 - `/event-intelligence` 详情页增加确认、拒绝、转人工复核操作按钮，前端动作通过 API 写入审计日志。
 - 语义增强接口现在也会写入 `semantic_enhanced` 审计记录，记录模型、提示版本、语义置信度和假设数量。
 
+# 2026-05-12 — Event Intelligence Engine Phase 10.3.2
+
+- 新增 `/api/event-intelligence/impact-links/{link_id}` PATCH 接口，支持人工修订影响链的品种、区域、机制、方向、置信度、影响分、周期、证据和反证。
+- 影响链修订会把事件与链路重新置为 `human_review`，写入 `impact_link.updated` 审计，并重新进入 `change_review_queue`；审计 payload 明确标记 `production_effect=none`。
+- `/event-intelligence` 详情页新增“修改链路”表单，保存前只提交真实变更字段，并提示修改后需要重新复核。
+
 # 2026-05-12 — Event Intelligence Engine Phase 10.4
 
 - `/api/causal-web` 新增 `symbol` 与 `region` 作用域参数，并把 `event_intelligence_items` 渲染为事件源、`event_impact_links` 渲染为影响假设节点。

@@ -4,6 +4,7 @@ from app.services.event_intelligence.governance import (
     event_intelligence_review_reasons,
     record_event_intelligence_audit,
     record_event_intelligence_review_learning,
+    update_event_impact_link,
 )
 from app.services.event_intelligence.quality import (
     evaluate_event_intelligence_quality,
@@ -36,4 +37,5 @@ __all__ = [
     "record_event_intelligence_review_learning",
     "resolve_news_event_impacts",
     "summarize_event_intelligence_quality",
+    "update_event_impact_link",
 ]

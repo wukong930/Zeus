@@ -955,6 +955,7 @@ Causa 的 `event_driven` 评估器实际上是纯技术面（gap + volume），*
     - [x] Phase 10.2 先在 `source_payload` 记录 `semantic_model` / `semantic_prompt_version`。
     - [x] Phase 10.3 补独立治理审计表与人工确认流。
     - [x] Phase 10.3.1 高影响 / 单源 / 低置信事件自动写入 `change_review_queue`，人工决策后关闭复核项并生成 `event_intelligence_review` 学习记录。
+    - [x] Phase 10.3.2 支持人工修改单条影响链，修改后事件与链路回到 `human_review`，审计记录标记 `production_effect=none` 并重新进入治理队列。
 - [ ] **前端联动**
   - [x] Phase 10.4 最小联动：Causal Web 可按 `symbol + region` 加载事件智能链路，并把 `event_intelligence_items -> event_impact_links` 显示为源事件到影响假设。
   - [x] Phase 10.4 最小联动：World Risk Map 聚合事件智能对象和影响链，区域运行态、证据、风险分和 Causal Web URL 使用同一 `event_id` 作用域。
@@ -967,6 +968,7 @@ Causa 的 `event_driven` 评估器实际上是纯技术面（gap + volume），*
   - [x] 新增 Event Intelligence 页面：事件池、影响链、证据/反证、人工确认队列。
   - [x] Event Intelligence 页面展示 LLM 语义假设与模型/提示版本。
   - [x] Event Intelligence 页面支持确认、拒绝、转人工复核，并写入审计日志。
+  - [x] Event Intelligence 页面支持编辑影响链的品种、区域、机制、方向、置信度、证据和反证；保存后必须重新复核。
 
 ### 验证
 
@@ -975,6 +977,7 @@ Causa 的 `event_driven` 评估器实际上是纯技术面（gap + volume），*
 - [x] 单源高影响事件不会自动进入生产预警。
 - [x] 人工确认 / 拒绝 / 转人工复核会写入独立治理审计日志。
 - [x] 高影响、单源或低置信事件智能对象会进入治理队列；复核结果会保留为可检索学习材料，不改变生产阈值。
+- [x] 人工修改影响链会写入 `impact_link.updated` 审计、重新打开复核队列，并保留为学习材料。
 - [x] Phase 10.4：Causal Web / World Risk Map 使用同一 `event_intelligence:{event_id}` 作用域，不出现各讲各的情况。
 
 ---

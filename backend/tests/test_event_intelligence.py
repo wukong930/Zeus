@@ -16,6 +16,7 @@ from app.services.event_intelligence import (
     evaluate_event_intelligence_quality,
     parse_semantic_extraction,
     summarize_event_intelligence_quality,
+    update_event_impact_link,
 )
 from app.services.event_intelligence.eval_cases import EVENT_INTELLIGENCE_EVAL_CASES
 
@@ -173,6 +174,17 @@ def test_event_intelligence_decision_api_rejects_invalid_decision() -> None:
     assert response.status_code == 422
 
 
+def test_event_impact_link_update_api_rejects_invalid_confidence() -> None:
+    client = TestClient(create_app())
+
+    response = client.patch(
+        f"/api/event-intelligence/impact-links/{uuid4()}",
+        json={"confidence": 1.5},
+    )
+
+    assert response.status_code == 422
+
+
 def test_event_intelligence_eval_cases_api_returns_samples() -> None:
     client = TestClient(create_app())
 
@@ -236,6 +248,79 @@ async def test_apply_event_intelligence_decision_records_audit() -> None:
     assert chunks[0].metadata_json["production_effect"] == "none"
     assert session.flush_count == 2
     assert session.execute_count == 1
+
+
+async def test_update_event_impact_link_reopens_review_and_records_learning() -> None:
+    event_id = uuid4()
+    link_id = uuid4()
+    event_item = EventIntelligenceItem(
+        id=event_id,
+        source_type="news_event",
+        source_id=str(uuid4()),
+        title="Verified crude policy report",
+        summary="Policy report has an editable impact chain.",
+        event_type="policy",
+        event_timestamp=datetime(2026, 5, 10, tzinfo=UTC),
+        entities=[],
+        symbols=["SC"],
+        regions=["middle_east_crude"],
+        mechanisms=["policy"],
+        evidence=["Original evidence"],
+        counterevidence=[],
+        confidence=0.8,
+        impact_score=80,
+        status="confirmed",
+        requires_manual_confirmation=False,
+        source_reliability=0.8,
+        freshness_score=1,
+        source_payload={"source_count": 2, "verification_status": "cross_verified"},
+    )
+    link = EventImpactLink(
+        id=link_id,
+        event_item_id=event_id,
+        symbol="SC",
+        region_id="middle_east_crude",
+        mechanism="policy",
+        direction="bullish",
+        confidence=0.8,
+        impact_score=80,
+        horizon="short",
+        rationale="Original rationale",
+        evidence=["Original evidence"],
+        counterevidence=[],
+        status="confirmed",
+    )
+    session = FakeImpactLinkUpdateSession(event_item, [link])
+
+    updated_event, updated_link, audit = await update_event_impact_link(
+        session,  # type: ignore[arg-type]
+        link_id,
+        edited_by="operator",
+        note="Direction should be watch until logistics evidence arrives.",
+        changes={
+            "direction": "watch",
+            "confidence": 0.61,
+            "impact_score": 61,
+            "rationale": "Manual review downgraded the impact chain.",
+            "counterevidence": ["Missing logistics confirmation"],
+        },
+    )
+
+    assert updated_event.status == "human_review"
+    assert updated_event.requires_manual_confirmation is True
+    assert updated_event.confidence == 0.61
+    assert updated_event.impact_score == 61
+    assert updated_link.status == "human_review"
+    assert updated_link.direction == "watch"
+    assert audit.action == "impact_link.updated"
+    assert audit.payload["before"]["direction"] == "bullish"
+    assert audit.payload["after"]["direction"] == "watch"
+    reviews = [row for row in session.rows if isinstance(row, ChangeReviewQueue)]
+    chunks = [row for row in session.rows if isinstance(row, VectorChunk)]
+    assert reviews[0].source == "event_intelligence"
+    assert "manual_confirmation_required" in reviews[0].proposed_change["review_reasons"]
+    assert chunks[0].chunk_type == "event_intelligence_review"
+    assert chunks[0].metadata_json["action"] == "impact_link.updated"
 
 
 def test_parse_semantic_extraction_normalizes_and_filters_hypotheses() -> None:
@@ -533,9 +618,45 @@ class FakeReviewSession:
         self.flush_count += 1
 
 
+class FakeImpactLinkUpdateSession:
+    def __init__(
+        self,
+        event_item: EventIntelligenceItem,
+        links: list[EventImpactLink],
+    ) -> None:
+        self.event_item = event_item
+        self.links = links
+        self.rows: list[object] = []
+        self.flush_count = 0
+        self.scalar_calls = 0
+
+    async def get(self, model, key):
+        if model is EventIntelligenceItem and key == self.event_item.id:
+            return self.event_item
+        if model is EventImpactLink:
+            return next((link for link in self.links if link.id == key), None)
+        return None
+
+    async def scalars(self, _):
+        self.scalar_calls += 1
+        if self.scalar_calls == 1:
+            return FakeScalars(rows=self.links)
+        return FakeScalars()
+
+    def add(self, row: object) -> None:
+        self.rows.append(row)
+
+    async def flush(self) -> None:
+        self.flush_count += 1
+
+
 class FakeScalars:
-    def __init__(self, row=None) -> None:
+    def __init__(self, row=None, rows=None) -> None:
         self._row = row
+        self._rows = rows or ([] if row is None else [row])
 
     def first(self):
         return self._row
+
+    def all(self):
+        return self._rows
