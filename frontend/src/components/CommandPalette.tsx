@@ -19,6 +19,7 @@ import {
   Plus,
   TrendingUp,
   Globe2,
+  ShieldCheck,
 } from "lucide-react";
 import { fetchContracts, type ContractMetadata } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
@@ -123,6 +124,7 @@ export function CommandPalette() {
       { id: "nav-cw", group: "跳转", label: "因果网络", icon: Network, action: () => go("/causal-web") },
       { id: "nav-wm", group: "跳转", label: "世界风险地图", icon: Globe2, action: () => go("/world-map") },
       { id: "nav-ei", group: "跳转", label: "事件智能引擎", icon: BrainCircuit, action: () => go("/event-intelligence") },
+      { id: "nav-gov", group: "跳转", label: "治理队列", icon: ShieldCheck, action: () => go("/governance") },
       { id: "nav-il", group: "跳转", label: "产业透镜", icon: Factory, action: () => go("/industry") },
       { id: "nav-sec", group: "跳转", label: "板块", icon: Layers, action: () => go("/sectors") },
       { id: "nav-fl", group: "跳转", label: "未来实验室", icon: Beaker, action: () => go("/future-lab") },

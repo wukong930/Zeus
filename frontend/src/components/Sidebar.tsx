@@ -21,6 +21,7 @@ import {
   NotebookPen,
   Plane,
   Settings,
+  ShieldCheck,
   Wrench,
   X,
 } from "lucide-react";
@@ -37,6 +38,7 @@ const NAV_ITEMS = [
   { href: "/causal-web", label: "因果网络", icon: Network },
   { href: "/world-map", label: "世界风险地图", icon: Globe2 },
   { href: "/event-intelligence", label: "事件智能引擎", icon: BrainCircuit },
+  { href: "/governance", label: "治理队列", icon: ShieldCheck },
   { href: "/news", label: "新闻事件", icon: Newspaper },
   { href: "/industry", label: "产业透镜", icon: Factory },
   { href: "/sectors", label: "板块", icon: Layers },

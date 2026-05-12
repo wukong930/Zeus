@@ -773,6 +773,13 @@ export type EventIntelligenceDecision = "confirm" | "reject" | "request_review" 
 export type EventIntelligenceQualityStatus = "blocked" | "review" | "shadow_ready" | "decision_grade";
 export type EventImpactLinkQualityStatus = "blocked" | "review" | "passed";
 export type EventIntelligenceQualitySeverity = "blocker" | "warning" | "info";
+export type GovernanceReviewStatus =
+  | "pending"
+  | "approved"
+  | "rejected"
+  | "reviewed"
+  | "shadow_review";
+export type GovernanceReviewDecision = "approve" | "reject" | "mark_reviewed" | "shadow_review";
 
 export interface EventIntelligenceItem {
   id: string;
@@ -895,6 +902,19 @@ export interface EventIntelligenceQualitySummary {
   shadowReady: number;
   decisionGrade: number;
   reports: EventIntelligenceQualityReport[];
+}
+
+export interface GovernanceReview {
+  id: string;
+  source: string;
+  targetTable: string;
+  targetKey: string;
+  proposedChange: Record<string, unknown>;
+  status: GovernanceReviewStatus | string;
+  reason: string | null;
+  reviewedBy: string | null;
+  reviewedAt: string | null;
+  createdAt: string;
 }
 
 interface BackendAlert {
@@ -1043,6 +1063,19 @@ interface BackendEventIntelligenceQualitySummary {
   shadow_ready: number;
   decision_grade: number;
   reports: BackendEventIntelligenceQualityReport[];
+}
+
+interface BackendGovernanceReview {
+  id: string;
+  source: string;
+  target_table: string;
+  target_key: string;
+  proposed_change: Record<string, unknown>;
+  status: GovernanceReviewStatus | string;
+  reason: string | null;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  created_at: string;
 }
 
 interface BackendNotebookEntry {
@@ -1278,6 +1311,43 @@ export async function fetchEventIntelligenceAuditLogs(params: {
     `/api/event-intelligence/audit-logs?${query.toString()}`
   );
   return rows.map(mapEventIntelligenceAuditLog);
+}
+
+export async function fetchGovernanceReviews(params: {
+  status?: GovernanceReviewStatus | "all";
+  source?: string;
+  targetTable?: string;
+  limit?: number;
+} = {}): Promise<GovernanceReview[]> {
+  const query = new URLSearchParams();
+  query.set("limit", String(params.limit ?? 200));
+  if (params.status && params.status !== "all") query.set("status", params.status);
+  if (params.source) query.set("source", params.source);
+  if (params.targetTable) query.set("target_table", params.targetTable);
+  const rows = await fetchJson<BackendGovernanceReview[]>(
+    `/api/governance/reviews?${query.toString()}`
+  );
+  return rows.map(mapGovernanceReview);
+}
+
+export async function decideGovernanceReview(
+  reviewId: string,
+  decision: GovernanceReviewDecision,
+  note?: string
+): Promise<GovernanceReview> {
+  const row = await fetchJson<BackendGovernanceReview>(
+    `/api/governance/reviews/${encodeURIComponent(reviewId)}/decision`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        decision,
+        reviewed_by: "zeus-ui",
+        note,
+      }),
+    }
+  );
+  return mapGovernanceReview(row);
 }
 
 export async function createEventIntelligenceFromNews(
@@ -1860,6 +1930,21 @@ function mapEventIntelligenceAuditLog(
     note: auditLog.note,
     payload: auditLog.payload,
     createdAt: auditLog.created_at,
+  };
+}
+
+function mapGovernanceReview(review: BackendGovernanceReview): GovernanceReview {
+  return {
+    id: review.id,
+    source: review.source,
+    targetTable: review.target_table,
+    targetKey: review.target_key,
+    proposedChange: review.proposed_change,
+    status: review.status,
+    reason: review.reason,
+    reviewedBy: review.reviewed_by,
+    reviewedAt: review.reviewed_at,
+    createdAt: review.created_at,
   };
 }
 

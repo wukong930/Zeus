@@ -1,7 +1,11 @@
 from datetime import datetime, timezone
+from uuid import uuid4
 
 import pytest
+from fastapi.testclient import TestClient
 
+from app.core.database import get_db
+from app.main import create_app
 from app.models.change_review_queue import ChangeReviewQueue
 from app.models.calibration import SignalCalibration
 from app.services.calibration.updater import CalibrationProposal, apply_signal_calibration_change
@@ -85,3 +89,98 @@ async def test_review_required_allows_human_approved_calibration_write() -> None
     assert row.effective_weight == 1.2
     assert row.effective_from == applied_at
     assert session.rows[0] is row
+
+
+class FakeGovernanceApiSession:
+    def __init__(self, row: ChangeReviewQueue | None) -> None:
+        self.row = row
+        self.commit_count = 0
+        self.refresh_count = 0
+
+    async def get(self, model, row_id):
+        if model is ChangeReviewQueue and self.row is not None and self.row.id == row_id:
+            return self.row
+        return None
+
+    async def commit(self) -> None:
+        self.commit_count += 1
+
+    async def refresh(self, row) -> None:
+        self.refresh_count += 1
+
+
+def test_governance_decision_api_marks_pending_review() -> None:
+    review_id = uuid4()
+    row = ChangeReviewQueue(
+        id=review_id,
+        source="calibration",
+        target_table="signal_calibration",
+        target_key="momentum:energy:range_low_vol",
+        proposed_change={"base_weight": 1.0},
+        status="pending",
+        reason="Shadow result requires review.",
+        created_at=datetime(2026, 5, 12, tzinfo=timezone.utc),
+    )
+    session = FakeGovernanceApiSession(row)
+
+    async def fake_db():
+        yield session
+
+    app = create_app()
+    app.dependency_overrides[get_db] = fake_db
+    client = TestClient(app)
+
+    response = client.post(
+        f"/api/governance/reviews/{review_id}/decision",
+        json={"decision": "approve", "reviewed_by": "operator", "note": "looks good"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "approved"
+    assert payload["reviewed_by"] == "operator"
+    assert payload["proposed_change"]["review_decision"]["production_effect"] == "none"
+    assert session.commit_count == 1
+    assert session.refresh_count == 1
+
+
+def test_governance_decision_api_rejects_redeciding_review() -> None:
+    review_id = uuid4()
+    row = ChangeReviewQueue(
+        id=review_id,
+        source="calibration",
+        target_table="signal_calibration",
+        target_key="momentum:energy:range_low_vol",
+        proposed_change={"base_weight": 1.0},
+        status="approved",
+        created_at=datetime(2026, 5, 12, tzinfo=timezone.utc),
+    )
+    session = FakeGovernanceApiSession(row)
+
+    async def fake_db():
+        yield session
+
+    app = create_app()
+    app.dependency_overrides[get_db] = fake_db
+    client = TestClient(app)
+
+    response = client.post(
+        f"/api/governance/reviews/{review_id}/decision",
+        json={"decision": "reject", "reviewed_by": "operator"},
+    )
+
+    assert response.status_code == 409
+    assert session.commit_count == 0
+
+
+def test_governance_api_rejects_invalid_filters_and_decisions() -> None:
+    client = TestClient(create_app())
+
+    invalid_filter = client.get("/api/governance/reviews?status=published")
+    invalid_decision = client.post(
+        f"/api/governance/reviews/{uuid4()}/decision",
+        json={"decision": "publish"},
+    )
+
+    assert invalid_filter.status_code == 422
+    assert invalid_decision.status_code == 422

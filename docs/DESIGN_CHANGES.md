@@ -350,6 +350,13 @@ threshold_modifier、propagation_activator、risk_recalc、数据腐烂防护
 - 审计时间线展示状态流转、操作者、备注、变更字段、复核原因、语义假设数量和生产影响，帮助人工复核时直接看到“为什么这条链变成现在这样”。
 - 前端决策和影响链编辑成功后会把返回的审计记录即时插入时间线，减少操作后必须刷新页面才能看到留痕的问题。
 
+# 2026-05-12 — Governance Queue Workbench Phase 10.3.4
+
+- 新增 `/api/governance/reviews` 与 `/api/governance/reviews/{review_id}/decision`，统一读取和处理 `change_review_queue`。
+- 通用治理动作支持批准、驳回、转影子复核和标记已审查，都会在 `proposed_change.review_decision` 中保留操作者、时间、备注和 `production_effect=none`。
+- 事件智能来源的队列项在批准 / 驳回 / 转影子复核时会走事件智能专用决策服务，同步事件对象、影响链、审计日志和学习记录；其它模块仍只关闭队列项，不越权写业务参数。
+- 新增 `/governance` 前端工作台，并同步侧边栏、命令面板和中英文文案，便于跨模块查看待复核建议、入队原因和候选影响链。
+
 # 2026-05-12 — Event Intelligence Engine Phase 10.4
 
 - `/api/causal-web` 新增 `symbol` 与 `region` 作用域参数，并把 `event_intelligence_items` 渲染为事件源、`event_impact_links` 渲染为影响假设节点。

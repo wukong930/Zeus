@@ -137,6 +137,8 @@ Phase 10.3 已落地的治理边界：
 - 学习记录：人工决策后会生成 `vector_chunks.chunk_type=event_intelligence_review`，用于后续回放、检索和复盘；这不会直接改生产阈值。
 - 审计查询：`GET /api/event-intelligence/audit-logs` 可按事件或动作查看治理历史。
 - 前端：`/event-intelligence` 详情页提供确认、拒绝、转人工复核和影响链编辑操作，所有动作写入审计日志；页面同时展示治理时间线，包含状态流转、操作者、备注、变更字段、复核原因和 `production_effect`。
+- 统一队列：`GET /api/governance/reviews` 与 `POST /api/governance/reviews/{review_id}/decision` 提供跨模块 `change_review_queue` 工作台接口；通用队列动作只记录审核结论，事件智能队列项会转交事件智能专用决策服务同步事件与影响链状态。
+- 前端工作台：`/governance` 展示所有待复核建议、结构化载荷、候选影响链和治理动作，作为自动学习与事件智能进入生产前的统一闸口。
 
 Phase 10.4 已落地的联动边界：
 
