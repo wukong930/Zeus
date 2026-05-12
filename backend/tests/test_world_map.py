@@ -8,6 +8,7 @@ from app.api.world_map import (
     _risk_level,
 )
 from app.models.alert import Alert
+from app.models.event_intelligence import EventImpactLink, EventIntelligenceItem
 from app.models.industry_data import IndustryData
 from app.models.news_events import NewsEvent
 from app.models.signal import SignalTrack
@@ -85,6 +86,69 @@ def test_region_snapshot_links_runtime_sources() -> None:
     assert any(step.stage == "production" for step in region.story.chain)
     assert region.adaptiveAlerts
     assert region.adaptiveAlerts[0].source in {"alert", "news"}
+
+
+def test_region_snapshot_uses_event_intelligence_scope() -> None:
+    now = datetime.now(timezone.utc)
+    event_item = EventIntelligenceItem(
+        id=uuid4(),
+        source_type="news_event",
+        source_id="rubber-policy-1",
+        title="China zero-tariff policy opens rubber trade",
+        summary="Tariff change may redirect natural rubber trade into China.",
+        event_type="policy",
+        event_timestamp=now,
+        entities=["China", "rubber"],
+        symbols=["RU", "NR"],
+        regions=["southeast_asia_rubber"],
+        mechanisms=["policy", "supply"],
+        evidence=["policy headline"],
+        counterevidence=["execution details pending"],
+        confidence=0.81,
+        impact_score=83,
+        status="shadow_review",
+        requires_manual_confirmation=False,
+        source_reliability=0.72,
+        freshness_score=0.94,
+        source_payload={},
+        created_at=now,
+        updated_at=now,
+    )
+    impact_link = EventImpactLink(
+        id=uuid4(),
+        event_item_id=event_item.id,
+        symbol="RU",
+        region_id="southeast_asia_rubber",
+        mechanism="policy",
+        direction="bullish",
+        confidence=0.84,
+        impact_score=86,
+        horizon="short",
+        rationale="Tariff policy can pull rubber demand forward.",
+        evidence=["policy headline"],
+        counterevidence=["details pending"],
+        status="shadow_review",
+        created_at=now,
+        updated_at=now,
+    )
+
+    region = _build_region_snapshot(
+        WORLD_RISK_REGIONS[0],
+        alerts=[],
+        news=[],
+        signals=[],
+        positions=[],
+        event_items=[event_item],
+        event_links=[impact_link],
+    )
+
+    assert region.runtime.eventIntelligence == 1
+    assert region.dataQuality == "runtime"
+    assert region.causalScope.hasDirectLinks is True
+    assert f"event_intelligence:{event_item.id}" in region.causalScope.eventIds
+    assert any(row.kind == "event_intelligence" for row in region.story.evidence)
+    assert any(alert.source == "event_intelligence" for alert in region.adaptiveAlerts)
+    assert region.riskScore > WORLD_RISK_REGIONS[0].base_risk
 
 
 def test_region_snapshot_keeps_baseline_label_without_runtime_links() -> None:

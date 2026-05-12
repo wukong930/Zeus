@@ -13,6 +13,7 @@ export default function CausalWebPage() {
   const [nodes, setNodes] = useState<CausalNode[]>([]);
   const [edges, setEdges] = useState<CausalEdge[]>([]);
   const [source, setSource] = useState<DataSourceState>("loading");
+  const [scope, setScope] = useState<{ symbol: string | null; region: string | null } | null>(null);
   const { text } = useI18n();
   const activeCount = useMemo(
     () => nodes.filter((node) => node.active).length,
@@ -24,8 +25,17 @@ export default function CausalWebPage() {
   );
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    setScope({
+      symbol: params.get("symbol"),
+      region: params.get("region"),
+    });
+  }, []);
+
+  useEffect(() => {
+    if (scope === null) return;
     let mounted = true;
-    fetchCausalWebGraph()
+    fetchCausalWebGraph({ limit: 10, symbol: scope.symbol, region: scope.region })
       .then((graph) => {
         if (!mounted) return;
         setNodes(graph.nodes);
@@ -38,7 +48,7 @@ export default function CausalWebPage() {
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [scope]);
 
   return (
     <div className="flex h-full flex-col">

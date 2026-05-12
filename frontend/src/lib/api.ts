@@ -211,7 +211,14 @@ export type WorldMapStoryStage =
   | "policy"
   | "cost"
   | "market";
-export type WorldMapEvidenceKind = "weather" | "alert" | "news" | "signal" | "position" | "baseline";
+export type WorldMapEvidenceKind =
+  | "weather"
+  | "alert"
+  | "news"
+  | "signal"
+  | "position"
+  | "event_intelligence"
+  | "baseline";
 
 export interface GeoPoint {
   lat: number;
@@ -240,6 +247,7 @@ export interface WorldMapRuntime {
   newsEvents: number;
   signals: number;
   positions: number;
+  eventIntelligence: number;
   latestEventAt: string | null;
 }
 
@@ -1143,8 +1151,15 @@ export async function fetchTradePlansFromApi(): Promise<TradePlan[]> {
     .filter((plan): plan is TradePlan => plan !== null);
 }
 
-export async function fetchCausalWebGraph(): Promise<CausalWebGraph> {
-  return fetchJson<CausalWebGraph>("/api/causal-web?limit=10");
+export async function fetchCausalWebGraph(params?: {
+  limit?: number;
+  symbol?: string | null;
+  region?: string | null;
+}): Promise<CausalWebGraph> {
+  const query = new URLSearchParams({ limit: String(params?.limit ?? 10) });
+  if (params?.symbol) query.set("symbol", params.symbol);
+  if (params?.region) query.set("region", params.region);
+  return fetchJson<CausalWebGraph>(`/api/causal-web?${query.toString()}`);
 }
 
 export async function fetchWorldMapSnapshot(): Promise<WorldMapSnapshot> {

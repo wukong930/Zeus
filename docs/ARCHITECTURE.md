@@ -135,6 +135,12 @@ Phase 10.3 已落地的治理边界：
 - 审计查询：`GET /api/event-intelligence/audit-logs` 可按事件或动作查看治理历史。
 - 前端：`/event-intelligence` 详情页提供确认、拒绝、转人工复核按钮，所有动作写入审计日志。
 
+Phase 10.4 已落地的联动边界：
+
+- Causal Web：`/api/causal-web` 支持 `symbol` 与 `region` 查询参数，并把事件智能对象作为 source 节点、影响链作为 thesis 节点渲染。
+- World Risk Map：`/api/world-map` 聚合 `event_intelligence_items` 与 `event_impact_links`，区域运行态新增 `eventIntelligence`，风险分、证据、动态预警和 `eventIds` 都消费同一作用域。
+- 前端：世界风险地图区域档案展示事件智能运行态，因果网络入口携带 `symbol + region`，减少地图与因果图对同一事件解释不一致的问题。
+
 治理约束：
 
 - 引擎判断默认只进入 Shadow / review，不直接修改生产阈值或自动发交易指令。

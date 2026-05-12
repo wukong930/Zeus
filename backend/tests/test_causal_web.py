@@ -3,6 +3,7 @@ from uuid import uuid4
 
 from app.api.causal_web import (
     CounterContext,
+    EventIntelligenceLinkContext,
     GraphNodeSeed,
     MetricContext,
     _append_edge,
@@ -10,9 +11,12 @@ from app.api.causal_web import (
     _counter_seeds_from_alert,
     _latest_market_metrics_statement,
     _layout_nodes,
+    _seed_from_event_intelligence_item,
+    _seed_from_event_intelligence_link,
     _unique_recent_news,
 )
 from app.models.alert import Alert
+from app.models.event_intelligence import EventImpactLink, EventIntelligenceItem
 from app.models.news_events import NewsEvent
 from app.models.signal import SignalTrack
 
@@ -117,6 +121,88 @@ def test_build_edges_links_news_metric_signal_and_alert_contexts() -> None:
     assert (f"signal-{signal_id}", f"alert-{alert_id}") in pairs
     assert (f"metric-{metric_id}", f"signal-{signal_id}") in pairs
     assert (f"news-{news_id}", f"signal-{signal_id}") in pairs
+
+
+def test_build_edges_links_event_intelligence_scope() -> None:
+    event_item_id = uuid4()
+    impact_link_id = uuid4()
+
+    edges = _build_edges(
+        news=[],
+        metrics=[],
+        signals=[],
+        alerts=[],
+        counters=[],
+        node_ids={f"ei-{event_item_id}", f"ei-link-{impact_link_id}"},
+        event_intelligence_links=[
+            EventIntelligenceLinkContext(
+                source_node_id=f"ei-{event_item_id}",
+                target_node_id=f"ei-link-{impact_link_id}",
+                direction="bullish",
+                confidence=0.82,
+                impact_score=87,
+                horizon="short",
+                verified=False,
+            )
+        ],
+    )
+
+    assert [(edge.source, edge.target, edge.direction) for edge in edges] == [
+        (f"ei-{event_item_id}", f"ei-link-{impact_link_id}", "bullish")
+    ]
+
+
+def test_event_intelligence_seeds_use_shared_scope_ids() -> None:
+    now = datetime.now(timezone.utc)
+    event_item = EventIntelligenceItem(
+        id=uuid4(),
+        source_type="news_event",
+        source_id="oil-1",
+        title="Carrier route raises crude supply risk",
+        summary="A naval route change raises crude supply risk.",
+        event_type="geopolitical",
+        event_timestamp=now,
+        entities=["Iran", "carrier"],
+        symbols=["SC"],
+        regions=["middle_east_crude"],
+        mechanisms=["geopolitical", "supply"],
+        evidence=["route report"],
+        counterevidence=[],
+        confidence=0.76,
+        impact_score=79,
+        status="shadow_review",
+        requires_manual_confirmation=False,
+        source_reliability=0.7,
+        freshness_score=0.9,
+        source_payload={},
+        created_at=now,
+        updated_at=now,
+    )
+    impact_link = EventImpactLink(
+        id=uuid4(),
+        event_item_id=event_item.id,
+        symbol="SC",
+        region_id="middle_east_crude",
+        mechanism="geopolitical",
+        direction="bullish",
+        confidence=0.8,
+        impact_score=82,
+        horizon="short",
+        rationale="Potential route tension lifts crude risk premium.",
+        evidence=[],
+        counterevidence=[],
+        status="shadow_review",
+        created_at=now,
+        updated_at=now,
+    )
+
+    item_seed = _seed_from_event_intelligence_item(event_item)
+    link_seed = _seed_from_event_intelligence_link(impact_link, event_item)
+
+    assert item_seed.id == f"ei-{event_item.id}"
+    assert link_seed.id == f"ei-link-{impact_link.id}"
+    assert link_seed.category == "energy"
+    assert link_seed.direction == "bullish"
 
 
 def test_build_edges_uses_latest_signal_for_alert_link() -> None:

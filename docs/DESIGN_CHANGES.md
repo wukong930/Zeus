@@ -335,3 +335,10 @@ threshold_modifier、propagation_activator、risk_recalc、数据腐烂防护
 - 新增 `/api/event-intelligence/{event_id}/decision` 与 `/api/event-intelligence/audit-logs`，用于事件智能确认/拒绝/复核和治理历史查询。
 - `/event-intelligence` 详情页增加确认、拒绝、转人工复核操作按钮，前端动作通过 API 写入审计日志。
 - 语义增强接口现在也会写入 `semantic_enhanced` 审计记录，记录模型、提示版本、语义置信度和假设数量。
+
+# 2026-05-12 — Event Intelligence Engine Phase 10.4
+
+- `/api/causal-web` 新增 `symbol` 与 `region` 作用域参数，并把 `event_intelligence_items` 渲染为事件源、`event_impact_links` 渲染为影响假设节点。
+- `/api/world-map` 开始聚合事件智能对象和影响链，区域运行态新增 `eventIntelligence`，风险分、证据、动态预警和 `eventIds` 共用 `event_intelligence:{event_id}` 作用域。
+- `/world-map` 区域档案展示事件智能运行态，打开因果网络时携带同一 `symbol + region`，减少地图和因果网络各自解释同一事件的问题。
+- 新增 Causal Web 与 World Risk Map 回归测试，覆盖事件智能源节点、链路边、区域证据和同一事件作用域。

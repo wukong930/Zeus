@@ -8,11 +8,12 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.models.alert import Alert
+from app.models.event_intelligence import EventImpactLink, EventIntelligenceItem
 from app.models.industry_data import IndustryData
 from app.models.market_data import MarketData
 from app.models.news_events import NewsEvent
@@ -134,11 +135,25 @@ class CounterContext:
     confidence: float
 
 
+@dataclass(frozen=True)
+class EventIntelligenceLinkContext:
+    source_node_id: str
+    target_node_id: str
+    direction: EdgeDirection
+    confidence: float
+    impact_score: float
+    horizon: str
+    verified: bool
+
+
 @router.get("", response_model=CausalWebGraph)
 async def get_causal_web(
     limit: int = Query(default=12, ge=4, le=40),
+    symbol: str | None = Query(default=None, min_length=1, max_length=20),
+    region: str | None = Query(default=None, min_length=1, max_length=80),
     session: AsyncSession = Depends(get_db),
 ) -> CausalWebGraph:
+    symbol_filter = _normalize_symbol(symbol) if symbol else None
     news_limit = max(3, limit // 3)
     news = _unique_recent_news(
         list(
@@ -188,6 +203,33 @@ async def get_causal_web(
             )
         ).all()
     )
+    event_intelligence_items = list(
+        (
+            await session.scalars(
+                _event_intelligence_statement(
+                    limit=max(4, min(limit, 16)),
+                    symbol=symbol_filter,
+                    region=region,
+                )
+            )
+        ).all()
+    )
+    event_intelligence_links = (
+        list(
+            (
+                await session.scalars(
+                    _event_intelligence_link_statement(
+                        event_item_ids=[row.id for row in event_intelligence_items],
+                        limit=max(6, limit),
+                        symbol=symbol_filter,
+                        region=region,
+                    )
+                )
+            ).all()
+        )
+        if event_intelligence_items
+        else []
+    )
     metric_contexts = [
         *[_metric_context_from_industry(row) for row in metrics],
         *[_metric_context_from_market(row) for row in market_metrics],
@@ -198,8 +240,15 @@ async def get_causal_web(
         for seed in counter_seeds
         if seed.ref_id is not None
     ]
+    event_intelligence_by_id = {row.id: row for row in event_intelligence_items}
+    event_intelligence_link_contexts = _event_intelligence_link_contexts(event_intelligence_links)
 
     seeds = [
+        *[_seed_from_event_intelligence_item(row) for row in event_intelligence_items],
+        *[
+            _seed_from_event_intelligence_link(row, event_intelligence_by_id.get(row.event_item_id))
+            for row in event_intelligence_links
+        ],
         *[_seed_from_news(row) for row in news],
         *[_seed_from_metric(row) for row in metrics],
         *[_seed_from_market_metric(row) for row in market_metrics],
@@ -215,6 +264,7 @@ async def get_causal_web(
         alerts=alerts,
         counters=counter_contexts,
         node_ids={n.id for n in nodes},
+        event_intelligence_links=event_intelligence_link_contexts,
     )
     return CausalWebGraph(
         generated_at=datetime.now(timezone.utc),
@@ -226,7 +276,52 @@ async def get_causal_web(
             "signals": len(signals),
             "counters": len(counter_seeds),
             "alerts": len(alerts),
+            "event_intelligence": len(event_intelligence_items),
         },
+    )
+
+
+def _seed_from_event_intelligence_item(row: EventIntelligenceItem) -> GraphNodeSeed:
+    symbols = [_normalize_symbol(symbol) for symbol in (row.symbols or [])[:3]]
+    mechanisms = [str(value) for value in (row.mechanisms or [])[:2]]
+    return GraphNodeSeed(
+        id=f"ei-{row.id}",
+        type="event",
+        label=row.title,
+        timestamp=row.event_timestamp,
+        category=_category_from_symbols(symbols),
+        confidence=max(row.confidence, min(row.impact_score / 100, 1.0)),
+        direction="neutral",
+        tags=tuple(filter(None, (row.event_type, row.status, *symbols[:2], *mechanisms[:1]))),
+        narrative=row.summary or row.title,
+        alert_linked=_event_intelligence_verified(row.status),
+        ref_id=row.id,
+    )
+
+
+def _seed_from_event_intelligence_link(
+    row: EventImpactLink,
+    event_item: EventIntelligenceItem | None,
+) -> GraphNodeSeed:
+    symbol = _normalize_symbol(row.symbol)
+    category = CATEGORY_BY_SYMBOL.get(symbol) or (
+        _category_from_symbols([_normalize_symbol(value) for value in (event_item.symbols or [])])
+        if event_item is not None
+        else "unknown"
+    )
+    return GraphNodeSeed(
+        id=f"ei-link-{row.id}",
+        type="signal",
+        label=f"{symbol} {row.mechanism.replace('_', ' ')}",
+        timestamp=row.created_at,
+        category=category,
+        confidence=max(row.confidence, min(row.impact_score / 100, 1.0)),
+        direction=_direction(row.direction),
+        tags=tuple(filter(None, (symbol, row.mechanism, row.status, row.region_id, row.horizon))),
+        narrative=row.rationale or (event_item.summary if event_item is not None else row.mechanism),
+        portfolio_linked=bool(symbol),
+        alert_linked=_event_intelligence_verified(row.status),
+        ref_id=row.id,
     )
 
 
@@ -394,6 +489,7 @@ def _build_edges(
     alerts: list[Alert],
     counters: list[CounterContext],
     node_ids: set[str],
+    event_intelligence_links: list[EventIntelligenceLinkContext] | None = None,
 ) -> list[CausalWebEdge]:
     edges: list[CausalWebEdge] = []
     edge_keys: set[tuple[str, str]] = set()
@@ -407,6 +503,21 @@ def _build_edges(
         row.id: {str(asset).upper() for asset in row.related_assets}
         for row in alerts
     }
+    for context in event_intelligence_links or []:
+        _append_edge(
+            edges,
+            f"edge-ei-link-{context.source_node_id}-{context.target_node_id}",
+            context.source_node_id,
+            context.target_node_id,
+            context.confidence,
+            context.horizon,
+            max(context.confidence, min(context.impact_score / 100, 1.0)),
+            context.direction,
+            context.verified,
+            node_ids,
+            edge_keys=edge_keys,
+        )
+
     for alert in alerts:
         signal = signal_by_alert.get(alert.id)
         if signal is not None:
@@ -537,6 +648,8 @@ def _trim_edges(edges: list[CausalWebEdge], *, limit: int) -> list[CausalWebEdge
 def _edge_type_priority(edge: CausalWebEdge) -> int:
     if edge.id.startswith("edge-signal-alert"):
         return 100
+    if edge.id.startswith("edge-ei-link"):
+        return 98
     if edge.id.startswith("edge-news-signal"):
         return 95
     if edge.id.startswith("edge-metric-signal"):
@@ -645,6 +758,48 @@ def _latest_market_metrics_statement(*, limit: int):
     )
 
 
+def _event_intelligence_statement(
+    *,
+    limit: int,
+    symbol: str | None,
+    region: str | None,
+):
+    statement = (
+        select(EventIntelligenceItem)
+        .where(EventIntelligenceItem.status != "rejected")
+        .order_by(EventIntelligenceItem.event_timestamp.desc(), EventIntelligenceItem.created_at.desc())
+        .limit(limit)
+    )
+    if symbol:
+        statement = statement.where(EventIntelligenceItem.symbols.contains([symbol]))
+    if region:
+        statement = statement.where(EventIntelligenceItem.regions.contains([region]))
+    return statement
+
+
+def _event_intelligence_link_statement(
+    *,
+    event_item_ids: list[UUID],
+    limit: int,
+    symbol: str | None,
+    region: str | None,
+):
+    statement = (
+        select(EventImpactLink)
+        .where(
+            EventImpactLink.event_item_id.in_(event_item_ids),
+            EventImpactLink.status != "rejected",
+        )
+        .order_by(EventImpactLink.impact_score.desc(), EventImpactLink.confidence.desc())
+        .limit(limit)
+    )
+    if symbol:
+        statement = statement.where(EventImpactLink.symbol == symbol)
+    if region:
+        statement = statement.where(or_(EventImpactLink.region_id == region, EventImpactLink.region_id.is_(None)))
+    return statement
+
+
 def _metric_context_from_industry(row: IndustryData) -> MetricContext:
     symbol = str(row.symbol).upper()
     return MetricContext(
@@ -661,6 +816,23 @@ def _metric_context_from_market(row: MarketData) -> MetricContext:
         symbol=symbol,
         category=CATEGORY_BY_SYMBOL.get(symbol, "unknown"),
     )
+
+
+def _event_intelligence_link_contexts(
+    rows: list[EventImpactLink],
+) -> list[EventIntelligenceLinkContext]:
+    return [
+        EventIntelligenceLinkContext(
+            source_node_id=f"ei-{row.event_item_id}",
+            target_node_id=f"ei-link-{row.id}",
+            direction=_direction(row.direction),
+            confidence=row.confidence,
+            impact_score=row.impact_score,
+            horizon=row.horizon or "short",
+            verified=_event_intelligence_verified(row.status),
+        )
+        for row in rows
+    ]
 
 
 def _unique_counter_items(items: list[object]) -> list[str]:
@@ -748,6 +920,14 @@ def _direction(value: str | None) -> EdgeDirection:
     return "neutral"
 
 
+def _event_intelligence_verified(status: str | None) -> bool:
+    return status in {"confirmed", "validated", "applied"}
+
+
+def _normalize_symbol(value: str) -> str:
+    return str(value).upper().strip()
+
+
 def _direction_from_text(text: str) -> EdgeDirection:
     lowered = text.lower()
     if any(marker in lowered for marker in ("bearish", "short", "下行", "偏空", "回落")):
@@ -804,6 +984,13 @@ _TEXT_ZH_REPLACEMENTS: tuple[tuple[str, str], ...] = (
     ("single source", "单一来源"),
     ("cross verified", "交叉验证"),
     ("validation", "校验"),
+    ("event intelligence", "事件智能"),
+    ("shadow review", "影子复核"),
+    ("confirmed", "已确认"),
+    ("logistics", "物流"),
+    ("risk sentiment", "风险情绪"),
+    ("macro", "宏观"),
+    ("horizon", "周期"),
     ("confidence", "置信度"),
     ("outcome", "结果"),
     ("regime", "状态"),

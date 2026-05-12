@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.models.alert import Alert
+from app.models.event_intelligence import EventImpactLink, EventIntelligenceItem
 from app.models.industry_data import IndustryData
 from app.models.news_events import NewsEvent
 from app.models.position import Position
@@ -54,7 +55,7 @@ StoryStage = Literal[
     "cost",
     "market",
 ]
-EvidenceKind = Literal["weather", "alert", "news", "signal", "position", "baseline"]
+EvidenceKind = Literal["weather", "alert", "news", "signal", "position", "event_intelligence", "baseline"]
 
 
 class GeoPoint(BaseModel):
@@ -84,6 +85,7 @@ class WorldMapRuntime(BaseModel):
     newsEvents: int
     signals: int
     positions: int
+    eventIntelligence: int
     latestEventAt: datetime | None = None
 
 
@@ -660,6 +662,33 @@ async def _load_world_map_regions(session: AsyncSession, *, limit: int) -> list[
             )
         ).all()
     )
+    event_items = list(
+        (
+            await session.scalars(
+                select(EventIntelligenceItem)
+                .where(EventIntelligenceItem.status != "rejected")
+                .order_by(EventIntelligenceItem.event_timestamp.desc(), EventIntelligenceItem.created_at.desc())
+                .limit(limit)
+            )
+        ).all()
+    )
+    event_links = (
+        list(
+            (
+                await session.scalars(
+                    select(EventImpactLink)
+                    .where(
+                        EventImpactLink.event_item_id.in_([row.id for row in event_items]),
+                        EventImpactLink.status != "rejected",
+                    )
+                    .order_by(EventImpactLink.impact_score.desc(), EventImpactLink.confidence.desc())
+                    .limit(min(max(limit * 2, 100), 1000))
+                )
+            ).all()
+        )
+        if event_items
+        else []
+    )
     regions = [
         _build_region_snapshot(
             definition,
@@ -667,6 +696,8 @@ async def _load_world_map_regions(session: AsyncSession, *, limit: int) -> list[
             news=news,
             signals=signals,
             positions=positions,
+            event_items=event_items,
+            event_links=event_links,
             industry_weather=weather_rows,
         )
         for definition in WORLD_RISK_REGIONS
@@ -682,17 +713,21 @@ def _build_region_snapshot(
     news: list[NewsEvent],
     signals: list[SignalTrack],
     positions: list[Position],
+    event_items: list[EventIntelligenceItem] | None = None,
+    event_links: list[EventImpactLink] | None = None,
     industry_weather: list[IndustryData] | None = None,
 ) -> WorldMapRegion:
     region_symbols = set(definition.symbols)
     matched_alerts = [row for row in alerts if _symbols_intersect(_alert_symbols(row), region_symbols)]
     matched_news = [row for row in news if _symbols_intersect(set(row.affected_symbols or []), region_symbols)]
+    matched_event_items = _matched_event_intelligence_items(definition, event_items or [])
+    matched_event_links = _matched_event_intelligence_links(definition, matched_event_items, event_links or [])
     matched_alert_ids = {row.id for row in matched_alerts}
     matched_signals = [
         row for row in signals if row.alert_id is not None and row.alert_id in matched_alert_ids
     ]
     matched_positions = [row for row in positions if _symbols_intersect(_position_symbols(row), region_symbols)]
-    latest_event_at = _latest_event_at(matched_alerts, matched_news, matched_signals)
+    latest_event_at = _latest_event_at(matched_alerts, matched_news, matched_signals, matched_event_items)
     high_severity_alerts = sum(row.severity in {"critical", "high"} for row in matched_alerts)
     weather = _region_weather(definition, industry_weather or [])
     weather_risk = max(
@@ -708,6 +743,7 @@ def _build_region_snapshot(
         matched_news=matched_news,
         matched_signals=matched_signals,
         matched_positions=matched_positions,
+        matched_event_links=matched_event_links,
         weather=weather,
         weather_risk=weather_risk,
     )
@@ -715,6 +751,15 @@ def _build_region_snapshot(
         sum(row.confidence for row in matched_signals) / len(matched_signals)
         if matched_signals
         else 0.0
+    )
+    event_intelligence_confidence = (
+        _mean(
+            [
+                *[row.confidence for row in matched_event_items],
+                *[row.confidence for row in matched_event_links],
+            ]
+        )
+        or 0.0
     )
     risk_score = _clamp_int(
         definition.base_risk
@@ -724,11 +769,14 @@ def _build_region_snapshot(
         + high_severity_alerts * 10
         + len(matched_news) * 4
         + round(avg_signal_confidence * 12)
-        + len(matched_positions) * 6,
+        + len(matched_positions) * 6
+        + len(matched_event_items) * 5
+        + round(event_intelligence_confidence * 10),
         0,
         100,
     )
     event_ids = [
+        *[f"event_intelligence:{row.id}" for row in matched_event_items[:6]],
         *[f"alert:{row.id}" for row in matched_alerts[:6]],
         *[f"news:{row.id}" for row in matched_news[:6]],
     ]
@@ -738,6 +786,7 @@ def _build_region_snapshot(
         newsEvents=len(matched_news),
         signals=len(matched_signals),
         positions=len(matched_positions),
+        eventIntelligence=len(matched_event_items),
         latestEventAt=latest_event_at,
     )
     story = _risk_story(definition, lens, factor_signals, runtime)
@@ -769,7 +818,7 @@ def _build_region_snapshot(
             symbols=list(definition.symbols),
             eventIds=event_ids,
             causalWebUrl=f"/causal-web?symbol={definition.symbols[0]}&region={definition.id}",
-            hasDirectLinks=bool(event_ids or matched_signals or matched_positions),
+            hasDirectLinks=bool(event_ids or matched_signals or matched_positions or matched_event_links),
         ),
         narrativeZh=definition.narrative_zh,
         narrativeEn=definition.narrative_en,
@@ -1262,6 +1311,7 @@ def _factor_signals(
     matched_news: list[NewsEvent],
     matched_signals: list[SignalTrack],
     matched_positions: list[Position],
+    matched_event_links: list[EventImpactLink],
     weather: WorldMapWeather,
     weather_risk: float,
 ) -> list[FactorSignal]:
@@ -1315,6 +1365,18 @@ def _factor_signals(
                 source=f"signal:{row.id}",
             )
         )
+    for row in matched_event_links[:8]:
+        factor = _factor_from_event_intelligence_link(row)
+        signals.append(
+            FactorSignal(
+                factor=factor,
+                weight=min(max(row.confidence, row.impact_score / 100, 0.35), 1.0),
+                evidence_kind="event_intelligence",
+                label_zh=_event_intelligence_factor_label_zh(row, factor),
+                label_en=_event_intelligence_factor_label_en(row, factor),
+                source=f"event_intelligence:{row.event_item_id}:{row.id}",
+            )
+        )
     if matched_positions:
         signals.append(
             FactorSignal(
@@ -1365,6 +1427,36 @@ def _factor_from_text(text: str) -> RiskFactor:
     if _contains_any(normalized, ("energy", "crude", "oil", "gas", "能源", "原油", "燃料")):
         return "energy_cost"
     return "supply_disruption"
+
+
+def _factor_from_event_intelligence_link(row: EventImpactLink) -> RiskFactor:
+    normalized = row.mechanism.lower().strip()
+    mechanism_map: dict[str, RiskFactor] = {
+        "weather": "rainfall_surplus",
+        "climate": "rainfall_surplus",
+        "supply": "supply_disruption",
+        "logistics": "logistics_disruption",
+        "transport": "logistics_disruption",
+        "inventory": "inventory_pressure",
+        "policy": "policy_shift",
+        "demand": "demand_shift",
+        "cost": "energy_cost",
+        "energy": "energy_cost",
+        "geopolitical": "supply_disruption",
+        "risk_sentiment": "demand_shift",
+        "macro": "demand_shift",
+    }
+    return mechanism_map.get(normalized, _factor_from_text(f"{row.mechanism} {row.rationale}"))
+
+
+def _event_intelligence_factor_label_zh(row: EventImpactLink, factor: RiskFactor) -> str:
+    symbol = _root_symbol(row.symbol)
+    return f"{symbol} {_factor_label_zh(factor)}"
+
+
+def _event_intelligence_factor_label_en(row: EventImpactLink, factor: RiskFactor) -> str:
+    symbol = _root_symbol(row.symbol)
+    return f"{symbol} {_factor_label_en(factor)}"
 
 
 def _dedupe_factor_signals(signals: list[FactorSignal]) -> list[FactorSignal]:
@@ -1426,7 +1518,7 @@ def _risk_story(
     ]
     headline_zh = f"{definition.name_zh}：{primary.label_zh}正在影响{lens.label_zh}链路"
     headline_en = f"{definition.name_en}: {primary.label_en} is shaping the {lens.label_en} chain"
-    if runtime.alerts or runtime.newsEvents or runtime.signals:
+    if runtime.alerts or runtime.newsEvents or runtime.signals or runtime.eventIntelligence:
         headline_zh = f"{definition.name_zh}出现运行态风险：{primary.label_zh}"
         headline_en = f"{definition.name_en} has runtime risk: {primary.label_en}"
     return WorldMapRiskStory(
@@ -1471,8 +1563,8 @@ def _adaptive_alerts(
         mechanism_zh = chain_tail.labelZh if chain_tail else definition.narrative_zh
         mechanism_en = chain_tail.labelEn if chain_tail else definition.narrative_en
         source: EvidenceKind = signal.evidence_kind
-        if source == "weather" and (runtime.alerts or runtime.newsEvents):
-            source = "alert" if runtime.alerts else "news"
+        if source == "weather" and (runtime.alerts or runtime.newsEvents or runtime.eventIntelligence):
+            source = "alert" if runtime.alerts else "news" if runtime.newsEvents else "event_intelligence"
         alerts.append(
             WorldMapAdaptiveAlert(
                 id=f"{definition.id}:{signal.factor}:{index}",
@@ -1507,6 +1599,14 @@ def _region_drivers(
         drivers.append(
             WorldMapDriver(labelZh="新闻事件", labelEn="News events", weight=min(runtime.newsEvents / 8, 1.0))
         )
+    if runtime.eventIntelligence:
+        drivers.append(
+            WorldMapDriver(
+                labelZh="事件智能链路",
+                labelEn="Event intelligence links",
+                weight=min(runtime.eventIntelligence / 6, 1.0),
+            )
+        )
     if runtime.signals:
         drivers.append(
             WorldMapDriver(labelZh="活跃信号", labelEn="Active signals", weight=min(runtime.signals / 10, 1.0))
@@ -1523,7 +1623,7 @@ def _region_drivers(
 
 
 def _data_quality(runtime: WorldMapRuntime, weather: WorldMapWeather) -> DataQuality:
-    if runtime.alerts or runtime.newsEvents or runtime.signals or runtime.positions:
+    if runtime.alerts or runtime.newsEvents or runtime.signals or runtime.positions or runtime.eventIntelligence:
         return "runtime"
     if weather.dataSource != BASELINE_WEATHER_SOURCE:
         return "partial"
@@ -1587,6 +1687,43 @@ def _position_symbols(position: Position) -> set[str]:
     return values
 
 
+def _matched_event_intelligence_items(
+    definition: RegionDefinition,
+    rows: list[EventIntelligenceItem],
+) -> list[EventIntelligenceItem]:
+    region_symbols = set(definition.symbols)
+    matched: list[EventIntelligenceItem] = []
+    for row in rows:
+        symbols = {str(symbol).upper() for symbol in row.symbols or []}
+        regions = {str(region) for region in row.regions or []}
+        if definition.id in regions or _symbols_intersect(symbols, region_symbols):
+            matched.append(row)
+    return matched
+
+
+def _matched_event_intelligence_links(
+    definition: RegionDefinition,
+    matched_items: list[EventIntelligenceItem],
+    rows: list[EventImpactLink],
+) -> list[EventImpactLink]:
+    matched_item_ids = {row.id for row in matched_items}
+    region_symbols = set(definition.symbols)
+    matched: list[EventImpactLink] = []
+    seen: set[str] = set()
+    for row in rows:
+        symbol_match = _symbols_intersect({row.symbol}, region_symbols)
+        region_match = row.region_id == definition.id
+        item_match = row.event_item_id in matched_item_ids
+        if not ((item_match and (symbol_match or region_match or row.region_id is None)) or symbol_match or region_match):
+            continue
+        key = str(row.id)
+        if key in seen:
+            continue
+        seen.add(key)
+        matched.append(row)
+    return sorted(matched, key=lambda row: (row.impact_score, row.confidence), reverse=True)
+
+
 def _extract_symbol_tokens(text: str) -> set[str]:
     upper = text.upper()
     tokens: set[str] = set()
@@ -1613,11 +1750,13 @@ def _latest_event_at(
     alerts: list[Alert],
     news: list[NewsEvent],
     signals: list[SignalTrack],
+    event_items: list[EventIntelligenceItem] | None = None,
 ) -> datetime | None:
     timestamps: list[datetime] = []
     timestamps.extend(row.triggered_at for row in alerts if row.triggered_at)
     timestamps.extend(row.published_at for row in news if row.published_at)
     timestamps.extend(row.created_at for row in signals if row.created_at)
+    timestamps.extend(row.event_timestamp for row in event_items or [] if row.event_timestamp)
     if not timestamps:
         return None
     return max(timestamps)

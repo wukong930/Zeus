@@ -411,7 +411,8 @@ function EnhancedReadingPanel({
           region.runtime.alerts +
           region.runtime.newsEvents +
           region.runtime.signals +
-          region.runtime.positions,
+          region.runtime.positions +
+          (region.runtime.eventIntelligence ?? 0),
         0
       ),
     [regions]
@@ -1775,12 +1776,14 @@ function RegionInsightModal({ region, onClose }: { region: WorldMapRegion; onClo
 
 function RuntimeGrid({ region }: { region: WorldMapRegion }) {
   const { text } = useI18n();
+  const eventIntelligence = region.runtime.eventIntelligence ?? 0;
   return (
     <div className="grid grid-cols-2 gap-2">
       <RuntimePill icon={AlertTriangle} label={text("预警")} value={region.runtime.alerts} />
       <RuntimePill icon={DatabaseZap} label={text("新闻")} value={region.runtime.newsEvents} />
       <RuntimePill icon={Activity} label={text("信号")} value={region.runtime.signals} />
       <RuntimePill icon={ShieldAlert} label={text("持仓")} value={region.runtime.positions} />
+      <RuntimePill icon={Link2} label={text("事件智能")} value={eventIntelligence} />
     </div>
   );
 }
