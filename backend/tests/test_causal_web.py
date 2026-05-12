@@ -204,6 +204,22 @@ def test_event_intelligence_seeds_use_shared_scope_ids() -> None:
     assert link_seed.id == f"ei-link-{impact_link.id}"
     assert link_seed.category == "energy"
     assert link_seed.direction == "bullish"
+    assert item_seed.label_zh == "地缘事件：原油"
+    assert item_seed.label_en == "Carrier route raises crude supply risk"
+    assert item_seed.narrative_zh is not None
+    assert "证据：route report" in item_seed.narrative_zh
+    assert item_seed.narrative_en is not None
+    assert "Impact symbols: SC" in item_seed.narrative_en
+    assert link_seed.label_zh == "SC 地缘影响假设"
+    assert link_seed.narrative_zh is not None
+    assert "方向：偏多" in link_seed.narrative_zh
+    assert link_seed.narrative_en is not None
+    assert "Direction: bullish" in link_seed.narrative_en
+
+    item_node, link_node = _layout_nodes([item_seed, link_seed])
+    assert item_node.narrativeZh == item_seed.narrative_zh
+    assert item_node.tagsZh[0] == "事件智能"
+    assert link_node.labelZh == link_seed.label_zh
 
 
 def test_build_edges_uses_latest_signal_for_alert_link() -> None:

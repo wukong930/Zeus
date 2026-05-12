@@ -26,6 +26,14 @@ const EN: Record<string, string> = {
   "新闻事件": "News Events",
   "事件智能引擎": "Event Intelligence",
   "事件智能": "Event Intelligence",
+  "事件智能源事件": "Event intelligence source",
+  "事件智能影响假设": "Event intelligence impact hypothesis",
+  "源事件": "source events",
+  "当前事件智能节点暂无可展示的关联链路。": "No linked event intelligence path is available for this node.",
+  "该源事件已被组织为可审计的商品影响链。先看证据摘要，再沿下游链路检查机制和市场出口。":
+    "This source event has been organized into auditable commodity impact links. Start with the evidence summary, then follow downstream paths for mechanisms and market exits.",
+  "该影响假设承接一个源事件，并把机制、方向和置信度投射到具体商品或区域。":
+    "This impact hypothesis inherits a source event and projects mechanism, direction, and confidence onto a specific commodity or region.",
   "产业透镜": "Industry Lens",
   "板块": "Sectors",
   "未来实验室": "Future Lab",

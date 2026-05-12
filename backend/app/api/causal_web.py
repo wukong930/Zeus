@@ -119,6 +119,12 @@ class GraphNodeSeed:
     portfolio_linked: bool = False
     alert_linked: bool = False
     ref_id: UUID | None = None
+    label_zh: str | None = None
+    label_en: str | None = None
+    narrative_zh: str | None = None
+    narrative_en: str | None = None
+    tags_zh: tuple[str, ...] = ()
+    tags_en: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -287,6 +293,14 @@ async def get_causal_web(
 def _seed_from_event_intelligence_item(row: EventIntelligenceItem) -> GraphNodeSeed:
     symbols = [_normalize_symbol(symbol) for symbol in (row.symbols or [])[:3]]
     mechanisms = [str(value) for value in (row.mechanisms or [])[:2]]
+    title = _short(row.title, 96)
+    summary = _event_summary_text(row.summary or row.title)
+    evidence = _compact_event_values(row.evidence)
+    counterevidence = _compact_event_values(row.counterevidence)
+    symbol_zh = _join_or(symbols, "未标明", transform=_zh_text)
+    symbol_en = _join_or(symbols, "unspecified")
+    mechanism_zh = _join_or(mechanisms, "待识别", transform=_zh_text)
+    mechanism_en = _join_or(mechanisms, "unclassified", transform=_humanize_token)
     return GraphNodeSeed(
         id=f"ei-{row.id}",
         type="event",
@@ -299,6 +313,20 @@ def _seed_from_event_intelligence_item(row: EventIntelligenceItem) -> GraphNodeS
         narrative=row.summary or row.title,
         alert_linked=_event_intelligence_verified(row.status),
         ref_id=row.id,
+        label_zh=f"{_zh_text(row.event_type)}事件：{symbol_zh}",
+        label_en=title,
+        narrative_zh=(
+            f"事件智能源：{_zh_text(summary)}。影响品种：{symbol_zh}；"
+            f"作用机制：{mechanism_zh}；证据：{_join_or(evidence, '暂无', transform=_zh_text)}；"
+            f"反证：{_join_or(counterevidence, '暂无', transform=_zh_text)}。"
+        ),
+        narrative_en=(
+            f"Event intelligence source: {summary}. Impact symbols: {symbol_en}; "
+            f"mechanisms: {mechanism_en}; evidence: {_join_or(evidence, 'none')}; "
+            f"counter-evidence: {_join_or(counterevidence, 'none')}."
+        ),
+        tags_zh=tuple(filter(None, ("事件智能", _zh_text(row.status), mechanism_zh, f"证据 {len(row.evidence or [])}"))),
+        tags_en=tuple(filter(None, ("Event Intelligence", _humanize_token(row.status), mechanism_en, f"evidence {len(row.evidence or [])}"))),
     )
 
 
@@ -312,6 +340,17 @@ def _seed_from_event_intelligence_link(
         if event_item is not None
         else "unknown"
     )
+    evidence = _compact_event_values(row.evidence or (event_item.evidence if event_item is not None else []))
+    counterevidence = _compact_event_values(
+        row.counterevidence or (event_item.counterevidence if event_item is not None else [])
+    )
+    mechanism_zh = _zh_text(row.mechanism)
+    mechanism_en = _humanize_token(row.mechanism)
+    direction_zh = _zh_text(row.direction)
+    direction_en = _humanize_token(row.direction)
+    horizon_zh = _zh_text(row.horizon)
+    horizon_en = _humanize_token(row.horizon)
+    rationale = _event_summary_text(row.rationale or (event_item.summary if event_item is not None else row.mechanism))
     return GraphNodeSeed(
         id=f"ei-link-{row.id}",
         type="signal",
@@ -325,7 +364,57 @@ def _seed_from_event_intelligence_link(
         portfolio_linked=bool(symbol),
         alert_linked=_event_intelligence_verified(row.status),
         ref_id=row.id,
+        label_zh=f"{symbol} {mechanism_zh}影响假设",
+        label_en=f"{symbol} {mechanism_en} impact hypothesis",
+        narrative_zh=(
+            f"影响假设：{_zh_text(rationale)}。方向：{direction_zh}；"
+            f"置信度：{round(row.confidence * 100)}%；影响分：{round(row.impact_score)}；"
+            f"周期：{horizon_zh}；证据：{_join_or(evidence, '暂无', transform=_zh_text)}；"
+            f"反证：{_join_or(counterevidence, '暂无', transform=_zh_text)}。"
+        ),
+        narrative_en=(
+            f"Impact hypothesis: {rationale}. Direction: {direction_en}; "
+            f"confidence: {round(row.confidence * 100)}%; impact score: {round(row.impact_score)}; "
+            f"horizon: {horizon_en}; evidence: {_join_or(evidence, 'none')}; "
+            f"counter-evidence: {_join_or(counterevidence, 'none')}."
+        ),
+        tags_zh=tuple(filter(None, ("事件智能", direction_zh, mechanism_zh, _zh_text(row.status)))),
+        tags_en=tuple(filter(None, ("Event Intelligence", direction_en, mechanism_en, _humanize_token(row.status)))),
     )
+
+
+def _event_summary_text(value: str | None) -> str:
+    value = (value or "").strip()
+    return _short(value, 180).rstrip("。.;；") if value else "No summary available"
+
+
+def _compact_event_values(values: list[str] | None, *, limit: int = 2) -> list[str]:
+    compacted: list[str] = []
+    seen: set[str] = set()
+    for value in values or []:
+        text = _short(str(value).strip(), 96)
+        key = text.lower()
+        if not text or key in seen:
+            continue
+        seen.add(key)
+        compacted.append(text)
+        if len(compacted) >= limit:
+            break
+    return compacted
+
+
+def _join_or(values: list[str], fallback: str, *, transform=None) -> str:
+    if not values:
+        return fallback
+    if transform is not None:
+        values = [transform(value) for value in values]
+    return " / ".join(values)
+
+
+def _humanize_token(value: str | None) -> str:
+    if not value:
+        return ""
+    return " ".join(str(value).replace("_", " ").split())
 
 
 def _seed_from_news(row: NewsEvent) -> GraphNodeSeed:
@@ -471,12 +560,12 @@ def _layout_nodes(seeds: list[GraphNodeSeed]) -> list[CausalWebNode]:
                 sector=sector,
                 tags=list(seed.tags[:4]),
                 narrative=seed.narrative or seed.label,
-                labelZh=_zh_label(seed.label, seed.type, seed.tags),
-                labelEn=seed.label,
-                narrativeZh=_zh_text(seed.narrative or seed.label),
-                narrativeEn=seed.narrative or seed.label,
-                tagsZh=[_zh_text(tag) for tag in seed.tags[:4]],
-                tagsEn=list(seed.tags[:4]),
+                labelZh=seed.label_zh or _zh_label(seed.label, seed.type, seed.tags),
+                labelEn=seed.label_en or seed.label,
+                narrativeZh=seed.narrative_zh or _zh_text(seed.narrative or seed.label),
+                narrativeEn=seed.narrative_en or seed.narrative or seed.label,
+                tagsZh=list(seed.tags_zh[:4]) if seed.tags_zh else [_zh_text(tag) for tag in seed.tags[:4]],
+                tagsEn=list(seed.tags_en[:4]) if seed.tags_en else list(seed.tags[:4]),
                 portfolioLinked=seed.portfolio_linked,
                 alertLinked=seed.alert_linked,
             )
@@ -1029,6 +1118,12 @@ _TEXT_ZH_REPLACEMENTS: tuple[tuple[str, str], ...] = (
     ("volume", "成交量"),
     ("latest", "最新"),
     ("review", "复核"),
+    ("watch", "观察"),
+    ("short", "短期"),
+    ("medium", "中期"),
+    ("long", "长期"),
+    ("southeast asia rubber", "东南亚橡胶产区"),
+    ("middle east crude", "中东原油链路"),
     ("bullish", "偏多"),
     ("bearish", "偏空"),
     ("neutral", "中性"),
@@ -1057,8 +1152,6 @@ def _zh_label(value: str, node_type: NodeType, tags: tuple[str, ...] = ()) -> st
 
 def _zh_text(value: str) -> str:
     if not value:
-        return value
-    if _contains_cjk(value):
         return value
     result = value.replace("_", " ")
     for symbol, name in sorted(COMMODITY_NAMES.items(), key=lambda item: len(item[0]), reverse=True):

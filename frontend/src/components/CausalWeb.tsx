@@ -1464,6 +1464,14 @@ function NodeDetails({
   const sector = SECTOR_META[meta.sector];
   const color = NODE_COLORS[node.type];
   const Icon = nodeIcon(node.type);
+  const eventInsight = eventIntelligenceInsight({
+    node,
+    nodes,
+    upstream,
+    downstream,
+    lang,
+    text,
+  });
 
   return (
     <div className="absolute inset-x-4 bottom-4 top-4 z-[1100] flex min-h-0 flex-col overflow-hidden rounded-sm border border-border-default bg-[linear-gradient(180deg,rgba(31,31,31,0.98),rgba(3,5,4,0.98))] shadow-data-panel animate-fade-in sm:left-auto sm:w-[396px]">
@@ -1499,6 +1507,38 @@ function NodeDetails({
         <div className="rounded-xs border border-border-subtle bg-bg-base p-3 text-sm text-text-secondary shadow-inner-panel">
           {nodeNarrative(node, meta, lang, text)}
         </div>
+
+        {eventInsight && (
+          <div className="mt-3 rounded-xs border border-brand-cyan/35 bg-brand-cyan/5 p-3 shadow-inner-panel">
+            <div className="flex items-center justify-between gap-3">
+              <div className="inline-flex min-w-0 items-center gap-2 text-sm font-semibold text-text-primary">
+                <Route className="h-4 w-4 shrink-0 text-brand-cyan" />
+                <span className="truncate">{eventInsight.title}</span>
+              </div>
+              <span className="shrink-0 font-mono text-caption text-text-muted">{eventInsight.countLabel}</span>
+            </div>
+            <p className="mt-2 text-caption leading-relaxed text-text-secondary">{eventInsight.description}</p>
+            {eventInsight.peers.length > 0 ? (
+              <div className="mt-3 space-y-1.5">
+                {eventInsight.peers.map((peer) => (
+                  <div
+                    key={peer.id}
+                    className="flex items-center justify-between gap-3 rounded-xs border border-border-subtle bg-bg-base/80 px-2 py-1.5 shadow-inner-panel"
+                  >
+                    <span className="min-w-0 truncate text-caption text-text-primary">{peer.label}</span>
+                    <span className="shrink-0 font-mono text-caption" style={{ color: peer.color }}>
+                      {peer.direction} · {peer.confidence}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="mt-3 rounded-xs border border-border-subtle bg-bg-base/80 px-2 py-1.5 text-caption text-text-muted">
+                {text("当前事件智能节点暂无可展示的关联链路。")}
+              </div>
+            )}
+          </div>
+        )}
 
         <div className="mt-3 flex flex-wrap gap-1.5">
           <span
@@ -1566,6 +1606,58 @@ function DetailMetric({ label, value }: { label: string; value: string }) {
       <div className="mt-1 font-mono text-sm text-text-primary">{value}</div>
     </div>
   );
+}
+
+function eventIntelligenceInsight({
+  node,
+  nodes,
+  upstream,
+  downstream,
+  lang,
+  text,
+}: {
+  node: CausalNode;
+  nodes: CausalNode[];
+  upstream: CausalEdge[];
+  downstream: CausalEdge[];
+  lang: Language;
+  text: (source: string) => string;
+}) {
+  const isImpactLink = node.id.startsWith("ei-link-");
+  const isSource = node.id.startsWith("ei-") && !isImpactLink;
+  if (!isSource && !isImpactLink) return null;
+
+  const nodeById = new Map(nodes.map((item) => [item.id, item]));
+  const linkedEdges = isImpactLink ? upstream : downstream;
+  const peerSide: "source" | "target" = isImpactLink ? "source" : "target";
+  const peers = linkedEdges.slice(0, 4).flatMap((edge) => {
+    const peer = nodeById.get(edge[peerSide]);
+    if (!peer) return [];
+    const color = EDGE_COLORS[edge.direction];
+    return [{
+      id: edge.id,
+      label: nodeLabel(peer, lang, text),
+      confidence: `${Math.round(edge.confidence * 100)}%`,
+      direction: text(edge.direction),
+      color,
+    }];
+  });
+
+  if (isSource) {
+    return {
+      title: text("事件智能源事件"),
+      countLabel: `${linkedEdges.length} ${text("影响链")}`,
+      description: text("该源事件已被组织为可审计的商品影响链。先看证据摘要，再沿下游链路检查机制和市场出口。"),
+      peers,
+    };
+  }
+
+  return {
+    title: text("事件智能影响假设"),
+    countLabel: `${linkedEdges.length} ${text("源事件")}`,
+    description: text("该影响假设承接一个源事件，并把机制、方向和置信度投射到具体商品或区域。"),
+    peers,
+  };
 }
 
 function EdgeList({
