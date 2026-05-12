@@ -405,3 +405,9 @@ threshold_modifier、propagation_activator、risk_recalc、数据腐烂防护
 - Causal Web 事件智能节点新增质量门状态、质量分和问题摘要；`review/blocked` 可阅读但不会显示为 verified/alert-ready。
 - World Risk Map 区域新增 `eventQuality` 摘要，展示事件智能的通过、复核、阻断和总数。
 - 地图风险分与事件智能传导故事按质量门降权：未通过质量门的事件保留为阅读复核材料，但不放大自动风险。
+
+# 2026-05-13 — World Risk Map Phase D.1 证据健康层
+
+- `/api/world-map` 区域新增 `evidenceHealth`，汇总支持证据、反证、来源数、新鲜来源、来源可信度、数据新鲜度和证据密度。
+- `/world-map` 增强阅读层从单纯“证据数量”升级为“密度 / 可信度 / 新鲜度”三维摘要，区域档案新增证据健康卡片和低覆盖提示。
+- 新增 World Risk Map 回归断言，覆盖运行态证据健康升高与 baseline 场景不误判为实时新鲜。

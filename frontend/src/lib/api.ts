@@ -272,6 +272,16 @@ export interface WorldMapEventQuality {
   passed: number;
 }
 
+export interface WorldMapEvidenceHealth {
+  evidenceCount: number;
+  counterEvidenceCount: number;
+  runtimeSources: number;
+  freshRuntimeSources: number;
+  sourceReliability: number;
+  freshnessScore: number;
+  densityScore: number;
+}
+
 export interface WorldMapDriver {
   labelZh: string;
   labelEn: string;
@@ -357,6 +367,7 @@ export interface WorldMapRegion {
   mechanisms: WorldMapRiskFactor[];
   sourceKinds: WorldMapEvidenceKind[];
   eventQuality: WorldMapEventQuality;
+  evidenceHealth?: WorldMapEvidenceHealth;
   narrativeZh: string;
   narrativeEn: string;
   dataQuality: WorldMapDataQuality;

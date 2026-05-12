@@ -90,6 +90,13 @@ def test_region_snapshot_links_runtime_sources() -> None:
     assert any(step.stage == "production" for step in region.story.chain)
     assert region.adaptiveAlerts
     assert region.adaptiveAlerts[0].source in {"alert", "news"}
+    assert region.evidenceHealth.evidenceCount >= len(region.story.evidence)
+    assert region.evidenceHealth.counterEvidenceCount == len(region.story.counterEvidence)
+    assert region.evidenceHealth.runtimeSources >= 4
+    assert region.evidenceHealth.freshRuntimeSources >= 3
+    assert region.evidenceHealth.densityScore > 50
+    assert 0 <= region.evidenceHealth.sourceReliability <= 100
+    assert 0 <= region.evidenceHealth.freshnessScore <= 100
 
 
 def test_region_snapshot_uses_event_intelligence_scope() -> None:
@@ -335,6 +342,9 @@ def test_region_snapshot_keeps_baseline_label_without_runtime_links() -> None:
     assert region.causalScope.hasDirectLinks is False
     assert region.weather.dataSource == "regional_baseline_seed"
     assert region.story.evidence[0].kind == "weather"
+    assert region.evidenceHealth.runtimeSources == 1
+    assert region.evidenceHealth.freshRuntimeSources == 0
+    assert region.evidenceHealth.freshnessScore < 40
 
 
 def test_region_snapshot_uses_runtime_weather_rows() -> None:

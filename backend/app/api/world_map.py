@@ -106,6 +106,16 @@ class WorldMapEventQuality(BaseModel):
     passed: int
 
 
+class WorldMapEvidenceHealth(BaseModel):
+    evidenceCount: int
+    counterEvidenceCount: int
+    runtimeSources: int
+    freshRuntimeSources: int
+    sourceReliability: int = Field(ge=0, le=100)
+    freshnessScore: int = Field(ge=0, le=100)
+    densityScore: int = Field(ge=0, le=100)
+
+
 class WorldMapDriver(BaseModel):
     labelZh: str
     labelEn: str
@@ -179,6 +189,7 @@ class WorldMapRegion(BaseModel):
     mechanisms: list[RiskFactor] = Field(default_factory=list)
     sourceKinds: list[EvidenceKind] = Field(default_factory=list)
     eventQuality: WorldMapEventQuality
+    evidenceHealth: WorldMapEvidenceHealth
     narrativeZh: str
     narrativeEn: str
     dataQuality: DataQuality
@@ -989,6 +1000,13 @@ def _build_region_snapshot(
         risk_score=risk_score,
         runtime=runtime,
     )
+    evidence_health = _world_map_evidence_health(
+        story=story,
+        adaptive_alerts=adaptive_alerts,
+        runtime=runtime,
+        weather=weather,
+        event_quality=event_quality,
+    )
     return WorldMapRegion(
         id=definition.id,
         nameZh=definition.name_zh,
@@ -1015,6 +1033,7 @@ def _build_region_snapshot(
         mechanisms=mechanisms,
         sourceKinds=source_kinds,
         eventQuality=event_quality,
+        evidenceHealth=evidence_health,
         narrativeZh=definition.narrative_zh,
         narrativeEn=definition.narrative_en,
         dataQuality=_data_quality(runtime, weather),
@@ -1165,6 +1184,90 @@ def _world_map_event_quality(
         decisionGrade=decision_grade,
         passed=shadow_ready + decision_grade,
     )
+
+
+def _world_map_evidence_health(
+    *,
+    story: WorldMapRiskStory,
+    adaptive_alerts: list[WorldMapAdaptiveAlert],
+    runtime: WorldMapRuntime,
+    weather: WorldMapWeather,
+    event_quality: WorldMapEventQuality,
+) -> WorldMapEvidenceHealth:
+    evidence_count = len(story.evidence) + len(adaptive_alerts)
+    counter_evidence_count = len(story.counterEvidence)
+    runtime_source_counts = [
+        runtime.alerts,
+        runtime.newsEvents,
+        runtime.signals,
+        runtime.positions,
+        runtime.eventIntelligence,
+    ]
+    runtime_sources = sum(1 for count in runtime_source_counts if count > 0)
+    if weather.dataSource:
+        runtime_sources += 1
+
+    fresh_runtime_sources = 0
+    if weather.dataSource != BASELINE_WEATHER_SOURCE:
+        fresh_runtime_sources += 1
+    event_freshness = _event_freshness_score(runtime.latestEventAt)
+    if event_freshness >= 70:
+        fresh_runtime_sources += sum(1 for count in runtime_source_counts if count > 0)
+
+    total_runtime_rows = sum(runtime_source_counts)
+    density_score = _clamp_int(
+        round(
+            evidence_count * 9
+            + counter_evidence_count * 7
+            + runtime_sources * 10
+            + min(total_runtime_rows, 12) * 3
+        ),
+        0,
+        100,
+    )
+    quality_component = event_quality.score if event_quality.total else 55
+    source_reliability = _clamp_int(
+        round(
+            weather.confidence * 35
+            + quality_component * 0.35
+            + min(runtime_sources / 4, 1) * 20
+            + min((evidence_count + counter_evidence_count) / 7, 1) * 10
+        ),
+        0,
+        100,
+    )
+    weather_freshness = 72 if weather.dataSource != BASELINE_WEATHER_SOURCE else round(weather.confidence * 60)
+    freshness_score = (
+        round(event_freshness * 0.6 + weather_freshness * 0.4)
+        if total_runtime_rows > 0
+        else weather_freshness
+    )
+    return WorldMapEvidenceHealth(
+        evidenceCount=evidence_count,
+        counterEvidenceCount=counter_evidence_count,
+        runtimeSources=runtime_sources,
+        freshRuntimeSources=fresh_runtime_sources,
+        sourceReliability=source_reliability,
+        freshnessScore=_clamp_int(freshness_score, 0, 100),
+        densityScore=density_score,
+    )
+
+
+def _event_freshness_score(timestamp: datetime | None) -> int:
+    if timestamp is None:
+        return 0
+    if timestamp.tzinfo is None:
+        timestamp = timestamp.replace(tzinfo=timezone.utc)
+    age_hours = max((datetime.now(timezone.utc) - timestamp).total_seconds() / 3600, 0.0)
+    if age_hours <= 6:
+        return 100
+    if age_hours <= 24:
+        return 86
+    if age_hours <= 72:
+        return 68
+    if age_hours <= 168:
+        return 48
+    return 25
 
 
 def _dominant_event_quality_status(

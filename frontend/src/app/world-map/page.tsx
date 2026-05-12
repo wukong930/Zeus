@@ -449,24 +449,7 @@ function EnhancedReadingPanel({
     [regions]
   );
   const topBridge = useMemo(() => buildRiskBridges(regions)[0] ?? null, [regions]);
-  const runtimeEvidenceCount = useMemo(
-    () =>
-      regions.reduce(
-        (total, region) =>
-          total +
-          region.runtime.alerts +
-          region.runtime.newsEvents +
-          region.runtime.signals +
-          region.runtime.positions +
-          (region.runtime.eventIntelligence ?? 0),
-        0
-      ),
-    [regions]
-  );
-  const storyEvidenceCount = useMemo(
-    () => regions.reduce((total, region) => total + region.story.evidence.length + region.adaptiveAlerts.length, 0),
-    [regions]
-  );
+  const healthSummary = useMemo(() => summarizeEvidenceHealth(regions), [regions]);
   const linkedRegionCount = useMemo(
     () => regions.filter((region) => region.causalScope.hasDirectLinks).length,
     [regions]
@@ -478,6 +461,7 @@ function EnhancedReadingPanel({
   if (!topRegion) return null;
 
   const topColor = riskColor(topRegion.riskLevel);
+  const topHealth = regionEvidenceHealth(topRegion);
   const topRegionName = lang === "zh" ? topRegion.nameZh : topRegion.nameEn;
   const topTrigger = lang === "zh" ? topRegion.story.triggerZh : topRegion.story.triggerEn;
   const bridgeLabel = topBridge
@@ -532,8 +516,20 @@ function EnhancedReadingPanel({
         <ReadingMetric
           icon={DatabaseZap}
           label={text("证据密度")}
-          value={`${runtimeEvidenceCount + storyEvidenceCount}`}
-          detail={`${text("运行态证据")} ${runtimeEvidenceCount} / ${text("故事证据")} ${storyEvidenceCount}`}
+          value={`${topHealth.densityScore}/100`}
+          detail={`${text("支持证据")} ${topHealth.evidenceCount} / ${text("反证")} ${topHealth.counterEvidenceCount}`}
+        />
+        <ReadingMetric
+          icon={ShieldCheck}
+          label={text("来源可信度")}
+          value={`${healthSummary.sourceReliability}/100`}
+          detail={`${text("来源数")} ${topHealth.runtimeSources} / ${text("新鲜来源")} ${topHealth.freshRuntimeSources}`}
+        />
+        <ReadingMetric
+          icon={Activity}
+          label={text("数据新鲜度")}
+          value={`${healthSummary.freshnessScore}/100`}
+          detail={`${text("最高风险区域")}：${topRegionName}`}
         />
         <ReadingMetric
           icon={Link2}
@@ -544,6 +540,84 @@ function EnhancedReadingPanel({
       </div>
     </div>
   );
+}
+
+function summarizeEvidenceHealth(regions: WorldMapRegion[]) {
+  if (regions.length === 0) {
+    return { densityScore: 0, sourceReliability: 0, freshnessScore: 0 };
+  }
+  const healthRows = regions.map((region) => regionEvidenceHealth(region));
+  return {
+    densityScore: Math.round(healthRows.reduce((total, health) => total + health.densityScore, 0) / regions.length),
+    sourceReliability: Math.round(
+      healthRows.reduce((total, health) => total + health.sourceReliability, 0) / regions.length
+    ),
+    freshnessScore: Math.round(healthRows.reduce((total, health) => total + health.freshnessScore, 0) / regions.length),
+  };
+}
+
+function regionEvidenceHealth(region: WorldMapRegion) {
+  if (region.evidenceHealth) return region.evidenceHealth;
+
+  const runtimeSourceCounts = [
+    region.runtime.alerts,
+    region.runtime.newsEvents,
+    region.runtime.signals,
+    region.runtime.positions,
+    region.runtime.eventIntelligence ?? 0,
+  ];
+  const totalRuntimeRows = runtimeSourceCounts.reduce((total, count) => total + count, 0);
+  const evidenceCount = region.story.evidence.length + region.adaptiveAlerts.length;
+  const counterEvidenceCount = region.story.counterEvidence.length;
+  const runtimeSources = runtimeSourceCounts.filter((count) => count > 0).length + (region.weather.dataSource ? 1 : 0);
+  const eventFreshness = eventFreshnessScore(region.runtime.latestEventAt);
+  const freshRuntimeSources =
+    (region.weather.dataSource && region.weather.dataSource !== "regional_baseline_seed" ? 1 : 0) +
+    (eventFreshness >= 70 ? runtimeSourceCounts.filter((count) => count > 0).length : 0);
+  const densityScore = clamp(
+    Math.round(evidenceCount * 9 + counterEvidenceCount * 7 + runtimeSources * 10 + Math.min(totalRuntimeRows, 12) * 3),
+    0,
+    100
+  );
+  const qualityComponent = region.eventQuality.total > 0 ? region.eventQuality.score : 55;
+  const sourceReliability = clamp(
+    Math.round(
+      region.weather.confidence * 35 +
+        qualityComponent * 0.35 +
+        Math.min(runtimeSources / 4, 1) * 20 +
+        Math.min((evidenceCount + counterEvidenceCount) / 7, 1) * 10
+    ),
+    0,
+    100
+  );
+  const weatherFreshness =
+    region.weather.dataSource !== "regional_baseline_seed" ? 72 : Math.round(region.weather.confidence * 60);
+  const freshnessScore =
+    totalRuntimeRows > 0
+      ? Math.round(eventFreshness * 0.6 + weatherFreshness * 0.4)
+      : weatherFreshness;
+
+  return {
+    evidenceCount,
+    counterEvidenceCount,
+    runtimeSources,
+    freshRuntimeSources,
+    sourceReliability,
+    freshnessScore: clamp(freshnessScore, 0, 100),
+    densityScore,
+  };
+}
+
+function eventFreshnessScore(value: string | null) {
+  if (!value) return 0;
+  const timestamp = new Date(value);
+  if (Number.isNaN(timestamp.getTime())) return 0;
+  const ageHours = Math.max((Date.now() - timestamp.getTime()) / 3_600_000, 0);
+  if (ageHours <= 6) return 100;
+  if (ageHours <= 24) return 86;
+  if (ageHours <= 72) return 68;
+  if (ageHours <= 168) return 48;
+  return 25;
 }
 
 function ReadingMetric({
@@ -1786,6 +1860,7 @@ function RegionInsightModal({ region, onClose }: { region: WorldMapRegion; onClo
             </div>
 
             <EventQualityCard region={region} />
+            <EvidenceHealthCard region={region} />
 
             <Link
               href={region.causalScope.causalWebUrl}
@@ -1937,6 +2012,79 @@ function EventQualityCard({ region }: { region: WorldMapRegion }) {
   );
 }
 
+function EvidenceHealthCard({ region }: { region: WorldMapRegion }) {
+  const { text } = useI18n();
+  const health = regionEvidenceHealth(region);
+  const weakEvidence = health.densityScore < 45 || health.sourceReliability < 45;
+
+  return (
+    <div className="rounded-sm border border-brand-cyan/20 bg-white/[0.035] p-3 backdrop-blur-xl">
+      <div className="flex items-center justify-between gap-3">
+        <div className="inline-flex min-w-0 items-center gap-2 text-sm font-semibold text-brand-cyan">
+          <DatabaseZap className="h-4 w-4 shrink-0" />
+          <span>{text("证据健康")}</span>
+        </div>
+        <span className="font-mono text-sm text-text-primary">{health.densityScore}/100</span>
+      </div>
+
+      <div className="mt-3 grid grid-cols-4 gap-2">
+        <EvidenceHealthMetric label={text("支持证据")} value={health.evidenceCount} />
+        <EvidenceHealthMetric label={text("反证")} value={health.counterEvidenceCount} />
+        <EvidenceHealthMetric label={text("来源数")} value={health.runtimeSources} />
+        <EvidenceHealthMetric label={text("新鲜来源")} value={health.freshRuntimeSources} />
+      </div>
+
+      <div className="mt-3 space-y-2">
+        <EvidenceHealthBar label={text("证据密度")} value={health.densityScore} tone="cyan" />
+        <EvidenceHealthBar label={text("来源可信度")} value={health.sourceReliability} tone="green" />
+        <EvidenceHealthBar label={text("数据新鲜度")} value={health.freshnessScore} tone="orange" />
+      </div>
+
+      {weakEvidence && (
+        <div className="mt-3 rounded-xs border border-brand-orange/25 bg-brand-orange/10 px-2 py-1.5 text-caption leading-relaxed text-brand-orange">
+          {text("当前区域证据覆盖偏薄，建议先阅读证据与反证，再判断是否需要进入因果网络。")}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function EvidenceHealthMetric({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-xs border border-border-subtle bg-bg-base/70 px-2 py-2">
+      <div className="text-caption text-text-muted">{label}</div>
+      <div className="mt-1 font-mono text-sm text-text-primary">{value}</div>
+    </div>
+  );
+}
+
+function EvidenceHealthBar({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: number;
+  tone: "cyan" | "green" | "orange";
+}) {
+  const colorClass = {
+    cyan: "bg-brand-cyan",
+    green: "bg-brand-emerald-bright",
+    orange: "bg-brand-orange",
+  }[tone];
+  return (
+    <div>
+      <div className="mb-1 flex items-center justify-between gap-2 text-caption">
+        <span className="text-text-muted">{label}</span>
+        <span className="font-mono text-text-primary">{value}/100</span>
+      </div>
+      <div className="h-1.5 overflow-hidden rounded-full bg-bg-surface-raised">
+        <div className={cn("h-full rounded-full", colorClass)} style={{ width: `${value}%` }} />
+      </div>
+    </div>
+  );
+}
+
 function EventQualityMetric({
   label,
   value,
@@ -2067,6 +2215,13 @@ function EvidenceList({
 }) {
   const { lang, text } = useI18n();
   const rows = region.story[kind];
+  if (rows.length === 0) {
+    return (
+      <div className="rounded-xs border border-white/[0.12] bg-white/[0.04] px-3 py-2 text-caption text-text-muted backdrop-blur-xl">
+        {text(kind === "evidence" ? "暂无支持证据" : "暂无反证")}
+      </div>
+    );
+  }
   return (
     <div className="space-y-2">
       {rows.map((row) => (

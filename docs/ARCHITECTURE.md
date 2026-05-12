@@ -182,6 +182,12 @@ Phase 10.10 已落地的质量门联动边界：
 - World Risk Map 区域携带 `eventQuality` 摘要，并在区域档案中展示事件智能通过、复核、阻断和总量。
 - 地图风险分对事件智能贡献做质量加权：`decision_grade` 全量参与，`shadow_ready` 只作为阅读/Shadow 信号，`review/blocked` 不放大自动风险。
 
+Phase 10.11 已落地的 World Risk Map 证据健康边界：
+
+- `/api/world-map` 区域新增 `evidenceHealth`，把支持证据、反证、来源数量、新鲜来源、来源可信度、数据新鲜度和证据密度汇总为前端可直接阅读的指标。
+- 证据健康只服务阅读和复核，不改变事件智能质量门、生产阈值或自动告警行为。
+- `/world-map` 增强阅读层和区域档案显示证据健康，帮助用户先判断“这块风险由多少可靠证据支撑”，再进入 Causal Web 追溯链路。
+
 治理约束：
 
 - 引擎判断默认只进入 Shadow / review，不直接修改生产阈值或自动发交易指令。
