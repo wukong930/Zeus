@@ -954,6 +954,7 @@ Causa 的 `event_driven` 评估器实际上是纯技术面（gap + volume），*
   - [x] 模型版本、LLM 提示版本和治理审计表。
     - [x] Phase 10.2 先在 `source_payload` 记录 `semantic_model` / `semantic_prompt_version`。
     - [x] Phase 10.3 补独立治理审计表与人工确认流。
+    - [x] Phase 10.3.1 高影响 / 单源 / 低置信事件自动写入 `change_review_queue`，人工决策后关闭复核项并生成 `event_intelligence_review` 学习记录。
 - [ ] **前端联动**
   - [x] Phase 10.4 最小联动：Causal Web 可按 `symbol + region` 加载事件智能链路，并把 `event_intelligence_items -> event_impact_links` 显示为源事件到影响假设。
   - [x] Phase 10.4 最小联动：World Risk Map 聚合事件智能对象和影响链，区域运行态、证据、风险分和 Causal Web URL 使用同一 `event_id` 作用域。
@@ -973,6 +974,7 @@ Causa 的 `event_driven` 评估器实际上是纯技术面（gap + volume），*
 - [x] 同一事件影响多个商品时，方向、机制和置信度可以不同。
 - [x] 单源高影响事件不会自动进入生产预警。
 - [x] 人工确认 / 拒绝 / 转人工复核会写入独立治理审计日志。
+- [x] 高影响、单源或低置信事件智能对象会进入治理队列；复核结果会保留为可检索学习材料，不改变生产阈值。
 - [x] Phase 10.4：Causal Web / World Risk Map 使用同一 `event_intelligence:{event_id}` 作用域，不出现各讲各的情况。
 
 ---

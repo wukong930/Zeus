@@ -332,6 +332,8 @@ threshold_modifier、propagation_activator、risk_recalc、数据腐烂防护
 
 - 新增 `event_intelligence_audit_logs`，把事件智能语义增强、人工确认、拒绝和转人工复核动作写入独立审计表。
 - 新增事件智能治理服务：人工决策会同步更新事件对象和所有影响链状态，并保留前后状态、操作者、备注和决策 payload。
+- 高影响、单源、低置信或需要人工确认的事件智能对象会自动进入 `change_review_queue`；入队审计明确标记 `production_effect=none`。
+- 人工确认、拒绝或回到 Shadow 后会关闭待复核项，并写入 `event_intelligence_review` 向量学习记录，支持后续回放与复盘。
 - 新增 `/api/event-intelligence/{event_id}/decision` 与 `/api/event-intelligence/audit-logs`，用于事件智能确认/拒绝/复核和治理历史查询。
 - `/event-intelligence` 详情页增加确认、拒绝、转人工复核操作按钮，前端动作通过 API 写入审计日志。
 - 语义增强接口现在也会写入 `semantic_enhanced` 审计记录，记录模型、提示版本、语义置信度和假设数量。

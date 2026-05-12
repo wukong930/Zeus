@@ -8,7 +8,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.event_intelligence import EventImpactLink, EventIntelligenceItem
 from app.models.news_events import NewsEvent
 from app.services.event_intelligence.profiles import profile_for_symbol, symbols_matching_text
-from app.services.event_intelligence.governance import record_event_intelligence_audit
+from app.services.event_intelligence.governance import (
+    enqueue_event_intelligence_review,
+    record_event_intelligence_audit,
+)
 from app.services.event_intelligence.semantic import (
     EventSemanticExtraction,
     EventSemanticHypothesis,
@@ -242,6 +245,23 @@ async def resolve_news_event_impacts(
     links = _impact_links_from_drafts(item.id, link_drafts)
     session.add_all(links)
     await session.flush()
+    await record_event_intelligence_audit(
+        session,
+        event_item_id=item.id,
+        action="resolved",
+        actor="rules",
+        before_status=None,
+        after_status=item.status,
+        note="Rule resolver created event intelligence impact links.",
+        payload={
+            "resolver_version": event_draft.source_payload.get("resolver_version"),
+            "link_count": len(links),
+            "symbols": list(item.symbols),
+            "mechanisms": list(item.mechanisms),
+            "production_effect": "none",
+        },
+    )
+    await enqueue_event_intelligence_review(session, item, links, actor="rules")
     return item, links, True
 
 
@@ -283,6 +303,7 @@ async def enhance_news_event_impacts_with_semantics(
 
     links = _impact_links_from_drafts(item.id, link_drafts)
     session.add_all(links)
+    await session.flush()
     await record_event_intelligence_audit(
         session,
         event_item_id=item.id,
@@ -299,7 +320,7 @@ async def enhance_news_event_impacts_with_semantics(
             "created": created,
         },
     )
-    await session.flush()
+    await enqueue_event_intelligence_review(session, item, links, actor="llm")
     return item, links, created
 
 

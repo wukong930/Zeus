@@ -131,7 +131,9 @@ Phase 10.2 已落地的语义增强边界：
 Phase 10.3 已落地的治理边界：
 
 - 审计模型：`event_intelligence_audit_logs` 独立记录语义增强、人工确认、拒绝和转人工复核动作，不再只依赖 `source_payload` 留痕。
+- 复核队列：高影响、单源、低置信或人工确认事件会进入 `change_review_queue`，`proposed_change` 保留事件作用域、原因、top links 和 `production_effect=none`。
 - 决策 API：`POST /api/event-intelligence/{event_id}/decision` 支持 `confirm`、`reject`、`request_review`、`shadow_review`，同步更新事件与影响链状态。
+- 学习记录：人工决策后会生成 `vector_chunks.chunk_type=event_intelligence_review`，用于后续回放、检索和复盘；这不会直接改生产阈值。
 - 审计查询：`GET /api/event-intelligence/audit-logs` 可按事件或动作查看治理历史。
 - 前端：`/event-intelligence` 详情页提供确认、拒绝、转人工复核按钮，所有动作写入审计日志。
 

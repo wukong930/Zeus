@@ -3,12 +3,16 @@ from uuid import uuid4
 
 from fastapi.testclient import TestClient
 
+from app.models.change_review_queue import ChangeReviewQueue
 from app.main import create_app
 from app.models.event_intelligence import EventImpactLink, EventIntelligenceAuditLog, EventIntelligenceItem
 from app.models.news_events import NewsEvent
+from app.models.vector_chunks import VectorChunk
 from app.services.event_intelligence import (
     apply_event_intelligence_decision,
     build_event_intelligence_from_news,
+    enqueue_event_intelligence_review,
+    event_intelligence_review_reasons,
     evaluate_event_intelligence_quality,
     parse_semantic_extraction,
     summarize_event_intelligence_quality,
@@ -88,6 +92,68 @@ def test_build_event_intelligence_requires_human_review_for_weak_single_source()
     assert links[0].direction == "watch"
 
 
+async def test_event_intelligence_review_queue_records_high_impact_uncertainty() -> None:
+    event_id = uuid4()
+    event_item = EventIntelligenceItem(
+        id=event_id,
+        source_type="news_event",
+        source_id=str(uuid4()),
+        title="Single source crude shipping rumor",
+        summary="Unverified shipping route claim may affect crude risk premium.",
+        event_type="geopolitical",
+        event_timestamp=datetime(2026, 5, 10, tzinfo=UTC),
+        entities=["Iran"],
+        symbols=["SC"],
+        regions=["middle_east_crude"],
+        mechanisms=["geopolitical"],
+        evidence=["Single source headline"],
+        counterevidence=["No secondary confirmation"],
+        confidence=0.58,
+        impact_score=82,
+        status="human_review",
+        requires_manual_confirmation=True,
+        source_reliability=0.42,
+        freshness_score=1,
+        source_payload={"source_count": 1, "verification_status": "single_source"},
+    )
+    link = EventImpactLink(
+        id=uuid4(),
+        event_item_id=event_id,
+        symbol="SC",
+        region_id="middle_east_crude",
+        mechanism="geopolitical",
+        direction="watch",
+        confidence=0.58,
+        impact_score=82,
+        horizon="immediate",
+        rationale="Needs confirmation before decision-grade use.",
+        evidence=["Single source headline"],
+        counterevidence=["No secondary confirmation"],
+        status="human_review",
+    )
+    session = FakeReviewSession()
+
+    reasons = event_intelligence_review_reasons(event_item, [link])
+    review = await enqueue_event_intelligence_review(
+        session,  # type: ignore[arg-type]
+        event_item,
+        [link],
+        actor="test",
+    )
+
+    assert review is not None
+    assert isinstance(review, ChangeReviewQueue)
+    assert review.source == "event_intelligence"
+    assert review.target_table == "event_intelligence_items"
+    assert review.target_key == str(event_id)
+    assert "high_impact_uncertain_event" in reasons
+    assert "manual_confirmation_required" in review.proposed_change["review_reasons"]
+    assert review.proposed_change["production_effect"] == "none"
+    audits = [row for row in session.rows if isinstance(row, EventIntelligenceAuditLog)]
+    assert audits[0].action == "review.queued"
+    assert audits[0].payload["production_effect"] == "none"
+
+
 def test_event_intelligence_api_rejects_invalid_filters() -> None:
     client = TestClient(create_app())
 
@@ -161,7 +227,14 @@ async def test_apply_event_intelligence_decision_records_audit() -> None:
     assert audit.before_status == "human_review"
     assert audit.after_status == "confirmed"
     assert audit.actor == "operator"
-    assert session.flush_count == 1
+    reviews = [row for row in session.rows if isinstance(row, ChangeReviewQueue)]
+    chunks = [row for row in session.rows if isinstance(row, VectorChunk)]
+    assert reviews[0].status == "approved"
+    assert reviews[0].reviewed_by == "operator"
+    assert chunks[0].chunk_type == "event_intelligence_review"
+    assert chunks[0].quality_status == "human_reviewed"
+    assert chunks[0].metadata_json["production_effect"] == "none"
+    assert session.flush_count == 2
     assert session.execute_count == 1
 
 
@@ -414,7 +487,16 @@ def test_event_intelligence_quality_gate_keeps_human_review_as_review_not_blocke
 class FakeDecisionSession:
     def __init__(self, event_item: EventIntelligenceItem) -> None:
         self.event_item = event_item
+        self.pending_review = ChangeReviewQueue(
+            source="event_intelligence",
+            target_table="event_intelligence_items",
+            target_key=str(event_item.id),
+            proposed_change={"event_item_id": str(event_item.id)},
+            status="pending",
+            reason="test review",
+        )
         self.rows: list[object] = []
+        self.rows.append(self.pending_review)
         self.flush_count = 0
         self.execute_count = 0
 
@@ -426,8 +508,34 @@ class FakeDecisionSession:
     async def execute(self, _):
         self.execute_count += 1
 
+    async def scalars(self, _):
+        return FakeScalars(self.pending_review if self.pending_review.status == "pending" else None)
+
     def add(self, row: object) -> None:
         self.rows.append(row)
 
     async def flush(self) -> None:
         self.flush_count += 1
+
+
+class FakeReviewSession:
+    def __init__(self) -> None:
+        self.rows: list[object] = []
+        self.flush_count = 0
+
+    async def scalars(self, _):
+        return FakeScalars()
+
+    def add(self, row: object) -> None:
+        self.rows.append(row)
+
+    async def flush(self) -> None:
+        self.flush_count += 1
+
+
+class FakeScalars:
+    def __init__(self, row=None) -> None:
+        self._row = row
+
+    def first(self):
+        return self._row
