@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Literal
@@ -662,15 +663,18 @@ async def _load_world_map_regions(session: AsyncSession, *, limit: int) -> list[
             )
         ).all()
     )
-    event_items = list(
-        (
-            await session.scalars(
-                select(EventIntelligenceItem)
-                .where(EventIntelligenceItem.status != "rejected")
-                .order_by(EventIntelligenceItem.event_timestamp.desc(), EventIntelligenceItem.created_at.desc())
-                .limit(limit)
-            )
-        ).all()
+    event_items = _unique_recent_event_intelligence(
+        list(
+            (
+                await session.scalars(
+                    select(EventIntelligenceItem)
+                    .where(EventIntelligenceItem.status != "rejected")
+                    .order_by(EventIntelligenceItem.event_timestamp.desc(), EventIntelligenceItem.created_at.desc())
+                    .limit(min(max(limit * 4, 100), 1000))
+                )
+            ).all()
+        ),
+        limit=limit,
     )
     event_links = (
         list(
@@ -1699,6 +1703,38 @@ def _matched_event_intelligence_items(
         if definition.id in regions or _symbols_intersect(symbols, region_symbols):
             matched.append(row)
     return matched
+
+
+def _unique_recent_event_intelligence(
+    rows: list[EventIntelligenceItem],
+    *,
+    limit: int,
+) -> list[EventIntelligenceItem]:
+    seen: set[tuple[str, tuple[str, ...], str]] = set()
+    unique: list[EventIntelligenceItem] = []
+    for row in rows:
+        key = _event_intelligence_display_key(row)
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(row)
+        if len(unique) >= limit:
+            break
+    return unique
+
+
+def _event_intelligence_display_key(row: EventIntelligenceItem) -> tuple[str, tuple[str, ...], str]:
+    symbols = tuple(sorted(str(symbol).upper() for symbol in (row.symbols or [])[:5]))
+    return (row.event_type.lower(), symbols, _normalize_event_title(row.title))
+
+
+def _normalize_event_title(value: str) -> str:
+    normalized = value.strip().lower()
+    normalized = re.sub(r"^\s*\([^)]*\)\s*", "", normalized)
+    normalized = re.sub(r"^\s*feature\s*:\s*", "", normalized)
+    normalized = normalized.split("--", 1)[0]
+    normalized = re.sub(r"[^a-z0-9\u4e00-\u9fff]+", " ", normalized)
+    return " ".join(normalized.split())
 
 
 def _matched_event_intelligence_links(

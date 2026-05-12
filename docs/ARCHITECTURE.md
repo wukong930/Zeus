@@ -141,6 +141,11 @@ Phase 10.4 已落地的联动边界：
 - World Risk Map：`/api/world-map` 聚合 `event_intelligence_items` 与 `event_impact_links`，区域运行态新增 `eventIntelligence`，风险分、证据、动态预警和 `eventIds` 都消费同一作用域。
 - 前端：世界风险地图区域档案展示事件智能运行态，因果网络入口携带 `symbol + region`，减少地图与因果图对同一事件解释不一致的问题。
 
+Phase 10.5 已落地的阅读准确性边界：
+
+- Causal Web 与 World Risk Map 在聚合层对事件智能对象做展示去重，合并同一事件的媒体转载、标题前缀和来源后缀差异。
+- 去重只影响视图和区域运行态计数，不删除 `event_intelligence_items` 原始行，保留审计、来源追踪和后续治理能力。
+
 治理约束：
 
 - 引擎判断默认只进入 Shadow / review，不直接修改生产阈值或自动发交易指令。

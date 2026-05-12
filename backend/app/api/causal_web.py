@@ -203,16 +203,19 @@ async def get_causal_web(
             )
         ).all()
     )
-    event_intelligence_items = list(
-        (
-            await session.scalars(
-                _event_intelligence_statement(
-                    limit=max(4, min(limit, 16)),
-                    symbol=symbol_filter,
-                    region=region,
+    event_intelligence_items = _unique_recent_event_intelligence(
+        list(
+            (
+                await session.scalars(
+                    _event_intelligence_statement(
+                        limit=max(8, min(limit * 4, 64)),
+                        symbol=symbol_filter,
+                        region=region,
+                    )
                 )
-            )
-        ).all()
+            ).all()
+        ),
+        limit=max(4, min(limit, 16)),
     )
     event_intelligence_links = (
         list(
@@ -716,8 +719,31 @@ def _unique_recent_news(rows: list[NewsEvent], *, limit: int) -> list[NewsEvent]
     return unique
 
 
+def _unique_recent_event_intelligence(
+    rows: list[EventIntelligenceItem],
+    *,
+    limit: int,
+) -> list[EventIntelligenceItem]:
+    seen: set[tuple[str, tuple[str, ...], str]] = set()
+    unique: list[EventIntelligenceItem] = []
+    for row in rows:
+        key = _event_intelligence_display_key(row)
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(row)
+        if len(unique) >= limit:
+            break
+    return unique
+
+
 def _news_display_key(row: NewsEvent) -> tuple[str, tuple[str, ...], str]:
     symbols = tuple(sorted(str(symbol).upper() for symbol in row.affected_symbols[:5]))
+    return (row.event_type.lower(), symbols, _normalize_news_title(row.title))
+
+
+def _event_intelligence_display_key(row: EventIntelligenceItem) -> tuple[str, tuple[str, ...], str]:
+    symbols = tuple(sorted(str(symbol).upper() for symbol in (row.symbols or [])[:5]))
     return (row.event_type.lower(), symbols, _normalize_news_title(row.title))
 
 
@@ -985,6 +1011,7 @@ _TEXT_ZH_REPLACEMENTS: tuple[tuple[str, str], ...] = (
     ("cross verified", "交叉验证"),
     ("validation", "校验"),
     ("event intelligence", "事件智能"),
+    ("human review", "人工复核"),
     ("shadow review", "影子复核"),
     ("confirmed", "已确认"),
     ("logistics", "物流"),

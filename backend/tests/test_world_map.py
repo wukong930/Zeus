@@ -6,6 +6,7 @@ from app.api.world_map import (
     _build_region_snapshot,
     _build_world_map_tile_cells,
     _risk_level,
+    _unique_recent_event_intelligence,
 )
 from app.models.alert import Alert
 from app.models.event_intelligence import EventImpactLink, EventIntelligenceItem
@@ -149,6 +150,47 @@ def test_region_snapshot_uses_event_intelligence_scope() -> None:
     assert any(row.kind == "event_intelligence" for row in region.story.evidence)
     assert any(alert.source == "event_intelligence" for alert in region.adaptiveAlerts)
     assert region.riskScore > WORLD_RISK_REGIONS[0].base_risk
+
+
+def test_world_map_event_intelligence_dedupe_keeps_one_display_event() -> None:
+    now = datetime.now(timezone.utc)
+
+    def event(title: str) -> EventIntelligenceItem:
+        return EventIntelligenceItem(
+            id=uuid4(),
+            source_type="news_event",
+            source_id=title[:20],
+            title=title,
+            summary="Rubber policy update",
+            event_type="policy",
+            event_timestamp=now,
+            entities=["China", "rubber"],
+            symbols=["RU", "NR"],
+            regions=["southeast_asia_rubber"],
+            mechanisms=["policy"],
+            evidence=[],
+            counterevidence=[],
+            confidence=0.7,
+            impact_score=70,
+            status="shadow_review",
+            requires_manual_confirmation=False,
+            source_reliability=0.7,
+            freshness_score=0.9,
+            source_payload={},
+            created_at=now,
+            updated_at=now,
+        )
+
+    unique = _unique_recent_event_intelligence(
+        [
+            event("( Hello Africa ) China zero - tariff policy opens new opportunities for Cote dIvoire rubber sector"),
+            event("Feature : China zero - tariff policy opens new opportunities for Cote dIvoire rubber sector"),
+            event("China zero - tariff policy opens new opportunities for Cote dIvoire rubber sector -- China Economic Net"),
+        ],
+        limit=10,
+    )
+
+    assert len(unique) == 1
 
 
 def test_region_snapshot_keeps_baseline_label_without_runtime_links() -> None:

@@ -957,6 +957,7 @@ Causa 的 `event_driven` 评估器实际上是纯技术面（gap + volume），*
 - [ ] **前端联动**
   - [x] Phase 10.4 最小联动：Causal Web 可按 `symbol + region` 加载事件智能链路，并把 `event_intelligence_items -> event_impact_links` 显示为源事件到影响假设。
   - [x] Phase 10.4 最小联动：World Risk Map 聚合事件智能对象和影响链，区域运行态、证据、风险分和 Causal Web URL 使用同一 `event_id` 作用域。
+  - [x] Phase 10.5 聚合去重：Causal Web / World Risk Map 对同源转写、媒体转载和标题前后缀做展示层去重，保留数据库原始审计记录。
   - [ ] Causal Web 支持点击事件智能链路后的局部高亮、路径聚焦和证据详情。
   - [ ] World Risk Map 支持按事件源、商品和影响机制做显式筛选。
   - [x] 新增 Event Intelligence 页面：事件池、影响链、证据/反证、人工确认队列。

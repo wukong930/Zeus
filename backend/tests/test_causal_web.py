@@ -13,6 +13,7 @@ from app.api.causal_web import (
     _layout_nodes,
     _seed_from_event_intelligence_item,
     _seed_from_event_intelligence_link,
+    _unique_recent_event_intelligence,
     _unique_recent_news,
 )
 from app.models.alert import Alert
@@ -427,6 +428,60 @@ def test_unique_recent_news_collapses_syndicated_titles() -> None:
     )
 
     unique = _unique_recent_news(
+        [first, duplicate_prefix, duplicate_suffix, unrelated],
+        limit=4,
+    )
+
+    assert [row.id for row in unique] == [first.id, unrelated.id]
+
+
+def test_unique_recent_event_intelligence_collapses_syndicated_titles() -> None:
+    now = datetime.now(timezone.utc)
+
+    def event(title: str, *, summary: str) -> EventIntelligenceItem:
+        return EventIntelligenceItem(
+            id=uuid4(),
+            source_type="news_event",
+            source_id=title[:20],
+            title=title,
+            summary=summary,
+            event_type="policy",
+            event_timestamp=now,
+            entities=["China", "rubber"],
+            symbols=["NR", "RU"],
+            regions=["southeast_asia_rubber"],
+            mechanisms=["policy"],
+            evidence=[],
+            counterevidence=[],
+            confidence=0.7,
+            impact_score=70,
+            status="shadow_review",
+            requires_manual_confirmation=False,
+            source_reliability=0.7,
+            freshness_score=0.9,
+            source_payload={},
+            created_at=now,
+            updated_at=now,
+        )
+
+    first = event(
+        "( Hello Africa ) China zero - tariff policy opens new opportunities for Cote dIvoire rubber sector",
+        summary="Japan",
+    )
+    duplicate_prefix = event(
+        "Feature : China zero - tariff policy opens new opportunities for Cote dIvoire rubber sector",
+        summary="China",
+    )
+    duplicate_suffix = event(
+        "China zero - tariff policy opens new opportunities for Cote dIvoire rubber sector -- China Economic Net",
+        summary="United States",
+    )
+    unrelated = event(
+        "Crude rally drives momentum in rubber stocks",
+        summary="Markets",
+    )
+
+    unique = _unique_recent_event_intelligence(
         [first, duplicate_prefix, duplicate_suffix, unrelated],
         limit=4,
     )

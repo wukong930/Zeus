@@ -342,3 +342,9 @@ threshold_modifier、propagation_activator、risk_recalc、数据腐烂防护
 - `/api/world-map` 开始聚合事件智能对象和影响链，区域运行态新增 `eventIntelligence`，风险分、证据、动态预警和 `eventIds` 共用 `event_intelligence:{event_id}` 作用域。
 - `/world-map` 区域档案展示事件智能运行态，打开因果网络时携带同一 `symbol + region`，减少地图和因果网络各自解释同一事件的问题。
 - 新增 Causal Web 与 World Risk Map 回归测试，覆盖事件智能源节点、链路边、区域证据和同一事件作用域。
+
+# 2026-05-12 — Event Intelligence Engine Phase 10.5
+
+- Causal Web 与 World Risk Map 聚合层新增事件智能展示去重，折叠媒体转载标题、`Feature:` 前缀和来源后缀导致的重复事件。
+- 去重只影响页面阅读密度、区域运行态计数和影响链入口，不删除原始事件智能对象，保留审计与来源追踪。
+- 新增回归测试，覆盖事件智能标题归一化和同一事件只展示一次的行为。
