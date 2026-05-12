@@ -831,6 +831,12 @@ export interface EventIntelligenceDecisionResult {
   };
 }
 
+export interface EventIntelligenceResolveResult {
+  event: EventIntelligenceItem;
+  impactLinks: EventImpactLink[];
+  created: boolean;
+}
+
 export interface EventIntelligenceQualityIssue {
   code: string;
   severity: EventIntelligenceQualitySeverity;
@@ -964,6 +970,12 @@ interface BackendEventIntelligenceAuditLog {
 interface BackendEventIntelligenceDecisionResponse {
   event: BackendEventIntelligenceItem;
   audit_log: BackendEventIntelligenceAuditLog;
+}
+
+interface BackendEventIntelligenceResolveResponse {
+  event: BackendEventIntelligenceItem;
+  impact_links: BackendEventImpactLink[];
+  created: boolean;
 }
 
 interface BackendEventIntelligenceQualityIssue {
@@ -1221,6 +1233,33 @@ export async function fetchEventIntelligenceQualitySummary(limit = 200): Promise
     `/api/event-intelligence/quality?limit=${limit}`
   );
   return mapEventIntelligenceQualitySummary(row);
+}
+
+export async function createEventIntelligenceFromNews(
+  newsEventId: string
+): Promise<EventIntelligenceResolveResult> {
+  const row = await fetchJson<BackendEventIntelligenceResolveResponse>(
+    `/api/event-intelligence/from-news/${encodeURIComponent(newsEventId)}`,
+    { method: "POST" }
+  );
+  return {
+    event: mapEventIntelligenceItem(row.event),
+    impactLinks: row.impact_links.map(mapEventImpactLink),
+    created: row.created,
+  };
+}
+
+export async function fetchEventIntelligenceDetail(
+  eventId: string
+): Promise<EventIntelligenceResolveResult> {
+  const row = await fetchJson<BackendEventIntelligenceResolveResponse>(
+    `/api/event-intelligence/${encodeURIComponent(eventId)}`
+  );
+  return {
+    event: mapEventIntelligenceItem(row.event),
+    impactLinks: row.impact_links.map(mapEventImpactLink),
+    created: row.created,
+  };
 }
 
 export async function decideEventIntelligence(

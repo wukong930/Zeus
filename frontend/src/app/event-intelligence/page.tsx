@@ -20,6 +20,7 @@ import { DataSourceBadge, type DataSourceState } from "@/components/DataSourceBa
 import {
   decideEventIntelligence,
   fetchEventImpactLinks,
+  fetchEventIntelligenceDetail,
   fetchEventIntelligenceItems,
   fetchEventIntelligenceQualitySummary,
   type EventIntelligenceDecision,
@@ -57,18 +58,39 @@ export default function EventIntelligencePage() {
 
   useEffect(() => {
     let mounted = true;
+    const initialEventId = new URLSearchParams(window.location.search).get("event");
     Promise.all([
       fetchEventIntelligenceItems(200),
       fetchEventImpactLinks({ limit: 300 }),
       fetchEventIntelligenceQualitySummary(200),
     ])
-      .then(([eventRows, linkRows, qualitySummary]) => {
+      .then(async ([eventRows, linkRows, qualitySummary]) => {
         if (!mounted) return;
-        setItems(eventRows);
-        setLinks(linkRows);
+        let nextItems = eventRows;
+        let nextLinks = linkRows;
+        let nextSelectedId =
+          initialEventId && eventRows.some((item) => item.id === initialEventId)
+            ? initialEventId
+            : eventRows[0]?.id ?? null;
+        if (initialEventId && !eventRows.some((item) => item.id === initialEventId)) {
+          try {
+            const detail = await fetchEventIntelligenceDetail(initialEventId);
+            nextItems = [detail.event, ...eventRows];
+            nextLinks = [
+              ...detail.impactLinks,
+              ...linkRows.filter((link) => link.eventItemId !== detail.event.id),
+            ];
+            nextSelectedId = detail.event.id;
+          } catch {
+            nextSelectedId = eventRows[0]?.id ?? null;
+          }
+        }
+        if (!mounted) return;
+        setItems(nextItems);
+        setLinks(nextLinks);
         setQualityReports(qualitySummary.reports);
         setSource("api");
-        setSelectedId(eventRows[0]?.id ?? null);
+        setSelectedId(nextSelectedId);
       })
       .catch(() => {
         if (!mounted) return;

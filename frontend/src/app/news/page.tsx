@@ -1,10 +1,14 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
+  BrainCircuit,
   CheckCircle2,
   ExternalLink,
+  GitBranch,
+  Loader2,
   Newspaper,
   Radio,
   Search,
@@ -14,8 +18,16 @@ import { Badge } from "@/components/Badge";
 import { Card, CardHeader, CardSubtitle, CardTitle } from "@/components/Card";
 import { DataSourceBadge, type DataSourceState } from "@/components/DataSourceBadge";
 import { MetricTile } from "@/components/MetricTile";
-import { fetchNewsEventsFromApi, type NewsEvent } from "@/lib/api";
-import { cn, timeAgo } from "@/lib/utils";
+import {
+  createEventIntelligenceFromNews,
+  fetchEventImpactLinks,
+  fetchEventIntelligenceItems,
+  fetchNewsEventsFromApi,
+  type EventImpactLink,
+  type EventIntelligenceItem,
+  type NewsEvent,
+} from "@/lib/api";
+import { cn, formatPercent, timeAgo } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n";
 
 export default function NewsEventsPage() {
@@ -25,6 +37,15 @@ export default function NewsEventsPage() {
   const [eventType, setEventType] = useState("all");
   const [direction, setDirection] = useState("all");
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [intelligenceByNewsId, setIntelligenceByNewsId] = useState<Map<string, EventIntelligenceItem>>(
+    new Map()
+  );
+  const [impactLinksByEventId, setImpactLinksByEventId] = useState<Map<string, EventImpactLink[]>>(
+    new Map()
+  );
+  const [intelligenceSource, setIntelligenceSource] = useState<DataSourceState>("loading");
+  const [intelligencePendingId, setIntelligencePendingId] = useState<string | null>(null);
+  const [intelligenceError, setIntelligenceError] = useState<string | null>(null);
 
   useEffect(() => {
     const initialSymbol = new URLSearchParams(window.location.search)
@@ -38,18 +59,30 @@ export default function NewsEventsPage() {
     let ignore = false;
     fetchNewsEventsFromApi()
       .then((rows) => {
-        if (!ignore) {
-          setEvents(rows);
-          setSource("api");
-          setSelectedId(rows[0]?.id ?? null);
-        }
+        if (ignore) return;
+        setEvents(rows);
+        setSource("api");
+        setSelectedId(rows[0]?.id ?? null);
       })
       .catch(() => {
-        if (!ignore) {
-          setEvents([]);
-          setSource("fallback");
-          setSelectedId(null);
-        }
+        if (ignore) return;
+        setEvents([]);
+        setSource("fallback");
+        setSelectedId(null);
+      });
+
+    Promise.all([fetchEventIntelligenceItems(300), fetchEventImpactLinks({ limit: 500 })])
+      .then(([items, links]) => {
+        if (ignore) return;
+        setIntelligenceByNewsId(groupEventIntelligenceByNewsId(items));
+        setImpactLinksByEventId(groupImpactLinksByEventId(links));
+        setIntelligenceSource("api");
+      })
+      .catch(() => {
+        if (ignore) return;
+        setIntelligenceByNewsId(new Map());
+        setImpactLinksByEventId(new Map());
+        setIntelligenceSource("fallback");
       });
     return () => {
       ignore = true;
@@ -91,6 +124,12 @@ export default function NewsEventsPage() {
     () => filtered.find((event) => event.id === selectedId) ?? filtered[0] ?? null,
     [filtered, selectedId]
   );
+  const selectedIntelligence = selected
+    ? intelligenceByNewsId.get(selected.id) ?? null
+    : null;
+  const selectedImpactLinks = selectedIntelligence
+    ? impactLinksByEventId.get(selectedIntelligence.id) ?? []
+    : [];
   const stats = useMemo(() => {
     let verified = 0;
     let manual = 0;
@@ -105,6 +144,32 @@ export default function NewsEventsPage() {
     };
   }, [events]);
   const { text } = useI18n();
+
+  const handleGenerateEventIntelligence = async (event: NewsEvent) => {
+    setIntelligencePendingId(event.id);
+    setIntelligenceError(null);
+    try {
+      const result = await createEventIntelligenceFromNews(event.id);
+      setIntelligenceByNewsId((current) => {
+        const next = new Map(current);
+        next.set(event.id, result.event);
+        if (result.event.sourceId) next.set(result.event.sourceId, result.event);
+        return next;
+      });
+      setImpactLinksByEventId((current) => {
+        const next = new Map(current);
+        next.set(result.event.id, result.impactLinks);
+        return next;
+      });
+      setIntelligenceSource("api");
+    } catch (error) {
+      setIntelligenceError(
+        error instanceof Error ? error.message : text("事件智能生成失败")
+      );
+    } finally {
+      setIntelligencePendingId(null);
+    }
+  };
 
   return (
     <div className="flex h-full">
@@ -161,6 +226,7 @@ export default function NewsEventsPage() {
         <section className="border-r border-border-subtle overflow-y-auto p-5 space-y-3">
           {filtered.map((event) => (
             <button
+              type="button"
               key={event.id}
               onClick={() => setSelectedId(event.id)}
               className={cn(
@@ -176,6 +242,12 @@ export default function NewsEventsPage() {
                 </Badge>
                 <Badge variant={directionVariant(event.direction)}>{text(event.direction)}</Badge>
                 <span className="text-caption text-text-muted font-mono">{event.source}</span>
+                {intelligenceByNewsId.get(event.id) && (
+                  <Badge variant="cyan">
+                    <GitBranch className="h-3 w-3" />
+                    {text("事件链")}
+                  </Badge>
+                )}
                 <span className="flex-1" />
                 <span className="text-caption text-text-muted">{timeAgo(event.publishedAt)}</span>
               </div>
@@ -202,7 +274,15 @@ export default function NewsEventsPage() {
 
         <section className="overflow-y-auto p-6">
           {selected ? (
-            <NewsEventDetail event={selected} />
+            <NewsEventDetail
+              event={selected}
+              intelligence={selectedIntelligence}
+              impactLinks={selectedImpactLinks}
+              intelligenceSource={intelligenceSource}
+              isGenerating={intelligencePendingId === selected.id}
+              intelligenceError={intelligenceError}
+              onGenerate={handleGenerateEventIntelligence}
+            />
           ) : (
             <Card variant="flat" className="py-12 text-center text-sm text-text-secondary">
               {text(source === "fallback" ? "新闻事件接口暂不可用" : "请选择新闻事件")}
@@ -244,7 +324,51 @@ function buildFilterValues(values: string[]): string[] {
   ];
 }
 
-function NewsEventDetail({ event }: { event: NewsEvent }) {
+function groupEventIntelligenceByNewsId(items: EventIntelligenceItem[]) {
+  const byNewsId = new Map<string, EventIntelligenceItem>();
+  for (const item of items) {
+    if (item.sourceType !== "news_event" || !item.sourceId) continue;
+    const current = byNewsId.get(item.sourceId);
+    if (!current || item.impactScore > current.impactScore) {
+      byNewsId.set(item.sourceId, item);
+    }
+  }
+  return byNewsId;
+}
+
+function groupImpactLinksByEventId(links: EventImpactLink[]) {
+  const byEventId = new Map<string, EventImpactLink[]>();
+  for (const link of links) {
+    const current = byEventId.get(link.eventItemId) ?? [];
+    current.push(link);
+    byEventId.set(link.eventItemId, current);
+  }
+  for (const [eventId, eventLinks] of byEventId) {
+    byEventId.set(
+      eventId,
+      [...eventLinks].sort((left, right) => right.impactScore - left.impactScore)
+    );
+  }
+  return byEventId;
+}
+
+function NewsEventDetail({
+  event,
+  intelligence,
+  impactLinks,
+  intelligenceSource,
+  isGenerating,
+  intelligenceError,
+  onGenerate,
+}: {
+  event: NewsEvent;
+  intelligence: EventIntelligenceItem | null;
+  impactLinks: EventImpactLink[];
+  intelligenceSource: DataSourceState;
+  isGenerating: boolean;
+  intelligenceError: string | null;
+  onGenerate: (event: NewsEvent) => void;
+}) {
   const { text } = useI18n();
 
   return (
@@ -290,6 +414,16 @@ function NewsEventDetail({ event }: { event: NewsEvent }) {
         </div>
       </Card>
 
+      <EventIntelligencePanel
+        event={event}
+        intelligence={intelligence}
+        impactLinks={impactLinks}
+        source={intelligenceSource}
+        isGenerating={isGenerating}
+        error={intelligenceError}
+        onGenerate={onGenerate}
+      />
+
       <Card variant="data">
         <CardHeader>
           <div>
@@ -324,6 +458,115 @@ function NewsEventDetail({ event }: { event: NewsEvent }) {
   );
 }
 
+function EventIntelligencePanel({
+  event,
+  intelligence,
+  impactLinks,
+  source,
+  isGenerating,
+  error,
+  onGenerate,
+}: {
+  event: NewsEvent;
+  intelligence: EventIntelligenceItem | null;
+  impactLinks: EventImpactLink[];
+  source: DataSourceState;
+  isGenerating: boolean;
+  error: string | null;
+  onGenerate: (event: NewsEvent) => void;
+}) {
+  const { text } = useI18n();
+
+  return (
+    <Card variant="data" className="border-brand-cyan/25">
+      <CardHeader>
+        <div>
+          <CardTitle>{text("事件智能链")}</CardTitle>
+          <CardSubtitle>{text("从新闻生成可审计的商品影响链")}</CardSubtitle>
+        </div>
+        {intelligence ? (
+          <Badge variant={eventIntelligenceStatusVariant(intelligence.status)}>
+            {text(eventIntelligenceStatusLabel(intelligence.status))}
+          </Badge>
+        ) : (
+          <DataSourceBadge state={source} compact />
+        )}
+      </CardHeader>
+
+      {intelligence ? (
+        <div className="space-y-4">
+          <div className="grid grid-cols-4 gap-3">
+            <Info label={text("影响分")} value={String(Math.round(intelligence.impactScore))} />
+            <Info
+              label={text("置信度")}
+              value={formatPercent(intelligence.confidence * 100, 0, false)}
+            />
+            <Info label={text("影响链")} value={String(impactLinks.length)} />
+            <Info label={text("更新时间")} value={timeAgo(intelligence.updatedAt)} />
+          </div>
+
+          <div className="space-y-2">
+            {impactLinks.slice(0, 3).map((link) => (
+              <div
+                key={link.id}
+                className="flex items-center gap-3 rounded-sm border border-border-subtle bg-bg-base px-3 py-2 text-sm shadow-inner-panel"
+              >
+                <Badge variant={directionVariant(link.direction)}>
+                  {text(link.direction)}
+                </Badge>
+                <span className="font-mono text-text-primary">{link.symbol}</span>
+                <span className="min-w-0 flex-1 truncate text-text-secondary">
+                  {text(link.mechanism)} · {text(link.horizon)}
+                </span>
+                <span className="font-mono text-text-muted">
+                  {Math.round(link.impactScore)}
+                </span>
+              </div>
+            ))}
+            {impactLinks.length === 0 && (
+              <div className="rounded-sm border border-border-subtle bg-bg-base px-3 py-4 text-sm text-text-muted">
+                {text("当前事件暂无影响链明细")}
+              </div>
+            )}
+          </div>
+
+          <Link
+            href={`/event-intelligence?event=${encodeURIComponent(intelligence.id)}`}
+            className="inline-flex h-9 items-center gap-2 rounded-sm border border-brand-cyan/35 bg-brand-cyan/10 px-3 text-sm text-brand-cyan transition-colors hover:bg-brand-cyan/16"
+          >
+            <GitBranch className="h-4 w-4" />
+            {text("查看事件智能链")}
+          </Link>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          <div className="rounded-sm border border-border-subtle bg-bg-base p-4 text-sm text-text-secondary shadow-inner-panel">
+            {text("当前新闻尚未生成事件智能链，可一键解析人物、地区、商品和影响机制。")}
+          </div>
+          {error && (
+            <div className="rounded-sm border border-data-down/35 bg-data-down/10 p-3 text-sm text-data-down">
+              {text("事件智能生成失败")}：{error}
+            </div>
+          )}
+          <button
+            type="button"
+            disabled={isGenerating || source === "loading"}
+            onClick={() => onGenerate(event)}
+            className="inline-flex h-10 items-center gap-2 rounded-sm border border-brand-emerald/35 bg-brand-emerald/15 px-4 text-sm font-medium text-brand-emerald-bright transition-colors hover:bg-brand-emerald/22 disabled:cursor-not-allowed disabled:opacity-55"
+          >
+            {isGenerating ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <BrainCircuit className="h-4 w-4" />
+            )}
+            {text(isGenerating ? "生成中" : "生成事件智能链")}
+          </button>
+        </div>
+      )}
+    </Card>
+  );
+}
+
 function Segmented({
   value,
   values,
@@ -339,6 +582,7 @@ function Segmented({
     <div className="grid grid-cols-2 gap-1">
       {values.map((item) => (
         <button
+          type="button"
           key={item}
           onClick={() => onChange(item)}
           className={cn(
@@ -380,9 +624,29 @@ function severityVariant(severity: number): "critical" | "high" | "medium" | "lo
   return "low";
 }
 
-function directionVariant(direction: NewsEvent["direction"]): "up" | "down" | "orange" | "neutral" {
+function directionVariant(
+  direction: NewsEvent["direction"] | EventImpactLink["direction"]
+): "up" | "down" | "orange" | "neutral" {
   if (direction === "bullish") return "up";
   if (direction === "bearish") return "down";
   if (direction === "mixed") return "orange";
   return "neutral";
+}
+
+function eventIntelligenceStatusVariant(
+  status: EventIntelligenceItem["status"]
+): "emerald" | "orange" | "neutral" | "down" {
+  if (status === "confirmed") return "emerald";
+  if (status === "human_review") return "orange";
+  if (status === "rejected") return "down";
+  return "neutral";
+}
+
+function eventIntelligenceStatusLabel(status: EventIntelligenceItem["status"]) {
+  return {
+    shadow_review: "影子复核",
+    human_review: "人工复核",
+    confirmed: "已确认",
+    rejected: "已拒绝",
+  }[status];
 }
