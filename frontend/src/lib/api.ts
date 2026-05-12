@@ -831,18 +831,21 @@ export interface EventImpactLinkUpdateInput {
   note?: string | null;
 }
 
+export interface EventIntelligenceAuditLog {
+  id: string;
+  eventItemId: string;
+  action: string;
+  actor: string | null;
+  beforeStatus: string | null;
+  afterStatus: string | null;
+  note: string | null;
+  payload: Record<string, unknown>;
+  createdAt: string;
+}
+
 export interface EventIntelligenceDecisionResult {
   event: EventIntelligenceItem;
-  auditLog: {
-    id: string;
-    eventItemId: string;
-    action: string;
-    actor: string | null;
-    beforeStatus: string | null;
-    afterStatus: string | null;
-    note: string | null;
-    createdAt: string;
-  };
+  auditLog: EventIntelligenceAuditLog;
 }
 
 export interface EventIntelligenceResolveResult {
@@ -854,7 +857,7 @@ export interface EventIntelligenceResolveResult {
 export interface EventImpactLinkUpdateResult {
   event: EventIntelligenceItem;
   impactLink: EventImpactLink;
-  auditLog: EventIntelligenceDecisionResult["auditLog"];
+  auditLog: EventIntelligenceAuditLog;
 }
 
 export interface EventIntelligenceQualityIssue {
@@ -984,6 +987,7 @@ interface BackendEventIntelligenceAuditLog {
   before_status: string | null;
   after_status: string | null;
   note: string | null;
+  payload: Record<string, unknown>;
   created_at: string;
 }
 
@@ -1259,6 +1263,21 @@ export async function fetchEventIntelligenceQualitySummary(limit = 200): Promise
     `/api/event-intelligence/quality?limit=${limit}`
   );
   return mapEventIntelligenceQualitySummary(row);
+}
+
+export async function fetchEventIntelligenceAuditLogs(params: {
+  eventItemId?: string;
+  action?: string;
+  limit?: number;
+} = {}): Promise<EventIntelligenceAuditLog[]> {
+  const query = new URLSearchParams();
+  query.set("limit", String(params.limit ?? 50));
+  if (params.eventItemId) query.set("event_item_id", params.eventItemId);
+  if (params.action) query.set("action", params.action);
+  const rows = await fetchJson<BackendEventIntelligenceAuditLog[]>(
+    `/api/event-intelligence/audit-logs?${query.toString()}`
+  );
+  return rows.map(mapEventIntelligenceAuditLog);
 }
 
 export async function createEventIntelligenceFromNews(
@@ -1830,7 +1849,7 @@ function mapEventImpactLink(link: BackendEventImpactLink): EventImpactLink {
 
 function mapEventIntelligenceAuditLog(
   auditLog: BackendEventIntelligenceAuditLog
-): EventIntelligenceDecisionResult["auditLog"] {
+): EventIntelligenceAuditLog {
   return {
     id: auditLog.id,
     eventItemId: auditLog.event_item_id,
@@ -1839,6 +1858,7 @@ function mapEventIntelligenceAuditLog(
     beforeStatus: auditLog.before_status,
     afterStatus: auditLog.after_status,
     note: auditLog.note,
+    payload: auditLog.payload,
     createdAt: auditLog.created_at,
   };
 }

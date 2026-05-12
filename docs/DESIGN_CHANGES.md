@@ -344,6 +344,12 @@ threshold_modifier、propagation_activator、risk_recalc、数据腐烂防护
 - 影响链修订会把事件与链路重新置为 `human_review`，写入 `impact_link.updated` 审计，并重新进入 `change_review_queue`；审计 payload 明确标记 `production_effect=none`。
 - `/event-intelligence` 详情页新增“修改链路”表单，保存前只提交真实变更字段，并提示修改后需要重新复核。
 
+# 2026-05-12 — Event Intelligence Engine Phase 10.3.3
+
+- `/event-intelligence` 详情页新增治理时间线，按事件读取 `/api/event-intelligence/audit-logs` 并展示规则解析、语义增强、进入治理队列、人工决策和影响链修改。
+- 审计时间线展示状态流转、操作者、备注、变更字段、复核原因、语义假设数量和生产影响，帮助人工复核时直接看到“为什么这条链变成现在这样”。
+- 前端决策和影响链编辑成功后会把返回的审计记录即时插入时间线，减少操作后必须刷新页面才能看到留痕的问题。
+
 # 2026-05-12 — Event Intelligence Engine Phase 10.4
 
 - `/api/causal-web` 新增 `symbol` 与 `region` 作用域参数，并把 `event_intelligence_items` 渲染为事件源、`event_impact_links` 渲染为影响假设节点。

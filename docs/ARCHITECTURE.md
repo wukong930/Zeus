@@ -136,7 +136,7 @@ Phase 10.3 已落地的治理边界：
 - 链路修订：`PATCH /api/event-intelligence/impact-links/{link_id}` 支持人工修改品种、区域、机制、方向、置信度、影响分、证据和反证；修改后事件与链路回到 `human_review`，并重新进入治理队列。
 - 学习记录：人工决策后会生成 `vector_chunks.chunk_type=event_intelligence_review`，用于后续回放、检索和复盘；这不会直接改生产阈值。
 - 审计查询：`GET /api/event-intelligence/audit-logs` 可按事件或动作查看治理历史。
-- 前端：`/event-intelligence` 详情页提供确认、拒绝、转人工复核和影响链编辑操作，所有动作写入审计日志，且链路编辑不直接改变生产阈值。
+- 前端：`/event-intelligence` 详情页提供确认、拒绝、转人工复核和影响链编辑操作，所有动作写入审计日志；页面同时展示治理时间线，包含状态流转、操作者、备注、变更字段、复核原因和 `production_effect`。
 
 Phase 10.4 已落地的联动边界：
 

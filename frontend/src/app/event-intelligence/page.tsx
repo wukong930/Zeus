@@ -6,6 +6,7 @@ import {
   ArrowRight,
   BrainCircuit,
   CheckCircle2,
+  Clock3,
   DatabaseZap,
   Gauge,
   GitBranch,
@@ -23,6 +24,7 @@ import { DataSourceBadge, type DataSourceState } from "@/components/DataSourceBa
 import {
   decideEventIntelligence,
   fetchEventImpactLinks,
+  fetchEventIntelligenceAuditLogs,
   fetchEventIntelligenceDetail,
   fetchEventIntelligenceItems,
   fetchEventIntelligenceQualitySummary,
@@ -31,6 +33,7 @@ import {
   type EventImpactDirection,
   type EventImpactLink,
   type EventImpactLinkUpdateInput,
+  type EventIntelligenceAuditLog,
   type EventIntelligenceItem,
   type EventIntelligenceQualityReport,
   type EventIntelligenceQualityStatus,
@@ -78,6 +81,8 @@ export default function EventIntelligencePage() {
   const [decisionPending, setDecisionPending] = useState<EventIntelligenceDecision | null>(null);
   const [linkEditPendingId, setLinkEditPendingId] = useState<string | null>(null);
   const [linkEditError, setLinkEditError] = useState<string | null>(null);
+  const [auditLogs, setAuditLogs] = useState<EventIntelligenceAuditLog[]>([]);
+  const [auditSource, setAuditSource] = useState<DataSourceState>("loading");
 
   useEffect(() => {
     let mounted = true;
@@ -154,6 +159,31 @@ export default function EventIntelligencePage() {
     [qualityReports]
   );
   const selectedQuality = selected ? qualityByEventId.get(selected.id) ?? null : null;
+
+  useEffect(() => {
+    if (!selected?.id) {
+      setAuditLogs([]);
+      setAuditSource(source === "fallback" ? "fallback" : "loading");
+      return;
+    }
+    let mounted = true;
+    setAuditSource("loading");
+    fetchEventIntelligenceAuditLogs({ eventItemId: selected.id, limit: 20 })
+      .then((rows) => {
+        if (!mounted) return;
+        setAuditLogs(rows);
+        setAuditSource("api");
+      })
+      .catch(() => {
+        if (!mounted) return;
+        setAuditLogs([]);
+        setAuditSource("fallback");
+      });
+    return () => {
+      mounted = false;
+    };
+  }, [selected?.id, source]);
+
   const stats = useMemo(() => {
     const humanReview = items.filter((item) => item.status === "human_review").length;
     const confirmed = items.filter((item) => item.status === "confirmed").length;
@@ -185,6 +215,8 @@ export default function EventIntelligencePage() {
             : link
         )
       );
+      setAuditLogs((current) => mergeAuditLogs([result.auditLog, ...current]));
+      setAuditSource("api");
     } finally {
       setDecisionPending(null);
     }
@@ -210,6 +242,8 @@ export default function EventIntelligencePage() {
       if (qualitySummary) {
         setQualityReports(qualitySummary.reports);
       }
+      setAuditLogs((current) => mergeAuditLogs([result.auditLog, ...current]));
+      setAuditSource("api");
       return true;
     } catch (error) {
       setLinkEditError(error instanceof Error ? error.message : "影响链修改失败");
@@ -291,6 +325,8 @@ export default function EventIntelligencePage() {
               onUpdateImpactLink={handleUpdateImpactLink}
               linkEditPendingId={linkEditPendingId}
               linkEditError={linkEditError}
+              auditLogs={auditLogs}
+              auditSource={auditSource}
             />
           ) : (
             <Card variant="flat" className="flex min-h-[420px] items-center justify-center text-sm text-text-secondary">
@@ -363,6 +399,8 @@ function EventDetail({
   onUpdateImpactLink,
   linkEditPendingId,
   linkEditError,
+  auditLogs,
+  auditSource,
 }: {
   item: EventIntelligenceItem;
   links: EventImpactLink[];
@@ -372,6 +410,8 @@ function EventDetail({
   onUpdateImpactLink: (linkId: string, payload: EventImpactLinkUpdateInput) => Promise<boolean>;
   linkEditPendingId: string | null;
   linkEditError: string | null;
+  auditLogs: EventIntelligenceAuditLog[];
+  auditSource: DataSourceState;
 }) {
   const { text } = useI18n();
   const [editingLinkId, setEditingLinkId] = useState<string | null>(null);
@@ -548,6 +588,134 @@ function EventDetail({
         <EvidencePanel title="证据" values={item.evidence} />
         <EvidencePanel title="反证" values={item.counterevidence} />
       </div>
+
+      <AuditTimeline logs={auditLogs} source={auditSource} />
+    </div>
+  );
+}
+
+function AuditTimeline({
+  logs,
+  source,
+}: {
+  logs: EventIntelligenceAuditLog[];
+  source: DataSourceState;
+}) {
+  const { text } = useI18n();
+
+  return (
+    <Card variant="flat">
+      <CardHeader>
+        <div>
+          <CardTitle>{text("治理时间线")}</CardTitle>
+          <CardSubtitle>{text("确认、复核、语义增强和影响链修改留痕")}</CardSubtitle>
+        </div>
+        <DataSourceBadge state={source} compact />
+      </CardHeader>
+      <div className="space-y-3">
+        {logs.map((log) => (
+          <div
+            key={log.id}
+            className="rounded-sm border border-border-subtle bg-black/28 p-3 shadow-inner-panel"
+          >
+            <div className="mb-2 flex flex-wrap items-center gap-2">
+              <span className="inline-flex h-7 w-7 items-center justify-center rounded-sm border border-brand-cyan/25 bg-brand-cyan/10 text-brand-cyan">
+                <Clock3 className="h-3.5 w-3.5" />
+              </span>
+              <div className="min-w-0">
+                <div className="text-sm font-semibold text-text-primary">
+                  {text(auditActionLabel(log.action))}
+                </div>
+                <div className="mt-0.5 text-caption text-text-muted">
+                  {timeAgo(log.createdAt)}
+                  {log.actor ? ` · ${text("操作者")} ${log.actor}` : ""}
+                </div>
+              </div>
+              <div className="ml-auto flex flex-wrap items-center gap-1.5">
+                {log.beforeStatus && (
+                  <Badge variant={statusVariant(log.beforeStatus as EventIntelligenceStatus)}>
+                    {text(statusLabel(log.beforeStatus as EventIntelligenceStatus))}
+                  </Badge>
+                )}
+                {(log.beforeStatus || log.afterStatus) && (
+                  <ArrowRight className="h-3.5 w-3.5 text-text-muted" />
+                )}
+                {log.afterStatus && (
+                  <Badge variant={statusVariant(log.afterStatus as EventIntelligenceStatus)}>
+                    {text(statusLabel(log.afterStatus as EventIntelligenceStatus))}
+                  </Badge>
+                )}
+              </div>
+            </div>
+            {log.note && (
+              <p className="mb-2 rounded-xs border border-border-subtle bg-black/24 px-2 py-1.5 text-xs text-text-secondary">
+                {text(log.note)}
+              </p>
+            )}
+            <AuditPayloadSummary log={log} />
+          </div>
+        ))}
+        {source === "loading" && (
+          <div className="py-6 text-center text-sm text-text-secondary">
+            {text("正在加载治理历史")}
+          </div>
+        )}
+        {source !== "loading" && logs.length === 0 && (
+          <div className="py-6 text-center text-sm text-text-secondary">
+            {text(source === "fallback" ? "治理历史暂不可用" : "暂无治理历史")}
+          </div>
+        )}
+      </div>
+    </Card>
+  );
+}
+
+function AuditPayloadSummary({ log }: { log: EventIntelligenceAuditLog }) {
+  const { text } = useI18n();
+  const changedFields = stringListPayload(log.payload.changed_fields);
+  const reviewReasons = stringListPayload(log.payload.review_reasons);
+  const semanticHypothesesCount =
+    numberPayload(log.payload.hypothesis_count) ??
+    numberPayload(log.payload.semantic_hypotheses_count);
+  const productionEffect = stringPayload(log.payload.production_effect);
+
+  if (
+    changedFields.length === 0 &&
+    reviewReasons.length === 0 &&
+    semanticHypothesesCount === null &&
+    !productionEffect
+  ) {
+    return null;
+  }
+
+  return (
+    <div className="flex flex-wrap gap-1.5 text-caption">
+      {changedFields.map((field) => (
+        <span
+          key={`field-${field}`}
+          className="rounded-xs border border-brand-cyan/25 bg-brand-cyan/10 px-1.5 py-0.5 text-brand-cyan"
+        >
+          {text("字段")} {text(auditFieldLabel(field))}
+        </span>
+      ))}
+      {reviewReasons.map((reason) => (
+        <span
+          key={`reason-${reason}`}
+          className="rounded-xs border border-brand-orange/25 bg-brand-orange/10 px-1.5 py-0.5 text-brand-orange"
+        >
+          {text(auditReasonLabel(reason))}
+        </span>
+      ))}
+      {semanticHypothesesCount !== null && (
+        <span className="rounded-xs border border-brand-emerald/25 bg-brand-emerald/10 px-1.5 py-0.5 text-brand-emerald-bright">
+          {semanticHypothesesCount} {text("条语义假设")}
+        </span>
+      )}
+      {productionEffect && (
+        <span className="rounded-xs border border-border-subtle bg-white/[0.03] px-1.5 py-0.5 text-text-muted">
+          {text("生产影响")}：{text(auditProductionEffectLabel(productionEffect))}
+        </span>
+      )}
     </div>
   );
 }
@@ -1065,6 +1233,51 @@ function linkQualityLabel(status: EventImpactLinkQualityStatus): string {
   }[status];
 }
 
+function auditActionLabel(action: string): string {
+  return {
+    resolved: "规则解析生成",
+    semantic_enhanced: "语义增强",
+    "review.queued": "进入治理队列",
+    "decision.confirm": "确认通过",
+    "decision.reject": "人工拒绝",
+    "decision.request_review": "转人工复核",
+    "decision.shadow_review": "回到影子复核",
+    "impact_link.updated": "影响链修改",
+  }[action] ?? action;
+}
+
+function auditFieldLabel(field: string): string {
+  return {
+    symbol: "品种",
+    region_id: "区域",
+    mechanism: "机制",
+    direction: "方向",
+    confidence: "置信度",
+    impact_score: "影响分",
+    horizon: "周期",
+    rationale: "机制说明",
+    evidence: "支持证据",
+    counterevidence: "反证线索",
+  }[field] ?? field;
+}
+
+function auditReasonLabel(reason: string): string {
+  return {
+    manual_confirmation_required: "需要人工确认",
+    single_source: "单一来源",
+    low_confidence: "低置信",
+    low_source_reliability: "低来源可信度",
+    high_impact_uncertain_event: "高影响不确定事件",
+    impact_link_requires_review: "影响链需要复核",
+  }[reason] ?? reason;
+}
+
+function auditProductionEffectLabel(effect: string): string {
+  return {
+    none: "无生产影响",
+  }[effect] ?? effect;
+}
+
 function directionVariant(direction: EventImpactDirection): "up" | "down" | "orange" | "neutral" {
   if (direction === "bullish") return "up";
   if (direction === "bearish") return "down";
@@ -1172,6 +1385,29 @@ function nearlyEqual(left: number, right: number, tolerance: number): boolean {
 function sameStringList(left: string[], right: string[]): boolean {
   if (left.length !== right.length) return false;
   return left.every((item, index) => item === right[index]);
+}
+
+function mergeAuditLogs(logs: EventIntelligenceAuditLog[]): EventIntelligenceAuditLog[] {
+  const byId = new Map<string, EventIntelligenceAuditLog>();
+  for (const log of logs) {
+    byId.set(log.id, log);
+  }
+  return Array.from(byId.values())
+    .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt))
+    .slice(0, 20);
+}
+
+function stringPayload(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value : null;
+}
+
+function numberPayload(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function stringListPayload(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === "string" && item.trim().length > 0);
 }
 
 function readPayloadString(payload: Record<string, unknown>, key: string): string | null {
