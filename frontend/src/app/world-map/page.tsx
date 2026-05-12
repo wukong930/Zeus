@@ -6,7 +6,13 @@ import { COORDINATE_SYSTEM, OrthographicView } from "@deck.gl/core";
 import { ArcLayer, PolygonLayer, ScatterplotLayer } from "@deck.gl/layers";
 import type { GeoJSONSource, Map as MapLibreMap, StyleSpecification } from "maplibre-gl";
 import { geoEqualEarth, geoGraticule, geoPath, type GeoPermissibleObjects, type GeoProjection } from "d3-geo";
-import type { ComponentType, PointerEvent as ReactPointerEvent, ReactNode, WheelEvent as ReactWheelEvent } from "react";
+import type {
+  ComponentType,
+  CSSProperties,
+  PointerEvent as ReactPointerEvent,
+  ReactNode,
+  WheelEvent as ReactWheelEvent,
+} from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
@@ -2004,9 +2010,10 @@ function RegionInsightModal({ region, onClose }: { region: WorldMapRegion; onClo
               </div>
             </div>
 
+            <RiskReadingPathCard region={region} />
             <RiskMomentumCard region={region} />
-            <EventQualityCard region={region} />
             <EvidenceHealthCard region={region} />
+            <EventQualityCard region={region} />
 
             <Link
               href={region.causalScope.causalWebUrl}
@@ -2121,6 +2128,88 @@ function RuntimeGrid({ region }: { region: WorldMapRegion }) {
       <RuntimePill icon={ShieldAlert} label={text("持仓")} value={region.runtime.positions} />
       <RuntimePill icon={Link2} label={text("事件智能")} value={eventIntelligence} />
     </div>
+  );
+}
+
+function RiskReadingPathCard({ region }: { region: WorldMapRegion }) {
+  const { text } = useI18n();
+  const momentum = regionRiskMomentum(region);
+  const momentumTone = momentumColor(momentum.direction);
+  const health = regionEvidenceHealth(region);
+  const quality = region.eventQuality;
+  const qualityMeta = worldMapQualityMeta(quality.status);
+  const causalTone = region.causalScope.hasDirectLinks ? "#22d3ee" : "#a3a3a3";
+  const steps: Array<{
+    icon: ComponentType<{ className?: string; style?: CSSProperties }>;
+    label: string;
+    value: string;
+    detail: string;
+    color: string;
+  }> = [
+    {
+      icon: Activity,
+      label: text("风险动量"),
+      value: text(momentumLabel(momentum.direction)),
+      detail: `${momentum.delta > 0 ? "+" : ""}${momentum.delta}`,
+      color: momentumTone.text,
+    },
+    {
+      icon: DatabaseZap,
+      label: text("证据健康"),
+      value: `${health.densityScore}/100`,
+      detail: `${text("新鲜来源")} ${health.freshRuntimeSources}/${health.runtimeSources}`,
+      color: "#22d3ee",
+    },
+    {
+      icon: qualityMeta.icon,
+      label: text("事件质量门"),
+      value: `${quality.score}/100`,
+      detail: text(qualityMeta.label),
+      color: qualityMeta.color,
+    },
+    {
+      icon: Link2,
+      label: text("因果网络"),
+      value: region.causalScope.hasDirectLinks ? text("可追溯") : text("同商品"),
+      detail: `${region.causalScope.eventIds.length} ${text("事件作用域")}`,
+      color: causalTone,
+    },
+  ];
+
+  return (
+    <section
+      data-testid="world-map-reading-path"
+      className="rounded-sm border border-white/[0.12] bg-white/[0.04] p-3 backdrop-blur-xl"
+    >
+      <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-text-primary">
+        <Route className="h-4 w-4 text-brand-cyan" />
+        {text("链路总览")}
+      </div>
+      <div className="grid grid-cols-2 gap-2 xl:grid-cols-4">
+        {steps.map((step, index) => {
+          const Icon = step.icon;
+          return (
+            <div
+              key={step.label}
+              className="min-w-0 rounded-xs border bg-bg-base/70 px-2.5 py-2"
+              style={{ borderColor: `${step.color}55` }}
+            >
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <span className="flex min-w-0 items-center gap-1.5 text-caption text-text-muted">
+                  <Icon className="h-3.5 w-3.5 shrink-0" style={{ color: step.color }} />
+                  <span className="truncate">{step.label}</span>
+                </span>
+                <span className="font-mono text-[10px] text-text-muted">0{index + 1}</span>
+              </div>
+              <div className="truncate text-xs font-semibold text-text-primary">{step.value}</div>
+              <div className="mt-0.5 truncate font-mono text-[10px]" style={{ color: step.color }}>
+                {step.detail}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 

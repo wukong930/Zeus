@@ -495,6 +495,7 @@ const EN: Record<string, string> = {
   "先读最高风险，再看跨区传导和证据密度":
     "Read the highest risk first, then cross-region transmission and evidence density",
   "主读区": "Primary Read",
+  "链路总览": "Chain Overview",
   "风险动量": "Risk Momentum",
   "动量升温": "Momentum Rising",
   "动量降温": "Momentum Easing",
@@ -509,6 +510,8 @@ const EN: Record<string, string> = {
   "数据新鲜度": "Data Freshness",
   "新鲜来源": "Fresh Sources",
   "最高风险区域": "Highest Risk Region",
+  "可追溯": "Traceable",
+  "事件作用域": "Event Scope",
   "当前区域证据覆盖偏薄，建议先阅读证据与反证，再判断是否需要进入因果网络。":
     "Evidence coverage is thin for this region. Read supporting and counter evidence before entering Causal Web.",
   "暂无支持证据": "No supporting evidence",
