@@ -970,6 +970,7 @@ Causa 的 `event_driven` 评估器实际上是纯技术面（gap + volume），*
   - [x] Phase 10.11 World Risk Map 证据健康层：区域接口输出 `evidenceHealth`，前端展示证据密度、来源可信度、新鲜度和反证覆盖，避免只看风险分。
   - [x] Phase 10.12 World Risk Map 风险动量层：区域接口输出 `riskMomentum`，前端把升温 / 降温 / 稳定、动量原因和脉冲动效纳入阅读路径。
   - [x] Phase 10.13 World Risk Map 风险链阅读动线：区域档案新增“链路总览”，将动量、证据健康、质量门和因果网络入口组织成同一阅读路径。
+  - [x] Phase 10.14 World Risk Map 推荐动作入口：区域档案按质量门、证据健康、动量和作用域生成下一步动作，指向事件智能、新闻证据或因果网络。
   - [x] 新增 Event Intelligence 页面：事件池、影响链、证据/反证、人工确认队列。
   - [x] Event Intelligence 页面展示 LLM 语义假设与模型/提示版本。
   - [x] Event Intelligence 页面支持确认、拒绝、转人工复核，并写入审计日志。

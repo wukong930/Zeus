@@ -726,6 +726,86 @@ function momentumColor(direction: WorldMapRiskMomentumDirection) {
   return { text: "#a3a3a3", stroke: "rgba(163,163,163,0.42)", fill: "rgba(163,163,163,0.08)" };
 }
 
+function regionRiskAction(region: WorldMapRegion) {
+  const momentum = regionRiskMomentum(region);
+  const health = regionEvidenceHealth(region);
+  const hasQualityReview = region.eventQuality.blocked > 0 || region.eventQuality.review > 0;
+  const needsEvidence = health.densityScore < 45 || health.sourceReliability < 45 || health.freshnessScore < 45;
+
+  if (hasQualityReview) {
+    return {
+      icon: ShieldAlert,
+      color: "#f97316",
+      title: "先复核质量门",
+      description: "存在待复核或被阻断事件，先到事件智能确认质量，再追溯因果链。",
+      primaryHref: "/event-intelligence",
+      primaryLabel: "打开事件智能",
+      primaryIcon: ShieldAlert,
+      secondaryHref: region.causalScope.causalWebUrl,
+      secondaryLabel: region.causalScope.hasDirectLinks ? "打开关联因果网络" : "打开同商品因果网络",
+      secondaryIcon: Link2,
+    };
+  }
+
+  if (needsEvidence) {
+    return {
+      icon: DatabaseZap,
+      color: "#38bdf8",
+      title: "先补证据",
+      description: "当前证据覆盖偏薄，优先查看新闻、天气或信号来源，再进入链路追溯。",
+      primaryHref: "/news",
+      primaryLabel: "打开新闻事件",
+      primaryIcon: DatabaseZap,
+      secondaryHref: region.causalScope.causalWebUrl,
+      secondaryLabel: "打开因果网络",
+      secondaryIcon: Link2,
+    };
+  }
+
+  if (momentum.direction === "rising" && region.causalScope.hasDirectLinks) {
+    return {
+      icon: Activity,
+      color: "#ff4d4f",
+      title: "追溯升温链",
+      description: "风险正在升温且存在直接事件作用域，优先进入因果网络核对上下游传导。",
+      primaryHref: region.causalScope.causalWebUrl,
+      primaryLabel: "打开关联因果网络",
+      primaryIcon: Link2,
+      secondaryHref: "/event-intelligence",
+      secondaryLabel: "打开事件智能",
+      secondaryIcon: ShieldCheck,
+    };
+  }
+
+  if (region.causalScope.hasDirectLinks) {
+    return {
+      icon: Link2,
+      color: "#22d3ee",
+      title: "追溯因果链",
+      description: "当前区域已有可追溯事件作用域，可进入因果网络核对上下游。",
+      primaryHref: region.causalScope.causalWebUrl,
+      primaryLabel: "打开关联因果网络",
+      primaryIcon: Link2,
+      secondaryHref: "/event-intelligence",
+      secondaryLabel: "打开事件智能",
+      secondaryIcon: ShieldCheck,
+    };
+  }
+
+  return {
+    icon: Compass,
+    color: "#a3a3a3",
+    title: "保持观察",
+    description: "当前缺少直接事件作用域，先保持同商品观察，等待新鲜证据进入。",
+    primaryHref: region.causalScope.causalWebUrl,
+    primaryLabel: "打开同商品因果网络",
+    primaryIcon: Link2,
+    secondaryHref: "/news",
+    secondaryLabel: "打开新闻事件",
+    secondaryIcon: DatabaseZap,
+  };
+}
+
 function ReadingMetric({
   icon: Icon,
   label,
@@ -2014,16 +2094,7 @@ function RegionInsightModal({ region, onClose }: { region: WorldMapRegion; onClo
             <RiskMomentumCard region={region} />
             <EvidenceHealthCard region={region} />
             <EventQualityCard region={region} />
-
-            <Link
-              href={region.causalScope.causalWebUrl}
-              className="flex h-10 items-center justify-center gap-2 rounded-sm border border-brand-cyan/35 bg-brand-cyan/10 text-sm font-semibold text-brand-cyan hover:bg-brand-cyan/15"
-            >
-              <Link2 className="h-4 w-4" />
-              {region.causalScope.hasDirectLinks
-                ? text("打开关联因果网络")
-                : text("打开同商品因果网络")}
-            </Link>
+            <RiskActionCard region={region} />
 
             <InsightSection icon={Route} title={text("商品传导链")}>
               <StoryChain steps={region.story.chain} />
@@ -2291,6 +2362,53 @@ function EventQualityCard({ region }: { region: WorldMapRegion }) {
         </div>
       )}
     </div>
+  );
+}
+
+function RiskActionCard({ region }: { region: WorldMapRegion }) {
+  const { text } = useI18n();
+  const action = regionRiskAction(region);
+  const Icon = action.icon;
+  const PrimaryIcon = action.primaryIcon;
+  const SecondaryIcon = action.secondaryIcon;
+
+  return (
+    <section
+      data-testid="world-map-risk-action"
+      className="rounded-sm border bg-white/[0.04] p-3 backdrop-blur-xl"
+      style={{ borderColor: `${action.color}55` }}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="inline-flex items-center gap-2 text-sm font-semibold" style={{ color: action.color }}>
+            <Icon className="h-4 w-4 shrink-0" />
+            <span>{text("推荐动作")}</span>
+          </div>
+          <div className="mt-1 text-sm font-semibold text-text-primary">{text(action.title)}</div>
+          <p className="mt-1 text-caption leading-4 text-text-secondary">{text(action.description)}</p>
+        </div>
+        <span className="rounded-xs border border-white/[0.12] bg-black/28 px-2 py-0.5 font-mono text-[10px] text-text-muted">
+          D.4
+        </span>
+      </div>
+      <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+        <Link
+          href={action.primaryHref}
+          className="inline-flex h-10 items-center justify-center gap-2 rounded-sm border text-sm font-semibold transition-colors"
+          style={{ borderColor: `${action.color}66`, background: `${action.color}18`, color: action.color }}
+        >
+          <PrimaryIcon className="h-4 w-4" />
+          {text(action.primaryLabel)}
+        </Link>
+        <Link
+          href={action.secondaryHref}
+          className="inline-flex h-10 items-center justify-center gap-2 rounded-sm border border-border-subtle bg-black/28 text-sm font-semibold text-text-secondary transition-colors hover:border-brand-cyan/35 hover:text-text-primary"
+        >
+          <SecondaryIcon className="h-4 w-4" />
+          {text(action.secondaryLabel)}
+        </Link>
+      </div>
+    </section>
   );
 }
 

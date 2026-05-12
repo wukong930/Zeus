@@ -512,6 +512,24 @@ const EN: Record<string, string> = {
   "最高风险区域": "Highest Risk Region",
   "可追溯": "Traceable",
   "事件作用域": "Event Scope",
+  "推荐动作": "Recommended Action",
+  "先复核质量门": "Review Quality Gate First",
+  "存在待复核或被阻断事件，先到事件智能确认质量，再追溯因果链。":
+    "Review pending or blocked events in Event Intelligence before tracing the causal chain.",
+  "先补证据": "Add Evidence First",
+  "当前证据覆盖偏薄，优先查看新闻、天气或信号来源，再进入链路追溯。":
+    "Evidence coverage is thin. Review news, weather, or signal sources before tracing the chain.",
+  "打开新闻事件": "Open News Events",
+  "打开因果网络": "Open Causal Web",
+  "追溯升温链": "Trace Rising Chain",
+  "风险正在升温且存在直接事件作用域，优先进入因果网络核对上下游传导。":
+    "Risk momentum is rising with a direct event scope. Trace upstream and downstream propagation in Causal Web first.",
+  "追溯因果链": "Trace Causal Chain",
+  "当前区域已有可追溯事件作用域，可进入因果网络核对上下游。":
+    "This region has a traceable event scope. Use Causal Web to verify upstream and downstream links.",
+  "保持观察": "Keep Watching",
+  "当前缺少直接事件作用域，先保持同商品观察，等待新鲜证据进入。":
+    "No direct event scope is available yet. Keep same-commodity monitoring until fresh evidence arrives.",
   "当前区域证据覆盖偏薄，建议先阅读证据与反证，再判断是否需要进入因果网络。":
     "Evidence coverage is thin for this region. Read supporting and counter evidence before entering Causal Web.",
   "暂无支持证据": "No supporting evidence",
