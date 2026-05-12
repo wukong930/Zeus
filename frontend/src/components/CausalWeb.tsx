@@ -254,6 +254,7 @@ function CausalWebCanvas({
   const [density, setDensity] = useState<Density>("curated");
   const [hoveredNode, setHoveredNode] = useState<string | null>(null);
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
+  const [pathFocusNode, setPathFocusNode] = useState<string | null>(null);
   const [selectedEventIds, setSelectedEventIds] = useState<Set<string>>(new Set());
   const isFull = variant === "full";
   const rawGraphNodes = runtimeNodes ?? [];
@@ -358,26 +359,52 @@ function CausalWebCanvas({
     return scopedViewIds;
   }, [baseViewNodeIds, eventNodes.length, isFull, selectedEventChainIds, selectedEventIds.size, strictViewNodeIds, view]);
 
-  const focusId = isFull ? selectedNode ?? hoveredNode : null;
-  const activeFocusId = focusId && scopedBaseNodeIds.has(focusId) ? focusId : null;
+  useEffect(() => {
+    if (pathFocusNode && !graphNodeById.has(pathFocusNode)) {
+      setPathFocusNode(null);
+    }
+  }, [graphNodeById, pathFocusNode]);
+
+  const pathFocusCandidate = pathFocusNode && graphNodeById.has(pathFocusNode) ? pathFocusNode : null;
+  const pathFocusNodeIds = useMemo(
+    () => eventIntelligencePathIds(pathFocusCandidate, graphEdges),
+    [graphEdges, pathFocusCandidate]
+  );
+  const pathFocusActive = isFull && pathFocusCandidate !== null && pathFocusNodeIds.size > 1;
+  const effectiveBaseNodeIds = useMemo(() => {
+    if (!pathFocusActive) return scopedBaseNodeIds;
+    const ids = new Set<string>();
+    for (const id of pathFocusNodeIds) {
+      if (graphNodeById.has(id)) ids.add(id);
+    }
+    return ids.size > 0 ? ids : scopedBaseNodeIds;
+  }, [graphNodeById, pathFocusActive, pathFocusNodeIds, scopedBaseNodeIds]);
+
+  const focusId = isFull ? (pathFocusActive ? pathFocusCandidate : selectedNode ?? hoveredNode) : null;
+  const activeFocusId = focusId && effectiveBaseNodeIds.has(focusId) ? focusId : null;
 
   const highlightedNodeIds = useMemo(
-    () => causalChainIds(activeFocusId, graphEdges, 2),
-    [activeFocusId, graphEdges]
+    () => {
+      if (pathFocusActive) {
+        return new Set([...pathFocusNodeIds].filter((id) => effectiveBaseNodeIds.has(id)));
+      }
+      return causalChainIds(activeFocusId, graphEdges, 2);
+    },
+    [activeFocusId, effectiveBaseNodeIds, graphEdges, pathFocusActive, pathFocusNodeIds]
   );
   const displayGraph = useMemo(
     () =>
       buildDisplayGraph({
         nodes: graphNodes,
         edges: graphEdges,
-        baseNodeIds: scopedBaseNodeIds,
+        baseNodeIds: effectiveBaseNodeIds,
         metaByNodeId,
         relationCounts,
         density: isFull ? density : "curated",
         variant,
         focusNodeIds: highlightedNodeIds,
       }),
-    [density, graphEdges, graphNodes, highlightedNodeIds, isFull, metaByNodeId, relationCounts, scopedBaseNodeIds, variant]
+    [density, effectiveBaseNodeIds, graphEdges, graphNodes, highlightedNodeIds, isFull, metaByNodeId, relationCounts, variant]
   );
   const eventScopeEmpty = eventScopeActive && displayGraph.visibleRealCount === 0;
   const displayNodeById = useMemo(
@@ -480,6 +507,7 @@ function CausalWebCanvas({
       ? graphNodeById.get(selectedNode)
       : null;
   const showEventPool = isFull && eventNodes.length > 0 && !selected;
+  const pathFocusDetails = pathFocusCandidate ? graphNodeById.get(pathFocusCandidate) ?? null : null;
 
   const fitCanvas = useCallback(() => {
     const fitOptions = isFull ? fitViewOptions : previewFitViewOptions;
@@ -496,6 +524,7 @@ function CausalWebCanvas({
       setView(nextView);
       setSelectedNode(null);
       setHoveredNode(null);
+      setPathFocusNode(null);
       window.setTimeout(() => {
         void flow.fitView(fitViewOptions);
       }, 0);
@@ -508,6 +537,7 @@ function CausalWebCanvas({
       setDensity(nextDensity);
       setSelectedNode(null);
       setHoveredNode(null);
+      setPathFocusNode(null);
       window.setTimeout(() => {
         void flow.fitView(fitViewOptions);
       }, 0);
@@ -516,6 +546,7 @@ function CausalWebCanvas({
   );
 
   const toggleEvent = useCallback((eventId: string) => {
+    setPathFocusNode(null);
     setSelectedEventIds((current) => {
       const next = new Set(current);
       if (next.has(eventId)) {
@@ -669,6 +700,14 @@ function CausalWebCanvas({
             )}
           </ReactFlow>
 
+          {isFull && pathFocusActive && pathFocusDetails && (
+            <PathFocusBanner
+              node={pathFocusDetails}
+              count={displayGraph.visibleRealCount}
+              onClear={() => setPathFocusNode(null)}
+            />
+          )}
+
           {isFull && viewNodeIds.size === 0 && (
             <EmptyGraphState
               view={view}
@@ -688,6 +727,10 @@ function CausalWebCanvas({
             edges={graphEdges}
             meta={metaByNodeId.get(selected.id) ?? semanticMetaForNode(selected)}
             onClose={() => setSelectedNode(null)}
+            pathFocused={pathFocusNode === selected.id && pathFocusActive}
+            onTogglePathFocus={() => {
+              setPathFocusNode((current) => (current === selected.id ? null : selected.id));
+            }}
           />
         )}
       </div>
@@ -708,6 +751,42 @@ function CausalWebCanvas({
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function PathFocusBanner({
+  node,
+  count,
+  onClear,
+}: {
+  node: CausalNode;
+  count: number;
+  onClear: () => void;
+}) {
+  const { lang, text } = useI18n();
+
+  return (
+    <div className="pointer-events-none absolute left-1/2 top-3 z-[920] w-[min(520px,calc(100%-32px))] -translate-x-1/2">
+      <div className="pointer-events-auto flex items-center justify-between gap-3 rounded-sm border border-brand-cyan/35 bg-bg-surface-overlay/90 px-3 py-2 shadow-data-panel backdrop-blur-md">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 text-caption font-semibold text-brand-cyan">
+            <Route className="h-3.5 w-3.5" />
+            {text("路径聚焦中")}
+            <span className="font-mono text-text-muted">{count}</span>
+          </div>
+          <div className="mt-0.5 truncate text-xs text-text-primary">{nodeLabel(node, lang, text)}</div>
+        </div>
+        <button
+          type="button"
+          title={text("显示完整因果网")}
+          aria-label={text("显示完整因果网")}
+          onClick={onClear}
+          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-xs border border-border-subtle bg-bg-base text-text-muted transition-colors hover:border-brand-cyan/50 hover:text-brand-cyan"
+        >
+          <X className="h-3.5 w-3.5" />
+        </button>
+      </div>
     </div>
   );
 }
@@ -1440,12 +1519,16 @@ function NodeDetails({
   edges,
   meta,
   onClose,
+  pathFocused,
+  onTogglePathFocus,
 }: {
   node: CausalNode;
   nodes: CausalNode[];
   edges: CausalEdge[];
   meta: NodeSemanticMeta;
   onClose: () => void;
+  pathFocused: boolean;
+  onTogglePathFocus: () => void;
 }) {
   const { lang, text } = useI18n();
   const { downstream, upstream } = useMemo(() => {
@@ -1515,9 +1598,24 @@ function NodeDetails({
                 <Route className="h-4 w-4 shrink-0 text-brand-cyan" />
                 <span className="truncate">{eventInsight.title}</span>
               </div>
-              <span className="shrink-0 font-mono text-caption text-text-muted">{eventInsight.countLabel}</span>
+              <div className="flex shrink-0 items-center gap-2">
+                <span className="font-mono text-caption text-text-muted">{eventInsight.countLabel}</span>
+                <button
+                  type="button"
+                  onClick={onTogglePathFocus}
+                  className={cn(
+                    "rounded-xs border px-2 py-1 text-caption font-medium transition-colors",
+                    pathFocused
+                      ? "border-brand-cyan/55 bg-brand-cyan/15 text-brand-cyan"
+                      : "border-border-subtle bg-bg-base text-text-secondary hover:border-brand-cyan/45 hover:text-brand-cyan"
+                  )}
+                >
+                  {pathFocused ? text("取消路径聚焦") : text("聚焦此路径")}
+                </button>
+              </div>
             </div>
             <p className="mt-2 text-caption leading-relaxed text-text-secondary">{eventInsight.description}</p>
+            <EventEvidencePanel node={node} />
             {eventInsight.peers.length > 0 ? (
               <div className="mt-3 space-y-1.5">
                 {eventInsight.peers.map((peer) => (
@@ -1606,6 +1704,96 @@ function DetailMetric({ label, value }: { label: string; value: string }) {
       <div className="mt-1 font-mono text-sm text-text-primary">{value}</div>
     </div>
   );
+}
+
+function EventEvidencePanel({ node }: { node: CausalNode }) {
+  const { lang, text } = useI18n();
+  const evidence = node.evidence ?? [];
+  const counterEvidence = node.counterEvidence ?? [];
+
+  if (evidence.length === 0 && counterEvidence.length === 0) {
+    return (
+      <div className="mt-3 rounded-xs border border-border-subtle bg-bg-base/80 px-2 py-1.5 text-caption text-text-muted">
+        {text("暂无结构化证据")}
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-3 grid gap-2">
+      <EvidenceGroup
+        title="支持证据"
+        icon={CheckCircle2}
+        color="#10B981"
+        items={evidence}
+        lang={lang}
+        text={text}
+      />
+      <EvidenceGroup
+        title="反证线索"
+        icon={ShieldX}
+        color="#EF4444"
+        items={counterEvidence}
+        lang={lang}
+        text={text}
+      />
+    </div>
+  );
+}
+
+function EvidenceGroup({
+  title,
+  icon: Icon,
+  color,
+  items,
+  lang,
+  text,
+}: {
+  title: string;
+  icon: IconComponent;
+  color: string;
+  items: NonNullable<CausalNode["evidence"]>;
+  lang: Language;
+  text: (source: string) => string;
+}) {
+  if (items.length === 0) return null;
+
+  return (
+    <details open className="rounded-xs border border-border-subtle bg-bg-base/70 p-2 shadow-inner-panel">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-caption font-semibold text-text-secondary">
+        <span className="inline-flex items-center gap-2">
+          <Icon className="h-3.5 w-3.5" style={{ color }} />
+          {text(title)}
+        </span>
+        <span className="font-mono text-text-muted">{items.length}</span>
+      </summary>
+      <div className="mt-2 space-y-1.5">
+        {items.slice(0, 4).map((item, index) => (
+          <div
+            key={`${title}-${item.text}-${index}`}
+            className="rounded-xs border border-border-subtle bg-black/25 px-2 py-1.5 text-caption leading-relaxed text-text-primary"
+          >
+            <span className="mr-2 font-mono" style={{ color }}>{index + 1}</span>
+            {evidenceText(item, lang, text)}
+            {item.source && (
+              <span className="ml-2 rounded-xs border border-border-subtle px-1 font-mono text-[10px] text-text-muted">
+                {text(item.source)}
+              </span>
+            )}
+          </div>
+        ))}
+      </div>
+    </details>
+  );
+}
+
+function evidenceText(
+  item: NonNullable<CausalNode["evidence"]>[number],
+  lang: Language,
+  text: (source: string) => string
+) {
+  if (lang === "zh") return text(item.textZh || item.text || "");
+  return text(item.textEn || item.text || "");
 }
 
 function eventIntelligenceInsight({
@@ -1844,6 +2032,8 @@ function mergeEventGroup(group: CausalNode[]): CausalNode {
   const tags = uniqueStrings(group.flatMap((node) => node.tags ?? [])).slice(0, 6);
   const tagsZh = uniqueStrings(group.flatMap((node) => node.tagsZh ?? [])).slice(0, 6);
   const tagsEn = uniqueStrings(group.flatMap((node) => node.tagsEn ?? [])).slice(0, 6);
+  const evidence = uniqueEvidenceItems(group.flatMap((node) => node.evidence ?? [])).slice(0, 8);
+  const counterEvidence = uniqueEvidenceItems(group.flatMap((node) => node.counterEvidence ?? [])).slice(0, 8);
   const narrativeZh = representative.narrativeZh ?? representative.narrative;
   const narrativeEn = representative.narrativeEn ?? representative.narrative;
 
@@ -1860,6 +2050,8 @@ function mergeEventGroup(group: CausalNode[]): CausalNode {
     portfolioLinked: group.some((node) => node.portfolioLinked),
     alertLinked: group.some((node) => node.alertLinked),
     aggregateCount: group.length,
+    evidence,
+    counterEvidence,
   };
 }
 
@@ -1873,6 +2065,18 @@ function uniqueStrings(items: string[]) {
     if (seen.has(key)) continue;
     seen.add(key);
     result.push(trimmed);
+  }
+  return result;
+}
+
+function uniqueEvidenceItems(items: NonNullable<CausalNode["evidence"]>) {
+  const seen = new Set<string>();
+  const result: NonNullable<CausalNode["evidence"]> = [];
+  for (const item of items) {
+    const key = `${item.kind}:${item.text.trim().toLowerCase()}`;
+    if (!item.text.trim() || seen.has(key)) continue;
+    seen.add(key);
+    result.push(item);
   }
   return result;
 }
@@ -2188,6 +2392,16 @@ function downstreamChainIds(focusId: string, edges: CausalEdge[], maxDepth = Num
   };
   visit(focusId, 0);
   return ids;
+}
+
+function eventIntelligencePathIds(focusId: string | null, edges: CausalEdge[]): Set<string> {
+  if (!focusId || !isEventIntelligenceNodeId(focusId)) return new Set<string>();
+  if (focusId.startsWith("ei-link-")) return causalChainIds(focusId, edges, 3);
+  return downstreamChainIds(focusId, edges, 4);
+}
+
+function isEventIntelligenceNodeId(id: string) {
+  return id.startsWith("ei-link-") || id.startsWith("ei-");
 }
 
 function semanticMetaForNode(node: CausalNode): NodeSemanticMeta {

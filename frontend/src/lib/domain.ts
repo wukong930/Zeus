@@ -102,6 +102,16 @@ export interface CausalNode {
   portfolioLinked?: boolean;
   alertLinked?: boolean;
   aggregateCount?: number;
+  evidence?: CausalEvidenceItem[];
+  counterEvidence?: CausalEvidenceItem[];
+}
+
+export interface CausalEvidenceItem {
+  kind: "evidence" | "counterevidence";
+  text: string;
+  textZh?: string | null;
+  textEn?: string | null;
+  source?: string | null;
 }
 
 export interface CausalEdge {

@@ -360,3 +360,9 @@ threshold_modifier、propagation_activator、risk_recalc、数据腐烂防护
 - World Risk Map API 新增 `symbol`、`mechanism`、`source` 筛选作用域，快照与瓦片接口使用同一过滤逻辑。
 - 区域返回新增 `mechanisms` 与 `sourceKinds`，前端可以明确展示当前区域由哪些机制和事件源驱动。
 - `/world-map` 顶部筛选从单一品类按钮升级为事件源 / 品种 / 机制三行紧凑控件，筛选后地图、热力瓦片、高风险索引和区域详情同步更新。
+
+# 2026-05-12 — Event Intelligence Engine Phase 10.8
+
+- `/api/causal-web` 事件智能节点新增结构化支持证据与反证线索，前端可直接展开阅读，不再依赖叙事文本中的拼接片段。
+- Causal Web 详情面板新增“聚焦此路径”，点击事件智能源事件或影响假设后，画布会收束到相关影响链并显示路径聚焦状态。
+- 事件源聚合保留合并后的证据去重，避免同源转载折叠后丢失可审计证据。

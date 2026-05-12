@@ -64,6 +64,14 @@ TYPE_STAGE: dict[NodeType, Stage] = {
 }
 
 
+class CausalWebEvidenceItem(BaseModel):
+    kind: Literal["evidence", "counterevidence"]
+    text: str
+    textZh: str | None = None
+    textEn: str | None = None
+    source: str | None = None
+
+
 class CausalWebNode(BaseModel):
     id: str
     type: NodeType
@@ -85,6 +93,8 @@ class CausalWebNode(BaseModel):
     tagsEn: list[str] = Field(default_factory=list)
     portfolioLinked: bool = False
     alertLinked: bool = False
+    evidence: list[CausalWebEvidenceItem] = Field(default_factory=list)
+    counterEvidence: list[CausalWebEvidenceItem] = Field(default_factory=list)
 
 
 class CausalWebEdge(BaseModel):
@@ -125,6 +135,8 @@ class GraphNodeSeed:
     narrative_en: str | None = None
     tags_zh: tuple[str, ...] = ()
     tags_en: tuple[str, ...] = ()
+    evidence: tuple[CausalWebEvidenceItem, ...] = ()
+    counter_evidence: tuple[CausalWebEvidenceItem, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -297,6 +309,8 @@ def _seed_from_event_intelligence_item(row: EventIntelligenceItem) -> GraphNodeS
     summary = _event_summary_text(row.summary or row.title)
     evidence = _compact_event_values(row.evidence)
     counterevidence = _compact_event_values(row.counterevidence)
+    evidence_items = _evidence_items(row.evidence, kind="evidence", source=row.source_type)
+    counter_evidence_items = _evidence_items(row.counterevidence, kind="counterevidence", source=row.source_type)
     symbol_zh = _join_or(symbols, "未标明", transform=_zh_text)
     symbol_en = _join_or(symbols, "unspecified")
     mechanism_zh = _join_or(mechanisms, "待识别", transform=_zh_text)
@@ -327,6 +341,8 @@ def _seed_from_event_intelligence_item(row: EventIntelligenceItem) -> GraphNodeS
         ),
         tags_zh=tuple(filter(None, ("事件智能", _zh_text(row.status), mechanism_zh, f"证据 {len(row.evidence or [])}"))),
         tags_en=tuple(filter(None, ("Event Intelligence", _humanize_token(row.status), mechanism_en, f"evidence {len(row.evidence or [])}"))),
+        evidence=evidence_items,
+        counter_evidence=counter_evidence_items,
     )
 
 
@@ -343,6 +359,16 @@ def _seed_from_event_intelligence_link(
     evidence = _compact_event_values(row.evidence or (event_item.evidence if event_item is not None else []))
     counterevidence = _compact_event_values(
         row.counterevidence or (event_item.counterevidence if event_item is not None else [])
+    )
+    evidence_items = _evidence_items(
+        row.evidence or (event_item.evidence if event_item is not None else []),
+        kind="evidence",
+        source="impact_link",
+    )
+    counter_evidence_items = _evidence_items(
+        row.counterevidence or (event_item.counterevidence if event_item is not None else []),
+        kind="counterevidence",
+        source="impact_link",
     )
     mechanism_zh = _zh_text(row.mechanism)
     mechanism_en = _humanize_token(row.mechanism)
@@ -380,6 +406,8 @@ def _seed_from_event_intelligence_link(
         ),
         tags_zh=tuple(filter(None, ("事件智能", direction_zh, mechanism_zh, _zh_text(row.status)))),
         tags_en=tuple(filter(None, ("Event Intelligence", direction_en, mechanism_en, _humanize_token(row.status)))),
+        evidence=evidence_items,
+        counter_evidence=counter_evidence_items,
     )
 
 
@@ -401,6 +429,25 @@ def _compact_event_values(values: list[str] | None, *, limit: int = 2) -> list[s
         if len(compacted) >= limit:
             break
     return compacted
+
+
+def _evidence_items(
+    values: list[str] | None,
+    *,
+    kind: Literal["evidence", "counterevidence"],
+    source: str | None,
+    limit: int = 4,
+) -> tuple[CausalWebEvidenceItem, ...]:
+    return tuple(
+        CausalWebEvidenceItem(
+            kind=kind,
+            text=text,
+            textZh=_zh_text(text),
+            textEn=text,
+            source=source,
+        )
+        for text in _compact_event_values(values, limit=limit)
+    )
 
 
 def _join_or(values: list[str], fallback: str, *, transform=None) -> str:
@@ -568,6 +615,8 @@ def _layout_nodes(seeds: list[GraphNodeSeed]) -> list[CausalWebNode]:
                 tagsEn=list(seed.tags_en[:4]) if seed.tags_en else list(seed.tags[:4]),
                 portfolioLinked=seed.portfolio_linked,
                 alertLinked=seed.alert_linked,
+                evidence=list(seed.evidence),
+                counterEvidence=list(seed.counter_evidence),
             )
         )
     return nodes
