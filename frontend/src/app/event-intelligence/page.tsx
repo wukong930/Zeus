@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import {
   AlertTriangle,
@@ -10,6 +11,7 @@ import {
   DatabaseZap,
   Gauge,
   GitBranch,
+  Globe2,
   Layers3,
   Pencil,
   Save,
@@ -43,6 +45,7 @@ import {
 } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 import {
+  buildWorldMapHref,
   readWorldMapNavigationScope,
   type WorldMapNavigationScope,
 } from "@/lib/navigation-scope";
@@ -612,6 +615,13 @@ function EventDetail({
                 <span>{text("区域")}：{link.regionId ?? "global"}</span>
                 <span>{text("周期")}：{text(link.horizon)}</span>
                 <span>{text("置信度")}：{formatPercent(link.confidence * 100, 0, false)}</span>
+                <Link
+                  href={eventImpactWorldMapHref(item, link)}
+                  className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-brand-emerald/30 bg-brand-emerald/10 px-2 text-caption text-brand-emerald-bright transition-colors hover:bg-brand-emerald/16"
+                >
+                  <Globe2 className="h-3.5 w-3.5" />
+                  {text("打开世界风险地图")}
+                </Link>
                 <button
                   type="button"
                   disabled={linkEditPendingId !== null}
@@ -654,6 +664,16 @@ function EventDetail({
       <AuditTimeline logs={auditLogs} source={auditSource} />
     </div>
   );
+}
+
+function eventImpactWorldMapHref(item: EventIntelligenceItem, link: EventImpactLink) {
+  return buildWorldMapHref({
+    symbol: link.symbol,
+    region: link.regionId ?? item.regions[0],
+    mechanism: link.mechanism,
+    source: "event_intelligence",
+    event: item.id,
+  });
 }
 
 function AuditTimeline({

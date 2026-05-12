@@ -435,3 +435,9 @@ threshold_modifier、propagation_activator、risk_recalc、数据腐烂防护
 - 世界风险地图推荐动作链接统一携带 `source=world-map`、`symbol`、`region`，可定位事件智能对象时额外携带 `event`。
 - `/event-intelligence` 支持从地图上下文打开后自动选中事件或按品种筛选，并显示“来自世界风险地图”的作用域提示。
 - `/news` 支持同一上下文打开后按品种筛选新闻事件，保留区域提示，减少跨页面后的重复过滤。
+
+# 2026-05-13 — Event Intelligence Phase 10.16 反向地图联动
+
+- `/event-intelligence` 影响链新增“打开世界风险地图”入口，按单条影响链的品种、区域、机制、来源和事件作用域打开地图。
+- `/news` 的事件智能链摘要新增地图小入口，支持从新闻证据直接回到对应区域风险视图。
+- `/world-map` 支持 URL 初始筛选与区域聚焦，进入页面后会按 `symbol/source/mechanism/region` 自动请求作用域数据并打开区域档案。

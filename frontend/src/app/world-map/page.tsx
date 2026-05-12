@@ -62,7 +62,12 @@ import {
   type WorldRiskLevel,
 } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
-import { appendWorldMapNavigationScope } from "@/lib/navigation-scope";
+import {
+  appendWorldMapNavigationScope,
+  normalizeNavigationSymbol,
+  normalizeWorldMapMechanismFilter,
+  normalizeWorldMapSourceFilter,
+} from "@/lib/navigation-scope";
 import { cn } from "@/lib/utils";
 
 type ScopeFilterValue = "all" | string;
@@ -191,6 +196,28 @@ const MAP_VISUAL_LAYER_OPTIONS: Array<{
   { id: "labels", label: "地图标签", icon: ListChecks },
 ];
 
+function initialWorldMapSearchParams() {
+  if (typeof window === "undefined") return new URLSearchParams();
+  return new URLSearchParams(window.location.search);
+}
+
+function initialWorldMapScopeFilters(): WorldMapScopeFilters {
+  const params = initialWorldMapSearchParams();
+  const symbol = normalizeNavigationSymbol(params.get("symbol"));
+  const mechanism = normalizeWorldMapMechanismFilter(params.get("mechanism"));
+  const source = normalizeWorldMapSourceFilter(params.get("source"));
+
+  return {
+    symbol: symbol || "all",
+    mechanism: mechanism || "all",
+    source: source || "all",
+  };
+}
+
+function initialWorldMapRegionParam() {
+  return initialWorldMapSearchParams().get("region")?.trim() || null;
+}
+
 export default function WorldMapPage() {
   const { text } = useI18n();
   const [snapshot, setSnapshot] = useState<WorldMapSnapshot | null>(null);
@@ -210,6 +237,7 @@ export default function WorldMapPage() {
   const [visibleLayers, setVisibleLayers] = useState<VisibleMapLayers>(DEFAULT_MAP_LAYERS);
   const [rendererMode, setRendererMode] = useState<WorldMapRendererMode>("svg");
   const [focusRequest, setFocusRequest] = useState<MapFocusRequest | null>(null);
+  const [initialScopeReady, setInitialScopeReady] = useState(false);
   const snapshotRef = useRef<WorldMapSnapshot | null>(null);
   const tileSnapshotRef = useRef<WorldMapTileSnapshot | null>(null);
   const tileViewportRef = useRef<WorldMapViewport | null>(null);
@@ -218,6 +246,7 @@ export default function WorldMapPage() {
   const refreshInFlightRef = useRef(false);
   const tileRefreshInFlightRef = useRef(false);
   const tileRefreshTimerRef = useRef<number | null>(null);
+  const initialScopeAppliedRef = useRef(false);
 
   const loadSnapshot = useCallback(async () => {
     if (refreshInFlightRef.current) return;
@@ -289,6 +318,26 @@ export default function WorldMapPage() {
   );
 
   useEffect(() => {
+    if (initialScopeAppliedRef.current) return;
+    initialScopeAppliedRef.current = true;
+
+    const nextFilters = initialWorldMapScopeFilters();
+    const regionId = initialWorldMapRegionParam();
+    const hasScopedFilter = Object.values(nextFilters).some((value) => value !== "all");
+
+    if (hasScopedFilter) {
+      setScopeFilters(nextFilters);
+    }
+    if (regionId) {
+      setSelectedId(regionId);
+      setDetailOpen(true);
+      setFocusRequest({ regionId, nonce: 0 });
+    }
+    setInitialScopeReady(true);
+  }, []);
+
+  useEffect(() => {
+    if (!initialScopeReady) return undefined;
     mountedRef.current = true;
     void loadSnapshot();
     return () => {
@@ -298,15 +347,15 @@ export default function WorldMapPage() {
         tileRefreshTimerRef.current = null;
       }
     };
-  }, [loadSnapshot]);
+  }, [initialScopeReady, loadSnapshot]);
 
   useEffect(() => {
-    if (!autoRefresh) return undefined;
+    if (!initialScopeReady || !autoRefresh) return undefined;
     const timer = window.setInterval(() => {
       void loadSnapshot();
     }, WORLD_MAP_REFRESH_INTERVAL_MS);
     return () => window.clearInterval(timer);
-  }, [autoRefresh, loadSnapshot]);
+  }, [autoRefresh, initialScopeReady, loadSnapshot]);
 
   const regions = snapshot?.regions ?? [];
   const filteredRegions = regions;

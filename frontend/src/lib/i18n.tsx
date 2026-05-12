@@ -295,6 +295,8 @@ const EN: Record<string, string> = {
   "后端接口暂不可用，当前视图显示空态或不可用状态":
     "Backend APIs are unavailable; this view is showing an empty or unavailable state.",
   "世界风险地图": "World Risk Map",
+  "打开世界风险地图": "Open World Risk Map",
+  "地图": "Map",
   "将新闻、天气、市场和人工事件组织成商品影响链。":
     "Organize news, weather, market, and manual events into commodity impact chains.",
   "搜索事件 / 品种 / 机制": "Search event / symbol / mechanism",

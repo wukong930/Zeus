@@ -9,8 +9,53 @@ export interface WorldMapNavigationScope {
   event?: string;
 }
 
+export interface WorldMapHrefScope {
+  symbol?: string | null;
+  region?: string | null;
+  mechanism?: string | null;
+  source?: string | null;
+  event?: string | null;
+}
+
+const WORLD_MAP_SOURCE_FILTERS = new Set([
+  "weather",
+  "alert",
+  "news",
+  "signal",
+  "position",
+  "event_intelligence",
+]);
+
+const WORLD_MAP_MECHANISM_ALIASES: Record<string, string> = {
+  weather: "rainfall_surplus",
+  climate: "rainfall_surplus",
+  weather_regime: "el_nino",
+  el_nino: "el_nino",
+  supply: "supply_disruption",
+  production: "supply_disruption",
+  logistics: "logistics_disruption",
+  geopolitical: "logistics_disruption",
+  inventory: "inventory_pressure",
+  policy: "policy_shift",
+  demand: "demand_shift",
+  cost: "energy_cost",
+  macro: "demand_shift",
+  risk_sentiment: "demand_shift",
+};
+
 export function normalizeNavigationSymbol(value: string | null | undefined) {
   return (value ?? "").replace(/\d+/g, "").trim().toUpperCase();
+}
+
+export function normalizeWorldMapSourceFilter(value: string | null | undefined) {
+  const normalized = (value ?? "").trim().toLowerCase();
+  return WORLD_MAP_SOURCE_FILTERS.has(normalized) ? normalized : "";
+}
+
+export function normalizeWorldMapMechanismFilter(value: string | null | undefined) {
+  const normalized = (value ?? "").trim().toLowerCase();
+  if (!normalized) return "";
+  return WORLD_MAP_MECHANISM_ALIASES[normalized] ?? normalized;
 }
 
 export function readWorldMapNavigationScope(
@@ -47,4 +92,22 @@ export function appendWorldMapNavigationScope(
 
   const nextQuery = params.toString();
   return nextQuery ? `${path}?${nextQuery}` : path;
+}
+
+export function buildWorldMapHref(scope: WorldMapHrefScope) {
+  const params = new URLSearchParams();
+  const symbol = normalizeNavigationSymbol(scope.symbol);
+  const source = normalizeWorldMapSourceFilter(scope.source);
+  const mechanism = normalizeWorldMapMechanismFilter(scope.mechanism);
+  const region = scope.region?.trim();
+  const event = scope.event?.trim();
+
+  if (symbol) params.set("symbol", symbol);
+  if (source) params.set("source", source);
+  if (mechanism) params.set("mechanism", mechanism);
+  if (region) params.set("region", region);
+  if (event) params.set("event", event);
+
+  const query = params.toString();
+  return query ? `/world-map?${query}` : "/world-map";
 }

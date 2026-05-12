@@ -8,6 +8,7 @@ import {
   CheckCircle2,
   ExternalLink,
   GitBranch,
+  Globe2,
   Loader2,
   Newspaper,
   Radio,
@@ -29,6 +30,7 @@ import {
   type NewsEvent,
 } from "@/lib/api";
 import {
+  buildWorldMapHref,
   normalizeNavigationSymbol,
   readWorldMapNavigationScope,
   type WorldMapNavigationScope,
@@ -584,6 +586,13 @@ function EventIntelligencePanel({
                 <span className="font-mono text-text-muted">
                   {Math.round(link.impactScore)}
                 </span>
+                <Link
+                  href={newsImpactWorldMapHref(intelligence, link)}
+                  className="inline-flex h-7 items-center gap-1.5 rounded-xs border border-brand-emerald/30 bg-brand-emerald/10 px-2 text-caption text-brand-emerald-bright transition-colors hover:bg-brand-emerald/16"
+                >
+                  <Globe2 className="h-3.5 w-3.5" />
+                  {text("地图")}
+                </Link>
               </div>
             ))}
             {impactLinks.length === 0 && (
@@ -628,6 +637,16 @@ function EventIntelligencePanel({
       )}
     </Card>
   );
+}
+
+function newsImpactWorldMapHref(intelligence: EventIntelligenceItem, link: EventImpactLink) {
+  return buildWorldMapHref({
+    symbol: link.symbol,
+    region: link.regionId ?? intelligence.regions[0],
+    mechanism: link.mechanism,
+    source: "event_intelligence",
+    event: intelligence.id,
+  });
 }
 
 function Segmented({
