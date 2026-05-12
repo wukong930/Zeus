@@ -307,6 +307,11 @@ const EN: Record<string, string> = {
   "质量复核": "Quality Review",
   "影子可用": "Shadow Ready",
   "决策级": "Decision Grade",
+  "质量门": "Quality Gate",
+  "事件质量门": "Event Quality Gate",
+  "未评估": "Not Evaluated",
+  "当前区域事件智能尚未通过质量门，地图只用于阅读复核，不放大自动风险。":
+    "Event intelligence in this region has not passed the quality gate; the map keeps it for review without amplifying automated risk.",
   "阻断": "Blocked",
   "复核": "Review",
   "已通过": "Passed",

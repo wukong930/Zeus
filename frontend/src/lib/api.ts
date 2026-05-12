@@ -261,6 +261,17 @@ export interface WorldMapRuntime {
   latestEventAt: string | null;
 }
 
+export interface WorldMapEventQuality {
+  status: EventIntelligenceQualityStatus | null;
+  score: number;
+  total: number;
+  blocked: number;
+  review: number;
+  shadowReady: number;
+  decisionGrade: number;
+  passed: number;
+}
+
 export interface WorldMapDriver {
   labelZh: string;
   labelEn: string;
@@ -345,6 +356,7 @@ export interface WorldMapRegion {
   causalScope: WorldMapCausalScope;
   mechanisms: WorldMapRiskFactor[];
   sourceKinds: WorldMapEvidenceKind[];
+  eventQuality: WorldMapEventQuality;
   narrativeZh: string;
   narrativeEn: string;
   dataQuality: WorldMapDataQuality;

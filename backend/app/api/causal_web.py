@@ -18,8 +18,10 @@ from app.models.industry_data import IndustryData
 from app.models.market_data import MarketData
 from app.models.news_events import NewsEvent
 from app.models.signal import SignalTrack
+from app.schemas.event_intelligence import EventImpactLinkQualityRead, EventIntelligenceQualityRead
 from app.services.data_sources.akshare_futures import COMMODITY_NAMES
 from app.services.data_sources.free_ingest import CATEGORY_BY_SYMBOL
+from app.services.event_intelligence import evaluate_event_intelligence_quality
 
 router = APIRouter(prefix="/api/causal-web", tags=["causal-web"])
 
@@ -36,6 +38,7 @@ Sector = Literal[
     "precious",
     "positioning",
 ]
+EventQualityStatus = Literal["blocked", "review", "shadow_ready", "decision_grade"]
 
 SECTOR_BY_CATEGORY = {
     "energy": "energy",
@@ -95,6 +98,9 @@ class CausalWebNode(BaseModel):
     alertLinked: bool = False
     evidence: list[CausalWebEvidenceItem] = Field(default_factory=list)
     counterEvidence: list[CausalWebEvidenceItem] = Field(default_factory=list)
+    qualityStatus: EventQualityStatus | None = None
+    qualityScore: int | None = Field(default=None, ge=0, le=100)
+    qualityIssues: list[str] = Field(default_factory=list)
 
 
 class CausalWebEdge(BaseModel):
@@ -137,6 +143,9 @@ class GraphNodeSeed:
     tags_en: tuple[str, ...] = ()
     evidence: tuple[CausalWebEvidenceItem, ...] = ()
     counter_evidence: tuple[CausalWebEvidenceItem, ...] = ()
+    quality_status: EventQualityStatus | None = None
+    quality_score: int | None = None
+    quality_issues: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -162,6 +171,8 @@ class EventIntelligenceLinkContext:
     impact_score: float
     horizon: str
     verified: bool
+    quality_status: EventQualityStatus | None = None
+    quality_score: int | None = None
 
 
 @router.get("", response_model=CausalWebGraph)
@@ -262,12 +273,32 @@ async def get_causal_web(
         if seed.ref_id is not None
     ]
     event_intelligence_by_id = {row.id: row for row in event_intelligence_items}
-    event_intelligence_link_contexts = _event_intelligence_link_contexts(event_intelligence_links)
+    event_intelligence_quality_by_id = _event_intelligence_quality_map(
+        event_intelligence_items,
+        event_intelligence_links,
+    )
+    event_intelligence_link_quality_by_id = {
+        link_report.id: link_report
+        for report in event_intelligence_quality_by_id.values()
+        for link_report in report.link_reports
+    }
+    event_intelligence_link_contexts = _event_intelligence_link_contexts(
+        event_intelligence_links,
+        event_quality_by_id=event_intelligence_quality_by_id,
+        link_quality_by_id=event_intelligence_link_quality_by_id,
+    )
 
     seeds = [
-        *[_seed_from_event_intelligence_item(row) for row in event_intelligence_items],
         *[
-            _seed_from_event_intelligence_link(row, event_intelligence_by_id.get(row.event_item_id))
+            _seed_from_event_intelligence_item(row, event_intelligence_quality_by_id.get(row.id))
+            for row in event_intelligence_items
+        ],
+        *[
+            _seed_from_event_intelligence_link(
+                row,
+                event_intelligence_by_id.get(row.event_item_id),
+                event_intelligence_link_quality_by_id.get(row.id),
+            )
             for row in event_intelligence_links
         ],
         *[_seed_from_news(row) for row in news],
@@ -302,7 +333,10 @@ async def get_causal_web(
     )
 
 
-def _seed_from_event_intelligence_item(row: EventIntelligenceItem) -> GraphNodeSeed:
+def _seed_from_event_intelligence_item(
+    row: EventIntelligenceItem,
+    quality: EventIntelligenceQualityRead | None = None,
+) -> GraphNodeSeed:
     symbols = [_normalize_symbol(symbol) for symbol in (row.symbols or [])[:3]]
     mechanisms = [str(value) for value in (row.mechanisms or [])[:2]]
     title = _short(row.title, 96)
@@ -311,6 +345,11 @@ def _seed_from_event_intelligence_item(row: EventIntelligenceItem) -> GraphNodeS
     counterevidence = _compact_event_values(row.counterevidence)
     evidence_items = _evidence_items(row.evidence, kind="evidence", source=row.source_type)
     counter_evidence_items = _evidence_items(row.counterevidence, kind="counterevidence", source=row.source_type)
+    quality_status = quality.status if quality is not None else None
+    quality_zh = _event_quality_label_zh(quality_status)
+    quality_en = _event_quality_label_en(quality_status)
+    quality_score = quality.score if quality is not None else None
+    quality_issues = tuple(issue.message for issue in (quality.issues if quality is not None else [])[:3])
     symbol_zh = _join_or(symbols, "未标明", transform=_zh_text)
     symbol_en = _join_or(symbols, "unspecified")
     mechanism_zh = _join_or(mechanisms, "待识别", transform=_zh_text)
@@ -325,30 +364,53 @@ def _seed_from_event_intelligence_item(row: EventIntelligenceItem) -> GraphNodeS
         direction="neutral",
         tags=tuple(filter(None, (row.event_type, row.status, *symbols[:2], *mechanisms[:1]))),
         narrative=row.summary or row.title,
-        alert_linked=_event_intelligence_verified(row.status),
+        alert_linked=quality_status == "decision_grade",
         ref_id=row.id,
         label_zh=f"{_zh_text(row.event_type)}事件：{symbol_zh}",
         label_en=title,
         narrative_zh=(
             f"事件智能源：{_zh_text(summary)}。影响品种：{symbol_zh}；"
             f"作用机制：{mechanism_zh}；证据：{_join_or(evidence, '暂无', transform=_zh_text)}；"
-            f"反证：{_join_or(counterevidence, '暂无', transform=_zh_text)}。"
+            f"反证：{_join_or(counterevidence, '暂无', transform=_zh_text)}；质量门：{quality_zh}"
+            f"{f' {quality_score}/100' if quality_score is not None else ''}。"
         ),
         narrative_en=(
             f"Event intelligence source: {summary}. Impact symbols: {symbol_en}; "
             f"mechanisms: {mechanism_en}; evidence: {_join_or(evidence, 'none')}; "
-            f"counter-evidence: {_join_or(counterevidence, 'none')}."
+            f"counter-evidence: {_join_or(counterevidence, 'none')}; quality gate: {quality_en}"
+            f"{f' {quality_score}/100' if quality_score is not None else ''}."
         ),
-        tags_zh=tuple(filter(None, ("事件智能", _zh_text(row.status), mechanism_zh, f"证据 {len(row.evidence or [])}"))),
-        tags_en=tuple(filter(None, ("Event Intelligence", _humanize_token(row.status), mechanism_en, f"evidence {len(row.evidence or [])}"))),
+        tags_zh=tuple(
+            filter(None, ("事件智能", _zh_text(row.status), quality_zh, mechanism_zh, f"证据 {len(row.evidence or [])}"))
+        ),
+        tags_en=tuple(
+            filter(None, ("Event Intelligence", _humanize_token(row.status), quality_en, mechanism_en, f"evidence {len(row.evidence or [])}"))
+        ),
         evidence=evidence_items,
         counter_evidence=counter_evidence_items,
+        quality_status=quality_status,
+        quality_score=quality_score,
+        quality_issues=quality_issues,
     )
+
+
+def _event_intelligence_quality_map(
+    items: list[EventIntelligenceItem],
+    links: list[EventImpactLink],
+) -> dict[UUID, EventIntelligenceQualityRead]:
+    links_by_event_id: dict[UUID, list[EventImpactLink]] = {item.id: [] for item in items}
+    for link in links:
+        links_by_event_id.setdefault(link.event_item_id, []).append(link)
+    return {
+        item.id: evaluate_event_intelligence_quality(item, links_by_event_id.get(item.id, []))
+        for item in items
+    }
 
 
 def _seed_from_event_intelligence_link(
     row: EventImpactLink,
     event_item: EventIntelligenceItem | None,
+    quality: EventImpactLinkQualityRead | None = None,
 ) -> GraphNodeSeed:
     symbol = _normalize_symbol(row.symbol)
     category = CATEGORY_BY_SYMBOL.get(symbol) or (
@@ -377,6 +439,13 @@ def _seed_from_event_intelligence_link(
     horizon_zh = _zh_text(row.horizon)
     horizon_en = _humanize_token(row.horizon)
     rationale = _event_summary_text(row.rationale or (event_item.summary if event_item is not None else row.mechanism))
+    quality_status: EventQualityStatus | None = (
+        _link_quality_to_event_status(quality.status, row.status) if quality else None
+    )
+    quality_zh = _event_quality_label_zh(quality_status)
+    quality_en = _event_quality_label_en(quality_status)
+    quality_score = quality.score if quality is not None else None
+    quality_issues = tuple(issue.message for issue in (quality.issues if quality is not None else [])[:3])
     return GraphNodeSeed(
         id=f"ei-link-{row.id}",
         type="signal",
@@ -388,7 +457,7 @@ def _seed_from_event_intelligence_link(
         tags=tuple(filter(None, (symbol, row.mechanism, row.status, row.region_id, row.horizon))),
         narrative=row.rationale or (event_item.summary if event_item is not None else row.mechanism),
         portfolio_linked=bool(symbol),
-        alert_linked=_event_intelligence_verified(row.status),
+        alert_linked=row.status == "confirmed" and quality is not None and quality.passed_gate,
         ref_id=row.id,
         label_zh=f"{symbol} {mechanism_zh}影响假设",
         label_en=f"{symbol} {mechanism_en} impact hypothesis",
@@ -396,18 +465,23 @@ def _seed_from_event_intelligence_link(
             f"影响假设：{_zh_text(rationale)}。方向：{direction_zh}；"
             f"置信度：{round(row.confidence * 100)}%；影响分：{round(row.impact_score)}；"
             f"周期：{horizon_zh}；证据：{_join_or(evidence, '暂无', transform=_zh_text)}；"
-            f"反证：{_join_or(counterevidence, '暂无', transform=_zh_text)}。"
+            f"反证：{_join_or(counterevidence, '暂无', transform=_zh_text)}；质量门：{quality_zh}"
+            f"{f' {quality_score}/100' if quality_score is not None else ''}。"
         ),
         narrative_en=(
             f"Impact hypothesis: {rationale}. Direction: {direction_en}; "
             f"confidence: {round(row.confidence * 100)}%; impact score: {round(row.impact_score)}; "
             f"horizon: {horizon_en}; evidence: {_join_or(evidence, 'none')}; "
-            f"counter-evidence: {_join_or(counterevidence, 'none')}."
+            f"counter-evidence: {_join_or(counterevidence, 'none')}; quality gate: {quality_en}"
+            f"{f' {quality_score}/100' if quality_score is not None else ''}."
         ),
-        tags_zh=tuple(filter(None, ("事件智能", direction_zh, mechanism_zh, _zh_text(row.status)))),
-        tags_en=tuple(filter(None, ("Event Intelligence", direction_en, mechanism_en, _humanize_token(row.status)))),
+        tags_zh=tuple(filter(None, ("事件智能", direction_zh, quality_zh, mechanism_zh, _zh_text(row.status)))),
+        tags_en=tuple(filter(None, ("Event Intelligence", direction_en, quality_en, mechanism_en, _humanize_token(row.status)))),
         evidence=evidence_items,
         counter_evidence=counter_evidence_items,
+        quality_status=quality_status,
+        quality_score=quality_score,
+        quality_issues=quality_issues,
     )
 
 
@@ -617,6 +691,9 @@ def _layout_nodes(seeds: list[GraphNodeSeed]) -> list[CausalWebNode]:
                 alertLinked=seed.alert_linked,
                 evidence=list(seed.evidence),
                 counterEvidence=list(seed.counter_evidence),
+                qualityStatus=seed.quality_status,
+                qualityScore=seed.quality_score,
+                qualityIssues=list(seed.quality_issues),
             )
         )
     return nodes
@@ -984,19 +1061,39 @@ def _metric_context_from_market(row: MarketData) -> MetricContext:
 
 def _event_intelligence_link_contexts(
     rows: list[EventImpactLink],
+    *,
+    event_quality_by_id: dict[UUID, EventIntelligenceQualityRead] | None = None,
+    link_quality_by_id: dict[UUID, EventImpactLinkQualityRead] | None = None,
 ) -> list[EventIntelligenceLinkContext]:
-    return [
-        EventIntelligenceLinkContext(
-            source_node_id=f"ei-{row.event_item_id}",
-            target_node_id=f"ei-link-{row.id}",
-            direction=_direction(row.direction),
-            confidence=row.confidence,
-            impact_score=row.impact_score,
-            horizon=row.horizon or "short",
-            verified=_event_intelligence_verified(row.status),
+    contexts: list[EventIntelligenceLinkContext] = []
+    for row in rows:
+        event_quality = (event_quality_by_id or {}).get(row.event_item_id)
+        link_quality = (link_quality_by_id or {}).get(row.id)
+        verified = (
+            _event_intelligence_verified(row.status)
+            and event_quality is not None
+            and event_quality.decision_grade
+            and link_quality is not None
+            and link_quality.passed_gate
         )
-        for row in rows
-    ]
+        contexts.append(
+            EventIntelligenceLinkContext(
+                source_node_id=f"ei-{row.event_item_id}",
+                target_node_id=f"ei-link-{row.id}",
+                direction=_direction(row.direction),
+                confidence=row.confidence,
+                impact_score=row.impact_score,
+                horizon=row.horizon or "short",
+                verified=verified,
+            quality_status=(
+                _link_quality_to_event_status(link_quality.status, row.status)
+                if link_quality is not None
+                else None
+            ),
+                quality_score=link_quality.score if link_quality is not None else None,
+            )
+        )
+    return contexts
 
 
 def _unique_counter_items(items: list[object]) -> list[str]:
@@ -1086,6 +1183,41 @@ def _direction(value: str | None) -> EdgeDirection:
 
 def _event_intelligence_verified(status: str | None) -> bool:
     return status in {"confirmed", "validated", "applied"}
+
+
+def _link_quality_to_event_status(
+    status: str | None,
+    governance_status: str | None = None,
+) -> EventQualityStatus | None:
+    if status == "passed":
+        if _event_intelligence_verified(governance_status):
+            return "decision_grade"
+        return "shadow_ready"
+    if status == "review":
+        return "review"
+    if status == "blocked":
+        return "blocked"
+    return None
+
+
+def _event_quality_label_zh(status: EventQualityStatus | None) -> str:
+    return {
+        "blocked": "质量阻断",
+        "review": "质量复核",
+        "shadow_ready": "影子可用",
+        "decision_grade": "决策级",
+        None: "未评估",
+    }[status]
+
+
+def _event_quality_label_en(status: EventQualityStatus | None) -> str:
+    return {
+        "blocked": "blocked",
+        "review": "quality review",
+        "shadow_ready": "shadow ready",
+        "decision_grade": "decision grade",
+        None: "not evaluated",
+    }[status]
 
 
 def _normalize_symbol(value: str) -> str:

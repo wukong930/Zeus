@@ -120,6 +120,13 @@ const NODE_LABELS: Record<CausalNode["type"], string> = {
   cluster: "聚合",
 };
 
+const QUALITY_META: Record<NonNullable<CausalNode["qualityStatus"]>, { label: string; color: string; icon: IconComponent }> = {
+  blocked: { label: "质量阻断", color: "#EF4444", icon: ShieldX },
+  review: { label: "质量复核", color: "#F97316", icon: ShieldCheck },
+  shadow_ready: { label: "影子可用", color: "#38BDF8", icon: Route },
+  decision_grade: { label: "决策级", color: "#10B981", icon: CheckCircle2 },
+};
+
 const MODE_META: Record<Mode, { label: string; icon: IconComponent }> = {
   live: { label: "Live", icon: Play },
   replay: { label: "Replay", icon: RotateCcw },
@@ -937,6 +944,7 @@ function EventPoolPanel({
       <div className="min-h-0 overflow-y-auto p-2">
         {events.map((event, index) => {
           const selected = selectedIds.has(event.id);
+          const quality = qualityMeta(event.qualityStatus ?? null);
           return (
             <button
               key={event.id}
@@ -961,6 +969,9 @@ function EventPoolPanel({
                 <span className="block truncate text-xs font-medium">{nodeLabel(event, lang, text)}</span>
                 <span className="mt-1 flex min-w-0 items-center gap-2 text-caption text-text-muted">
                   {index < 3 && <span className="text-brand-orange">Top {index + 1}</span>}
+                  {quality && (
+                    <span style={{ color: quality.color }}>{text(quality.label)}</span>
+                  )}
                   <span className="font-mono">{Math.round(event.freshness * 100)}%</span>
                   <span>I{event.influence}</span>
                   {event.aggregateCount && event.aggregateCount > 1 && (
@@ -1188,6 +1199,7 @@ function CausalNodeCard({ data, selected }: NodeProps<CausalFlowNode>) {
   const stage = STAGE_META[meta.stage];
   const sector = SECTOR_META[meta.sector];
   const color = NODE_COLORS[node.type];
+  const quality = qualityMeta(node.qualityStatus ?? null);
   const compact = data.variant === "preview" || (data.density === "curated" && !data.focused && !selected);
   const Icon = nodeIcon(node.type);
 
@@ -1256,10 +1268,19 @@ function CausalNodeCard({ data, selected }: NodeProps<CausalFlowNode>) {
                 {node.aggregateCount} {text("源")}
               </span>
             )}
+            {quality && (
+              <span
+                className="shrink-0 rounded-xs border px-1 font-mono text-[10px] leading-4"
+                style={{ borderColor: `${quality.color}66`, color: quality.color }}
+              >
+                {node.qualityScore ?? "--"}
+              </span>
+            )}
           </div>
           <div className="mt-1 flex items-center gap-2 text-caption text-text-muted">
             <span style={{ color }}>{text(NODE_LABELS[node.type])}</span>
             <span className="font-mono">{Math.round(node.freshness * 100)}%</span>
+            {quality && <span style={{ color: quality.color }}>{text(quality.label)}</span>}
             {!compact && <span className="font-mono">I{node.influence}</span>}
           </div>
           {!compact && (
@@ -1547,6 +1568,8 @@ function NodeDetails({
   const sector = SECTOR_META[meta.sector];
   const color = NODE_COLORS[node.type];
   const Icon = nodeIcon(node.type);
+  const quality = qualityMeta(node.qualityStatus ?? null);
+  const QualityIcon = quality?.icon ?? ShieldCheck;
   const eventInsight = eventIntelligenceInsight({
     node,
     nodes,
@@ -1590,6 +1613,33 @@ function NodeDetails({
         <div className="rounded-xs border border-border-subtle bg-bg-base p-3 text-sm text-text-secondary shadow-inner-panel">
           {nodeNarrative(node, meta, lang, text)}
         </div>
+
+        {quality && (
+          <div
+            className="mt-3 rounded-xs border bg-bg-base/80 p-3 shadow-inner-panel"
+            style={{ borderColor: `${quality.color}55` }}
+          >
+            <div className="flex items-center justify-between gap-3">
+              <div className="inline-flex min-w-0 items-center gap-2 text-sm font-semibold" style={{ color: quality.color }}>
+                <QualityIcon className="h-4 w-4 shrink-0" />
+                <span>{text("质量门")}</span>
+                <span>{text(quality.label)}</span>
+              </div>
+              <span className="font-mono text-sm text-text-primary">
+                {node.qualityScore ?? "--"}/100
+              </span>
+            </div>
+            {node.qualityIssues && node.qualityIssues.length > 0 && (
+              <div className="mt-2 space-y-1">
+                {node.qualityIssues.slice(0, 3).map((issue) => (
+                  <div key={issue} className="text-caption leading-relaxed text-text-secondary">
+                    {text(issue)}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {eventInsight && (
           <div className="mt-3 rounded-xs border border-brand-cyan/35 bg-brand-cyan/5 p-3 shadow-inner-panel">
@@ -2402,6 +2452,10 @@ function eventIntelligencePathIds(focusId: string | null, edges: CausalEdge[]): 
 
 function isEventIntelligenceNodeId(id: string) {
   return id.startsWith("ei-link-") || id.startsWith("ei-");
+}
+
+function qualityMeta(status: CausalNode["qualityStatus"] | null | undefined) {
+  return status ? QUALITY_META[status] : null;
 }
 
 function semanticMetaForNode(node: CausalNode): NodeSemanticMeta {

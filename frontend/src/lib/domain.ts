@@ -104,6 +104,9 @@ export interface CausalNode {
   aggregateCount?: number;
   evidence?: CausalEvidenceItem[];
   counterEvidence?: CausalEvidenceItem[];
+  qualityStatus?: "blocked" | "review" | "shadow_ready" | "decision_grade" | null;
+  qualityScore?: number | null;
+  qualityIssues?: string[];
 }
 
 export interface CausalEvidenceItem {

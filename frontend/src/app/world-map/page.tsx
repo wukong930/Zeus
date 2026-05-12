@@ -24,6 +24,8 @@ import {
   RotateCcw,
   Route,
   ShieldAlert,
+  ShieldCheck,
+  ShieldX,
   Sparkles,
   X,
 } from "lucide-react";
@@ -1732,6 +1734,8 @@ function RegionInsightModal({ region, onClose }: { region: WorldMapRegion; onClo
               </div>
             </div>
 
+            <EventQualityCard region={region} />
+
             <Link
               href={region.causalScope.causalWebUrl}
               className="flex h-10 items-center justify-center gap-2 rounded-sm border border-brand-cyan/35 bg-brand-cyan/10 text-sm font-semibold text-brand-cyan hover:bg-brand-cyan/15"
@@ -1844,6 +1848,64 @@ function RuntimeGrid({ region }: { region: WorldMapRegion }) {
       <RuntimePill icon={Activity} label={text("信号")} value={region.runtime.signals} />
       <RuntimePill icon={ShieldAlert} label={text("持仓")} value={region.runtime.positions} />
       <RuntimePill icon={Link2} label={text("事件智能")} value={eventIntelligence} />
+    </div>
+  );
+}
+
+function EventQualityCard({ region }: { region: WorldMapRegion }) {
+  const { text } = useI18n();
+  const quality = region.eventQuality;
+  const meta = worldMapQualityMeta(quality.status);
+  const Icon = meta.icon;
+
+  return (
+    <div
+      className="rounded-sm border bg-white/[0.035] p-3 backdrop-blur-xl"
+      style={{ borderColor: `${meta.color}55` }}
+    >
+      <div className="flex items-center justify-between gap-3">
+        <div className="inline-flex min-w-0 items-center gap-2 text-sm font-semibold" style={{ color: meta.color }}>
+          <Icon className="h-4 w-4 shrink-0" />
+          <span>{text("事件质量门")}</span>
+          <span>{text(meta.label)}</span>
+        </div>
+        <span className="font-mono text-sm text-text-primary">{quality.score}/100</span>
+      </div>
+      <div className="mt-3 grid grid-cols-4 gap-2">
+        <EventQualityMetric label="质量通过" value={quality.passed} tone="up" />
+        <EventQualityMetric label="复核" value={quality.review} tone="warn" />
+        <EventQualityMetric label="阻断" value={quality.blocked} tone="down" />
+        <EventQualityMetric label="总数" value={quality.total} tone="neutral" />
+      </div>
+      {quality.total > 0 && quality.passed === 0 && (
+        <div className="mt-2 rounded-xs border border-brand-orange/25 bg-brand-orange/10 px-2 py-1.5 text-caption leading-relaxed text-brand-orange">
+          {text("当前区域事件智能尚未通过质量门，地图只用于阅读复核，不放大自动风险。")}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function EventQualityMetric({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: number;
+  tone: "up" | "warn" | "down" | "neutral";
+}) {
+  const { text } = useI18n();
+  const toneClass = {
+    up: "text-brand-emerald-bright",
+    warn: "text-brand-orange",
+    down: "text-data-down",
+    neutral: "text-text-secondary",
+  }[tone];
+  return (
+    <div className="rounded-xs border border-border-subtle bg-bg-base/70 px-2 py-2">
+      <div className="text-caption text-text-muted">{text(label)}</div>
+      <div className={cn("mt-1 font-mono text-sm", toneClass)}>{value}</div>
     </div>
   );
 }
@@ -2438,6 +2500,22 @@ function colorToRgba(hex: string, alpha: number): [number, number, number, numbe
   const value = Number.parseInt(normalized, 16);
   if (!Number.isFinite(value)) return [16, 185, 129, alpha];
   return [(value >> 16) & 255, (value >> 8) & 255, value & 255, alpha];
+}
+
+function worldMapQualityMeta(status: WorldMapRegion["eventQuality"]["status"]) {
+  if (status === "decision_grade") {
+    return { label: "决策级", color: "#10b981", icon: ShieldCheck };
+  }
+  if (status === "shadow_ready") {
+    return { label: "影子可用", color: "#38bdf8", icon: Sparkles };
+  }
+  if (status === "review") {
+    return { label: "质量复核", color: "#f97316", icon: ShieldAlert };
+  }
+  if (status === "blocked") {
+    return { label: "质量阻断", color: "#ef4444", icon: ShieldX };
+  }
+  return { label: "未评估", color: "#a3a3a3", icon: ShieldAlert };
 }
 
 function riskLabel(level: WorldRiskLevel): string {

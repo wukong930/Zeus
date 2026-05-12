@@ -4,6 +4,7 @@ import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Literal
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
@@ -17,7 +18,9 @@ from app.models.industry_data import IndustryData
 from app.models.news_events import NewsEvent
 from app.models.position import Position
 from app.models.signal import SignalTrack
+from app.schemas.event_intelligence import EventImpactLinkQualityRead, EventIntelligenceQualityRead
 from app.services.data_sources.open_meteo import DEFAULT_WEATHER_LOCATIONS
+from app.services.event_intelligence import evaluate_event_intelligence_quality
 
 router = APIRouter(prefix="/api/world-map", tags=["world-map"])
 
@@ -58,6 +61,7 @@ StoryStage = Literal[
 ]
 EvidenceKind = Literal["weather", "alert", "news", "signal", "position", "event_intelligence", "baseline"]
 WorldMapSourceFilter = Literal["all", "weather", "alert", "news", "signal", "position", "event_intelligence"]
+EventQualityStatus = Literal["blocked", "review", "shadow_ready", "decision_grade"]
 
 
 class GeoPoint(BaseModel):
@@ -89,6 +93,17 @@ class WorldMapRuntime(BaseModel):
     positions: int
     eventIntelligence: int
     latestEventAt: datetime | None = None
+
+
+class WorldMapEventQuality(BaseModel):
+    status: EventQualityStatus | None = None
+    score: int = Field(ge=0, le=100)
+    total: int
+    blocked: int
+    review: int
+    shadowReady: int
+    decisionGrade: int
+    passed: int
 
 
 class WorldMapDriver(BaseModel):
@@ -163,6 +178,7 @@ class WorldMapRegion(BaseModel):
     causalScope: WorldMapCausalScope
     mechanisms: list[RiskFactor] = Field(default_factory=list)
     sourceKinds: list[EvidenceKind] = Field(default_factory=list)
+    eventQuality: WorldMapEventQuality
     narrativeZh: str
     narrativeEn: str
     dataQuality: DataQuality
@@ -860,6 +876,10 @@ def _build_region_snapshot(
             matched_event_links=matched_event_links,
         )
     )
+    event_quality_reports = _event_intelligence_quality_reports(matched_event_items, matched_event_links)
+    event_quality = _world_map_event_quality(event_quality_reports)
+    link_quality_by_id = _event_intelligence_link_quality_map(event_quality_reports)
+    quality_weight = _event_quality_weight(event_quality.status)
     latest_event_at = _latest_event_at(matched_alerts, matched_news, matched_signals, matched_event_items)
     high_severity_alerts = sum(row.severity in {"critical", "high"} for row in matched_alerts)
     weather = _region_weather(definition, industry_weather or [])
@@ -877,6 +897,7 @@ def _build_region_snapshot(
         matched_signals=matched_signals,
         matched_positions=matched_positions,
         matched_event_links=matched_event_links,
+        event_link_quality_by_id=link_quality_by_id,
         weather=weather,
         weather_risk=weather_risk,
     )
@@ -898,8 +919,15 @@ def _build_region_snapshot(
     event_intelligence_confidence = (
         _mean(
             [
-                *[row.confidence for row in matched_event_items],
-                *[row.confidence for row in matched_event_links],
+                *[
+                    row.confidence * _event_quality_weight(event_quality_reports[row.id].status)
+                    for row in matched_event_items
+                    if row.id in event_quality_reports
+                ],
+                *[
+                    row.confidence * _link_quality_weight(link_quality_by_id.get(row.id))
+                    for row in matched_event_links
+                ],
             ]
         )
         or 0.0
@@ -913,8 +941,8 @@ def _build_region_snapshot(
         + len(matched_news) * 4
         + round(avg_signal_confidence * 12)
         + len(matched_positions) * 6
-        + len(matched_event_items) * 5
-        + round(event_intelligence_confidence * 10),
+        + round(event_quality.passed * 5 + event_quality.review * 1.5)
+        + round(event_intelligence_confidence * 10 * quality_weight),
         0,
         100,
     )
@@ -965,6 +993,7 @@ def _build_region_snapshot(
         ),
         mechanisms=mechanisms,
         sourceKinds=source_kinds,
+        eventQuality=event_quality,
         narrativeZh=definition.narrative_zh,
         narrativeEn=definition.narrative_en,
         dataQuality=_data_quality(runtime, weather),
@@ -1054,6 +1083,105 @@ def _filter_factor_signals(
     if filters.mechanism is not None:
         filtered = [signal for signal in filtered if signal.factor == filters.mechanism]
     return filtered
+
+
+def _event_intelligence_quality_reports(
+    matched_items: list[EventIntelligenceItem],
+    matched_links: list[EventImpactLink],
+) -> dict[UUID, EventIntelligenceQualityRead]:
+    links_by_event_id: dict[UUID, list[EventImpactLink]] = {item.id: [] for item in matched_items}
+    for link in matched_links:
+        links_by_event_id.setdefault(link.event_item_id, []).append(link)
+    return {
+        item.id: evaluate_event_intelligence_quality(item, links_by_event_id.get(item.id, []))
+        for item in matched_items
+    }
+
+
+def _event_intelligence_link_quality_map(
+    reports: dict[UUID, EventIntelligenceQualityRead],
+) -> dict[UUID, EventImpactLinkQualityRead]:
+    return {
+        link_report.id: link_report
+        for report in reports.values()
+        for link_report in report.link_reports
+    }
+
+
+def _world_map_event_quality(
+    reports: dict[UUID, EventIntelligenceQualityRead],
+) -> WorldMapEventQuality:
+    rows = list(reports.values())
+    total = len(rows)
+    if total == 0:
+        return WorldMapEventQuality(
+            status=None,
+            score=0,
+            total=0,
+            blocked=0,
+            review=0,
+            shadowReady=0,
+            decisionGrade=0,
+            passed=0,
+        )
+    blocked = sum(1 for row in rows if row.status == "blocked")
+    review = sum(1 for row in rows if row.status == "review")
+    shadow_ready = sum(1 for row in rows if row.status == "shadow_ready")
+    decision_grade = sum(1 for row in rows if row.status == "decision_grade")
+    status = _dominant_event_quality_status(
+        blocked=blocked,
+        review=review,
+        shadow_ready=shadow_ready,
+        decision_grade=decision_grade,
+    )
+    return WorldMapEventQuality(
+        status=status,
+        score=round(sum(row.score for row in rows) / total),
+        total=total,
+        blocked=blocked,
+        review=review,
+        shadowReady=shadow_ready,
+        decisionGrade=decision_grade,
+        passed=shadow_ready + decision_grade,
+    )
+
+
+def _dominant_event_quality_status(
+    *,
+    blocked: int,
+    review: int,
+    shadow_ready: int,
+    decision_grade: int,
+) -> EventQualityStatus:
+    if decision_grade:
+        return "decision_grade"
+    if shadow_ready:
+        return "shadow_ready"
+    if review:
+        return "review"
+    if blocked:
+        return "blocked"
+    return "review"
+
+
+def _event_quality_weight(status: EventQualityStatus | None) -> float:
+    if status == "decision_grade":
+        return 1.0
+    if status == "shadow_ready":
+        return 0.7
+    if status == "review":
+        return 0.18
+    return 0.0
+
+
+def _link_quality_weight(report: EventImpactLinkQualityRead | None) -> float:
+    if report is None:
+        return 0.0
+    if report.status == "passed":
+        return 1.0
+    if report.status == "review":
+        return 0.25
+    return 0.0
 
 
 def _event_intelligence_item_matches_factor(row: EventIntelligenceItem, factor: RiskFactor) -> bool:
@@ -1582,6 +1710,7 @@ def _factor_signals(
     matched_signals: list[SignalTrack],
     matched_positions: list[Position],
     matched_event_links: list[EventImpactLink],
+    event_link_quality_by_id: dict[UUID, EventImpactLinkQualityRead],
     weather: WorldMapWeather,
     weather_risk: float,
 ) -> list[FactorSignal]:
@@ -1636,11 +1765,15 @@ def _factor_signals(
             )
         )
     for row in matched_event_links[:8]:
+        link_quality = event_link_quality_by_id.get(row.id)
+        link_weight = _link_quality_weight(link_quality)
+        if link_weight <= 0:
+            continue
         factor = _factor_from_event_intelligence_link(row)
         signals.append(
             FactorSignal(
                 factor=factor,
-                weight=min(max(row.confidence, row.impact_score / 100, 0.35), 1.0),
+                weight=min(max(row.confidence, row.impact_score / 100, 0.35) * link_weight, 1.0),
                 evidence_kind="event_intelligence",
                 label_zh=_event_intelligence_factor_label_zh(row, factor),
                 label_en=_event_intelligence_factor_label_en(row, factor),

@@ -372,3 +372,9 @@ threshold_modifier、propagation_activator、risk_recalc、数据腐烂防护
 - 新增事件智能质量门服务，按证据、反证、来源可信、新鲜度、作用域、治理状态和影响链质量实时评估事件可用性。
 - 新增 `/api/event-intelligence/quality`，返回 `blocked / review / shadow_ready / decision_grade`、事件级问题和影响链级问题。
 - `/event-intelligence` 页面新增质量评分、阻断原因和影响链质量状态，避免人工确认时只依赖置信度和影响分。
+
+# 2026-05-12 — Event Intelligence Engine Phase 10.10
+
+- Causal Web 事件智能节点新增质量门状态、质量分和问题摘要；`review/blocked` 可阅读但不会显示为 verified/alert-ready。
+- World Risk Map 区域新增 `eventQuality` 摘要，展示事件智能的通过、复核、阻断和总数。
+- 地图风险分与事件智能传导故事按质量门降权：未通过质量门的事件保留为阅读复核材料，但不放大自动风险。

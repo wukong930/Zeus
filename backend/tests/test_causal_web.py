@@ -20,6 +20,7 @@ from app.models.alert import Alert
 from app.models.event_intelligence import EventImpactLink, EventIntelligenceItem
 from app.models.news_events import NewsEvent
 from app.models.signal import SignalTrack
+from app.services.event_intelligence import evaluate_event_intelligence_quality
 
 
 def test_layout_nodes_includes_runtime_semantics() -> None:
@@ -225,6 +226,66 @@ def test_event_intelligence_seeds_use_shared_scope_ids() -> None:
     assert item_node.evidence[0].kind == "evidence"
     assert link_node.labelZh == link_seed.label_zh
     assert link_node.evidence[0].text == "route report"
+
+
+def test_event_intelligence_seeds_expose_quality_gate_state() -> None:
+    now = datetime.now(timezone.utc)
+    event_item = EventIntelligenceItem(
+        id=uuid4(),
+        source_type="news_event",
+        source_id="rubber-quality-1",
+        title="Rubber rainfall disruption",
+        summary="Rainfall disruption may tighten rubber supply.",
+        event_type="weather",
+        event_timestamp=now,
+        entities=["Thailand"],
+        symbols=["RU"],
+        regions=["southeast_asia_rubber"],
+        mechanisms=["weather", "supply"],
+        evidence=["rainfall anomaly", "station percentile"],
+        counterevidence=["forecast may shift"],
+        confidence=0.88,
+        impact_score=88,
+        status="confirmed",
+        requires_manual_confirmation=False,
+        source_reliability=0.82,
+        freshness_score=0.96,
+        source_payload={},
+        created_at=now,
+        updated_at=now,
+    )
+    impact_link = EventImpactLink(
+        id=uuid4(),
+        event_item_id=event_item.id,
+        symbol="RU",
+        region_id="southeast_asia_rubber",
+        mechanism="weather",
+        direction="bullish",
+        confidence=0.84,
+        impact_score=86,
+        horizon="short",
+        rationale="Rainfall reduces tapping days.",
+        evidence=["rainfall anomaly"],
+        counterevidence=["forecast may shift"],
+        status="confirmed",
+        created_at=now,
+        updated_at=now,
+    )
+    quality = evaluate_event_intelligence_quality(event_item, [impact_link])
+    link_quality = quality.link_reports[0]
+
+    item_node, link_node = _layout_nodes(
+        [
+            _seed_from_event_intelligence_item(event_item, quality),
+            _seed_from_event_intelligence_link(impact_link, event_item, link_quality),
+        ]
+    )
+
+    assert item_node.qualityStatus == "decision_grade"
+    assert item_node.qualityScore is not None and item_node.qualityScore >= 82
+    assert item_node.alertLinked is True
+    assert link_node.qualityStatus == "decision_grade"
+    assert link_node.qualityScore is not None and link_node.qualityScore >= 60
 
 
 def test_build_edges_uses_latest_signal_for_alert_link() -> None:

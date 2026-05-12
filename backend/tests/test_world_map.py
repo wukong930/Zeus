@@ -145,6 +145,9 @@ def test_region_snapshot_uses_event_intelligence_scope() -> None:
     )
 
     assert region.runtime.eventIntelligence == 1
+    assert region.eventQuality.status == "shadow_ready"
+    assert region.eventQuality.passed == 1
+    assert region.eventQuality.score >= 70
     assert region.dataQuality == "runtime"
     assert region.causalScope.hasDirectLinks is True
     assert f"event_intelligence:{event_item.id}" in region.causalScope.eventIds
@@ -230,6 +233,50 @@ def test_region_snapshot_source_filter_scopes_runtime_evidence() -> None:
     assert region.sourceKinds == ["event_intelligence"]
     assert region.mechanisms == ["policy_shift"]
     assert all(row.kind == "event_intelligence" for row in region.story.evidence)
+
+
+def test_region_snapshot_keeps_low_quality_event_intelligence_for_review_without_risk_boost() -> None:
+    now = datetime.now(timezone.utc)
+    event_item = EventIntelligenceItem(
+        id=uuid4(),
+        source_type="social",
+        source_id="rumor-1",
+        title="Unverified rubber rumor",
+        summary="Single source rumor lacks evidence.",
+        event_type="policy",
+        event_timestamp=now,
+        entities=[],
+        symbols=["RU"],
+        regions=["southeast_asia_rubber"],
+        mechanisms=["policy"],
+        evidence=[],
+        counterevidence=[],
+        confidence=0.42,
+        impact_score=70,
+        status="human_review",
+        requires_manual_confirmation=True,
+        source_reliability=0.3,
+        freshness_score=0.9,
+        source_payload={},
+        created_at=now,
+        updated_at=now,
+    )
+
+    region = _build_region_snapshot(
+        WORLD_RISK_REGIONS[0],
+        alerts=[],
+        news=[],
+        signals=[],
+        positions=[],
+        event_items=[event_item],
+        event_links=[],
+    )
+
+    assert region.runtime.eventIntelligence == 1
+    assert region.eventQuality.status == "blocked"
+    assert region.eventQuality.blocked == 1
+    assert region.eventQuality.passed == 0
+    assert not any(row.kind == "event_intelligence" for row in region.story.evidence)
 
 
 def test_world_map_event_intelligence_dedupe_keeps_one_display_event() -> None:

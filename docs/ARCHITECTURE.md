@@ -170,6 +170,12 @@ Phase 10.9 已落地的事件质量门边界：
 - 质量状态分为 `blocked`、`review`、`shadow_ready`、`decision_grade`：blocked/review 不应进入后续自动链路，shadow_ready 只允许 Shadow/阅读层使用，decision_grade 需要已确认且质量分达标。
 - `/event-intelligence` 页面展示事件级质量评分、阻断原因和影响链级质量门，帮助人工确认前先看到缺证据、弱来源或无可用链路的问题。
 
+Phase 10.10 已落地的质量门联动边界：
+
+- Causal Web 节点携带 `qualityStatus`、`qualityScore`、`qualityIssues`，低质量事件仍可阅读追溯，但 `review/blocked` 不会被渲染为 verified 或 alert-ready 链路。
+- World Risk Map 区域携带 `eventQuality` 摘要，并在区域档案中展示事件智能通过、复核、阻断和总量。
+- 地图风险分对事件智能贡献做质量加权：`decision_grade` 全量参与，`shadow_ready` 只作为阅读/Shadow 信号，`review/blocked` 不放大自动风险。
+
 治理约束：
 
 - 引擎判断默认只进入 Shadow / review，不直接修改生产阈值或自动发交易指令。
