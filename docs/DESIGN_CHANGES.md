@@ -411,3 +411,9 @@ threshold_modifier、propagation_activator、risk_recalc、数据腐烂防护
 - `/api/world-map` 区域新增 `evidenceHealth`，汇总支持证据、反证、来源数、新鲜来源、来源可信度、数据新鲜度和证据密度。
 - `/world-map` 增强阅读层从单纯“证据数量”升级为“密度 / 可信度 / 新鲜度”三维摘要，区域档案新增证据健康卡片和低覆盖提示。
 - 新增 World Risk Map 回归断言，覆盖运行态证据健康升高与 baseline 场景不误判为实时新鲜。
+
+# 2026-05-13 — World Risk Map Phase D.2 风险动量层
+
+- `/api/world-map` 区域新增 `riskMomentum`，输出升温 / 降温 / 稳定、动量强度、推导原因、主驱动和最新触发时间。
+- `/world-map` 增强阅读层、高风险索引、地图区域标签和区域档案新增风险动量读取入口；升温 / 降温区域会显示轻量 SVG 脉冲。
+- 新增 World Risk Map 回归断言，覆盖运行态风险升温、低质量事件质量门阻断后的降温，以及纯 baseline 稳定场景。

@@ -46,6 +46,8 @@ import {
   type WorldMapFilterOption,
   type WorldMapLayer,
   type WorldMapRegion,
+  type WorldMapRiskMomentum,
+  type WorldMapRiskMomentumDirection,
   type WorldMapSnapshot,
   type WorldMapStoryStep,
   type WorldMapTileCell,
@@ -462,6 +464,7 @@ function EnhancedReadingPanel({
 
   const topColor = riskColor(topRegion.riskLevel);
   const topHealth = regionEvidenceHealth(topRegion);
+  const topMomentum = regionRiskMomentum(topRegion);
   const topRegionName = lang === "zh" ? topRegion.nameZh : topRegion.nameEn;
   const topTrigger = lang === "zh" ? topRegion.story.triggerZh : topRegion.story.triggerEn;
   const bridgeLabel = topBridge
@@ -508,6 +511,14 @@ function EnhancedReadingPanel({
 
       <div className="mt-2 grid gap-1.5">
         <ReadingMetric
+          icon={Activity}
+          label={text("风险动量")}
+          value={text(momentumLabel(topMomentum.direction))}
+          detail={`${topMomentum.delta > 0 ? "+" : ""}${topMomentum.delta} · ${
+            lang === "zh" ? topMomentum.driverZh : topMomentum.driverEn
+          }`}
+        />
+        <ReadingMetric
           icon={Route}
           label={text("跨区传导")}
           value={bridgeLabel}
@@ -526,7 +537,7 @@ function EnhancedReadingPanel({
           detail={`${text("来源数")} ${topHealth.runtimeSources} / ${text("新鲜来源")} ${topHealth.freshRuntimeSources}`}
         />
         <ReadingMetric
-          icon={Activity}
+          icon={RefreshCw}
           label={text("数据新鲜度")}
           value={`${healthSummary.freshnessScore}/100`}
           detail={`${text("最高风险区域")}：${topRegionName}`}
@@ -618,6 +629,95 @@ function eventFreshnessScore(value: string | null) {
   if (ageHours <= 72) return 68;
   if (ageHours <= 168) return 48;
   return 25;
+}
+
+function regionRiskMomentum(region: WorldMapRegion): WorldMapRiskMomentum {
+  if (region.riskMomentum) return region.riskMomentum;
+
+  const health = regionEvidenceHealth(region);
+  const runtimeRows =
+    region.runtime.alerts +
+    region.runtime.newsEvents +
+    region.runtime.signals +
+    region.runtime.positions +
+    (region.runtime.eventIntelligence ?? 0);
+  if ((region.runtime.eventIntelligence ?? 0) > 0 && region.eventQuality.blocked > region.eventQuality.passed) {
+    const delta = -Math.min(18, 4 + region.eventQuality.blocked * 5 + region.eventQuality.review * 2);
+    return {
+      direction: "easing",
+      delta,
+      intensity: Math.min(Math.abs(delta) / 28, 1),
+      driverZh: "质量门阻断",
+      driverEn: "Quality gate blocked",
+      reasonZh: "事件智能未通过质量门，地图保留阅读但不放大风险动量。",
+      reasonEn: "Event intelligence failed the quality gate, so the map keeps it readable without amplifying momentum.",
+      changedAt: region.runtime.latestEventAt,
+    };
+  }
+
+  const weatherStress = Math.max(
+    Math.abs(region.weather.precipitationAnomalyPct) / 55,
+    region.weather.floodRisk,
+    region.weather.droughtRisk
+  );
+  let delta =
+    region.runtime.highSeverityAlerts * 7 +
+    region.runtime.alerts * 3 +
+    region.runtime.newsEvents * 2 +
+    region.runtime.signals * 2 +
+    region.runtime.positions +
+    (region.runtime.eventIntelligence ?? 0) * 2 +
+    region.eventQuality.passed * 4 +
+    Math.round(region.weather.dataSource !== "regional_baseline_seed" ? weatherStress * 6 : 0) +
+    Math.round(Math.max(health.freshnessScore - 65, 0) / 12);
+  if (runtimeRows === 0 && region.weather.dataSource === "regional_baseline_seed") {
+    delta = 0;
+  }
+  delta = clamp(delta, -100, 100);
+  const direction: WorldMapRiskMomentumDirection = delta >= 5 ? "rising" : delta <= -5 ? "easing" : "steady";
+  const primaryDriver = region.drivers[0];
+  return {
+    direction,
+    delta,
+    intensity: Math.min(Math.abs(delta) / 32, 1),
+    driverZh: primaryDriver?.labelZh ?? "区域基线",
+    driverEn: primaryDriver?.labelEn ?? "Regional baseline",
+    reasonZh:
+      direction === "rising"
+        ? `${region.nameZh}风险升温：运行态信号、天气或事件智能证据正在增加。`
+        : direction === "easing"
+          ? `${region.nameZh}动量降温：缺少新鲜运行态证据或低质量事件被阻断。`
+          : `${region.nameZh}暂无明显风险动量，当前主要作为基线观察。`,
+    reasonEn:
+      direction === "rising"
+        ? `${region.nameEn} momentum is rising as runtime signals, weather, or event-intelligence evidence increases.`
+        : direction === "easing"
+          ? `${region.nameEn} momentum is easing because fresh runtime evidence is missing or weak events were blocked.`
+          : `${region.nameEn} has no clear risk momentum and is mainly a baseline watch.`,
+    changedAt: region.runtime.latestEventAt,
+  };
+}
+
+function momentumLabel(direction: WorldMapRiskMomentumDirection) {
+  if (direction === "rising") return "动量升温";
+  if (direction === "easing") return "动量降温";
+  return "动量稳定";
+}
+
+function momentumSymbol(direction: WorldMapRiskMomentumDirection) {
+  if (direction === "rising") return "↑";
+  if (direction === "easing") return "↓";
+  return "→";
+}
+
+function momentumColor(direction: WorldMapRiskMomentumDirection) {
+  if (direction === "rising") {
+    return { text: "#ff4d4f", stroke: "rgba(255,77,79,0.78)", fill: "rgba(255,77,79,0.12)" };
+  }
+  if (direction === "easing") {
+    return { text: "#10b981", stroke: "rgba(16,185,129,0.7)", fill: "rgba(16,185,129,0.1)" };
+  }
+  return { text: "#a3a3a3", stroke: "rgba(163,163,163,0.42)", fill: "rgba(163,163,163,0.08)" };
 }
 
 function ReadingMetric({
@@ -941,6 +1041,8 @@ function RiskRegionIndex({
         {regions.map((region, index) => {
           const active = region.id === selectedId;
           const color = riskColor(region.riskLevel);
+          const momentum = regionRiskMomentum(region);
+          const momentumTone = momentumColor(momentum.direction);
           return (
             <button
               key={region.id}
@@ -961,12 +1063,21 @@ function RiskRegionIndex({
                     {lang === "zh" ? region.nameZh : region.nameEn}
                   </span>
                 </span>
-                <span className="font-mono text-xs" style={{ color: color.text }}>
-                  {region.riskScore}
+                <span className="flex shrink-0 items-center gap-1.5">
+                  {momentum.direction !== "steady" && (
+                    <span className="font-mono text-[10px]" style={{ color: momentumTone.text }}>
+                      {momentumSymbol(momentum.direction)}
+                      {momentum.delta > 0 ? "+" : ""}
+                      {momentum.delta}
+                    </span>
+                  )}
+                  <span className="font-mono text-xs" style={{ color: color.text }}>
+                    {region.riskScore}
+                  </span>
                 </span>
               </div>
               <div className="mt-1 truncate text-[10px] text-text-muted">
-                {(lang === "zh" ? region.story.triggerZh : region.story.triggerEn)} · {region.symbols.join("/")}
+                {text(momentumLabel(momentum.direction))} · {(lang === "zh" ? region.story.triggerZh : region.story.triggerEn)} · {region.symbols.join("/")}
               </div>
             </button>
           );
@@ -1305,6 +1416,8 @@ function WorldMapCanvas({
             const color = riskColor(region.riskLevel);
             const radius = 22 + region.riskScore * 0.42;
             const delta = riskDeltas[region.id] ?? 0;
+            const momentum = regionRiskMomentum(region);
+            const momentumTone = momentumColor(momentum.direction);
             const heatVisible = visibleLayers.heat;
             return (
               <g
@@ -1326,6 +1439,31 @@ function WorldMapCanvas({
                   filter={selected && heatVisible ? "url(#worldMapRiskGlow)" : undefined}
                   vectorEffect="non-scaling-stroke"
                 />
+                {heatVisible && momentum.direction !== "steady" && momentum.intensity > 0 && (
+                  <circle
+                    cx={center.x}
+                    cy={center.y}
+                    r={radius * 0.58}
+                    fill={momentumTone.fill}
+                    stroke={momentumTone.stroke}
+                    strokeWidth={1 + momentum.intensity * 2.4}
+                    opacity={0.22 + momentum.intensity * 0.3}
+                    vectorEffect="non-scaling-stroke"
+                  >
+                    <animate
+                      attributeName="r"
+                      values={`${radius * 0.55};${radius + 18 + momentum.intensity * 18};${radius * 0.55}`}
+                      dur={momentum.direction === "rising" ? "2.15s" : "3.2s"}
+                      repeatCount="indefinite"
+                    />
+                    <animate
+                      attributeName="opacity"
+                      values={`${0.24 + momentum.intensity * 0.32};0.05;${0.24 + momentum.intensity * 0.32}`}
+                      dur={momentum.direction === "rising" ? "2.15s" : "3.2s"}
+                      repeatCount="indefinite"
+                    />
+                  </circle>
+                )}
                 {heatVisible && (
                   <circle
                     cx={center.x}
@@ -1376,6 +1514,13 @@ function WorldMapCanvas({
                       </div>
                       <div className="mt-0.5 flex items-center gap-1 truncate text-[10px] text-text-muted">
                         {region.symbols.join("/")}
+                        {momentum.direction !== "steady" && (
+                          <span className="font-mono" style={{ color: momentumTone.text }}>
+                            {momentumSymbol(momentum.direction)}
+                            {momentum.delta > 0 ? "+" : ""}
+                            {momentum.delta}
+                          </span>
+                        )}
                         {delta !== 0 && (
                           <span className={cn("font-mono", delta > 0 ? "text-data-down" : "text-data-up")}>
                             {delta > 0 ? "+" : ""}
@@ -1859,6 +2004,7 @@ function RegionInsightModal({ region, onClose }: { region: WorldMapRegion; onClo
               </div>
             </div>
 
+            <RiskMomentumCard region={region} />
             <EventQualityCard region={region} />
             <EvidenceHealthCard region={region} />
 
@@ -1974,6 +2120,53 @@ function RuntimeGrid({ region }: { region: WorldMapRegion }) {
       <RuntimePill icon={Activity} label={text("信号")} value={region.runtime.signals} />
       <RuntimePill icon={ShieldAlert} label={text("持仓")} value={region.runtime.positions} />
       <RuntimePill icon={Link2} label={text("事件智能")} value={eventIntelligence} />
+    </div>
+  );
+}
+
+function RiskMomentumCard({ region }: { region: WorldMapRegion }) {
+  const { lang, text } = useI18n();
+  const momentum = regionRiskMomentum(region);
+  const tone = momentumColor(momentum.direction);
+  const changedAt = formatOptionalUpdateTime(momentum.changedAt);
+
+  return (
+    <div className="rounded-sm border bg-white/[0.035] p-3 backdrop-blur-xl" style={{ borderColor: `${tone.text}55` }}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="inline-flex items-center gap-2 text-sm font-semibold" style={{ color: tone.text }}>
+            <Activity className="h-4 w-4 shrink-0" />
+            <span>{text("风险动量")}</span>
+            <span>{text(momentumLabel(momentum.direction))}</span>
+          </div>
+          <p className="mt-1 line-clamp-2 text-caption leading-4 text-text-secondary">
+            {lang === "zh" ? momentum.reasonZh : momentum.reasonEn}
+          </p>
+        </div>
+        <span className="shrink-0 font-mono text-lg font-semibold" style={{ color: tone.text }}>
+          {momentumSymbol(momentum.direction)}
+          {momentum.delta > 0 ? "+" : ""}
+          {momentum.delta}
+        </span>
+      </div>
+      <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-bg-surface-raised">
+        <div
+          className="h-full rounded-full"
+          style={{ width: `${Math.max(6, momentum.intensity * 100)}%`, background: tone.text }}
+        />
+      </div>
+      <div className="mt-3 grid grid-cols-2 gap-2">
+        <div className="rounded-xs border border-border-subtle bg-bg-base/70 px-2 py-2">
+          <div className="text-caption text-text-muted">{text("动量来源")}</div>
+          <div className="mt-1 truncate text-xs text-text-primary">
+            {lang === "zh" ? momentum.driverZh : momentum.driverEn}
+          </div>
+        </div>
+        <div className="rounded-xs border border-border-subtle bg-bg-base/70 px-2 py-2">
+          <div className="text-caption text-text-muted">{text("触发时间")}</div>
+          <div className="mt-1 font-mono text-xs text-text-primary">{changedAt ?? text("暂无")}</div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -2707,6 +2900,13 @@ function formatUpdateTime(date: Date): string {
     second: "2-digit",
     hour12: false,
   });
+}
+
+function formatOptionalUpdateTime(value: string | null): string | null {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return formatUpdateTime(date);
 }
 
 function riskColor(level: WorldRiskLevel) {

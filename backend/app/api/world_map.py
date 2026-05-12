@@ -27,6 +27,7 @@ router = APIRouter(prefix="/api/world-map", tags=["world-map"])
 RiskLevel = Literal["low", "watch", "elevated", "high", "critical"]
 DataQuality = Literal["runtime", "partial", "baseline"]
 LayerStatus = Literal["ready", "baseline", "planned"]
+RiskMomentumDirection = Literal["rising", "easing", "steady"]
 TileLayer = Literal["weather", "risk"]
 TileLayerFilter = Literal["all", "weather", "risk"]
 TileResolution = Literal["coarse", "medium"]
@@ -116,6 +117,17 @@ class WorldMapEvidenceHealth(BaseModel):
     densityScore: int = Field(ge=0, le=100)
 
 
+class WorldMapRiskMomentum(BaseModel):
+    direction: RiskMomentumDirection
+    delta: int = Field(ge=-100, le=100)
+    intensity: float = Field(ge=0, le=1)
+    driverZh: str
+    driverEn: str
+    reasonZh: str
+    reasonEn: str
+    changedAt: datetime | None = None
+
+
 class WorldMapDriver(BaseModel):
     labelZh: str
     labelEn: str
@@ -180,6 +192,7 @@ class WorldMapRegion(BaseModel):
     polygon: list[GeoPoint]
     riskScore: int = Field(ge=0, le=100)
     riskLevel: RiskLevel
+    riskMomentum: WorldMapRiskMomentum
     drivers: list[WorldMapDriver]
     weather: WorldMapWeather
     runtime: WorldMapRuntime
@@ -1007,6 +1020,14 @@ def _build_region_snapshot(
         weather=weather,
         event_quality=event_quality,
     )
+    risk_momentum = _world_map_risk_momentum(
+        definition=definition,
+        runtime=runtime,
+        weather=weather,
+        event_quality=event_quality,
+        evidence_health=evidence_health,
+        factor_signals=factor_signals,
+    )
     return WorldMapRegion(
         id=definition.id,
         nameZh=definition.name_zh,
@@ -1018,6 +1039,7 @@ def _build_region_snapshot(
         polygon=[GeoPoint(lat=lat, lon=lon) for lat, lon in definition.polygon],
         riskScore=risk_score,
         riskLevel=_risk_level(risk_score),
+        riskMomentum=risk_momentum,
         drivers=_region_drivers(definition, runtime, factor_signals),
         weather=weather,
         runtime=runtime,
@@ -1250,6 +1272,131 @@ def _world_map_evidence_health(
         sourceReliability=source_reliability,
         freshnessScore=_clamp_int(freshness_score, 0, 100),
         densityScore=density_score,
+    )
+
+
+def _world_map_risk_momentum(
+    *,
+    definition: RegionDefinition,
+    runtime: WorldMapRuntime,
+    weather: WorldMapWeather,
+    event_quality: WorldMapEventQuality,
+    evidence_health: WorldMapEvidenceHealth,
+    factor_signals: list[FactorSignal],
+) -> WorldMapRiskMomentum:
+    primary = factor_signals[0] if factor_signals else None
+    runtime_rows = (
+        runtime.alerts
+        + runtime.newsEvents
+        + runtime.signals
+        + runtime.positions
+        + runtime.eventIntelligence
+    )
+    if runtime.eventIntelligence and event_quality.blocked > event_quality.passed:
+        delta = -min(18, 4 + event_quality.blocked * 5 + event_quality.review * 2)
+        return WorldMapRiskMomentum(
+            direction="easing",
+            delta=delta,
+            intensity=round(min(abs(delta) / 28, 1.0), 2),
+            driverZh="质量门阻断",
+            driverEn="Quality gate blocked",
+            reasonZh="事件智能未通过质量门，地图保留阅读但不放大风险动量。",
+            reasonEn="Event intelligence failed the quality gate, so the map keeps it readable without amplifying momentum.",
+            changedAt=runtime.latestEventAt,
+        )
+
+    weather_stress = max(
+        abs(weather.precipitationAnomalyPct) / 55,
+        weather.floodRisk,
+        weather.droughtRisk,
+    )
+    raw_delta = (
+        runtime.highSeverityAlerts * 7
+        + runtime.alerts * 3
+        + runtime.newsEvents * 2
+        + runtime.signals * 2
+        + runtime.positions
+        + runtime.eventIntelligence * 2
+        + event_quality.passed * 4
+        + round(weather_stress * 6 if weather.dataSource != BASELINE_WEATHER_SOURCE else 0)
+        + round(max(evidence_health.freshnessScore - 65, 0) / 12)
+    )
+    if runtime_rows == 0 and weather.dataSource == BASELINE_WEATHER_SOURCE:
+        raw_delta = 0
+    delta = _clamp_int(raw_delta, -100, 100)
+    if delta >= 5:
+        direction: RiskMomentumDirection = "rising"
+    elif delta <= -5:
+        direction = "easing"
+    else:
+        direction = "steady"
+
+    if primary is not None:
+        driver_zh = primary.label_zh
+        driver_en = primary.label_en
+    elif weather.dataSource != BASELINE_WEATHER_SOURCE:
+        driver_zh = "天气异常更新"
+        driver_en = "Weather anomaly update"
+    else:
+        driver_zh = "区域基线"
+        driver_en = "Regional baseline"
+
+    reason_zh, reason_en = _risk_momentum_reason(
+        definition=definition,
+        direction=direction,
+        runtime=runtime,
+        weather=weather,
+        event_quality=event_quality,
+        evidence_health=evidence_health,
+    )
+    return WorldMapRiskMomentum(
+        direction=direction,
+        delta=delta,
+        intensity=round(min(abs(delta) / 32, 1.0), 2),
+        driverZh=driver_zh,
+        driverEn=driver_en,
+        reasonZh=reason_zh,
+        reasonEn=reason_en,
+        changedAt=runtime.latestEventAt,
+    )
+
+
+def _risk_momentum_reason(
+    *,
+    definition: RegionDefinition,
+    direction: RiskMomentumDirection,
+    runtime: WorldMapRuntime,
+    weather: WorldMapWeather,
+    event_quality: WorldMapEventQuality,
+    evidence_health: WorldMapEvidenceHealth,
+) -> tuple[str, str]:
+    if direction == "rising":
+        reasons_zh: list[str] = []
+        reasons_en: list[str] = []
+        if runtime.highSeverityAlerts:
+            reasons_zh.append(f"{runtime.highSeverityAlerts} 条高等级预警")
+            reasons_en.append(f"{runtime.highSeverityAlerts} high-severity alert(s)")
+        if runtime.eventIntelligence:
+            reasons_zh.append(f"{event_quality.passed}/{event_quality.total} 条事件智能通过质量门")
+            reasons_en.append(f"{event_quality.passed}/{event_quality.total} event-intelligence item(s) passed quality gates")
+        if weather.dataSource != BASELINE_WEATHER_SOURCE:
+            reasons_zh.append(f"天气数据源 {weather.dataSource} 已更新")
+            reasons_en.append(f"weather source {weather.dataSource} updated")
+        if not reasons_zh:
+            reasons_zh.append("运行态信号与证据密度上升")
+            reasons_en.append("runtime signals and evidence density increased")
+        return (
+            f"{definition.name_zh}风险升温：{'，'.join(reasons_zh)}。",
+            f"{definition.name_en} momentum is rising: {', '.join(reasons_en)}.",
+        )
+    if direction == "easing":
+        return (
+            f"{definition.name_zh}动量降温：低质量事件被阻断或缺少新鲜运行态证据。",
+            f"{definition.name_en} momentum is easing: weak events were blocked or fresh runtime evidence is missing.",
+        )
+    return (
+        f"{definition.name_zh}暂无明显风险动量，当前主要作为基线观察。",
+        f"{definition.name_en} has no clear risk momentum and is mainly a baseline watch.",
     )
 
 

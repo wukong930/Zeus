@@ -495,6 +495,12 @@ const EN: Record<string, string> = {
   "先读最高风险，再看跨区传导和证据密度":
     "Read the highest risk first, then cross-region transmission and evidence density",
   "主读区": "Primary Read",
+  "风险动量": "Risk Momentum",
+  "动量升温": "Momentum Rising",
+  "动量降温": "Momentum Easing",
+  "动量稳定": "Momentum Stable",
+  "动量来源": "Momentum Driver",
+  "触发时间": "Trigger Time",
   "跨区传导": "Cross-Region Transmission",
   "证据密度": "Evidence Density",
   "运行态证据": "Runtime Evidence",

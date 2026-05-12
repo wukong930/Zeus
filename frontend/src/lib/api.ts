@@ -200,6 +200,7 @@ export interface CausalWebGraph {
 export type WorldRiskLevel = "low" | "watch" | "elevated" | "high" | "critical";
 export type WorldMapDataQuality = "runtime" | "partial" | "baseline";
 export type WorldMapLayerStatus = "ready" | "baseline" | "planned";
+export type WorldMapRiskMomentumDirection = "rising" | "easing" | "steady";
 export type WorldMapStoryStage =
   | "climate"
   | "weather_regime"
@@ -282,6 +283,17 @@ export interface WorldMapEvidenceHealth {
   densityScore: number;
 }
 
+export interface WorldMapRiskMomentum {
+  direction: WorldMapRiskMomentumDirection;
+  delta: number;
+  intensity: number;
+  driverZh: string;
+  driverEn: string;
+  reasonZh: string;
+  reasonEn: string;
+  changedAt: string | null;
+}
+
 export interface WorldMapDriver {
   labelZh: string;
   labelEn: string;
@@ -358,6 +370,7 @@ export interface WorldMapRegion {
   polygon: GeoPoint[];
   riskScore: number;
   riskLevel: WorldRiskLevel;
+  riskMomentum?: WorldMapRiskMomentum;
   drivers: WorldMapDriver[];
   weather: WorldMapWeather;
   runtime: WorldMapRuntime;
