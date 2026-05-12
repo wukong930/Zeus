@@ -152,6 +152,12 @@ Phase 10.6 已落地的 Causal Web 阅读边界：
 - Causal Web 点击事件智能节点时展示专属阅读块：源事件显示已关联影响链，影响假设回指源事件，并保留边的方向与置信度。
 - 当前仍是详情面板内的解释增强；更强的路径聚焦、证据展开和多跳链路高亮留给后续 Phase 10.x。
 
+Phase 10.7 已落地的 World Risk Map 作用域边界：
+
+- `/api/world-map` 与 `/api/world-map/tiles` 支持 `symbol`、`mechanism`、`source` 查询参数，后端按同一作用域返回区域、风险分、证据、动态预警和瓦片。
+- 返回结构新增 `filters`、`region.mechanisms`、`region.sourceKinds`，前端可以直接渲染事件源、品种和影响机制筛选，而不是只在本地按品类隐藏卡片。
+- 前端筛选后会重新请求快照和瓦片，风险索引、地图热区、区域档案和打开 Causal Web 的链接保持一致作用域。
+
 治理约束：
 
 - 引擎判断默认只进入 Shadow / review，不直接修改生产阈值或自动发交易指令。

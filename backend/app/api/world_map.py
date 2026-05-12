@@ -57,6 +57,7 @@ StoryStage = Literal[
     "market",
 ]
 EvidenceKind = Literal["weather", "alert", "news", "signal", "position", "event_intelligence", "baseline"]
+WorldMapSourceFilter = Literal["all", "weather", "alert", "news", "signal", "position", "event_intelligence"]
 
 
 class GeoPoint(BaseModel):
@@ -160,6 +161,8 @@ class WorldMapRegion(BaseModel):
     story: WorldMapRiskStory
     adaptiveAlerts: list[WorldMapAdaptiveAlert]
     causalScope: WorldMapCausalScope
+    mechanisms: list[RiskFactor] = Field(default_factory=list)
+    sourceKinds: list[EvidenceKind] = Field(default_factory=list)
     narrativeZh: str
     narrativeEn: str
     dataQuality: DataQuality
@@ -180,9 +183,22 @@ class WorldMapSummary(BaseModel):
     runtimeLinkedRegions: int
 
 
+class WorldMapFilterOption(BaseModel):
+    id: str
+    labelZh: str
+    labelEn: str
+
+
+class WorldMapFilterOptions(BaseModel):
+    symbols: list[str]
+    mechanisms: list[WorldMapFilterOption]
+    sources: list[WorldMapFilterOption]
+
+
 class WorldMapSnapshot(BaseModel):
     generatedAt: datetime
     summary: WorldMapSummary
+    filters: WorldMapFilterOptions
     layers: list[WorldMapLayer]
     regions: list[WorldMapRegion]
 
@@ -261,6 +277,13 @@ class CommodityLens:
     counter_templates: dict[RiskFactor, tuple[str, str]]
 
 
+@dataclass(frozen=True)
+class WorldMapFilterScope:
+    symbol: str | None = None
+    mechanism: RiskFactor | None = None
+    source: WorldMapSourceFilter = "all"
+
+
 GENERIC_COUNTER_TEMPLATES: dict[RiskFactor, tuple[str, str]] = {
     "rainfall_surplus": ("库存或进口补充可能缓冲天气扰动。", "Inventory or imports may buffer the weather shock."),
     "drought_heat": ("需求偏弱可能削弱天气风险对价格的传导。", "Weak demand may soften weather transmission into prices."),
@@ -271,6 +294,28 @@ GENERIC_COUNTER_TEMPLATES: dict[RiskFactor, tuple[str, str]] = {
     "policy_shift": ("政策口径可能调整，需等待执行细则。", "Policy language may shift; implementation details matter."),
     "demand_shift": ("需求变化可能已被盘面提前交易。", "Demand changes may already be priced in."),
     "energy_cost": ("能源成本传导可能被产业利润压缩吸收。", "Energy cost transmission may be absorbed by margin compression."),
+}
+
+WORLD_MAP_MECHANISM_ORDER: tuple[RiskFactor, ...] = (
+    "rainfall_surplus",
+    "drought_heat",
+    "el_nino",
+    "supply_disruption",
+    "logistics_disruption",
+    "inventory_pressure",
+    "policy_shift",
+    "demand_shift",
+    "energy_cost",
+)
+
+WORLD_MAP_SOURCE_LABELS: dict[WorldMapSourceFilter, tuple[str, str]] = {
+    "all": ("全部来源", "All Sources"),
+    "weather": ("天气", "Weather"),
+    "alert": ("预警", "Alerts"),
+    "news": ("新闻", "News"),
+    "signal": ("信号", "Signals"),
+    "position": ("持仓", "Positions"),
+    "event_intelligence": ("事件智能", "Event Intelligence"),
 }
 
 
@@ -576,9 +621,17 @@ WEATHER_REGION_BY_LOCATION_KEY = {
 @router.get("", response_model=WorldMapSnapshot)
 async def get_world_map(
     limit: int = Query(default=200, ge=20, le=500),
+    symbol: str | None = Query(default=None, min_length=1, max_length=20),
+    mechanism: RiskFactor | None = Query(default=None),
+    source: WorldMapSourceFilter = Query(default="all"),
     session: AsyncSession = Depends(get_db),
 ) -> WorldMapSnapshot:
-    regions = await _load_world_map_regions(session, limit=limit)
+    filters = WorldMapFilterScope(
+        symbol=_normalize_filter_symbol(symbol),
+        mechanism=mechanism,
+        source=source,
+    )
+    regions = await _load_world_map_regions(session, limit=limit, filters=filters)
     return WorldMapSnapshot(
         generatedAt=datetime.now(timezone.utc),
         summary=WorldMapSummary(
@@ -587,6 +640,7 @@ async def get_world_map(
             maxRiskScore=max((region.riskScore for region in regions), default=0),
             runtimeLinkedRegions=sum(region.causalScope.hasDirectLinks for region in regions),
         ),
+        filters=_world_map_filter_options(),
         layers=_world_map_layers(
             weather_runtime=any(region.weather.dataSource != BASELINE_WEATHER_SOURCE for region in regions)
         ),
@@ -599,9 +653,17 @@ async def get_world_map_tiles(
     layer: TileLayerFilter = Query(default="all"),
     resolution: TileResolution = Query(default="coarse"),
     limit: int = Query(default=200, ge=20, le=500),
+    symbol: str | None = Query(default=None, min_length=1, max_length=20),
+    mechanism: RiskFactor | None = Query(default=None),
+    source: WorldMapSourceFilter = Query(default="all"),
     session: AsyncSession = Depends(get_db),
 ) -> WorldMapTileSnapshot:
-    regions = await _load_world_map_regions(session, limit=limit)
+    filters = WorldMapFilterScope(
+        symbol=_normalize_filter_symbol(symbol),
+        mechanism=mechanism,
+        source=source,
+    )
+    regions = await _load_world_map_regions(session, limit=limit, filters=filters)
     cells = _build_world_map_tile_cells(regions, layer=layer, resolution=resolution)
     data_sources = sorted({cell.source for cell in cells})
     return WorldMapTileSnapshot(
@@ -618,7 +680,12 @@ async def get_world_map_tiles(
     )
 
 
-async def _load_world_map_regions(session: AsyncSession, *, limit: int) -> list[WorldMapRegion]:
+async def _load_world_map_regions(
+    session: AsyncSession,
+    *,
+    limit: int,
+    filters: WorldMapFilterScope | None = None,
+) -> list[WorldMapRegion]:
     alerts = list(
         (
             await session.scalars(
@@ -693,6 +760,11 @@ async def _load_world_map_regions(session: AsyncSession, *, limit: int) -> list[
         if event_items
         else []
     )
+    definitions = [
+        definition
+        for definition in WORLD_RISK_REGIONS
+        if filters is None or filters.symbol is None or filters.symbol in definition.symbols
+    ]
     regions = [
         _build_region_snapshot(
             definition,
@@ -703,11 +775,45 @@ async def _load_world_map_regions(session: AsyncSession, *, limit: int) -> list[
             event_items=event_items,
             event_links=event_links,
             industry_weather=weather_rows,
+            filters=filters,
         )
-        for definition in WORLD_RISK_REGIONS
+        for definition in definitions
     ]
+    regions = [region for region in regions if _region_matches_filter_scope(region, filters)]
     regions.sort(key=lambda region: region.riskScore, reverse=True)
     return regions
+
+
+def _world_map_filter_options() -> WorldMapFilterOptions:
+    symbols = sorted({symbol for definition in WORLD_RISK_REGIONS for symbol in definition.symbols})
+    return WorldMapFilterOptions(
+        symbols=symbols,
+        mechanisms=[
+            WorldMapFilterOption(id=factor, labelZh=_factor_label_zh(factor), labelEn=_factor_label_en(factor))
+            for factor in WORLD_MAP_MECHANISM_ORDER
+        ],
+        sources=[
+            WorldMapFilterOption(id=source, labelZh=labels[0], labelEn=labels[1])
+            for source, labels in WORLD_MAP_SOURCE_LABELS.items()
+        ],
+    )
+
+
+def _normalize_filter_symbol(value: str | None) -> str | None:
+    if value is None:
+        return None
+    normalized = value.strip().upper()
+    return normalized or None
+
+
+def _region_matches_filter_scope(region: WorldMapRegion, filters: WorldMapFilterScope | None) -> bool:
+    if filters is None:
+        return True
+    if filters.source != "all" and filters.source not in region.sourceKinds:
+        return False
+    if filters.mechanism is not None and filters.mechanism not in region.mechanisms:
+        return False
+    return True
 
 
 def _build_region_snapshot(
@@ -720,6 +826,7 @@ def _build_region_snapshot(
     event_items: list[EventIntelligenceItem] | None = None,
     event_links: list[EventImpactLink] | None = None,
     industry_weather: list[IndustryData] | None = None,
+    filters: WorldMapFilterScope | None = None,
 ) -> WorldMapRegion:
     region_symbols = set(definition.symbols)
     matched_alerts = [row for row in alerts if _symbols_intersect(_alert_symbols(row), region_symbols)]
@@ -731,6 +838,28 @@ def _build_region_snapshot(
         row for row in signals if row.alert_id is not None and row.alert_id in matched_alert_ids
     ]
     matched_positions = [row for row in positions if _symbols_intersect(_position_symbols(row), region_symbols)]
+    matched_alerts, matched_news, matched_signals, matched_positions, matched_event_items, matched_event_links = (
+        _apply_source_filter(
+            filters,
+            matched_alerts=matched_alerts,
+            matched_news=matched_news,
+            matched_signals=matched_signals,
+            matched_positions=matched_positions,
+            matched_event_items=matched_event_items,
+            matched_event_links=matched_event_links,
+        )
+    )
+    matched_alerts, matched_news, matched_signals, matched_positions, matched_event_items, matched_event_links = (
+        _apply_mechanism_filter(
+            filters,
+            matched_alerts=matched_alerts,
+            matched_news=matched_news,
+            matched_signals=matched_signals,
+            matched_positions=matched_positions,
+            matched_event_items=matched_event_items,
+            matched_event_links=matched_event_links,
+        )
+    )
     latest_event_at = _latest_event_at(matched_alerts, matched_news, matched_signals, matched_event_items)
     high_severity_alerts = sum(row.severity in {"critical", "high"} for row in matched_alerts)
     weather = _region_weather(definition, industry_weather or [])
@@ -750,6 +879,16 @@ def _build_region_snapshot(
         matched_event_links=matched_event_links,
         weather=weather,
         weather_risk=weather_risk,
+    )
+    factor_signals = _filter_factor_signals(factor_signals, filters)
+    mechanisms = _factor_mechanisms(factor_signals)
+    source_kinds = _source_kinds(
+        factor_signals,
+        matched_alerts=matched_alerts,
+        matched_news=matched_news,
+        matched_signals=matched_signals,
+        matched_positions=matched_positions,
+        matched_event_items=matched_event_items,
     )
     avg_signal_confidence = (
         sum(row.confidence for row in matched_signals) / len(matched_signals)
@@ -824,10 +963,137 @@ def _build_region_snapshot(
             causalWebUrl=f"/causal-web?symbol={definition.symbols[0]}&region={definition.id}",
             hasDirectLinks=bool(event_ids or matched_signals or matched_positions or matched_event_links),
         ),
+        mechanisms=mechanisms,
+        sourceKinds=source_kinds,
         narrativeZh=definition.narrative_zh,
         narrativeEn=definition.narrative_en,
         dataQuality=_data_quality(runtime, weather),
     )
+
+
+def _apply_source_filter(
+    filters: WorldMapFilterScope | None,
+    *,
+    matched_alerts: list[Alert],
+    matched_news: list[NewsEvent],
+    matched_signals: list[SignalTrack],
+    matched_positions: list[Position],
+    matched_event_items: list[EventIntelligenceItem],
+    matched_event_links: list[EventImpactLink],
+) -> tuple[
+    list[Alert],
+    list[NewsEvent],
+    list[SignalTrack],
+    list[Position],
+    list[EventIntelligenceItem],
+    list[EventImpactLink],
+]:
+    if filters is None or filters.source == "all":
+        return matched_alerts, matched_news, matched_signals, matched_positions, matched_event_items, matched_event_links
+    if filters.source == "weather":
+        return [], [], [], [], [], []
+    return (
+        matched_alerts if filters.source == "alert" else [],
+        matched_news if filters.source == "news" else [],
+        matched_signals if filters.source == "signal" else [],
+        matched_positions if filters.source == "position" else [],
+        matched_event_items if filters.source == "event_intelligence" else [],
+        matched_event_links if filters.source == "event_intelligence" else [],
+    )
+
+
+def _apply_mechanism_filter(
+    filters: WorldMapFilterScope | None,
+    *,
+    matched_alerts: list[Alert],
+    matched_news: list[NewsEvent],
+    matched_signals: list[SignalTrack],
+    matched_positions: list[Position],
+    matched_event_items: list[EventIntelligenceItem],
+    matched_event_links: list[EventImpactLink],
+) -> tuple[
+    list[Alert],
+    list[NewsEvent],
+    list[SignalTrack],
+    list[Position],
+    list[EventIntelligenceItem],
+    list[EventImpactLink],
+]:
+    if filters is None or filters.mechanism is None:
+        return matched_alerts, matched_news, matched_signals, matched_positions, matched_event_items, matched_event_links
+    factor = filters.mechanism
+    filtered_alerts = [
+        row for row in matched_alerts if _factor_from_text(" ".join([row.title, row.summary, row.type])) == factor
+    ]
+    filtered_news = [
+        row
+        for row in matched_news
+        if _factor_from_text(" ".join([row.title, row.summary, row.event_type, row.direction])) == factor
+    ]
+    filtered_signals = [row for row in matched_signals if _factor_from_text(row.signal_type) == factor]
+    filtered_positions = matched_positions if factor == "demand_shift" else []
+    filtered_links = [row for row in matched_event_links if _factor_from_event_intelligence_link(row) == factor]
+    linked_event_ids = {row.event_item_id for row in filtered_links}
+    filtered_items = [
+        row
+        for row in matched_event_items
+        if row.id in linked_event_ids or _event_intelligence_item_matches_factor(row, factor)
+    ]
+    return filtered_alerts, filtered_news, filtered_signals, filtered_positions, filtered_items, filtered_links
+
+
+def _filter_factor_signals(
+    factor_signals: list[FactorSignal],
+    filters: WorldMapFilterScope | None,
+) -> list[FactorSignal]:
+    if filters is None:
+        return factor_signals
+    filtered = factor_signals
+    if filters.source != "all":
+        filtered = [signal for signal in filtered if signal.evidence_kind == filters.source]
+    if filters.mechanism is not None:
+        filtered = [signal for signal in filtered if signal.factor == filters.mechanism]
+    return filtered
+
+
+def _event_intelligence_item_matches_factor(row: EventIntelligenceItem, factor: RiskFactor) -> bool:
+    return any(_factor_from_text(str(mechanism)) == factor for mechanism in row.mechanisms or [])
+
+
+def _factor_mechanisms(factor_signals: list[FactorSignal]) -> list[RiskFactor]:
+    seen: set[RiskFactor] = set()
+    mechanisms: list[RiskFactor] = []
+    for signal in factor_signals:
+        if signal.factor in seen:
+            continue
+        seen.add(signal.factor)
+        mechanisms.append(signal.factor)
+    return mechanisms
+
+
+def _source_kinds(
+    factor_signals: list[FactorSignal],
+    *,
+    matched_alerts: list[Alert],
+    matched_news: list[NewsEvent],
+    matched_signals: list[SignalTrack],
+    matched_positions: list[Position],
+    matched_event_items: list[EventIntelligenceItem],
+) -> list[EvidenceKind]:
+    ordered: list[EvidenceKind] = []
+    for source in [signal.evidence_kind for signal in factor_signals]:
+        if source not in ordered:
+            ordered.append(source)
+    for source, present in (
+        ("alert", bool(matched_alerts)),
+        ("news", bool(matched_news)),
+        ("signal", bool(matched_signals)),
+        ("position", bool(matched_positions)),
+        ("event_intelligence", bool(matched_event_items)),
+    ):
+        if present and source not in ordered:
+            ordered.append(source)
+    return ordered
 
 
 def _region_weather(

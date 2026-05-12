@@ -219,6 +219,16 @@ export type WorldMapEvidenceKind =
   | "position"
   | "event_intelligence"
   | "baseline";
+export type WorldMapRiskFactor =
+  | "rainfall_surplus"
+  | "drought_heat"
+  | "el_nino"
+  | "supply_disruption"
+  | "logistics_disruption"
+  | "inventory_pressure"
+  | "policy_shift"
+  | "demand_shift"
+  | "energy_cost";
 
 export interface GeoPoint {
   lat: number;
@@ -304,6 +314,18 @@ export interface WorldMapCausalScope {
   hasDirectLinks: boolean;
 }
 
+export interface WorldMapFilterOption {
+  id: string;
+  labelZh: string;
+  labelEn: string;
+}
+
+export interface WorldMapFilterOptions {
+  symbols: string[];
+  mechanisms: WorldMapFilterOption[];
+  sources: WorldMapFilterOption[];
+}
+
 export interface WorldMapRegion {
   id: string;
   nameZh: string;
@@ -321,6 +343,8 @@ export interface WorldMapRegion {
   story: WorldMapRiskStory;
   adaptiveAlerts: WorldMapAdaptiveAlert[];
   causalScope: WorldMapCausalScope;
+  mechanisms: WorldMapRiskFactor[];
+  sourceKinds: WorldMapEvidenceKind[];
   narrativeZh: string;
   narrativeEn: string;
   dataQuality: WorldMapDataQuality;
@@ -344,6 +368,7 @@ export interface WorldMapSummary {
 export interface WorldMapSnapshot {
   generatedAt: string;
   summary: WorldMapSummary;
+  filters: WorldMapFilterOptions;
   layers: WorldMapLayer[];
   regions: WorldMapRegion[];
 }
@@ -1162,16 +1187,35 @@ export async function fetchCausalWebGraph(params?: {
   return fetchJson<CausalWebGraph>(`/api/causal-web?${query.toString()}`);
 }
 
-export async function fetchWorldMapSnapshot(): Promise<WorldMapSnapshot> {
-  return fetchJson<WorldMapSnapshot>("/api/world-map");
+export interface WorldMapFilterParams {
+  symbol?: string;
+  mechanism?: string;
+  source?: string;
+}
+
+function worldMapQuery(params?: WorldMapFilterParams): string {
+  const query = new URLSearchParams();
+  if (params?.symbol) query.set("symbol", params.symbol);
+  if (params?.mechanism) query.set("mechanism", params.mechanism);
+  if (params?.source) query.set("source", params.source);
+  const value = query.toString();
+  return value ? `?${value}` : "";
+}
+
+export async function fetchWorldMapSnapshot(params?: WorldMapFilterParams): Promise<WorldMapSnapshot> {
+  return fetchJson<WorldMapSnapshot>(`/api/world-map${worldMapQuery(params)}`);
 }
 
 export async function fetchWorldMapTiles(
   layer: WorldMapTileLayerFilter = "all",
-  resolution: WorldMapTileResolution = "coarse"
+  resolution: WorldMapTileResolution = "coarse",
+  filters?: WorldMapFilterParams
 ): Promise<WorldMapTileSnapshot> {
-  const params = new URLSearchParams({ layer, resolution });
-  return fetchJson<WorldMapTileSnapshot>(`/api/world-map/tiles?${params.toString()}`);
+  const query = new URLSearchParams({ layer, resolution });
+  if (filters?.symbol) query.set("symbol", filters.symbol);
+  if (filters?.mechanism) query.set("mechanism", filters.mechanism);
+  if (filters?.source) query.set("source", filters.source);
+  return fetchJson<WorldMapTileSnapshot>(`/api/world-map/tiles?${query.toString()}`);
 }
 
 export async function fetchDataSourceStatuses(): Promise<DataSourceStatus[]> {

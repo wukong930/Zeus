@@ -354,3 +354,9 @@ threshold_modifier、propagation_activator、risk_recalc、数据腐烂防护
 - 事件智能源节点和影响假设节点新增双语语义字段，详情面板可直接展示品种、机制、证据、反证、方向、置信度、影响分和周期。
 - Causal Web 节点详情新增事件智能阅读块：源事件展示关联影响链，影响假设展示回指源事件，并保留边方向与置信度。
 - 这一步优先解决“看得懂为什么关联”的问题，路径高亮和证据展开作为后续增强继续推进。
+
+# 2026-05-12 — Event Intelligence Engine Phase 10.7
+
+- World Risk Map API 新增 `symbol`、`mechanism`、`source` 筛选作用域，快照与瓦片接口使用同一过滤逻辑。
+- 区域返回新增 `mechanisms` 与 `sourceKinds`，前端可以明确展示当前区域由哪些机制和事件源驱动。
+- `/world-map` 顶部筛选从单一品类按钮升级为事件源 / 品种 / 机制三行紧凑控件，筛选后地图、热力瓦片、高风险索引和区域详情同步更新。

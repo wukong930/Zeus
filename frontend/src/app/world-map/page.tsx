@@ -40,6 +40,7 @@ import {
   fetchWorldMapSnapshot,
   type GeoPoint,
   type WorldMapAdaptiveAlert,
+  type WorldMapFilterOption,
   type WorldMapLayer,
   type WorldMapRegion,
   type WorldMapSnapshot,
@@ -51,7 +52,12 @@ import {
 import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
-type CommodityFilter = "all" | string;
+type ScopeFilterValue = "all" | string;
+type WorldMapScopeFilters = {
+  symbol: ScopeFilterValue;
+  mechanism: ScopeFilterValue;
+  source: ScopeFilterValue;
+};
 type WorldMapVisualLayer = "weather" | "density" | "heat" | "routes" | "labels";
 type WorldMapRendererMode = "svg" | "webgl-ready";
 type VisibleMapLayers = Record<WorldMapVisualLayer, boolean>;
@@ -173,13 +179,17 @@ const MAP_VISUAL_LAYER_OPTIONS: Array<{
 ];
 
 export default function WorldMapPage() {
-  const { lang, text } = useI18n();
+  const { text } = useI18n();
   const [snapshot, setSnapshot] = useState<WorldMapSnapshot | null>(null);
   const [tileSnapshot, setTileSnapshot] = useState<WorldMapTileSnapshot | null>(null);
   const [source, setSource] = useState<DataSourceState>("loading");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
-  const [commodity, setCommodity] = useState<CommodityFilter>("all");
+  const [scopeFilters, setScopeFilters] = useState<WorldMapScopeFilters>({
+    symbol: "all",
+    mechanism: "all",
+    source: "all",
+  });
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
@@ -198,8 +208,9 @@ export default function WorldMapPage() {
     refreshInFlightRef.current = true;
     setIsRefreshing(true);
     try {
-      const next = await fetchWorldMapSnapshot();
-      const nextTileSnapshot = await fetchWorldMapTiles().catch(() => tileSnapshotRef.current);
+      const filterParams = worldMapFilterParams(scopeFilters);
+      const next = await fetchWorldMapSnapshot(filterParams);
+      const nextTileSnapshot = await fetchWorldMapTiles("all", "coarse", filterParams).catch(() => tileSnapshotRef.current);
       if (!mountedRef.current) return;
 
       const previousScores = riskScoresRef.current;
@@ -232,7 +243,7 @@ export default function WorldMapPage() {
       refreshInFlightRef.current = false;
       if (mountedRef.current) setIsRefreshing(false);
     }
-  }, []);
+  }, [scopeFilters]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -251,17 +262,7 @@ export default function WorldMapPage() {
   }, [autoRefresh, loadSnapshot]);
 
   const regions = snapshot?.regions ?? [];
-  const commodities = useMemo(
-    () => Array.from(new Set(regions.map((region) => commodityLabel(region, lang)))),
-    [lang, regions]
-  );
-  const filteredRegions = useMemo(
-    () =>
-      commodity === "all"
-        ? regions
-        : regions.filter((region) => commodityLabel(region, lang) === commodity),
-    [commodity, lang, regions]
-  );
+  const filteredRegions = regions;
   const filteredRegionIds = useMemo(
     () => new Set(filteredRegions.map((region) => region.id)),
     [filteredRegions]
@@ -278,6 +279,12 @@ export default function WorldMapPage() {
     [filteredRegions]
   );
   const selectedRegion = regions.find((region) => region.id === selectedId) ?? null;
+  useEffect(() => {
+    if (!selectedId) return;
+    if (regions.some((region) => region.id === selectedId)) return;
+    setSelectedId(null);
+    setDetailOpen(false);
+  }, [regions, selectedId]);
   const selectRegion = useCallback((id: string) => {
     setSelectedId(id);
     setDetailOpen(true);
@@ -308,11 +315,11 @@ export default function WorldMapPage() {
 
           <div className="grid min-w-0 gap-2 xl:justify-items-end">
             <div className="min-w-0 max-w-full rounded-sm border border-white/[0.12] bg-black/42 p-1 shadow-data-panel backdrop-blur-2xl xl:max-w-[620px]">
-              <CommodityToggle
-                value={commodity}
-                options={commodities}
-                onChange={(value) => {
-                  setCommodity(value);
+              <WorldMapScopeFilterPanel
+                filters={scopeFilters}
+                options={snapshot?.filters ?? null}
+                onChange={(nextFilters) => {
+                  setScopeFilters(nextFilters);
                   setSelectedId(null);
                   setDetailOpen(false);
                 }}
@@ -595,36 +602,89 @@ function StatusPill({
   );
 }
 
-function CommodityToggle({
-  value,
+function WorldMapScopeFilterPanel({
+  filters,
   options,
   onChange,
 }: {
-  value: CommodityFilter;
-  options: string[];
-  onChange: (value: CommodityFilter) => void;
+  filters: WorldMapScopeFilters;
+  options: WorldMapSnapshot["filters"] | null;
+  onChange: (filters: WorldMapScopeFilters) => void;
+}) {
+  const { text, lang } = useI18n();
+  const sourceOptions = options?.sources ?? [];
+  const mechanismOptions = options?.mechanisms ?? [];
+  const symbolOptions = options?.symbols ?? [];
+  const update = (key: keyof WorldMapScopeFilters, value: ScopeFilterValue) => {
+    onChange({ ...filters, [key]: value });
+  };
+
+  return (
+    <div className="grid gap-1.5">
+      <ScopeFilterRow
+        label={text("事件源")}
+        value={filters.source}
+        options={sourceOptions}
+        onChange={(value) => update("source", value)}
+        optionLabel={(option) => (lang === "zh" ? option.labelZh : option.labelEn)}
+      />
+      <ScopeFilterRow
+        label={text("品种")}
+        value={filters.symbol}
+        options={symbolOptions.map((symbol) => ({ id: symbol, labelZh: symbol, labelEn: symbol }))}
+        onChange={(value) => update("symbol", value)}
+        optionLabel={(option) => option.id}
+      />
+      <ScopeFilterRow
+        label={text("机制")}
+        value={filters.mechanism}
+        options={mechanismOptions}
+        onChange={(value) => update("mechanism", value)}
+        optionLabel={(option) => (lang === "zh" ? option.labelZh : option.labelEn)}
+      />
+    </div>
+  );
+}
+
+function ScopeFilterRow({
+  label,
+  value,
+  options,
+  onChange,
+  optionLabel,
+}: {
+  label: string;
+  value: ScopeFilterValue;
+  options: WorldMapFilterOption[];
+  onChange: (value: ScopeFilterValue) => void;
+  optionLabel: (option: WorldMapFilterOption) => string;
 }) {
   const { text } = useI18n();
+  const allOption: WorldMapFilterOption = { id: "all", labelZh: "全部", labelEn: "All" };
   return (
-    <div className="flex max-w-full gap-1 overflow-x-auto">
-      {["all", ...options].map((option) => {
-        const active = value === option;
-        return (
-          <button
-            key={option}
-            type="button"
-            onClick={() => onChange(option)}
-            className={cn(
-              "h-8 shrink-0 rounded-xs px-3 text-xs font-semibold transition-colors",
-              active
-                ? "bg-brand-emerald text-black"
-                : "text-text-muted hover:bg-bg-surface-raised hover:text-text-primary"
-            )}
-          >
-            {option === "all" ? text("全部") : option}
-          </button>
-        );
-      })}
+    <div className="grid grid-cols-[48px_minmax(0,1fr)] items-center gap-1.5">
+      <span className="text-[10px] font-semibold text-text-muted">{label}</span>
+      <div className="flex max-w-full gap-1 overflow-x-auto">
+        {[allOption, ...options.filter((option) => option.id !== "all")].map((option) => {
+          const active = value === option.id;
+          return (
+            <button
+              key={option.id}
+              type="button"
+              onClick={() => onChange(option.id)}
+              className={cn(
+                "h-7 shrink-0 rounded-xs border px-2 text-[11px] font-semibold transition-colors",
+                active
+                  ? "border-brand-emerald/40 bg-brand-emerald text-black"
+                  : "border-transparent text-text-muted hover:bg-bg-surface-raised hover:text-text-primary"
+              )}
+              title={option.id === "all" ? text("全部") : optionLabel(option)}
+            >
+              {option.id === "all" ? text("全部") : optionLabel(option)}
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -2407,6 +2467,10 @@ function stageLabel(stage: string): string {
   return labels[stage] ?? stage;
 }
 
-function commodityLabel(region: WorldMapRegion, lang: "zh" | "en"): string {
-  return lang === "zh" ? region.commodityZh : region.commodityEn;
+function worldMapFilterParams(filters: WorldMapScopeFilters) {
+  return {
+    symbol: filters.symbol === "all" ? undefined : filters.symbol,
+    mechanism: filters.mechanism === "all" ? undefined : filters.mechanism,
+    source: filters.source === "all" ? undefined : filters.source,
+  };
 }

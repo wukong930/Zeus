@@ -960,7 +960,7 @@ Causa 的 `event_driven` 评估器实际上是纯技术面（gap + volume），*
   - [x] Phase 10.5 聚合去重：Causal Web / World Risk Map 对同源转写、媒体转载和标题前后缀做展示层去重，保留数据库原始审计记录。
   - [x] Phase 10.6 Causal Web 阅读层：事件智能节点提供双语证据摘要，点击源事件/影响假设时展示关联链路和方向置信。
   - [ ] Causal Web 支持点击事件智能链路后的更强路径聚焦和证据详情展开。
-  - [ ] World Risk Map 支持按事件源、商品和影响机制做显式筛选。
+  - [x] Phase 10.7 World Risk Map 显式筛选：按事件源、品种和影响机制请求同一后端作用域，地图、瓦片、索引、详情和 Causal Web URL 保持一致。
   - [x] 新增 Event Intelligence 页面：事件池、影响链、证据/反证、人工确认队列。
   - [x] Event Intelligence 页面展示 LLM 语义假设与模型/提示版本。
   - [x] Event Intelligence 页面支持确认、拒绝、转人工复核，并写入审计日志。

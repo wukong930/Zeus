@@ -3,6 +3,7 @@ from uuid import uuid4
 
 from app.api.world_map import (
     WORLD_RISK_REGIONS,
+    WorldMapFilterScope,
     _build_region_snapshot,
     _build_world_map_tile_cells,
     _risk_level,
@@ -150,6 +151,85 @@ def test_region_snapshot_uses_event_intelligence_scope() -> None:
     assert any(row.kind == "event_intelligence" for row in region.story.evidence)
     assert any(alert.source == "event_intelligence" for alert in region.adaptiveAlerts)
     assert region.riskScore > WORLD_RISK_REGIONS[0].base_risk
+    assert "event_intelligence" in region.sourceKinds
+    assert "policy_shift" in region.mechanisms
+
+
+def test_region_snapshot_source_filter_scopes_runtime_evidence() -> None:
+    now = datetime.now(timezone.utc)
+    alert = Alert(
+        id=uuid4(),
+        title="RU 降水扰动预警",
+        summary="暴雨影响割胶",
+        severity="high",
+        category="rubber",
+        type="weather",
+        status="active",
+        triggered_at=now,
+        confidence=0.82,
+        related_assets=["RU"],
+        trigger_chain=[],
+        risk_items=[],
+        manual_check_items=[],
+    )
+    event_item = EventIntelligenceItem(
+        id=uuid4(),
+        source_type="news_event",
+        source_id="rubber-policy-filter",
+        title="Rubber policy update",
+        summary="Policy update may support rubber flows.",
+        event_type="policy",
+        event_timestamp=now,
+        entities=["rubber"],
+        symbols=["RU"],
+        regions=["southeast_asia_rubber"],
+        mechanisms=["policy"],
+        evidence=["policy headline"],
+        counterevidence=[],
+        confidence=0.78,
+        impact_score=80,
+        status="shadow_review",
+        requires_manual_confirmation=False,
+        source_reliability=0.7,
+        freshness_score=0.9,
+        source_payload={},
+        created_at=now,
+        updated_at=now,
+    )
+    impact_link = EventImpactLink(
+        id=uuid4(),
+        event_item_id=event_item.id,
+        symbol="RU",
+        region_id="southeast_asia_rubber",
+        mechanism="policy",
+        direction="bullish",
+        confidence=0.8,
+        impact_score=82,
+        horizon="short",
+        rationale="Policy supports flows.",
+        evidence=["policy headline"],
+        counterevidence=[],
+        status="shadow_review",
+        created_at=now,
+        updated_at=now,
+    )
+
+    region = _build_region_snapshot(
+        WORLD_RISK_REGIONS[0],
+        alerts=[alert],
+        news=[],
+        signals=[],
+        positions=[],
+        event_items=[event_item],
+        event_links=[impact_link],
+        filters=WorldMapFilterScope(source="event_intelligence", mechanism="policy_shift"),
+    )
+
+    assert region.runtime.alerts == 0
+    assert region.runtime.eventIntelligence == 1
+    assert region.sourceKinds == ["event_intelligence"]
+    assert region.mechanisms == ["policy_shift"]
+    assert all(row.kind == "event_intelligence" for row in region.story.evidence)
 
 
 def test_world_map_event_intelligence_dedupe_keeps_one_display_event() -> None:
