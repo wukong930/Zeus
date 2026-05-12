@@ -40,6 +40,7 @@ import type { DataSourceState } from "@/components/DataSourceBadge";
 import {
   fetchWorldMapTiles,
   fetchWorldMapSnapshot,
+  type WorldMapFilterParams,
   type GeoPoint,
   type WorldMapAdaptiveAlert,
   type WorldMapFilterOption,
@@ -49,6 +50,7 @@ import {
   type WorldMapStoryStep,
   type WorldMapTileCell,
   type WorldMapTileSnapshot,
+  type WorldMapViewport,
   type WorldRiskLevel,
 } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
@@ -201,9 +203,12 @@ export default function WorldMapPage() {
   const [focusRequest, setFocusRequest] = useState<MapFocusRequest | null>(null);
   const snapshotRef = useRef<WorldMapSnapshot | null>(null);
   const tileSnapshotRef = useRef<WorldMapTileSnapshot | null>(null);
+  const tileViewportRef = useRef<WorldMapViewport | null>(null);
   const riskScoresRef = useRef<Record<string, number>>({});
   const mountedRef = useRef(false);
   const refreshInFlightRef = useRef(false);
+  const tileRefreshInFlightRef = useRef(false);
+  const tileRefreshTimerRef = useRef<number | null>(null);
 
   const loadSnapshot = useCallback(async () => {
     if (refreshInFlightRef.current) return;
@@ -211,8 +216,9 @@ export default function WorldMapPage() {
     setIsRefreshing(true);
     try {
       const filterParams = worldMapFilterParams(scopeFilters);
+      const tileFilterParams = worldMapFilterParams(scopeFilters, tileViewportRef.current);
       const next = await fetchWorldMapSnapshot(filterParams);
-      const nextTileSnapshot = await fetchWorldMapTiles("all", "coarse", filterParams).catch(() => tileSnapshotRef.current);
+      const nextTileSnapshot = await fetchWorldMapTiles("all", "coarse", tileFilterParams).catch(() => tileSnapshotRef.current);
       if (!mountedRef.current) return;
 
       const previousScores = riskScoresRef.current;
@@ -247,11 +253,41 @@ export default function WorldMapPage() {
     }
   }, [scopeFilters]);
 
+  const loadViewportTiles = useCallback(
+    (viewport: WorldMapViewport, scale: number) => {
+      tileViewportRef.current = viewport;
+      if (tileRefreshTimerRef.current !== null) {
+        window.clearTimeout(tileRefreshTimerRef.current);
+      }
+      tileRefreshTimerRef.current = window.setTimeout(() => {
+        if (!mountedRef.current || tileRefreshInFlightRef.current) return;
+        tileRefreshInFlightRef.current = true;
+        const resolution = scale >= 1.35 ? "medium" : "coarse";
+        const filterParams = worldMapFilterParams(scopeFilters, viewport);
+        fetchWorldMapTiles("all", resolution, filterParams)
+          .then((nextTileSnapshot) => {
+            if (!mountedRef.current) return;
+            tileSnapshotRef.current = nextTileSnapshot;
+            setTileSnapshot(nextTileSnapshot);
+          })
+          .catch(() => undefined)
+          .finally(() => {
+            tileRefreshInFlightRef.current = false;
+          });
+      }, 260);
+    },
+    [scopeFilters]
+  );
+
   useEffect(() => {
     mountedRef.current = true;
     void loadSnapshot();
     return () => {
       mountedRef.current = false;
+      if (tileRefreshTimerRef.current !== null) {
+        window.clearTimeout(tileRefreshTimerRef.current);
+        tileRefreshTimerRef.current = null;
+      }
     };
   }, [loadSnapshot]);
 
@@ -374,6 +410,7 @@ export default function WorldMapPage() {
           visibleLayers={visibleLayers}
           rendererMode={rendererMode}
           focusRequest={focusRequest}
+          onViewportChange={loadViewportTiles}
           onSelect={selectRegion}
         />
 
@@ -876,6 +913,7 @@ function WorldMapCanvas({
   visibleLayers,
   rendererMode,
   focusRequest,
+  onViewportChange,
   onSelect,
 }: {
   regions: WorldMapRegion[];
@@ -885,6 +923,7 @@ function WorldMapCanvas({
   visibleLayers: VisibleMapLayers;
   rendererMode: WorldMapRendererMode;
   focusRequest: MapFocusRequest | null;
+  onViewportChange: (viewport: WorldMapViewport, scale: number) => void;
   onSelect: (id: string) => void;
 }) {
   const { lang } = useI18n();
@@ -929,6 +968,18 @@ function WorldMapCanvas({
     () => buildWeatherTileCells(regions, projection, tileCells),
     [projection, regions, tileCells]
   );
+  const viewport = useMemo(() => computeMapViewport(view, projection), [projection, view]);
+
+  useEffect(() => {
+    onViewportChange(viewport, view.scale);
+  }, [
+    onViewportChange,
+    view.scale,
+    viewport.maxLat,
+    viewport.maxLon,
+    viewport.minLat,
+    viewport.minLon,
+  ]);
 
   useEffect(() => {
     if (!focusRequest) return;
@@ -2071,6 +2122,54 @@ function project(point: GeoPoint, projection: GeoProjection): { x: number; y: nu
   };
 }
 
+function computeMapViewport(view: MapViewTransform, projection: GeoProjection): WorldMapViewport {
+  const padding = 80;
+  const samples: Array<[number, number]> = [
+    [-padding, -padding],
+    [MAP_WIDTH / 2, -padding],
+    [MAP_WIDTH + padding, -padding],
+    [-padding, MAP_HEIGHT / 2],
+    [MAP_WIDTH / 2, MAP_HEIGHT / 2],
+    [MAP_WIDTH + padding, MAP_HEIGHT / 2],
+    [-padding, MAP_HEIGHT + padding],
+    [MAP_WIDTH / 2, MAP_HEIGHT + padding],
+    [MAP_WIDTH + padding, MAP_HEIGHT + padding],
+  ];
+  const coords = samples.flatMap(([screenX, screenY]) => {
+    const mapX = (screenX - view.x) / view.scale;
+    const mapY = (screenY - view.y) / view.scale;
+    const inverted = projection.invert?.([mapX, mapY]);
+    if (!inverted) return [];
+    const [lon, lat] = inverted;
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return [];
+    return [{ lat: clamp(lat, -85, 85), lon: clamp(lon, -180, 180) }];
+  });
+  if (coords.length === 0) {
+    return { minLat: -85, maxLat: 85, minLon: -180, maxLon: 180 };
+  }
+
+  const latitudes = coords.map((coord) => coord.lat);
+  const longitudes = coords.map((coord) => coord.lon);
+  const latSpan = ensureMinSpan(Math.min(...latitudes), Math.max(...latitudes), -85, 85);
+  const lonSpan = ensureMinSpan(Math.min(...longitudes), Math.max(...longitudes), -180, 180);
+
+  return {
+    minLat: latSpan.min,
+    maxLat: latSpan.max,
+    minLon: lonSpan.min,
+    maxLon: lonSpan.max,
+  };
+}
+
+function ensureMinSpan(min: number, max: number, floor: number, ceiling: number): { min: number; max: number } {
+  if (max - min >= 1) return { min, max };
+  const center = (min + max) / 2;
+  return {
+    min: clamp(center - 0.5, floor, ceiling - 1),
+    max: clamp(center + 0.5, floor + 1, ceiling),
+  };
+}
+
 function polygonPath(points: GeoPoint[], projection: GeoProjection): string {
   return `${points
     .map((point, index) => {
@@ -2545,10 +2644,14 @@ function stageLabel(stage: string): string {
   return labels[stage] ?? stage;
 }
 
-function worldMapFilterParams(filters: WorldMapScopeFilters) {
+function worldMapFilterParams(
+  filters: WorldMapScopeFilters,
+  viewport?: WorldMapViewport | null
+): WorldMapFilterParams {
   return {
     symbol: filters.symbol === "all" ? undefined : filters.symbol,
     mechanism: filters.mechanism === "all" ? undefined : filters.mechanism,
     source: filters.source === "all" ? undefined : filters.source,
+    viewport: viewport ?? undefined,
   };
 }

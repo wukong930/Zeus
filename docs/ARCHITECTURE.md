@@ -162,6 +162,7 @@ Phase 10.7 已落地的 World Risk Map 作用域边界：
 - `/api/world-map` 与 `/api/world-map/tiles` 支持 `symbol`、`mechanism`、`source` 查询参数，后端按同一作用域返回区域、风险分、证据、动态预警和瓦片。
 - 返回结构新增 `filters`、`region.mechanisms`、`region.sourceKinds`，前端可以直接渲染事件源、品种和影响机制筛选，而不是只在本地按品类隐藏卡片。
 - 前端筛选后会重新请求快照和瓦片，风险索引、地图热区、区域档案和打开 Causal Web 的链接保持一致作用域。
+- `/api/world-map/tiles` 额外支持 `min_lat/max_lat/min_lon/max_lon` 视口裁剪；前端缩放/拖拽后只刷新当前可视范围瓦片，完整区域快照不被裁剪。
 
 Phase 10.8 已落地的 Causal Web 路径阅读边界：
 

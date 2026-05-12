@@ -1464,6 +1464,14 @@ export interface WorldMapFilterParams {
   symbol?: string;
   mechanism?: string;
   source?: string;
+  viewport?: WorldMapViewport;
+}
+
+export interface WorldMapViewport {
+  minLat: number;
+  maxLat: number;
+  minLon: number;
+  maxLon: number;
 }
 
 function worldMapQuery(params?: WorldMapFilterParams): string {
@@ -1471,6 +1479,12 @@ function worldMapQuery(params?: WorldMapFilterParams): string {
   if (params?.symbol) query.set("symbol", params.symbol);
   if (params?.mechanism) query.set("mechanism", params.mechanism);
   if (params?.source) query.set("source", params.source);
+  if (params?.viewport) {
+    query.set("min_lat", params.viewport.minLat.toFixed(4));
+    query.set("max_lat", params.viewport.maxLat.toFixed(4));
+    query.set("min_lon", params.viewport.minLon.toFixed(4));
+    query.set("max_lon", params.viewport.maxLon.toFixed(4));
+  }
   const value = query.toString();
   return value ? `?${value}` : "";
 }
@@ -1488,6 +1502,12 @@ export async function fetchWorldMapTiles(
   if (filters?.symbol) query.set("symbol", filters.symbol);
   if (filters?.mechanism) query.set("mechanism", filters.mechanism);
   if (filters?.source) query.set("source", filters.source);
+  if (filters?.viewport) {
+    query.set("min_lat", filters.viewport.minLat.toFixed(4));
+    query.set("max_lat", filters.viewport.maxLat.toFixed(4));
+    query.set("min_lon", filters.viewport.minLon.toFixed(4));
+    query.set("max_lon", filters.viewport.maxLon.toFixed(4));
+  }
   return fetchJson<WorldMapTileSnapshot>(`/api/world-map/tiles?${query.toString()}`);
 }
 

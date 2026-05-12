@@ -252,6 +252,12 @@ threshold_modifier、propagation_activator、risk_recalc、数据腐烂防护
 - 前端增强模式优先使用后端 weather/risk tile 数据；接口失败时保留上一版本地生成回退，避免世界地图因为瓦片服务异常整体不可用。
 - 新增 world map tile 契约单测，覆盖天气/风险双层输出、polygon 结构、强度范围和天气层过滤。
 
+# 2026-05-12 — World Risk Map Phase B.2.10 视口瓦片裁剪
+
+- `/api/world-map/tiles` 新增 `min_lat/max_lat/min_lon/max_lon` 可选查询参数，用于按当前地图视口裁剪天气/风险瓦片。
+- 前端地图缩放或拖拽后会 debounce 请求当前可视范围瓦片；缩放到 135% 以上自动切换 medium resolution，保持放大阅读时的细节密度。
+- 全局区域快照仍保持完整，视口裁剪只影响 WebGL / tile 图层，避免大数据量时把不可见瓦片全部送到浏览器渲染。
+
 # 2026-05-09 — World Risk Map Phase C.1 真实天气接入准备
 
 - Open-Meteo 采集配置化，并把默认天气地点扩展到橡胶、原油、黑色、农产和农能区域。

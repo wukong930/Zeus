@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from typing import Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -298,6 +298,14 @@ class WorldMapFilterScope:
     symbol: str | None = None
     mechanism: RiskFactor | None = None
     source: WorldMapSourceFilter = "all"
+
+
+@dataclass(frozen=True)
+class WorldMapTileViewport:
+    min_lat: float
+    max_lat: float
+    min_lon: float
+    max_lon: float
 
 
 GENERIC_COUNTER_TEMPLATES: dict[RiskFactor, tuple[str, str]] = {
@@ -672,6 +680,10 @@ async def get_world_map_tiles(
     symbol: str | None = Query(default=None, min_length=1, max_length=20),
     mechanism: RiskFactor | None = Query(default=None),
     source: WorldMapSourceFilter = Query(default="all"),
+    min_lat: float | None = Query(default=None, ge=-85, le=85),
+    max_lat: float | None = Query(default=None, ge=-85, le=85),
+    min_lon: float | None = Query(default=None, ge=-180, le=180),
+    max_lon: float | None = Query(default=None, ge=-180, le=180),
     session: AsyncSession = Depends(get_db),
 ) -> WorldMapTileSnapshot:
     filters = WorldMapFilterScope(
@@ -679,8 +691,17 @@ async def get_world_map_tiles(
         mechanism=mechanism,
         source=source,
     )
+    viewport = _world_map_tile_viewport(
+        min_lat=min_lat,
+        max_lat=max_lat,
+        min_lon=min_lon,
+        max_lon=max_lon,
+    )
     regions = await _load_world_map_regions(session, limit=limit, filters=filters)
-    cells = _build_world_map_tile_cells(regions, layer=layer, resolution=resolution)
+    cells = _filter_tile_cells_for_viewport(
+        _build_world_map_tile_cells(regions, layer=layer, resolution=resolution),
+        viewport,
+    )
     data_sources = sorted({cell.source for cell in cells})
     return WorldMapTileSnapshot(
         generatedAt=datetime.now(timezone.utc),
@@ -1524,6 +1545,60 @@ def _build_world_map_tile_cells(
             )
 
     return sorted(cells.values(), key=lambda cell: cell.intensity, reverse=True)[:max_cells]
+
+
+def _world_map_tile_viewport(
+    *,
+    min_lat: float | None,
+    max_lat: float | None,
+    min_lon: float | None,
+    max_lon: float | None,
+) -> WorldMapTileViewport | None:
+    values = (min_lat, max_lat, min_lon, max_lon)
+    if all(value is None for value in values):
+        return None
+    if any(value is None for value in values):
+        raise HTTPException(status_code=400, detail="tile viewport requires all four bounds")
+    assert min_lat is not None
+    assert max_lat is not None
+    assert min_lon is not None
+    assert max_lon is not None
+    if min_lat >= max_lat:
+        raise HTTPException(status_code=400, detail="min_lat must be less than max_lat")
+    if min_lon >= max_lon:
+        raise HTTPException(status_code=400, detail="min_lon must be less than max_lon")
+    return WorldMapTileViewport(
+        min_lat=min_lat,
+        max_lat=max_lat,
+        min_lon=min_lon,
+        max_lon=max_lon,
+    )
+
+
+def _filter_tile_cells_for_viewport(
+    cells: list[WorldMapTileCell],
+    viewport: WorldMapTileViewport | None,
+) -> list[WorldMapTileCell]:
+    if viewport is None:
+        return cells
+    return [cell for cell in cells if _tile_cell_intersects_viewport(cell, viewport)]
+
+
+def _tile_cell_intersects_viewport(
+    cell: WorldMapTileCell,
+    viewport: WorldMapTileViewport,
+) -> bool:
+    latitudes = [point.lat for point in cell.polygon]
+    longitudes = [point.lon for point in cell.polygon]
+    cell_min_lat = min(latitudes, default=cell.center.lat)
+    cell_max_lat = max(latitudes, default=cell.center.lat)
+    cell_min_lon = min(longitudes, default=cell.center.lon)
+    cell_max_lon = max(longitudes, default=cell.center.lon)
+    if cell_max_lat < viewport.min_lat or cell_min_lat > viewport.max_lat:
+        return False
+    if cell_max_lon < viewport.min_lon or cell_min_lon > viewport.max_lon:
+        return False
+    return True
 
 
 def _tile_resolution_spec(resolution: TileResolution) -> tuple[float, float, int]:

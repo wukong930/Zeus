@@ -4,8 +4,10 @@ from uuid import uuid4
 from app.api.world_map import (
     WORLD_RISK_REGIONS,
     WorldMapFilterScope,
+    WorldMapTileViewport,
     _build_region_snapshot,
     _build_world_map_tile_cells,
+    _filter_tile_cells_for_viewport,
     _risk_level,
     _unique_recent_event_intelligence,
 )
@@ -635,3 +637,27 @@ def test_world_map_tile_contract_can_filter_weather_layer() -> None:
     assert cells
     assert {cell.layer for cell in cells} == {"weather"}
     assert all(cell.source == "regional_baseline_seed" for cell in cells)
+
+
+def test_world_map_tile_viewport_filters_cells() -> None:
+    region = _build_region_snapshot(
+        WORLD_RISK_REGIONS[0],
+        alerts=[],
+        news=[],
+        signals=[],
+        positions=[],
+    )
+    cells = _build_world_map_tile_cells([region], layer="all", resolution="medium")
+    selected = cells[0]
+    viewport = WorldMapTileViewport(
+        min_lat=max(selected.center.lat - 2, -85),
+        max_lat=min(selected.center.lat + 2, 85),
+        min_lon=max(selected.center.lon - 2, -180),
+        max_lon=min(selected.center.lon + 2, 180),
+    )
+
+    filtered = _filter_tile_cells_for_viewport(cells, viewport)
+
+    assert filtered
+    assert len(filtered) < len(cells)
+    assert selected.id in {cell.id for cell in filtered}
