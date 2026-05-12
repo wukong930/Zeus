@@ -366,3 +366,9 @@ threshold_modifier、propagation_activator、risk_recalc、数据腐烂防护
 - `/api/causal-web` 事件智能节点新增结构化支持证据与反证线索，前端可直接展开阅读，不再依赖叙事文本中的拼接片段。
 - Causal Web 详情面板新增“聚焦此路径”，点击事件智能源事件或影响假设后，画布会收束到相关影响链并显示路径聚焦状态。
 - 事件源聚合保留合并后的证据去重，避免同源转载折叠后丢失可审计证据。
+
+# 2026-05-12 — Event Intelligence Engine Phase 10.9
+
+- 新增事件智能质量门服务，按证据、反证、来源可信、新鲜度、作用域、治理状态和影响链质量实时评估事件可用性。
+- 新增 `/api/event-intelligence/quality`，返回 `blocked / review / shadow_ready / decision_grade`、事件级问题和影响链级问题。
+- `/event-intelligence` 页面新增质量评分、阻断原因和影响链质量状态，避免人工确认时只依赖置信度和影响分。

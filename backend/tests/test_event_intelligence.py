@@ -4,12 +4,14 @@ from uuid import uuid4
 from fastapi.testclient import TestClient
 
 from app.main import create_app
-from app.models.event_intelligence import EventIntelligenceAuditLog, EventIntelligenceItem
+from app.models.event_intelligence import EventImpactLink, EventIntelligenceAuditLog, EventIntelligenceItem
 from app.models.news_events import NewsEvent
 from app.services.event_intelligence import (
     apply_event_intelligence_decision,
     build_event_intelligence_from_news,
+    evaluate_event_intelligence_quality,
     parse_semantic_extraction,
+    summarize_event_intelligence_quality,
 )
 from app.services.event_intelligence.eval_cases import EVENT_INTELLIGENCE_EVAL_CASES
 
@@ -274,6 +276,139 @@ def test_event_intelligence_eval_cases_cover_required_scenarios() -> None:
         "tariff-ferrous-base-metals",
         "port-flood-logistics",
     }.issubset(case_ids)
+
+
+def test_event_intelligence_quality_gate_marks_confirmed_evidence_as_decision_grade() -> None:
+    event_id = uuid4()
+    event_item = EventIntelligenceItem(
+        id=event_id,
+        source_type="news_event",
+        source_id=str(uuid4()),
+        title="Verified rubber weather disruption",
+        summary="Multi-source rainfall anomaly affects rubber tapping.",
+        event_type="weather",
+        event_timestamp=datetime(2026, 5, 10, tzinfo=UTC),
+        entities=["Thailand"],
+        symbols=["RU"],
+        regions=["southeast_asia_rubber"],
+        mechanisms=["weather", "supply"],
+        evidence=["Rainfall anomaly report", "Station precipitation percentile"],
+        counterevidence=["Forecast path may shift"],
+        confidence=0.88,
+        impact_score=88,
+        status="confirmed",
+        requires_manual_confirmation=False,
+        source_reliability=0.82,
+        freshness_score=0.96,
+        source_payload={},
+    )
+    link = EventImpactLink(
+        id=uuid4(),
+        event_item_id=event_id,
+        symbol="RU",
+        region_id="southeast_asia_rubber",
+        mechanism="weather",
+        direction="bullish",
+        confidence=0.84,
+        impact_score=84,
+        horizon="short",
+        rationale="Rainfall may reduce tapping days and tighten near-end supply.",
+        evidence=["Rainfall anomaly report"],
+        counterevidence=["Forecast path may shift"],
+        status="confirmed",
+    )
+
+    report = evaluate_event_intelligence_quality(event_item, [link])
+    summary = summarize_event_intelligence_quality([report])
+
+    assert report.status == "decision_grade"
+    assert report.decision_grade is True
+    assert report.passed_gate is True
+    assert report.link_reports[0].passed_gate is True
+    assert summary.decision_grade == 1
+    assert summary.average_score >= 82
+
+
+def test_event_intelligence_quality_gate_blocks_missing_evidence_and_links() -> None:
+    event_item = EventIntelligenceItem(
+        id=uuid4(),
+        source_type="social",
+        source_id=str(uuid4()),
+        title="Single source crude rumor",
+        summary="Unverified rumor needs review.",
+        event_type="geopolitical",
+        event_timestamp=datetime(2026, 5, 10, tzinfo=UTC),
+        entities=[],
+        symbols=["SC"],
+        regions=["middle_east_crude"],
+        mechanisms=["geopolitical"],
+        evidence=[],
+        counterevidence=[],
+        confidence=0.5,
+        impact_score=50,
+        status="human_review",
+        requires_manual_confirmation=True,
+        source_reliability=0.35,
+        freshness_score=1,
+        source_payload={},
+    )
+
+    report = evaluate_event_intelligence_quality(event_item, [])
+
+    assert report.status == "blocked"
+    assert report.passed_gate is False
+    assert {issue.code for issue in report.issues} >= {
+        "missing_evidence",
+        "missing_impact_links",
+        "manual_review_required",
+    }
+
+
+def test_event_intelligence_quality_gate_keeps_human_review_as_review_not_blocked() -> None:
+    event_id = uuid4()
+    event_item = EventIntelligenceItem(
+        id=event_id,
+        source_type="news_event",
+        source_id=str(uuid4()),
+        title="Rubber policy report needs review",
+        summary="Single-source policy event has evidence but awaits confirmation.",
+        event_type="policy",
+        event_timestamp=datetime(2026, 5, 10, tzinfo=UTC),
+        entities=[],
+        symbols=["RU"],
+        regions=["southeast_asia_rubber"],
+        mechanisms=["policy"],
+        evidence=["Policy headline"],
+        counterevidence=["Awaiting independent confirmation"],
+        confidence=0.58,
+        impact_score=58,
+        status="human_review",
+        requires_manual_confirmation=True,
+        source_reliability=0.45,
+        freshness_score=1,
+        source_payload={},
+    )
+    link = EventImpactLink(
+        id=uuid4(),
+        event_item_id=event_id,
+        symbol="RU",
+        region_id="southeast_asia_rubber",
+        mechanism="policy",
+        direction="watch",
+        confidence=0.57,
+        impact_score=57,
+        horizon="short",
+        rationale="Policy report may affect import expectations if confirmed.",
+        evidence=["Policy headline"],
+        counterevidence=["Awaiting independent confirmation"],
+        status="human_review",
+    )
+
+    report = evaluate_event_intelligence_quality(event_item, [link])
+
+    assert report.status == "review"
+    assert "impact_links_need_review" in {issue.code for issue in report.issues}
+    assert "no_usable_impact_links" not in {issue.code for issue in report.issues}
 
 
 class FakeDecisionSession:

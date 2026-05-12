@@ -961,6 +961,7 @@ Causa 的 `event_driven` 评估器实际上是纯技术面（gap + volume），*
   - [x] Phase 10.6 Causal Web 阅读层：事件智能节点提供双语证据摘要，点击源事件/影响假设时展示关联链路和方向置信。
   - [x] Phase 10.8 Causal Web 路径聚焦：点击事件智能节点后可收束到相关影响链，并展开结构化支持证据 / 反证线索。
   - [x] Phase 10.7 World Risk Map 显式筛选：按事件源、品种和影响机制请求同一后端作用域，地图、瓦片、索引、详情和 Causal Web URL 保持一致。
+  - [x] Phase 10.9 事件智能质量门：按证据、反证、来源可信、新鲜度、作用域和影响链完整性输出 `blocked/review/shadow_ready/decision_grade`。
   - [x] 新增 Event Intelligence 页面：事件池、影响链、证据/反证、人工确认队列。
   - [x] Event Intelligence 页面展示 LLM 语义假设与模型/提示版本。
   - [x] Event Intelligence 页面支持确认、拒绝、转人工复核，并写入审计日志。

@@ -16,14 +16,17 @@ from app.schemas.event_intelligence import (
     EventIntelligenceDecisionCreate,
     EventIntelligenceDecisionResponse,
     EventIntelligenceEvalCaseRead,
+    EventIntelligenceQualitySummary,
     EventImpactLinkRead,
     EventIntelligenceRead,
     EventIntelligenceResolveResponse,
 )
 from app.services.event_intelligence import (
     apply_event_intelligence_decision,
+    evaluate_event_intelligence_quality,
     enhance_news_event_impacts_with_semantics,
     resolve_news_event_impacts,
+    summarize_event_intelligence_quality,
 )
 from app.services.event_intelligence.eval_cases import EVENT_INTELLIGENCE_EVAL_CASES
 from app.services.llm.types import LLMConfigurationError
@@ -102,6 +105,51 @@ async def list_event_intelligence_audit_logs(
 @router.get("/eval-cases", response_model=list[EventIntelligenceEvalCaseRead])
 async def list_event_intelligence_eval_cases() -> list[dict]:
     return [case.to_dict() for case in EVENT_INTELLIGENCE_EVAL_CASES]
+
+
+@router.get("/quality", response_model=EventIntelligenceQualitySummary)
+async def list_event_intelligence_quality(
+    symbol: str | None = Query(default=None, min_length=1, max_length=MAX_INGEST_SYMBOL_LENGTH),
+    region_id: str | None = Query(default=None, min_length=1, max_length=80),
+    mechanism: str | None = Query(default=None, pattern=EVENT_IMPACT_MECHANISM_PATTERN),
+    status_filter: str | None = Query(default=None, alias="status", pattern=EVENT_INTELLIGENCE_STATUS_PATTERN),
+    limit: int = Query(default=100, ge=1, le=500),
+    session: AsyncSession = Depends(get_db),
+) -> EventIntelligenceQualitySummary:
+    statement = select(EventIntelligenceItem).order_by(
+        EventIntelligenceItem.event_timestamp.desc(),
+        EventIntelligenceItem.impact_score.desc(),
+    )
+    if symbol is not None:
+        statement = statement.where(EventIntelligenceItem.symbols.contains([symbol.upper()]))
+    if region_id is not None:
+        statement = statement.where(EventIntelligenceItem.regions.contains([region_id]))
+    if mechanism is not None:
+        statement = statement.where(EventIntelligenceItem.mechanisms.contains([mechanism]))
+    if status_filter is not None:
+        statement = statement.where(EventIntelligenceItem.status == status_filter)
+
+    items = list((await session.scalars(statement.limit(limit))).all())
+    item_ids = [item.id for item in items]
+    links_by_event_id: dict[UUID, list[EventImpactLink]] = {item.id: [] for item in items}
+    if item_ids:
+        links = list(
+            (
+                await session.scalars(
+                    select(EventImpactLink)
+                    .where(EventImpactLink.event_item_id.in_(item_ids))
+                    .order_by(EventImpactLink.impact_score.desc(), EventImpactLink.confidence.desc())
+                )
+            ).all()
+        )
+        for link in links:
+            links_by_event_id.setdefault(link.event_item_id, []).append(link)
+
+    reports = [
+        evaluate_event_intelligence_quality(item, links_by_event_id.get(item.id, []))
+        for item in items
+    ]
+    return summarize_event_intelligence_quality(reports)
 
 
 @router.post(

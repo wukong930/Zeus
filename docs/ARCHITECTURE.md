@@ -164,6 +164,12 @@ Phase 10.8 已落地的 Causal Web 路径阅读边界：
 - Causal Web 点击事件智能源事件或影响假设后，可在详情面板展开支持证据 / 反证线索，并通过“路径聚焦”把画布收束到对应事件智能影响链。
 - 路径聚焦只改变阅读视图和高亮范围，不改变事件智能治理状态、评分阈值或生产告警行为。
 
+Phase 10.9 已落地的事件质量门边界：
+
+- `/api/event-intelligence/quality` 实时评估事件智能质量，综合证据、反证、来源可信、新鲜度、作用域、影响链可用性和治理状态。
+- 质量状态分为 `blocked`、`review`、`shadow_ready`、`decision_grade`：blocked/review 不应进入后续自动链路，shadow_ready 只允许 Shadow/阅读层使用，decision_grade 需要已确认且质量分达标。
+- `/event-intelligence` 页面展示事件级质量评分、阻断原因和影响链级质量门，帮助人工确认前先看到缺证据、弱来源或无可用链路的问题。
+
 治理约束：
 
 - 引擎判断默认只进入 Shadow / review，不直接修改生产阈值或自动发交易指令。

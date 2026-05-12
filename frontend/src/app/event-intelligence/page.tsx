@@ -7,6 +7,7 @@ import {
   BrainCircuit,
   CheckCircle2,
   DatabaseZap,
+  Gauge,
   GitBranch,
   Layers3,
   Search,
@@ -20,10 +21,15 @@ import {
   decideEventIntelligence,
   fetchEventImpactLinks,
   fetchEventIntelligenceItems,
+  fetchEventIntelligenceQualitySummary,
   type EventIntelligenceDecision,
   type EventImpactDirection,
   type EventImpactLink,
   type EventIntelligenceItem,
+  type EventIntelligenceQualityReport,
+  type EventIntelligenceQualityStatus,
+  type EventImpactLinkQuality,
+  type EventImpactLinkQualityStatus,
   type EventIntelligenceStatus,
 } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
@@ -43,6 +49,7 @@ export default function EventIntelligencePage() {
   const { text } = useI18n();
   const [items, setItems] = useState<EventIntelligenceItem[]>([]);
   const [links, setLinks] = useState<EventImpactLink[]>([]);
+  const [qualityReports, setQualityReports] = useState<EventIntelligenceQualityReport[]>([]);
   const [source, setSource] = useState<DataSourceState>("loading");
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -50,11 +57,16 @@ export default function EventIntelligencePage() {
 
   useEffect(() => {
     let mounted = true;
-    Promise.all([fetchEventIntelligenceItems(200), fetchEventImpactLinks({ limit: 300 })])
-      .then(([eventRows, linkRows]) => {
+    Promise.all([
+      fetchEventIntelligenceItems(200),
+      fetchEventImpactLinks({ limit: 300 }),
+      fetchEventIntelligenceQualitySummary(200),
+    ])
+      .then(([eventRows, linkRows, qualitySummary]) => {
         if (!mounted) return;
         setItems(eventRows);
         setLinks(linkRows);
+        setQualityReports(qualitySummary.reports);
         setSource("api");
         setSelectedId(eventRows[0]?.id ?? null);
       })
@@ -62,6 +74,7 @@ export default function EventIntelligencePage() {
         if (!mounted) return;
         setItems([]);
         setLinks([]);
+        setQualityReports([]);
         setSource("fallback");
         setSelectedId(null);
       });
@@ -91,19 +104,26 @@ export default function EventIntelligencePage() {
     () => links.filter((link) => link.eventItemId === selected?.id),
     [links, selected?.id]
   );
+  const qualityByEventId = useMemo(
+    () => new Map(qualityReports.map((report) => [report.eventId, report])),
+    [qualityReports]
+  );
+  const selectedQuality = selected ? qualityByEventId.get(selected.id) ?? null : null;
   const stats = useMemo(() => {
     const humanReview = items.filter((item) => item.status === "human_review").length;
     const confirmed = items.filter((item) => item.status === "confirmed").length;
     const linkedSymbols = new Set(links.map((link) => link.symbol)).size;
+    const passedQuality = qualityReports.filter((report) => report.passedGate).length;
     return {
       events: items.length,
       links: links.length,
       humanReview,
       confirmed,
       linkedSymbols,
+      passedQuality,
       maxImpact: Math.max(0, ...links.map((link) => link.impactScore)),
     };
-  }, [items, links]);
+  }, [items, links, qualityReports]);
 
   const handleDecision = async (decision: EventIntelligenceDecision) => {
     if (!selected) return;
@@ -149,11 +169,12 @@ export default function EventIntelligencePage() {
         </div>
       </div>
 
-      <div className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-5">
+      <div className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-6">
         <Metric label="事件" value={stats.events} icon={DatabaseZap} />
         <Metric label="影响链" value={stats.links} icon={GitBranch} tone="cyan" />
         <Metric label="关联品种" value={stats.linkedSymbols} icon={Layers3} tone="emerald" />
         <Metric label="人工复核" value={stats.humanReview} icon={ShieldQuestion} tone="orange" />
+        <Metric label="质量通过" value={stats.passedQuality} icon={Gauge} tone="emerald" />
         <Metric label="最高影响" value={Math.round(stats.maxImpact)} icon={AlertTriangle} tone="red" />
       </div>
 
@@ -169,35 +190,13 @@ export default function EventIntelligencePage() {
           </CardHeader>
           <div className="max-h-[640px] overflow-y-auto p-3">
             {filtered.map((item) => (
-              <button
+              <EventQueueItem
                 key={item.id}
-                onClick={() => setSelectedId(item.id)}
-                className={cn(
-                  "mb-2 w-full rounded-sm border p-3 text-left transition-colors",
-                  selected?.id === item.id
-                    ? "border-brand-emerald/55 bg-brand-emerald/12 shadow-focus-ring"
-                    : "border-border-subtle bg-black/28 hover:border-border-default hover:bg-white/[0.04]"
-                )}
-              >
-                <div className="mb-2 flex items-center gap-2">
-                  <Badge variant={statusVariant(item.status)}>{statusLabel(item.status)}</Badge>
-                  <span className="text-caption text-text-muted">{timeAgo(item.eventTimestamp)}</span>
-                  <span className="flex-1" />
-                  <span className="font-mono text-caption text-brand-orange">{Math.round(item.impactScore)}</span>
-                </div>
-                <div className="truncate text-sm font-semibold text-text-primary">{text(item.title)}</div>
-                <p className="mt-1 line-clamp-2 text-xs text-text-secondary">{text(item.summary)}</p>
-                <div className="mt-3 flex flex-wrap gap-1.5">
-                  {item.symbols.slice(0, 5).map((symbol) => (
-                    <span
-                      key={symbol}
-                      className="inline-flex h-5 items-center rounded-xs border border-brand-cyan/25 bg-brand-cyan/10 px-1.5 font-mono text-caption text-brand-cyan"
-                    >
-                      {symbol}
-                    </span>
-                  ))}
-                </div>
-              </button>
+                item={item}
+                selected={selected?.id === item.id}
+                quality={qualityByEventId.get(item.id) ?? null}
+                onSelect={() => setSelectedId(item.id)}
+              />
             ))}
             {filtered.length === 0 && (
               <div className="py-12 text-center text-sm text-text-secondary">
@@ -212,6 +211,7 @@ export default function EventIntelligencePage() {
             <EventDetail
               item={selected}
               links={selectedLinks}
+              quality={selectedQuality}
               onDecision={handleDecision}
               decisionPending={decisionPending}
             />
@@ -226,14 +226,67 @@ export default function EventIntelligencePage() {
   );
 }
 
+function EventQueueItem({
+  item,
+  selected,
+  quality,
+  onSelect,
+}: {
+  item: EventIntelligenceItem;
+  selected: boolean;
+  quality: EventIntelligenceQualityReport | null;
+  onSelect: () => void;
+}) {
+  const { text } = useI18n();
+
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      className={cn(
+        "mb-2 w-full rounded-sm border p-3 text-left transition-colors",
+        selected
+          ? "border-brand-emerald/55 bg-brand-emerald/12 shadow-focus-ring"
+          : "border-border-subtle bg-black/28 hover:border-border-default hover:bg-white/[0.04]"
+      )}
+    >
+      <div className="mb-2 flex items-center gap-2">
+        <Badge variant={statusVariant(item.status)}>{text(statusLabel(item.status))}</Badge>
+        {quality && (
+          <Badge variant={qualityVariant(quality.status)}>
+            {text(qualityLabel(quality.status))}
+          </Badge>
+        )}
+        <span className="text-caption text-text-muted">{timeAgo(item.eventTimestamp)}</span>
+        <span className="flex-1" />
+        <span className="font-mono text-caption text-brand-orange">{Math.round(item.impactScore)}</span>
+      </div>
+      <div className="truncate text-sm font-semibold text-text-primary">{text(item.title)}</div>
+      <p className="mt-1 line-clamp-2 text-xs text-text-secondary">{text(item.summary)}</p>
+      <div className="mt-3 flex flex-wrap gap-1.5">
+        {item.symbols.slice(0, 5).map((symbol) => (
+          <span
+            key={symbol}
+            className="inline-flex h-5 items-center rounded-xs border border-brand-cyan/25 bg-brand-cyan/10 px-1.5 font-mono text-caption text-brand-cyan"
+          >
+            {symbol}
+          </span>
+        ))}
+      </div>
+    </button>
+  );
+}
+
 function EventDetail({
   item,
   links,
+  quality,
   onDecision,
   decisionPending,
 }: {
   item: EventIntelligenceItem;
   links: EventImpactLink[];
+  quality: EventIntelligenceQualityReport | null;
   onDecision: (decision: EventIntelligenceDecision) => void;
   decisionPending: EventIntelligenceDecision | null;
 }) {
@@ -248,7 +301,7 @@ function EventDetail({
         <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
             <div className="mb-2 flex flex-wrap items-center gap-2">
-              <Badge variant={statusVariant(item.status)}>{statusLabel(item.status)}</Badge>
+              <Badge variant={statusVariant(item.status)}>{text(statusLabel(item.status))}</Badge>
               <Badge variant="blue">{text(item.eventType)}</Badge>
               {item.requiresManualConfirmation && (
                 <Badge variant="orange">{text("需要人工确认")}</Badge>
@@ -297,6 +350,8 @@ function EventDetail({
         </div>
       </Card>
 
+      {quality && <QualityGatePanel quality={quality} links={links} />}
+
       {semanticHypotheses.length > 0 && (
         <Card variant="flat">
           <CardHeader>
@@ -320,9 +375,9 @@ function EventDetail({
                     {hypothesis.symbol}
                   </span>
                   <Badge variant={directionVariant(hypothesis.direction)}>
-                    {directionLabel(hypothesis.direction)}
+                    {text(directionLabel(hypothesis.direction))}
                   </Badge>
-                  <Badge variant="neutral">{mechanismLabel(hypothesis.mechanism)}</Badge>
+                  <Badge variant="neutral">{text(mechanismLabel(hypothesis.mechanism))}</Badge>
                   <span className="ml-auto font-mono text-caption text-brand-emerald-bright">
                     {formatPercent(hypothesis.confidence * 100, 0, false)}
                   </span>
@@ -356,8 +411,8 @@ function EventDetail({
               <div className="mb-2 flex flex-wrap items-center gap-2">
                 <span className="font-mono text-sm font-semibold text-text-primary">{link.symbol}</span>
                 <ArrowRight className="h-3.5 w-3.5 text-text-muted" />
-                <Badge variant={directionVariant(link.direction)}>{directionLabel(link.direction)}</Badge>
-                <Badge variant="neutral">{mechanismLabel(link.mechanism)}</Badge>
+                <Badge variant={directionVariant(link.direction)}>{text(directionLabel(link.direction))}</Badge>
+                <Badge variant="neutral">{text(mechanismLabel(link.mechanism))}</Badge>
                 <span className="ml-auto font-mono text-sm text-brand-orange">
                   {Math.round(link.impactScore)}
                 </span>
@@ -382,6 +437,121 @@ function EventDetail({
         <EvidencePanel title="证据" values={item.evidence} />
         <EvidencePanel title="反证" values={item.counterevidence} />
       </div>
+    </div>
+  );
+}
+
+function QualityGatePanel({
+  quality,
+  links,
+}: {
+  quality: EventIntelligenceQualityReport;
+  links: EventImpactLink[];
+}) {
+  const { text } = useI18n();
+  const linkById = useMemo(() => new Map(links.map((link) => [link.id, link])), [links]);
+
+  return (
+    <Card variant="flat">
+      <CardHeader>
+        <div>
+          <CardTitle>{text("质量门槛")}</CardTitle>
+          <CardSubtitle>{text("证据、来源、作用域和影响链完整性")}</CardSubtitle>
+        </div>
+        <Badge variant={qualityVariant(quality.status)}>{text(qualityLabel(quality.status))}</Badge>
+      </CardHeader>
+      <div className="grid gap-3 lg:grid-cols-[180px_minmax(0,1fr)]">
+        <div className="rounded-sm border border-border-subtle bg-black/30 p-3">
+          <div className="text-caption text-text-muted">{text("质量评分")}</div>
+          <div className="mt-2 font-mono text-4xl text-text-primary">{quality.score}</div>
+          <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-border-subtle">
+            <div
+              className={cn(
+                "h-full rounded-full",
+                quality.status === "blocked"
+                  ? "bg-data-down"
+                  : quality.status === "review"
+                    ? "bg-brand-orange"
+                    : "bg-brand-emerald"
+              )}
+              style={{ width: `${quality.score}%` }}
+            />
+          </div>
+        </div>
+        <div className="min-w-0">
+          <IssueList issues={quality.issues} />
+          <div className="mt-3 grid gap-2 xl:grid-cols-2">
+            {quality.linkReports.slice(0, 6).map((report) => (
+              <LinkQualityRow
+                key={report.id}
+                report={report}
+                link={linkById.get(report.id) ?? null}
+              />
+            ))}
+          </div>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+function IssueList({ issues }: { issues: EventIntelligenceQualityReport["issues"] }) {
+  const { text } = useI18n();
+  if (issues.length === 0) {
+    return (
+      <div className="rounded-sm border border-brand-emerald/20 bg-brand-emerald/8 p-3 text-sm text-brand-emerald-bright">
+        {text("当前事件通过质量门，暂无阻断项。")}
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid gap-2">
+      {issues.slice(0, 5).map((issue) => (
+        <div
+          key={`${issue.code}-${issue.severity}`}
+          className={cn(
+            "rounded-sm border p-2 text-sm",
+            issue.severity === "blocker"
+              ? "border-data-down/25 bg-data-down/10 text-data-down"
+              : issue.severity === "warning"
+                ? "border-brand-orange/25 bg-brand-orange/10 text-brand-orange"
+                : "border-border-subtle bg-black/22 text-text-secondary"
+          )}
+        >
+          <span className="mr-2 font-mono text-caption">{text(issue.severity)}</span>
+          {text(issue.message)}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function LinkQualityRow({
+  report,
+  link,
+}: {
+  report: EventImpactLinkQuality;
+  link: EventImpactLink | null;
+}) {
+  const { text } = useI18n();
+
+  return (
+    <div className="rounded-sm border border-border-subtle bg-black/22 p-2">
+      <div className="flex items-center gap-2">
+        <span className="font-mono text-sm text-text-primary">{report.symbol}</span>
+        <Badge variant={linkQualityVariant(report.status)}>{text(linkQualityLabel(report.status))}</Badge>
+        <span className="ml-auto font-mono text-sm text-text-primary">{report.score}</span>
+      </div>
+      <div className="mt-1 text-caption text-text-muted">
+        {text(mechanismLabel(report.mechanism))}
+        {link?.regionId ? ` · ${link.regionId}` : ""}
+      </div>
+      {report.issues.length > 0 && (
+        <div className="mt-2 line-clamp-1 text-caption text-text-secondary">
+          {text(report.issues[0].message)}
+        </div>
+      )}
     </div>
   );
 }
@@ -530,6 +700,35 @@ function statusLabel(status: EventIntelligenceStatus): string {
     human_review: "人工复核",
     confirmed: "已确认",
     rejected: "已拒绝",
+  }[status];
+}
+
+function qualityVariant(status: EventIntelligenceQualityStatus): "emerald" | "orange" | "neutral" | "down" {
+  if (status === "decision_grade" || status === "shadow_ready") return "emerald";
+  if (status === "review") return "orange";
+  return "down";
+}
+
+function qualityLabel(status: EventIntelligenceQualityStatus): string {
+  return {
+    blocked: "质量阻断",
+    review: "质量复核",
+    shadow_ready: "影子可用",
+    decision_grade: "决策级",
+  }[status];
+}
+
+function linkQualityVariant(status: EventImpactLinkQualityStatus): "emerald" | "orange" | "down" {
+  if (status === "passed") return "emerald";
+  if (status === "review") return "orange";
+  return "down";
+}
+
+function linkQualityLabel(status: EventImpactLinkQualityStatus): string {
+  return {
+    blocked: "阻断",
+    review: "复核",
+    passed: "已通过",
   }[status];
 }
 

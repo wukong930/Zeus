@@ -758,6 +758,9 @@ export interface NewsEvent {
 export type EventIntelligenceStatus = "shadow_review" | "human_review" | "confirmed" | "rejected";
 export type EventImpactDirection = "bullish" | "bearish" | "mixed" | "watch";
 export type EventIntelligenceDecision = "confirm" | "reject" | "request_review" | "shadow_review";
+export type EventIntelligenceQualityStatus = "blocked" | "review" | "shadow_ready" | "decision_grade";
+export type EventImpactLinkQualityStatus = "blocked" | "review" | "passed";
+export type EventIntelligenceQualitySeverity = "blocker" | "warning" | "info";
 
 export interface EventIntelligenceItem {
   id: string;
@@ -814,6 +817,43 @@ export interface EventIntelligenceDecisionResult {
     note: string | null;
     createdAt: string;
   };
+}
+
+export interface EventIntelligenceQualityIssue {
+  code: string;
+  severity: EventIntelligenceQualitySeverity;
+  message: string;
+}
+
+export interface EventImpactLinkQuality {
+  id: string;
+  symbol: string;
+  mechanism: string;
+  score: number;
+  status: EventImpactLinkQualityStatus;
+  passedGate: boolean;
+  issues: EventIntelligenceQualityIssue[];
+}
+
+export interface EventIntelligenceQualityReport {
+  eventId: string;
+  score: number;
+  status: EventIntelligenceQualityStatus;
+  passedGate: boolean;
+  decisionGrade: boolean;
+  issues: EventIntelligenceQualityIssue[];
+  linkReports: EventImpactLinkQuality[];
+}
+
+export interface EventIntelligenceQualitySummary {
+  generatedAt: string;
+  total: number;
+  averageScore: number;
+  blocked: number;
+  review: number;
+  shadowReady: number;
+  decisionGrade: number;
+  reports: EventIntelligenceQualityReport[];
 }
 
 interface BackendAlert {
@@ -912,6 +952,43 @@ interface BackendEventIntelligenceAuditLog {
 interface BackendEventIntelligenceDecisionResponse {
   event: BackendEventIntelligenceItem;
   audit_log: BackendEventIntelligenceAuditLog;
+}
+
+interface BackendEventIntelligenceQualityIssue {
+  code: string;
+  severity: EventIntelligenceQualitySeverity;
+  message: string;
+}
+
+interface BackendEventImpactLinkQuality {
+  id: string;
+  symbol: string;
+  mechanism: string;
+  score: number;
+  status: EventImpactLinkQualityStatus;
+  passed_gate: boolean;
+  issues: BackendEventIntelligenceQualityIssue[];
+}
+
+interface BackendEventIntelligenceQualityReport {
+  event_id: string;
+  score: number;
+  status: EventIntelligenceQualityStatus;
+  passed_gate: boolean;
+  decision_grade: boolean;
+  issues: BackendEventIntelligenceQualityIssue[];
+  link_reports: BackendEventImpactLinkQuality[];
+}
+
+interface BackendEventIntelligenceQualitySummary {
+  generated_at: string;
+  total: number;
+  average_score: number;
+  blocked: number;
+  review: number;
+  shadow_ready: number;
+  decision_grade: number;
+  reports: BackendEventIntelligenceQualityReport[];
 }
 
 interface BackendNotebookEntry {
@@ -1125,6 +1202,13 @@ export async function fetchEventImpactLinks(params: {
     `/api/event-intelligence/impact-links?${query.toString()}`
   );
   return rows.map(mapEventImpactLink);
+}
+
+export async function fetchEventIntelligenceQualitySummary(limit = 200): Promise<EventIntelligenceQualitySummary> {
+  const row = await fetchJson<BackendEventIntelligenceQualitySummary>(
+    `/api/event-intelligence/quality?limit=${limit}`
+  );
+  return mapEventIntelligenceQualitySummary(row);
 }
 
 export async function decideEventIntelligence(
@@ -1641,6 +1725,37 @@ function mapEventImpactLink(link: BackendEventImpactLink): EventImpactLink {
     status: link.status,
     createdAt: link.created_at,
     updatedAt: link.updated_at,
+  };
+}
+
+function mapEventIntelligenceQualitySummary(
+  summary: BackendEventIntelligenceQualitySummary
+): EventIntelligenceQualitySummary {
+  return {
+    generatedAt: summary.generated_at,
+    total: summary.total,
+    averageScore: summary.average_score,
+    blocked: summary.blocked,
+    review: summary.review,
+    shadowReady: summary.shadow_ready,
+    decisionGrade: summary.decision_grade,
+    reports: summary.reports.map((report) => ({
+      eventId: report.event_id,
+      score: report.score,
+      status: report.status,
+      passedGate: report.passed_gate,
+      decisionGrade: report.decision_grade,
+      issues: report.issues,
+      linkReports: report.link_reports.map((link) => ({
+        id: link.id,
+        symbol: link.symbol,
+        mechanism: link.mechanism,
+        score: link.score,
+        status: link.status,
+        passedGate: link.passed_gate,
+        issues: link.issues,
+      })),
+    })),
   };
 }
 

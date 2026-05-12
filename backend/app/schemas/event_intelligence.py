@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator
@@ -159,6 +159,43 @@ class EventIntelligenceEvalCaseRead(BaseModel):
     expected_mechanisms: list[str]
     expected_directions: list[str]
     review_note: str
+
+
+class EventIntelligenceQualityIssue(BaseModel):
+    code: str
+    severity: Literal["blocker", "warning", "info"]
+    message: str
+
+
+class EventImpactLinkQualityRead(BaseModel):
+    id: UUID
+    symbol: str
+    mechanism: str
+    score: int = Field(ge=0, le=100)
+    status: Literal["blocked", "review", "passed"]
+    passed_gate: bool
+    issues: list[EventIntelligenceQualityIssue] = Field(default_factory=list)
+
+
+class EventIntelligenceQualityRead(BaseModel):
+    event_id: UUID
+    score: int = Field(ge=0, le=100)
+    status: Literal["blocked", "review", "shadow_ready", "decision_grade"]
+    passed_gate: bool
+    decision_grade: bool
+    issues: list[EventIntelligenceQualityIssue] = Field(default_factory=list)
+    link_reports: list[EventImpactLinkQualityRead] = Field(default_factory=list)
+
+
+class EventIntelligenceQualitySummary(BaseModel):
+    generated_at: datetime
+    total: int
+    average_score: int = Field(ge=0, le=100)
+    blocked: int
+    review: int
+    shadow_ready: int
+    decision_grade: int
+    reports: list[EventIntelligenceQualityRead]
 
 
 def _normalize_text_list(
