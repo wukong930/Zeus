@@ -951,20 +951,22 @@ Causa 的 `event_driven` 评估器实际上是纯技术面（gap + volume），*
   - [x] 事件影响判断默认进入 Shadow / review，不直接改生产阈值。
   - [x] 高影响、单源、低置信度事件必须要求人工确认。
   - [x] 每条链路保留原始证据引用、反证、数据新鲜度和置信度。
-  - [ ] 模型版本、LLM 提示版本和治理审计表。
+  - [x] 模型版本、LLM 提示版本和治理审计表。
     - [x] Phase 10.2 先在 `source_payload` 记录 `semantic_model` / `semantic_prompt_version`。
-    - [ ] 后续 Phase 10.3 补独立治理审计表与人工确认流。
+    - [x] Phase 10.3 补独立治理审计表与人工确认流。
 - [ ] **前端联动**
   - [ ] Causal Web 支持按事件智能链路高亮上下游。
   - [ ] World Risk Map 支持按事件源筛选区域、商品和影响机制。
   - [x] 新增 Event Intelligence 页面：事件池、影响链、证据/反证、人工确认队列。
   - [x] Event Intelligence 页面展示 LLM 语义假设与模型/提示版本。
+  - [x] Event Intelligence 页面支持确认、拒绝、转人工复核，并写入审计日志。
 
 ### 验证
 
 - [x] 特朗普社媒、航母移动、极端天气、港口拥堵、政策公告等样例能生成不同机制链。
 - [x] 同一事件影响多个商品时，方向、机制和置信度可以不同。
 - [x] 单源高影响事件不会自动进入生产预警。
+- [x] 人工确认 / 拒绝 / 转人工复核会写入独立治理审计日志。
 - [ ] Causal Web / World Risk Map 使用同一 `event_id` 作用域，不出现各讲各的情况。
 
 ---

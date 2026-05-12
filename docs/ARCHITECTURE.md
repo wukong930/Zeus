@@ -128,6 +128,13 @@ Phase 10.2 已落地的语义增强边界：
 - 评估样例：`/api/event-intelligence/eval-cases` 暴露特朗普关税、航母/伊朗、橡胶天气、港口洪涝和生柴政策等样例，用于后续回归评估。
 - 前端：`/event-intelligence` 在事件详情中展示语义假设、模型和提示版本。
 
+Phase 10.3 已落地的治理边界：
+
+- 审计模型：`event_intelligence_audit_logs` 独立记录语义增强、人工确认、拒绝和转人工复核动作，不再只依赖 `source_payload` 留痕。
+- 决策 API：`POST /api/event-intelligence/{event_id}/decision` 支持 `confirm`、`reject`、`request_review`、`shadow_review`，同步更新事件与影响链状态。
+- 审计查询：`GET /api/event-intelligence/audit-logs` 可按事件或动作查看治理历史。
+- 前端：`/event-intelligence` 详情页提供确认、拒绝、转人工复核按钮，所有动作写入审计日志。
+
 治理约束：
 
 - 引擎判断默认只进入 Shadow / review，不直接修改生产阈值或自动发交易指令。

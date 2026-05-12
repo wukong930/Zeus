@@ -327,3 +327,11 @@ threshold_modifier、propagation_activator、risk_recalc、数据腐烂防护
 - 新增 `/api/event-intelligence/from-news/{news_event_id}/semantic` 显式语义增强接口；默认新闻写入仍走规则 resolver，避免自动消耗 LLM 配额。
 - 新增 `/api/event-intelligence/eval-cases` 与评估样例集，覆盖特朗普关税、航母/伊朗、橡胶天气、港口洪涝和生柴政策等场景。
 - `/event-intelligence` 事件详情新增语义假设展示，显示 LLM 候选影响、模型和提示版本。
+
+# 2026-05-12 — Event Intelligence Engine Phase 10.3
+
+- 新增 `event_intelligence_audit_logs`，把事件智能语义增强、人工确认、拒绝和转人工复核动作写入独立审计表。
+- 新增事件智能治理服务：人工决策会同步更新事件对象和所有影响链状态，并保留前后状态、操作者、备注和决策 payload。
+- 新增 `/api/event-intelligence/{event_id}/decision` 与 `/api/event-intelligence/audit-logs`，用于事件智能确认/拒绝/复核和治理历史查询。
+- `/event-intelligence` 详情页增加确认、拒绝、转人工复核操作按钮，前端动作通过 API 写入审计日志。
+- 语义增强接口现在也会写入 `semantic_enhanced` 审计记录，记录模型、提示版本、语义置信度和假设数量。

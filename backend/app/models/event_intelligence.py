@@ -60,6 +60,11 @@ class EventIntelligenceItem(Base):
         cascade="all, delete-orphan",
         passive_deletes=True,
     )
+    audit_logs: Mapped[list["EventIntelligenceAuditLog"]] = relationship(
+        back_populates="event_item",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
 
 
 class EventImpactLink(Base):
@@ -110,3 +115,33 @@ class EventImpactLink(Base):
     )
 
     event_item: Mapped[EventIntelligenceItem] = relationship(back_populates="impact_links")
+
+
+class EventIntelligenceAuditLog(Base):
+    __tablename__ = "event_intelligence_audit_logs"
+    __table_args__ = (
+        Index("ix_event_intelligence_audit_logs_event_item_id", "event_item_id"),
+        Index("ix_event_intelligence_audit_logs_action", "action"),
+        Index("ix_event_intelligence_audit_logs_actor", "actor"),
+        Index("ix_event_intelligence_audit_logs_created_at", "created_at"),
+    )
+
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    event_item_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("event_intelligence_items.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    action: Mapped[str] = mapped_column(String(40), nullable=False)
+    actor: Mapped[str | None] = mapped_column(String(80))
+    before_status: Mapped[str | None] = mapped_column(String(30))
+    after_status: Mapped[str | None] = mapped_column(String(30))
+    note: Mapped[str | None] = mapped_column(Text)
+    payload: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+
+    event_item: Mapped[EventIntelligenceItem] = relationship(back_populates="audit_logs")

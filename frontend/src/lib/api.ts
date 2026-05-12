@@ -724,6 +724,7 @@ export interface NewsEvent {
 
 export type EventIntelligenceStatus = "shadow_review" | "human_review" | "confirmed" | "rejected";
 export type EventImpactDirection = "bullish" | "bearish" | "mixed" | "watch";
+export type EventIntelligenceDecision = "confirm" | "reject" | "request_review" | "shadow_review";
 
 export interface EventIntelligenceItem {
   id: string;
@@ -766,6 +767,20 @@ export interface EventImpactLink {
   status: EventIntelligenceStatus;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface EventIntelligenceDecisionResult {
+  event: EventIntelligenceItem;
+  auditLog: {
+    id: string;
+    eventItemId: string;
+    action: string;
+    actor: string | null;
+    beforeStatus: string | null;
+    afterStatus: string | null;
+    note: string | null;
+    createdAt: string;
+  };
 }
 
 interface BackendAlert {
@@ -848,6 +863,22 @@ interface BackendEventImpactLink {
   status: EventIntelligenceStatus;
   created_at: string;
   updated_at: string;
+}
+
+interface BackendEventIntelligenceAuditLog {
+  id: string;
+  event_item_id: string;
+  action: string;
+  actor: string | null;
+  before_status: string | null;
+  after_status: string | null;
+  note: string | null;
+  created_at: string;
+}
+
+interface BackendEventIntelligenceDecisionResponse {
+  event: BackendEventIntelligenceItem;
+  audit_log: BackendEventIntelligenceAuditLog;
 }
 
 interface BackendNotebookEntry {
@@ -1061,6 +1092,38 @@ export async function fetchEventImpactLinks(params: {
     `/api/event-intelligence/impact-links?${query.toString()}`
   );
   return rows.map(mapEventImpactLink);
+}
+
+export async function decideEventIntelligence(
+  eventId: string,
+  decision: EventIntelligenceDecision,
+  note?: string
+): Promise<EventIntelligenceDecisionResult> {
+  const row = await fetchJson<BackendEventIntelligenceDecisionResponse>(
+    `/api/event-intelligence/${eventId}/decision`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        decision,
+        decided_by: "zeus-ui",
+        note,
+      }),
+    }
+  );
+  return {
+    event: mapEventIntelligenceItem(row.event),
+    auditLog: {
+      id: row.audit_log.id,
+      eventItemId: row.audit_log.event_item_id,
+      action: row.audit_log.action,
+      actor: row.audit_log.actor,
+      beforeStatus: row.audit_log.before_status,
+      afterStatus: row.audit_log.after_status,
+      note: row.audit_log.note,
+      createdAt: row.audit_log.created_at,
+    },
+  };
 }
 
 export async function fetchTradePlansFromApi(): Promise<TradePlan[]> {

@@ -5,18 +5,22 @@ import {
   AlertTriangle,
   ArrowRight,
   BrainCircuit,
+  CheckCircle2,
   DatabaseZap,
   GitBranch,
   Layers3,
   Search,
   ShieldQuestion,
+  XCircle,
 } from "lucide-react";
 import { Badge } from "@/components/Badge";
 import { Card, CardHeader, CardSubtitle, CardTitle } from "@/components/Card";
 import { DataSourceBadge, type DataSourceState } from "@/components/DataSourceBadge";
 import {
+  decideEventIntelligence,
   fetchEventImpactLinks,
   fetchEventIntelligenceItems,
+  type EventIntelligenceDecision,
   type EventImpactDirection,
   type EventImpactLink,
   type EventIntelligenceItem,
@@ -42,6 +46,7 @@ export default function EventIntelligencePage() {
   const [source, setSource] = useState<DataSourceState>("loading");
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [decisionPending, setDecisionPending] = useState<EventIntelligenceDecision | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -99,6 +104,26 @@ export default function EventIntelligencePage() {
       maxImpact: Math.max(0, ...links.map((link) => link.impactScore)),
     };
   }, [items, links]);
+
+  const handleDecision = async (decision: EventIntelligenceDecision) => {
+    if (!selected) return;
+    setDecisionPending(decision);
+    try {
+      const result = await decideEventIntelligence(selected.id, decision, decisionNote(decision));
+      setItems((current) =>
+        current.map((item) => (item.id === result.event.id ? result.event : item))
+      );
+      setLinks((current) =>
+        current.map((link) =>
+          link.eventItemId === result.event.id
+            ? { ...link, status: result.event.status }
+            : link
+        )
+      );
+    } finally {
+      setDecisionPending(null);
+    }
+  };
 
   return (
     <div className="h-full overflow-y-auto px-7 py-6 animate-fade-in">
@@ -184,7 +209,12 @@ export default function EventIntelligencePage() {
 
         <section className="min-w-0">
           {selected ? (
-            <EventDetail item={selected} links={selectedLinks} />
+            <EventDetail
+              item={selected}
+              links={selectedLinks}
+              onDecision={handleDecision}
+              decisionPending={decisionPending}
+            />
           ) : (
             <Card variant="flat" className="flex min-h-[420px] items-center justify-center text-sm text-text-secondary">
               {text(source === "fallback" ? "事件智能接口暂不可用" : "请选择事件")}
@@ -196,7 +226,17 @@ export default function EventIntelligencePage() {
   );
 }
 
-function EventDetail({ item, links }: { item: EventIntelligenceItem; links: EventImpactLink[] }) {
+function EventDetail({
+  item,
+  links,
+  onDecision,
+  decisionPending,
+}: {
+  item: EventIntelligenceItem;
+  links: EventImpactLink[];
+  onDecision: (decision: EventIntelligenceDecision) => void;
+  decisionPending: EventIntelligenceDecision | null;
+}) {
   const { text } = useI18n();
   const semanticHypotheses = readSemanticHypotheses(item.sourcePayload);
   const semanticModel = readPayloadString(item.sourcePayload, "semantic_model");
@@ -223,6 +263,32 @@ function EventDetail({ item, links }: { item: EventIntelligenceItem; links: Even
             <Score label="来源可信" value={formatPercent(item.sourceReliability * 100, 0, false)} />
             <Score label="新鲜度" value={formatPercent(item.freshnessScore * 100, 0, false)} />
           </div>
+        </div>
+        <div className="mb-4 flex flex-wrap items-center gap-2 rounded-sm border border-border-subtle bg-black/24 p-2">
+          <DecisionButton
+            label="确认"
+            icon={CheckCircle2}
+            decision="confirm"
+            tone="emerald"
+            pending={decisionPending}
+            onDecision={onDecision}
+          />
+          <DecisionButton
+            label="转人工复核"
+            icon={ShieldQuestion}
+            decision="request_review"
+            tone="orange"
+            pending={decisionPending}
+            onDecision={onDecision}
+          />
+          <DecisionButton
+            label="拒绝"
+            icon={XCircle}
+            decision="reject"
+            tone="red"
+            pending={decisionPending}
+            onDecision={onDecision}
+          />
         </div>
         <div className="grid gap-3 md:grid-cols-3">
           <TokenGroup title="品种" values={item.symbols} />
@@ -357,6 +423,44 @@ function Score({ label, value }: { label: string; value: string }) {
       <div className="text-caption text-text-muted">{text(label)}</div>
       <div className="mt-1 font-mono text-sm text-text-primary">{value}</div>
     </div>
+  );
+}
+
+function DecisionButton({
+  label,
+  icon: Icon,
+  decision,
+  tone,
+  pending,
+  onDecision,
+}: {
+  label: string;
+  icon: typeof CheckCircle2;
+  decision: EventIntelligenceDecision;
+  tone: "emerald" | "orange" | "red";
+  pending: EventIntelligenceDecision | null;
+  onDecision: (decision: EventIntelligenceDecision) => void;
+}) {
+  const { text } = useI18n();
+  const toneClass = {
+    emerald: "border-brand-emerald/35 text-brand-emerald-bright hover:bg-brand-emerald/12",
+    orange: "border-brand-orange/35 text-brand-orange hover:bg-brand-orange/12",
+    red: "border-data-down/35 text-data-down hover:bg-data-down/12",
+  }[tone];
+  const isPending = pending === decision;
+  return (
+    <button
+      type="button"
+      disabled={pending !== null}
+      onClick={() => onDecision(decision)}
+      className={cn(
+        "inline-flex h-9 items-center gap-2 rounded-sm border bg-black/28 px-3 text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-50",
+        toneClass
+      )}
+    >
+      <Icon className="h-4 w-4" />
+      <span>{text(isPending ? "处理中" : label)}</span>
+    </button>
   );
 }
 
@@ -502,4 +606,13 @@ function directionValue(value: unknown): EventImpactDirection | null {
     return value;
   }
   return null;
+}
+
+function decisionNote(decision: EventIntelligenceDecision): string {
+  return {
+    confirm: "UI operator confirmed this event intelligence result.",
+    reject: "UI operator rejected this event intelligence result.",
+    request_review: "UI operator requested manual review for this event intelligence result.",
+    shadow_review: "UI operator returned this event intelligence result to shadow review.",
+  }[decision];
 }

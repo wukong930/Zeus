@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.event_intelligence import EventImpactLink, EventIntelligenceItem
 from app.models.news_events import NewsEvent
 from app.services.event_intelligence.profiles import profile_for_symbol, symbols_matching_text
+from app.services.event_intelligence.governance import record_event_intelligence_audit
 from app.services.event_intelligence.semantic import (
     EventSemanticExtraction,
     EventSemanticHypothesis,
@@ -269,6 +270,7 @@ async def enhance_news_event_impacts_with_semantics(
         )
     )
     created = existing is None
+    before_status = existing.status if existing is not None else None
     if existing is None:
         item = _event_item_from_draft(event_draft)
         session.add(item)
@@ -281,6 +283,22 @@ async def enhance_news_event_impacts_with_semantics(
 
     links = _impact_links_from_drafts(item.id, link_drafts)
     session.add_all(links)
+    await record_event_intelligence_audit(
+        session,
+        event_item_id=item.id,
+        action="semantic_enhanced",
+        actor="llm",
+        before_status=before_status,
+        after_status=item.status,
+        note="LLM semantic extraction merged into event intelligence impact links.",
+        payload={
+            "semantic_model": event_draft.source_payload.get("semantic_model"),
+            "semantic_prompt_version": event_draft.source_payload.get("semantic_prompt_version"),
+            "semantic_confidence": event_draft.source_payload.get("semantic_confidence"),
+            "hypothesis_count": len(event_draft.source_payload.get("semantic_hypotheses", [])),
+            "created": created,
+        },
+    )
     await session.flush()
     return item, links, created
 

@@ -4,8 +4,10 @@ from uuid import uuid4
 from fastapi.testclient import TestClient
 
 from app.main import create_app
+from app.models.event_intelligence import EventIntelligenceAuditLog, EventIntelligenceItem
 from app.models.news_events import NewsEvent
 from app.services.event_intelligence import (
+    apply_event_intelligence_decision,
     build_event_intelligence_from_news,
     parse_semantic_extraction,
 )
@@ -92,6 +94,17 @@ def test_event_intelligence_api_rejects_invalid_filters() -> None:
     assert response.status_code == 422
 
 
+def test_event_intelligence_decision_api_rejects_invalid_decision() -> None:
+    client = TestClient(create_app())
+
+    response = client.post(
+        f"/api/event-intelligence/{uuid4()}/decision",
+        json={"decision": "publish"},
+    )
+
+    assert response.status_code == 422
+
+
 def test_event_intelligence_eval_cases_api_returns_samples() -> None:
     client = TestClient(create_app())
 
@@ -101,6 +114,53 @@ def test_event_intelligence_eval_cases_api_returns_samples() -> None:
     payload = response.json()
     assert len(payload) >= 5
     assert payload[0]["expected_symbols"]
+
+
+async def test_apply_event_intelligence_decision_records_audit() -> None:
+    event_id = uuid4()
+    event_item = EventIntelligenceItem(
+        id=event_id,
+        source_type="news_event",
+        source_id=str(uuid4()),
+        title="Carrier rumor",
+        summary="Single-source report needs confirmation.",
+        event_type="geopolitical",
+        event_timestamp=datetime(2026, 5, 10, tzinfo=UTC),
+        entities=[],
+        symbols=["SC"],
+        regions=["middle_east_crude"],
+        mechanisms=["geopolitical"],
+        evidence=[],
+        counterevidence=[],
+        confidence=0.62,
+        impact_score=62,
+        status="human_review",
+        requires_manual_confirmation=True,
+        source_reliability=0.45,
+        freshness_score=1,
+        source_payload={},
+    )
+    session = FakeDecisionSession(event_item)
+
+    updated, audit = await apply_event_intelligence_decision(
+        session,  # type: ignore[arg-type]
+        event_id,
+        decision="confirm",
+        decided_by="operator",
+        note="Verified with secondary source.",
+        confidence_override=0.8,
+    )
+
+    assert updated.status == "confirmed"
+    assert updated.requires_manual_confirmation is False
+    assert updated.confidence == 0.8
+    assert isinstance(audit, EventIntelligenceAuditLog)
+    assert audit.action == "decision.confirm"
+    assert audit.before_status == "human_review"
+    assert audit.after_status == "confirmed"
+    assert audit.actor == "operator"
+    assert session.flush_count == 1
+    assert session.execute_count == 1
 
 
 def test_parse_semantic_extraction_normalizes_and_filters_hypotheses() -> None:
@@ -214,3 +274,25 @@ def test_event_intelligence_eval_cases_cover_required_scenarios() -> None:
         "tariff-ferrous-base-metals",
         "port-flood-logistics",
     }.issubset(case_ids)
+
+
+class FakeDecisionSession:
+    def __init__(self, event_item: EventIntelligenceItem) -> None:
+        self.event_item = event_item
+        self.rows: list[object] = []
+        self.flush_count = 0
+        self.execute_count = 0
+
+    async def get(self, model, key):
+        if model is EventIntelligenceItem and key == self.event_item.id:
+            return self.event_item
+        return None
+
+    async def execute(self, _):
+        self.execute_count += 1
+
+    def add(self, row: object) -> None:
+        self.rows.append(row)
+
+    async def flush(self) -> None:
+        self.flush_count += 1

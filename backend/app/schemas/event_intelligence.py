@@ -118,6 +118,39 @@ class EventIntelligenceResolveResponse(BaseModel):
     created: bool
 
 
+class EventIntelligenceAuditLogRead(ORMModel):
+    id: UUID
+    event_item_id: UUID
+    action: str
+    actor: str | None = None
+    before_status: str | None = None
+    after_status: str | None = None
+    note: str | None = None
+    payload: dict[str, Any]
+    created_at: datetime
+
+
+class EventIntelligenceDecisionCreate(StrictInputModel):
+    decision: str = Field(pattern="^(confirm|reject|request_review|shadow_review)$")
+    decided_by: str | None = Field(default=None, max_length=80)
+    note: str | None = Field(default=None, max_length=MAX_GOVERNANCE_TEXT_LENGTH)
+    confidence_override: float | None = Field(default=None, ge=0, le=1)
+    payload: dict[str, Any] = Field(
+        default_factory=dict,
+        max_length=MAX_GOVERNANCE_JSON_TOP_LEVEL_KEYS,
+    )
+
+    @field_validator("payload")
+    @classmethod
+    def validate_payload(cls, value: dict[str, Any]) -> dict[str, Any]:
+        return validate_governance_json_object(value, field_name="payload")
+
+
+class EventIntelligenceDecisionResponse(BaseModel):
+    event: EventIntelligenceRead
+    audit_log: EventIntelligenceAuditLogRead
+
+
 class EventIntelligenceEvalCaseRead(BaseModel):
     id: str
     title: str

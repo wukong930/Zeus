@@ -6,17 +6,22 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.models.event_intelligence import EventImpactLink, EventIntelligenceItem
+from app.models.event_intelligence import EventIntelligenceAuditLog
 from app.schemas.common import MAX_INGEST_SYMBOL_LENGTH
 from app.schemas.event_intelligence import (
     EVENT_IMPACT_DIRECTION_PATTERN,
     EVENT_IMPACT_MECHANISM_PATTERN,
     EVENT_INTELLIGENCE_STATUS_PATTERN,
+    EventIntelligenceAuditLogRead,
+    EventIntelligenceDecisionCreate,
+    EventIntelligenceDecisionResponse,
     EventIntelligenceEvalCaseRead,
     EventImpactLinkRead,
     EventIntelligenceRead,
     EventIntelligenceResolveResponse,
 )
 from app.services.event_intelligence import (
+    apply_event_intelligence_decision,
     enhance_news_event_impacts_with_semantics,
     resolve_news_event_impacts,
 )
@@ -77,6 +82,23 @@ async def list_event_impact_links(
     return list((await session.scalars(statement.limit(limit))).all())
 
 
+@router.get("/audit-logs", response_model=list[EventIntelligenceAuditLogRead])
+async def list_event_intelligence_audit_logs(
+    event_item_id: UUID | None = None,
+    action: str | None = Query(default=None, min_length=1, max_length=40),
+    limit: int = Query(default=100, ge=1, le=500),
+    session: AsyncSession = Depends(get_db),
+) -> list[EventIntelligenceAuditLog]:
+    statement = select(EventIntelligenceAuditLog).order_by(
+        EventIntelligenceAuditLog.created_at.desc()
+    )
+    if event_item_id is not None:
+        statement = statement.where(EventIntelligenceAuditLog.event_item_id == event_item_id)
+    if action is not None:
+        statement = statement.where(EventIntelligenceAuditLog.action == action)
+    return list((await session.scalars(statement.limit(limit))).all())
+
+
 @router.get("/eval-cases", response_model=list[EventIntelligenceEvalCaseRead])
 async def list_event_intelligence_eval_cases() -> list[dict]:
     return [case.to_dict() for case in EVENT_INTELLIGENCE_EVAL_CASES]
@@ -104,6 +126,32 @@ async def create_event_intelligence_from_news(
     if not created:
         response.status_code = status.HTTP_200_OK
     return _resolve_response(event_item, links, created=created)
+
+
+@router.post("/{event_id}/decision", response_model=EventIntelligenceDecisionResponse)
+async def decide_event_intelligence(
+    event_id: UUID,
+    payload: EventIntelligenceDecisionCreate,
+    session: AsyncSession = Depends(get_db),
+) -> EventIntelligenceDecisionResponse:
+    try:
+        event_item, audit_log = await apply_event_intelligence_decision(
+            session,
+            event_id,
+            **payload.model_dump(),
+        )
+    except ValueError as exc:
+        if "not found" in str(exc):
+            raise HTTPException(status_code=404, detail="Event intelligence item not found") from exc
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    await session.commit()
+    await session.refresh(event_item)
+    await session.refresh(audit_log)
+    return EventIntelligenceDecisionResponse(
+        event=EventIntelligenceRead.model_validate(event_item),
+        audit_log=EventIntelligenceAuditLogRead.model_validate(audit_log),
+    )
 
 
 @router.post(
