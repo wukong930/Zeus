@@ -513,6 +513,11 @@ const EN: Record<string, string> = {
   "可追溯": "Traceable",
   "事件作用域": "Event Scope",
   "推荐动作": "Recommended Action",
+  "来自世界风险地图": "From World Risk Map",
+  "已带入区域和品种上下文": "Region and symbol context is applied",
+  "已按品种过滤事件智能结果": "Event intelligence results are filtered by symbol",
+  "已按品种过滤新闻事件": "News events are filtered by symbol",
+  "清除作用域": "Clear Scope",
   "先复核质量门": "Review Quality Gate First",
   "存在待复核或被阻断事件，先到事件智能确认质量，再追溯因果链。":
     "Review pending or blocked events in Event Intelligence before tracing the causal chain.",

@@ -13,6 +13,7 @@ import {
   Radio,
   Search,
   ShieldCheck,
+  X,
 } from "lucide-react";
 import { Badge } from "@/components/Badge";
 import { Card, CardHeader, CardSubtitle, CardTitle } from "@/components/Card";
@@ -27,6 +28,11 @@ import {
   type EventIntelligenceItem,
   type NewsEvent,
 } from "@/lib/api";
+import {
+  normalizeNavigationSymbol,
+  readWorldMapNavigationScope,
+  type WorldMapNavigationScope,
+} from "@/lib/navigation-scope";
 import { cn, formatPercent, timeAgo } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n";
 
@@ -46,12 +52,15 @@ export default function NewsEventsPage() {
   const [intelligenceSource, setIntelligenceSource] = useState<DataSourceState>("loading");
   const [intelligencePendingId, setIntelligencePendingId] = useState<string | null>(null);
   const [intelligenceError, setIntelligenceError] = useState<string | null>(null);
+  const [navigationScope, setNavigationScope] = useState<WorldMapNavigationScope | null>(null);
 
   useEffect(() => {
-    const initialSymbol = new URLSearchParams(window.location.search)
-      .get("symbol")
-      ?.replace(/\d+/g, "")
-      .toUpperCase();
+    const initialParams = new URLSearchParams(window.location.search);
+    const initialScope = readWorldMapNavigationScope(initialParams);
+    const initialSymbol = initialScope?.symbol ?? normalizeNavigationSymbol(initialParams.get("symbol"));
+    if (initialScope) {
+      setNavigationScope(initialScope);
+    }
     if (initialSymbol) {
       setQuery(initialSymbol);
     }
@@ -220,6 +229,20 @@ export default function NewsEventsPage() {
 
         <Segmented value={eventType} values={eventTypeOptions} onChange={setEventType} />
         <Segmented value={direction} values={directionOptions} onChange={setDirection} />
+        {navigationScope && (
+          <WorldMapScopeBanner
+            scope={navigationScope}
+            onClear={() => {
+              setNavigationScope(null);
+              if (
+                navigationScope.symbol &&
+                query.trim().toUpperCase() === navigationScope.symbol.toUpperCase()
+              ) {
+                setQuery("");
+              }
+            }}
+          />
+        )}
       </aside>
 
       <main className="flex-1 min-w-0 grid grid-cols-[minmax(360px,0.9fr)_minmax(420px,1.1fr)]">
@@ -290,6 +313,46 @@ export default function NewsEventsPage() {
           )}
         </section>
       </main>
+    </div>
+  );
+}
+
+function WorldMapScopeBanner({
+  scope,
+  onClear,
+}: {
+  scope: WorldMapNavigationScope;
+  onClear: () => void;
+}) {
+  const { text } = useI18n();
+
+  return (
+    <div className="rounded-sm border border-brand-cyan/25 bg-brand-cyan/10 px-3 py-2 text-sm text-text-secondary shadow-inner-panel">
+      <div className="mb-2 flex items-center gap-2">
+        <GitBranch className="h-4 w-4 text-brand-cyan" />
+        <span className="font-semibold text-text-primary">{text("来自世界风险地图")}</span>
+      </div>
+      <p className="text-caption leading-4 text-text-secondary">{text("已按品种过滤新闻事件")}</p>
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        {scope.symbol && (
+          <span className="rounded-xs border border-brand-cyan/25 bg-black/28 px-2 py-0.5 font-mono text-caption text-brand-cyan">
+            {scope.symbol}
+          </span>
+        )}
+        {scope.region && (
+          <span className="rounded-xs border border-white/[0.12] bg-black/28 px-2 py-0.5 font-mono text-caption text-text-muted">
+            {scope.region}
+          </span>
+        )}
+        <button
+          type="button"
+          onClick={onClear}
+          className="ml-auto inline-flex h-7 items-center gap-1.5 rounded-xs border border-border-subtle bg-black/28 px-2 text-caption text-text-secondary transition-colors hover:border-brand-cyan/35 hover:text-text-primary"
+        >
+          <X className="h-3.5 w-3.5" />
+          {text("清除作用域")}
+        </button>
+      </div>
     </div>
   );
 }

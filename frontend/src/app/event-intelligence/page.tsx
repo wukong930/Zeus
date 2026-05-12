@@ -42,6 +42,10 @@ import {
   type EventIntelligenceStatus,
 } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
+import {
+  readWorldMapNavigationScope,
+  type WorldMapNavigationScope,
+} from "@/lib/navigation-scope";
 import { cn, formatPercent, timeAgo } from "@/lib/utils";
 
 interface SemanticHypothesisPayload {
@@ -83,10 +87,17 @@ export default function EventIntelligencePage() {
   const [linkEditError, setLinkEditError] = useState<string | null>(null);
   const [auditLogs, setAuditLogs] = useState<EventIntelligenceAuditLog[]>([]);
   const [auditSource, setAuditSource] = useState<DataSourceState>("loading");
+  const [navigationScope, setNavigationScope] = useState<WorldMapNavigationScope | null>(null);
 
   useEffect(() => {
     let mounted = true;
-    const initialEventId = new URLSearchParams(window.location.search).get("event");
+    const initialParams = new URLSearchParams(window.location.search);
+    const initialEventId = initialParams.get("event");
+    const initialScope = readWorldMapNavigationScope(initialParams);
+    if (initialScope) {
+      setNavigationScope(initialScope);
+      if (initialScope.symbol) setQuery(initialScope.symbol);
+    }
     Promise.all([
       fetchEventIntelligenceItems(200),
       fetchEventImpactLinks({ limit: 300 }),
@@ -277,6 +288,21 @@ export default function EventIntelligencePage() {
         </div>
       </div>
 
+      {navigationScope && (
+        <WorldMapScopeBanner
+          scope={navigationScope}
+          onClear={() => {
+            setNavigationScope(null);
+            if (
+              navigationScope.symbol &&
+              query.trim().toUpperCase() === navigationScope.symbol.toUpperCase()
+            ) {
+              setQuery("");
+            }
+          }}
+        />
+      )}
+
       <div className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-6">
         <Metric label="事件" value={stats.events} icon={DatabaseZap} />
         <Metric label="影响链" value={stats.links} icon={GitBranch} tone="cyan" />
@@ -335,6 +361,42 @@ export default function EventIntelligencePage() {
           )}
         </section>
       </div>
+    </div>
+  );
+}
+
+function WorldMapScopeBanner({
+  scope,
+  onClear,
+}: {
+  scope: WorldMapNavigationScope;
+  onClear: () => void;
+}) {
+  const { text } = useI18n();
+
+  return (
+    <div className="mb-5 flex flex-wrap items-center gap-2 rounded-sm border border-brand-cyan/25 bg-brand-cyan/10 px-3 py-2 text-sm text-text-secondary shadow-inner-panel">
+      <GitBranch className="h-4 w-4 text-brand-cyan" />
+      <span className="font-semibold text-text-primary">{text("来自世界风险地图")}</span>
+      <span>{text("已按品种过滤事件智能结果")}</span>
+      {scope.symbol && (
+        <span className="rounded-xs border border-brand-cyan/25 bg-black/28 px-2 py-0.5 font-mono text-caption text-brand-cyan">
+          {scope.symbol}
+        </span>
+      )}
+      {scope.region && (
+        <span className="rounded-xs border border-white/[0.12] bg-black/28 px-2 py-0.5 font-mono text-caption text-text-muted">
+          {scope.region}
+        </span>
+      )}
+      <button
+        type="button"
+        onClick={onClear}
+        className="ml-auto inline-flex h-7 items-center gap-1.5 rounded-xs border border-border-subtle bg-black/28 px-2 text-caption text-text-secondary transition-colors hover:border-brand-cyan/35 hover:text-text-primary"
+      >
+        <X className="h-3.5 w-3.5" />
+        {text("清除作用域")}
+      </button>
     </div>
   );
 }

@@ -62,6 +62,7 @@ import {
   type WorldRiskLevel,
 } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
+import { appendWorldMapNavigationScope } from "@/lib/navigation-scope";
 import { cn } from "@/lib/utils";
 
 type ScopeFilterValue = "all" | string;
@@ -731,6 +732,9 @@ function regionRiskAction(region: WorldMapRegion) {
   const health = regionEvidenceHealth(region);
   const hasQualityReview = region.eventQuality.blocked > 0 || region.eventQuality.review > 0;
   const needsEvidence = health.densityScore < 45 || health.sourceReliability < 45 || health.freshnessScore < 45;
+  const eventIntelligenceHref = scopedWorldMapHref("/event-intelligence", region, { includeEvent: true });
+  const newsHref = scopedWorldMapHref("/news", region);
+  const causalWebHref = scopedWorldMapHref(region.causalScope.causalWebUrl, region);
 
   if (hasQualityReview) {
     return {
@@ -738,10 +742,10 @@ function regionRiskAction(region: WorldMapRegion) {
       color: "#f97316",
       title: "先复核质量门",
       description: "存在待复核或被阻断事件，先到事件智能确认质量，再追溯因果链。",
-      primaryHref: "/event-intelligence",
+      primaryHref: eventIntelligenceHref,
       primaryLabel: "打开事件智能",
       primaryIcon: ShieldAlert,
-      secondaryHref: region.causalScope.causalWebUrl,
+      secondaryHref: causalWebHref,
       secondaryLabel: region.causalScope.hasDirectLinks ? "打开关联因果网络" : "打开同商品因果网络",
       secondaryIcon: Link2,
     };
@@ -753,10 +757,10 @@ function regionRiskAction(region: WorldMapRegion) {
       color: "#38bdf8",
       title: "先补证据",
       description: "当前证据覆盖偏薄，优先查看新闻、天气或信号来源，再进入链路追溯。",
-      primaryHref: "/news",
+      primaryHref: newsHref,
       primaryLabel: "打开新闻事件",
       primaryIcon: DatabaseZap,
-      secondaryHref: region.causalScope.causalWebUrl,
+      secondaryHref: causalWebHref,
       secondaryLabel: "打开因果网络",
       secondaryIcon: Link2,
     };
@@ -768,10 +772,10 @@ function regionRiskAction(region: WorldMapRegion) {
       color: "#ff4d4f",
       title: "追溯升温链",
       description: "风险正在升温且存在直接事件作用域，优先进入因果网络核对上下游传导。",
-      primaryHref: region.causalScope.causalWebUrl,
+      primaryHref: causalWebHref,
       primaryLabel: "打开关联因果网络",
       primaryIcon: Link2,
-      secondaryHref: "/event-intelligence",
+      secondaryHref: eventIntelligenceHref,
       secondaryLabel: "打开事件智能",
       secondaryIcon: ShieldCheck,
     };
@@ -783,10 +787,10 @@ function regionRiskAction(region: WorldMapRegion) {
       color: "#22d3ee",
       title: "追溯因果链",
       description: "当前区域已有可追溯事件作用域，可进入因果网络核对上下游。",
-      primaryHref: region.causalScope.causalWebUrl,
+      primaryHref: causalWebHref,
       primaryLabel: "打开关联因果网络",
       primaryIcon: Link2,
-      secondaryHref: "/event-intelligence",
+      secondaryHref: eventIntelligenceHref,
       secondaryLabel: "打开事件智能",
       secondaryIcon: ShieldCheck,
     };
@@ -797,13 +801,33 @@ function regionRiskAction(region: WorldMapRegion) {
     color: "#a3a3a3",
     title: "保持观察",
     description: "当前缺少直接事件作用域，先保持同商品观察，等待新鲜证据进入。",
-    primaryHref: region.causalScope.causalWebUrl,
+    primaryHref: causalWebHref,
     primaryLabel: "打开同商品因果网络",
     primaryIcon: Link2,
-    secondaryHref: "/news",
+    secondaryHref: newsHref,
     secondaryLabel: "打开新闻事件",
     secondaryIcon: DatabaseZap,
   };
+}
+
+function scopedWorldMapHref(
+  href: string,
+  region: WorldMapRegion,
+  options: { includeEvent?: boolean } = {}
+) {
+  const event = options.includeEvent ? firstEventIntelligenceId(region) : undefined;
+  return appendWorldMapNavigationScope(href, {
+    symbol: region.causalScope.symbols[0] ?? region.symbols[0],
+    region: region.id,
+    ...(event ? { event } : {}),
+  });
+}
+
+function firstEventIntelligenceId(region: WorldMapRegion) {
+  const eventScope = region.causalScope.eventIds.find((eventId) =>
+    eventId.startsWith("event_intelligence:")
+  );
+  return eventScope?.split(":")[1];
 }
 
 function ReadingMetric({
@@ -2388,7 +2412,7 @@ function RiskActionCard({ region }: { region: WorldMapRegion }) {
           <p className="mt-1 text-caption leading-4 text-text-secondary">{text(action.description)}</p>
         </div>
         <span className="rounded-xs border border-white/[0.12] bg-black/28 px-2 py-0.5 font-mono text-[10px] text-text-muted">
-          D.4
+          D.5
         </span>
       </div>
       <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
