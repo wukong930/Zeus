@@ -319,3 +319,11 @@ threshold_modifier、propagation_activator、risk_recalc、数据腐烂防护
 - 新增 `/api/event-intelligence`、`/api/event-intelligence/impact-links` 与 `/api/event-intelligence/from-news/{news_event_id}`，事件影响判断默认进入 Shadow / review，高影响单源或低置信事件进入人工复核。
 - 新闻事件写入后会同步生成事件智能对象，避免新新闻只停留在 `news_events` 表而没有 Phase 10 作用域。
 - 新增 `/event-intelligence` 前端工作台，并同步侧边栏、命令面板和中英文文案，用于查看事件池、影响链、证据和反证。
+
+# 2026-05-12 — Event Intelligence Engine Phase 10.2
+
+- 新增 `services/event_intelligence/semantic.py`：通过统一 LLM registry 进行结构化语义抽取，输出实体、商品、机制、方向和多商品影响假设。
+- resolver 支持把 LLM 语义假设与 Commodity Lens 规则链路合并，语义输出必须通过已登记商品、允许机制和方向枚举校验后才会入库。
+- 新增 `/api/event-intelligence/from-news/{news_event_id}/semantic` 显式语义增强接口；默认新闻写入仍走规则 resolver，避免自动消耗 LLM 配额。
+- 新增 `/api/event-intelligence/eval-cases` 与评估样例集，覆盖特朗普关税、航母/伊朗、橡胶天气、港口洪涝和生柴政策等场景。
+- `/event-intelligence` 事件详情新增语义假设展示，显示 LLM 候选影响、模型和提示版本。

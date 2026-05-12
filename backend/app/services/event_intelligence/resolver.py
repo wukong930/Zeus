@@ -2,12 +2,18 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.event_intelligence import EventImpactLink, EventIntelligenceItem
 from app.models.news_events import NewsEvent
 from app.services.event_intelligence.profiles import profile_for_symbol, symbols_matching_text
+from app.services.event_intelligence.semantic import (
+    EventSemanticExtraction,
+    EventSemanticHypothesis,
+    SemanticCompleter,
+    extract_news_event_semantics,
+)
 
 
 @dataclass(frozen=True)
@@ -228,71 +234,99 @@ async def resolve_news_event_impacts(
         return existing, links, False
 
     event_draft, link_drafts = build_event_intelligence_from_news(news_event)
-    item = EventIntelligenceItem(
-        source_type=event_draft.source_type,
-        source_id=event_draft.source_id,
-        title=event_draft.title,
-        summary=event_draft.summary,
-        event_type=event_draft.event_type,
-        event_timestamp=event_draft.event_timestamp,
-        entities=list(event_draft.entities),
-        symbols=list(event_draft.symbols),
-        regions=list(event_draft.regions),
-        mechanisms=list(event_draft.mechanisms),
-        evidence=list(event_draft.evidence),
-        counterevidence=list(event_draft.counterevidence),
-        confidence=event_draft.confidence,
-        impact_score=event_draft.impact_score,
-        status=event_draft.status,
-        requires_manual_confirmation=event_draft.requires_manual_confirmation,
-        source_reliability=event_draft.source_reliability,
-        freshness_score=event_draft.freshness_score,
-        source_payload=event_draft.source_payload,
-    )
+    item = _event_item_from_draft(event_draft)
     session.add(item)
     await session.flush()
 
-    links = [
-        EventImpactLink(
-            event_item_id=item.id,
-            symbol=draft.symbol,
-            region_id=draft.region_id,
-            mechanism=draft.mechanism,
-            direction=draft.direction,
-            confidence=draft.confidence,
-            impact_score=draft.impact_score,
-            horizon=draft.horizon,
-            rationale=draft.rationale,
-            evidence=list(draft.evidence),
-            counterevidence=list(draft.counterevidence),
-            status=draft.status,
-        )
-        for draft in link_drafts
-    ]
+    links = _impact_links_from_drafts(item.id, link_drafts)
     session.add_all(links)
     await session.flush()
     return item, links, True
+
+
+async def enhance_news_event_impacts_with_semantics(
+    session: AsyncSession,
+    news_event_id: UUID,
+    *,
+    completer: SemanticCompleter | None = None,
+) -> tuple[EventIntelligenceItem, list[EventImpactLink], bool]:
+    news_event = await session.get(NewsEvent, news_event_id)
+    if news_event is None:
+        raise ValueError("news event not found")
+
+    if completer is None:
+        semantic = await extract_news_event_semantics(session, news_event)
+    else:
+        semantic = await extract_news_event_semantics(session, news_event, completer=completer)
+    event_draft, link_drafts = build_event_intelligence_from_news(
+        news_event,
+        semantic=semantic,
+    )
+    existing = await session.scalar(
+        select(EventIntelligenceItem).where(
+            EventIntelligenceItem.source_type == "news_event",
+            EventIntelligenceItem.source_id == str(news_event.id),
+        )
+    )
+    created = existing is None
+    if existing is None:
+        item = _event_item_from_draft(event_draft)
+        session.add(item)
+        await session.flush()
+    else:
+        item = existing
+        _apply_event_draft(item, event_draft)
+        await session.execute(delete(EventImpactLink).where(EventImpactLink.event_item_id == item.id))
+        await session.flush()
+
+    links = _impact_links_from_drafts(item.id, link_drafts)
+    session.add_all(links)
+    await session.flush()
+    return item, links, created
 
 
 def build_event_intelligence_from_news(
     news_event: NewsEvent,
     *,
     now: datetime | None = None,
+    semantic: EventSemanticExtraction | None = None,
 ) -> tuple[EventIntelligenceDraft, list[EventImpactLinkDraft]]:
     observed_at = now or datetime.now(UTC)
     text = _combined_news_text(news_event)
-    symbols = _resolve_symbols(news_event, text)
-    mechanisms = _resolve_mechanisms(news_event, text)
+    rule_symbols = _resolve_symbols(news_event, text)
+    symbols = _merge_text_lists(_semantic_symbols(semantic), rule_symbols)
+    rule_mechanisms = _resolve_mechanisms(news_event, text)
+    mechanisms = _merge_text_lists(_semantic_mechanisms(semantic), rule_mechanisms)
     reliability = _source_reliability(news_event)
     freshness = _freshness_score(news_event.published_at, observed_at)
     confidence = _clamp(news_event.llm_confidence * (0.7 + reliability * 0.3) * freshness)
+    if semantic is not None:
+        confidence = _clamp(confidence * 0.82 + semantic.confidence * 0.18)
     requires_manual_confirmation = _requires_manual_confirmation(news_event, confidence)
+    if semantic is not None and semantic.requires_manual_confirmation is True:
+        requires_manual_confirmation = True
     status = "human_review" if requires_manual_confirmation else "shadow_review"
-    entities = _extract_entities(news_event, text)
-    regions = _regions_for_symbols(symbols)
-    evidence = tuple(_compact_evidence([news_event.title, news_event.summary, news_event.raw_url or ""]))
-    counterevidence = tuple(_counterevidence(news_event, mechanisms))
-    direction = _resolve_direction(news_event.direction, text)
+    entities = _merge_text_lists(_semantic_entities(semantic), _extract_entities(news_event, text))
+    regions = _merge_text_lists(_semantic_regions(semantic), _regions_for_symbols(symbols))
+    evidence = tuple(
+        _compact_evidence(
+            [
+                news_event.title,
+                news_event.summary,
+                news_event.raw_url or "",
+                *_semantic_evidence(semantic),
+            ]
+        )
+    )
+    counterevidence = tuple(
+        _compact_evidence(
+            [
+                *_counterevidence(news_event, mechanisms),
+                *_semantic_counterevidence(semantic),
+            ]
+        )
+    )
+    direction = _semantic_direction(semantic) or _resolve_direction(news_event.direction, text)
 
     link_drafts = _build_impact_links(
         symbols=symbols,
@@ -303,6 +337,7 @@ def build_event_intelligence_from_news(
         evidence=evidence,
         counterevidence=counterevidence,
         status=status,
+        semantic_hypotheses=semantic.hypotheses if semantic is not None else (),
     )
     impact_score = max((link.impact_score for link in link_drafts), default=round(confidence * 100, 2))
 
@@ -326,12 +361,14 @@ def build_event_intelligence_from_news(
         source_reliability=round(reliability, 4),
         freshness_score=round(freshness, 4),
         source_payload={
+            "resolver_version": "event-intelligence-rules-v2",
             "news_event_id": str(news_event.id),
             "source": news_event.source,
             "source_count": news_event.source_count,
             "verification_status": news_event.verification_status,
             "severity": news_event.severity,
             "direction": news_event.direction,
+            **_semantic_source_payload(semantic),
         },
     )
     return event_draft, link_drafts
@@ -347,6 +384,7 @@ def _build_impact_links(
     evidence: tuple[str, ...],
     counterevidence: tuple[str, ...],
     status: str,
+    semantic_hypotheses: tuple[EventSemanticHypothesis, ...] | list[EventSemanticHypothesis] = (),
 ) -> list[EventImpactLinkDraft]:
     links: list[EventImpactLinkDraft] = []
     for symbol in symbols:
@@ -372,7 +410,71 @@ def _build_impact_links(
                         status=status,
                     )
                 )
-    return sorted(links, key=lambda item: item.impact_score, reverse=True)[:80]
+    links.extend(
+        _build_semantic_impact_links(
+            semantic_hypotheses=semantic_hypotheses,
+            event_confidence=confidence,
+            fallback_evidence=evidence,
+            fallback_counterevidence=counterevidence,
+            fallback_status=status,
+        )
+    )
+    return _dedupe_impact_links(links)[:80]
+
+
+def _build_semantic_impact_links(
+    *,
+    semantic_hypotheses: tuple[EventSemanticHypothesis, ...] | list[EventSemanticHypothesis],
+    event_confidence: float,
+    fallback_evidence: tuple[str, ...],
+    fallback_counterevidence: tuple[str, ...],
+    fallback_status: str,
+) -> list[EventImpactLinkDraft]:
+    links: list[EventImpactLinkDraft] = []
+    for hypothesis in semantic_hypotheses:
+        symbol = hypothesis.symbol.upper()
+        profile = profile_for_symbol(symbol)
+        region_id = hypothesis.region_id
+        if region_id is None and profile is not None and profile.regions:
+            region_id = profile.regions[0]
+        confidence = _clamp(hypothesis.confidence * 0.72 + event_confidence * 0.28)
+        evidence = tuple(hypothesis.evidence) if hypothesis.evidence else fallback_evidence
+        counterevidence = (
+            tuple(hypothesis.counterevidence)
+            if hypothesis.counterevidence
+            else fallback_counterevidence
+        )
+        links.append(
+            EventImpactLinkDraft(
+                symbol=symbol,
+                region_id=region_id,
+                mechanism=hypothesis.mechanism,
+                direction=hypothesis.direction,
+                confidence=round(confidence, 4),
+                impact_score=round(confidence * 100, 2),
+                horizon=hypothesis.horizon,
+                rationale=hypothesis.rationale
+                or _rationale(symbol, region_id, hypothesis.mechanism, hypothesis.direction),
+                evidence=evidence,
+                counterevidence=counterevidence,
+                status=fallback_status,
+            )
+        )
+    return links
+
+
+def _dedupe_impact_links(links: list[EventImpactLinkDraft]) -> list[EventImpactLinkDraft]:
+    best_by_scope: dict[tuple[str, str | None, str], EventImpactLinkDraft] = {}
+    for link in links:
+        key = (link.symbol, link.region_id, link.mechanism)
+        existing = best_by_scope.get(key)
+        if existing is None or link.impact_score >= existing.impact_score:
+            best_by_scope[key] = link
+    return sorted(
+        best_by_scope.values(),
+        key=lambda item: (item.impact_score, item.confidence),
+        reverse=True,
+    )
 
 
 def _weighted_mechanisms_for_symbol(symbol: str, mechanisms: list[str]) -> list[tuple[str, float]]:
@@ -507,6 +609,154 @@ def _rationale(symbol: str, region_id: str | None, mechanism: str, direction: st
     name = profile.name_zh if profile else symbol
     region_label = region_id or "global"
     return f"{name} 对 {mechanism} 机制敏感，当前事件在 {region_label} 形成 {direction} 方向的候选影响链。"
+
+
+def _event_item_from_draft(event_draft: EventIntelligenceDraft) -> EventIntelligenceItem:
+    return EventIntelligenceItem(
+        source_type=event_draft.source_type,
+        source_id=event_draft.source_id,
+        title=event_draft.title,
+        summary=event_draft.summary,
+        event_type=event_draft.event_type,
+        event_timestamp=event_draft.event_timestamp,
+        entities=list(event_draft.entities),
+        symbols=list(event_draft.symbols),
+        regions=list(event_draft.regions),
+        mechanisms=list(event_draft.mechanisms),
+        evidence=list(event_draft.evidence),
+        counterevidence=list(event_draft.counterevidence),
+        confidence=event_draft.confidence,
+        impact_score=event_draft.impact_score,
+        status=event_draft.status,
+        requires_manual_confirmation=event_draft.requires_manual_confirmation,
+        source_reliability=event_draft.source_reliability,
+        freshness_score=event_draft.freshness_score,
+        source_payload=event_draft.source_payload,
+    )
+
+
+def _apply_event_draft(item: EventIntelligenceItem, event_draft: EventIntelligenceDraft) -> None:
+    item.title = event_draft.title
+    item.summary = event_draft.summary
+    item.event_type = event_draft.event_type
+    item.event_timestamp = event_draft.event_timestamp
+    item.entities = list(event_draft.entities)
+    item.symbols = list(event_draft.symbols)
+    item.regions = list(event_draft.regions)
+    item.mechanisms = list(event_draft.mechanisms)
+    item.evidence = list(event_draft.evidence)
+    item.counterevidence = list(event_draft.counterevidence)
+    item.confidence = event_draft.confidence
+    item.impact_score = event_draft.impact_score
+    item.status = event_draft.status
+    item.requires_manual_confirmation = event_draft.requires_manual_confirmation
+    item.source_reliability = event_draft.source_reliability
+    item.freshness_score = event_draft.freshness_score
+    item.source_payload = event_draft.source_payload
+
+
+def _impact_links_from_drafts(
+    event_item_id: UUID,
+    link_drafts: list[EventImpactLinkDraft],
+) -> list[EventImpactLink]:
+    return [
+        EventImpactLink(
+            event_item_id=event_item_id,
+            symbol=draft.symbol,
+            region_id=draft.region_id,
+            mechanism=draft.mechanism,
+            direction=draft.direction,
+            confidence=draft.confidence,
+            impact_score=draft.impact_score,
+            horizon=draft.horizon,
+            rationale=draft.rationale,
+            evidence=list(draft.evidence),
+            counterevidence=list(draft.counterevidence),
+            status=draft.status,
+        )
+        for draft in link_drafts
+    ]
+
+
+def _semantic_symbols(semantic: EventSemanticExtraction | None) -> list[str]:
+    if semantic is None:
+        return []
+    symbols = list(semantic.symbols)
+    symbols.extend(hypothesis.symbol for hypothesis in semantic.hypotheses)
+    return _merge_text_lists(symbols, uppercase=True)
+
+
+def _semantic_mechanisms(semantic: EventSemanticExtraction | None) -> list[str]:
+    if semantic is None:
+        return []
+    mechanisms = list(semantic.mechanisms)
+    mechanisms.extend(hypothesis.mechanism for hypothesis in semantic.hypotheses)
+    return _merge_text_lists(mechanisms)
+
+
+def _semantic_entities(semantic: EventSemanticExtraction | None) -> list[str]:
+    return list(semantic.entities) if semantic is not None else []
+
+
+def _semantic_regions(semantic: EventSemanticExtraction | None) -> list[str]:
+    if semantic is None:
+        return []
+    regions = list(semantic.regions)
+    regions.extend(
+        hypothesis.region_id
+        for hypothesis in semantic.hypotheses
+        if hypothesis.region_id is not None
+    )
+    return _merge_text_lists(regions)
+
+
+def _semantic_evidence(semantic: EventSemanticExtraction | None) -> list[str]:
+    if semantic is None:
+        return []
+    evidence = list(semantic.evidence)
+    for hypothesis in semantic.hypotheses:
+        evidence.extend(hypothesis.evidence)
+    return _compact_evidence(evidence)
+
+
+def _semantic_counterevidence(semantic: EventSemanticExtraction | None) -> list[str]:
+    if semantic is None:
+        return []
+    counterevidence = list(semantic.counterevidence)
+    for hypothesis in semantic.hypotheses:
+        counterevidence.extend(hypothesis.counterevidence)
+    return _compact_evidence(counterevidence)
+
+
+def _semantic_direction(semantic: EventSemanticExtraction | None) -> str | None:
+    if semantic is None or semantic.direction is None:
+        return None
+    return semantic.direction
+
+
+def _semantic_source_payload(semantic: EventSemanticExtraction | None) -> dict:
+    if semantic is None:
+        return {"semantic_used": False}
+    return {
+        "semantic_used": True,
+        "semantic_model": semantic.model,
+        "semantic_prompt_version": semantic.prompt_version,
+        "semantic_confidence": round(semantic.confidence, 4),
+        "semantic_hypotheses": [
+            hypothesis.model_dump(exclude_none=True) for hypothesis in semantic.hypotheses[:24]
+        ],
+    }
+
+
+def _merge_text_lists(*items: list[str], uppercase: bool = False) -> list[str]:
+    values: list[str] = []
+    for item in items:
+        for value in item:
+            text = str(value).strip()
+            if not text:
+                continue
+            values.append(text.upper() if uppercase else text)
+    return list(dict.fromkeys(values))
 
 
 def _combined_news_text(news_event: NewsEvent) -> str:

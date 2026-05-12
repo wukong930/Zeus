@@ -25,6 +25,16 @@ import {
 import { useI18n } from "@/lib/i18n";
 import { cn, formatPercent, timeAgo } from "@/lib/utils";
 
+interface SemanticHypothesisPayload {
+  symbol: string;
+  regionId: string | null;
+  mechanism: string;
+  direction: EventImpactDirection;
+  confidence: number;
+  horizon: string;
+  rationale: string;
+}
+
 export default function EventIntelligencePage() {
   const { text } = useI18n();
   const [items, setItems] = useState<EventIntelligenceItem[]>([]);
@@ -188,6 +198,9 @@ export default function EventIntelligencePage() {
 
 function EventDetail({ item, links }: { item: EventIntelligenceItem; links: EventImpactLink[] }) {
   const { text } = useI18n();
+  const semanticHypotheses = readSemanticHypotheses(item.sourcePayload);
+  const semanticModel = readPayloadString(item.sourcePayload, "semantic_model");
+  const semanticPrompt = readPayloadString(item.sourcePayload, "semantic_prompt_version");
 
   return (
     <div className="space-y-5">
@@ -217,6 +230,49 @@ function EventDetail({ item, links }: { item: EventIntelligenceItem; links: Even
           <TokenGroup title="区域" values={item.regions} tone="cyan" />
         </div>
       </Card>
+
+      {semanticHypotheses.length > 0 && (
+        <Card variant="flat">
+          <CardHeader>
+            <div>
+              <CardTitle>{text("语义假设")}</CardTitle>
+              <CardSubtitle>
+                {semanticHypotheses.length} {text("条 LLM 候选影响")}
+                {semanticModel ? ` · ${semanticModel}` : ""}
+                {semanticPrompt ? ` · ${semanticPrompt}` : ""}
+              </CardSubtitle>
+            </div>
+          </CardHeader>
+          <div className="grid gap-3 lg:grid-cols-2">
+            {semanticHypotheses.slice(0, 6).map((hypothesis, index) => (
+              <div
+                key={`${hypothesis.symbol}-${hypothesis.mechanism}-${index}`}
+                className="rounded-sm border border-brand-emerald/18 bg-brand-emerald/8 p-3 shadow-inner-panel"
+              >
+                <div className="mb-2 flex flex-wrap items-center gap-2">
+                  <span className="font-mono text-sm font-semibold text-text-primary">
+                    {hypothesis.symbol}
+                  </span>
+                  <Badge variant={directionVariant(hypothesis.direction)}>
+                    {directionLabel(hypothesis.direction)}
+                  </Badge>
+                  <Badge variant="neutral">{mechanismLabel(hypothesis.mechanism)}</Badge>
+                  <span className="ml-auto font-mono text-caption text-brand-emerald-bright">
+                    {formatPercent(hypothesis.confidence * 100, 0, false)}
+                  </span>
+                </div>
+                <p className="line-clamp-2 text-sm text-text-secondary">
+                  {text(hypothesis.rationale || "等待语义假设说明")}
+                </p>
+                <div className="mt-2 flex flex-wrap gap-2 text-caption text-text-muted">
+                  <span>{text("区域")}：{hypothesis.regionId ?? "global"}</span>
+                  <span>{text("周期")}：{text(hypothesis.horizon)}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
 
       <Card variant="flat">
         <CardHeader>
@@ -402,4 +458,48 @@ function mechanismLabel(mechanism: string): string {
     weather: "天气",
     macro: "宏观",
   }[mechanism] ?? mechanism;
+}
+
+function readPayloadString(payload: Record<string, unknown>, key: string): string | null {
+  const value = payload[key];
+  return typeof value === "string" && value.trim() ? value : null;
+}
+
+function readSemanticHypotheses(payload: Record<string, unknown>): SemanticHypothesisPayload[] {
+  const raw = payload.semantic_hypotheses;
+  if (!Array.isArray(raw)) return [];
+  return raw.flatMap((item) => {
+    if (!item || typeof item !== "object") return [];
+    const record = item as Record<string, unknown>;
+    const symbol = stringValue(record.symbol);
+    const mechanism = stringValue(record.mechanism);
+    const direction = directionValue(record.direction);
+    if (!symbol || !mechanism || !direction) return [];
+    return [
+      {
+        symbol,
+        regionId: stringValue(record.region_id),
+        mechanism,
+        direction,
+        confidence: numberValue(record.confidence),
+        horizon: stringValue(record.horizon) ?? "short",
+        rationale: stringValue(record.rationale) ?? "",
+      },
+    ];
+  });
+}
+
+function stringValue(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value : null;
+}
+
+function numberValue(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function directionValue(value: unknown): EventImpactDirection | null {
+  if (value === "bullish" || value === "bearish" || value === "mixed" || value === "watch") {
+    return value;
+  }
+  return null;
 }

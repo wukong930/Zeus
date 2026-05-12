@@ -120,6 +120,14 @@ Phase 10.1 已落地的运行态边界：
 - API：`/api/event-intelligence` 查询事件智能对象，`/api/event-intelligence/impact-links` 查询影响链，`POST /api/event-intelligence/from-news/{news_event_id}` 从现有新闻事件生成影响链。
 - 前端：`/event-intelligence` 作为最小工作台，展示事件池、影响链、证据/反证和人工复核状态。
 
+Phase 10.2 已落地的语义增强边界：
+
+- LLM 语义层：`services/event_intelligence/semantic.py` 使用统一 LLM registry 生成结构化 JSON，提取实体、商品、机制、方向、证据/反证和多商品影响假设。
+- 规则护栏：语义输出只接受已登记商品和允许机制，resolver 将 LLM 假设与 Commodity Lens 规则结果合并、去重并保留可解释字段。
+- 显式触发：`POST /api/event-intelligence/from-news/{news_event_id}/semantic` 可用 LLM 重算/增强某条新闻事件；默认新闻入库仍走规则 resolver，避免自动消耗 LLM 配额。
+- 评估样例：`/api/event-intelligence/eval-cases` 暴露特朗普关税、航母/伊朗、橡胶天气、港口洪涝和生柴政策等样例，用于后续回归评估。
+- 前端：`/event-intelligence` 在事件详情中展示语义假设、模型和提示版本。
+
 治理约束：
 
 - 引擎判断默认只进入 Shadow / review，不直接修改生产阈值或自动发交易指令。

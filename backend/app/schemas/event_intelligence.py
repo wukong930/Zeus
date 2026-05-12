@@ -118,6 +118,16 @@ class EventIntelligenceResolveResponse(BaseModel):
     created: bool
 
 
+class EventIntelligenceEvalCaseRead(BaseModel):
+    id: str
+    title: str
+    source_text: str
+    expected_symbols: list[str]
+    expected_mechanisms: list[str]
+    expected_directions: list[str]
+    review_note: str
+
+
 def _normalize_text_list(
     values: list[str],
     *,

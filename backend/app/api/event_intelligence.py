@@ -11,11 +11,17 @@ from app.schemas.event_intelligence import (
     EVENT_IMPACT_DIRECTION_PATTERN,
     EVENT_IMPACT_MECHANISM_PATTERN,
     EVENT_INTELLIGENCE_STATUS_PATTERN,
+    EventIntelligenceEvalCaseRead,
     EventImpactLinkRead,
     EventIntelligenceRead,
     EventIntelligenceResolveResponse,
 )
-from app.services.event_intelligence import resolve_news_event_impacts
+from app.services.event_intelligence import (
+    enhance_news_event_impacts_with_semantics,
+    resolve_news_event_impacts,
+)
+from app.services.event_intelligence.eval_cases import EVENT_INTELLIGENCE_EVAL_CASES
+from app.services.llm.types import LLMConfigurationError
 
 router = APIRouter(prefix="/api/event-intelligence", tags=["event-intelligence"])
 
@@ -71,6 +77,11 @@ async def list_event_impact_links(
     return list((await session.scalars(statement.limit(limit))).all())
 
 
+@router.get("/eval-cases", response_model=list[EventIntelligenceEvalCaseRead])
+async def list_event_intelligence_eval_cases() -> list[dict]:
+    return [case.to_dict() for case in EVENT_INTELLIGENCE_EVAL_CASES]
+
+
 @router.post(
     "/from-news/{news_event_id}",
     response_model=EventIntelligenceResolveResponse,
@@ -85,6 +96,37 @@ async def create_event_intelligence_from_news(
         event_item, links, created = await resolve_news_event_impacts(session, news_event_id)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail="News event not found") from exc
+
+    await session.commit()
+    await session.refresh(event_item)
+    for link in links:
+        await session.refresh(link)
+    if not created:
+        response.status_code = status.HTTP_200_OK
+    return _resolve_response(event_item, links, created=created)
+
+
+@router.post(
+    "/from-news/{news_event_id}/semantic",
+    response_model=EventIntelligenceResolveResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def enhance_event_intelligence_from_news_with_semantics(
+    news_event_id: UUID,
+    response: Response,
+    session: AsyncSession = Depends(get_db),
+) -> EventIntelligenceResolveResponse:
+    try:
+        event_item, links, created = await enhance_news_event_impacts_with_semantics(
+            session,
+            news_event_id,
+        )
+    except ValueError as exc:
+        if "not found" in str(exc):
+            raise HTTPException(status_code=404, detail="News event not found") from exc
+        raise HTTPException(status_code=502, detail="Semantic extraction failed") from exc
+    except LLMConfigurationError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
     await session.commit()
     await session.refresh(event_item)
