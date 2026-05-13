@@ -465,3 +465,9 @@ threshold_modifier、propagation_activator、risk_recalc、数据腐烂防护
 - 新增 `buildEventIntelligenceHref`，让 Causal Web 能生成带 `source=causal-web`、`event`、`symbol` 和 `region` 的事件智能入口。
 - Causal Web 事件智能源节点和影响假设详情新增“打开事件智能 / 打开世界风险地图”入口，人工复核可从图谱反向回到事件详情或区域风险。
 - 事件智能页的来源提示现在能区分来自世界风险地图、因果网络或事件智能自身，避免从 Causal Web 进入时仍显示“来自世界风险地图”。
+
+# 2026-05-13 — News Events Phase 10.21 事件作用域深链
+
+- `/news` 支持读取 `event` 作用域并按事件智能对象的 `source_id` 自动选中来源新闻，避免从地图或图谱回到新闻页后落到错误新闻。
+- 新闻事件的事件智能链新增“打开因果网络”入口，单条影响链也能带 `event + symbol + region` 进入 Causal Web。
+- 新闻页的“查看事件智能链”改用统一深链构造器，携带 `source=news`、品种、区域和事件，事件智能页会显示“来自新闻事件”。

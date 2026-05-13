@@ -410,6 +410,7 @@ function WorldMapScopeBanner({
 function scopeSourceLabel(source: WorldMapNavigationScope["source"]) {
   if (source === "causal-web") return "来自因果网络";
   if (source === "event-intelligence") return "来自事件智能";
+  if (source === "news") return "来自新闻事件";
   return "来自世界风险地图";
 }
 

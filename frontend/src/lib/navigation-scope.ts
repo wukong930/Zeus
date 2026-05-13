@@ -3,11 +3,13 @@
 export const WORLD_MAP_NAV_SOURCE = "world-map";
 export const CAUSAL_WEB_NAV_SOURCE = "causal-web";
 export const EVENT_INTELLIGENCE_NAV_SOURCE = "event-intelligence";
+export const NEWS_NAV_SOURCE = "news";
 
 export type NavigationScopeSource =
   | typeof WORLD_MAP_NAV_SOURCE
   | typeof CAUSAL_WEB_NAV_SOURCE
-  | typeof EVENT_INTELLIGENCE_NAV_SOURCE;
+  | typeof EVENT_INTELLIGENCE_NAV_SOURCE
+  | typeof NEWS_NAV_SOURCE;
 
 export interface WorldMapNavigationScope {
   source: NavigationScopeSource;
@@ -70,6 +72,7 @@ export function normalizeNavigationScopeSource(value: string | null | undefined)
   if (normalized === WORLD_MAP_NAV_SOURCE) return WORLD_MAP_NAV_SOURCE;
   if (normalized === CAUSAL_WEB_NAV_SOURCE) return CAUSAL_WEB_NAV_SOURCE;
   if (normalized === EVENT_INTELLIGENCE_NAV_SOURCE) return EVENT_INTELLIGENCE_NAV_SOURCE;
+  if (normalized === NEWS_NAV_SOURCE) return NEWS_NAV_SOURCE;
   return null;
 }
 

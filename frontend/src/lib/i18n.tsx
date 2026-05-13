@@ -519,6 +519,7 @@ const EN: Record<string, string> = {
   "来自世界风险地图": "From World Risk Map",
   "来自因果网络": "From Causal Web",
   "来自事件智能": "From Event Intelligence",
+  "来自新闻事件": "From News Events",
   "已带入区域和品种上下文": "Region and symbol context is applied",
   "已按品种过滤事件智能结果": "Event intelligence results are filtered by symbol",
   "已按品种过滤新闻事件": "News events are filtered by symbol",

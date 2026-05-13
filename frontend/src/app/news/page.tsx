@@ -10,6 +10,7 @@ import {
   GitBranch,
   Globe2,
   Loader2,
+  Network,
   Newspaper,
   Radio,
   Search,
@@ -30,6 +31,8 @@ import {
   type NewsEvent,
 } from "@/lib/api";
 import {
+  buildCausalWebHref,
+  buildEventIntelligenceHref,
   buildWorldMapHref,
   normalizeNavigationSymbol,
   readWorldMapNavigationScope,
@@ -60,6 +63,7 @@ export default function NewsEventsPage() {
     const initialParams = new URLSearchParams(window.location.search);
     const initialScope = readWorldMapNavigationScope(initialParams);
     const initialSymbol = initialScope?.symbol ?? normalizeNavigationSymbol(initialParams.get("symbol"));
+    const initialEventId = initialScope?.event ?? initialParams.get("event")?.trim() ?? null;
     if (initialScope) {
       setNavigationScope(initialScope);
     }
@@ -73,7 +77,7 @@ export default function NewsEventsPage() {
         if (ignore) return;
         setEvents(rows);
         setSource("api");
-        setSelectedId(rows[0]?.id ?? null);
+        setSelectedId((current) => current ?? rows[0]?.id ?? null);
       })
       .catch(() => {
         if (ignore) return;
@@ -87,6 +91,10 @@ export default function NewsEventsPage() {
         if (ignore) return;
         setIntelligenceByNewsId(groupEventIntelligenceByNewsId(items));
         setImpactLinksByEventId(groupImpactLinksByEventId(links));
+        const scopedEvent = initialEventId ? items.find((item) => item.id === initialEventId) : null;
+        if (scopedEvent?.sourceType === "news_event" && scopedEvent.sourceId) {
+          setSelectedId(scopedEvent.sourceId);
+        }
         setIntelligenceSource("api");
       })
       .catch(() => {
@@ -306,6 +314,7 @@ export default function NewsEventsPage() {
               intelligenceSource={intelligenceSource}
               isGenerating={intelligencePendingId === selected.id}
               intelligenceError={intelligenceError}
+              navigationScope={navigationScope}
               onGenerate={handleGenerateEventIntelligence}
             />
           ) : (
@@ -332,7 +341,7 @@ function WorldMapScopeBanner({
     <div className="rounded-sm border border-brand-cyan/25 bg-brand-cyan/10 px-3 py-2 text-sm text-text-secondary shadow-inner-panel">
       <div className="mb-2 flex items-center gap-2">
         <GitBranch className="h-4 w-4 text-brand-cyan" />
-        <span className="font-semibold text-text-primary">{text("来自世界风险地图")}</span>
+        <span className="font-semibold text-text-primary">{text(scopeSourceLabel(scope.source))}</span>
       </div>
       <p className="text-caption leading-4 text-text-secondary">{text("已按品种过滤新闻事件")}</p>
       <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -357,6 +366,13 @@ function WorldMapScopeBanner({
       </div>
     </div>
   );
+}
+
+function scopeSourceLabel(source: WorldMapNavigationScope["source"]) {
+  if (source === "causal-web") return "来自因果网络";
+  if (source === "event-intelligence") return "来自事件智能";
+  if (source === "news") return "来自新闻事件";
+  return "来自世界风险地图";
 }
 
 function emptyNewsMessage(
@@ -424,6 +440,7 @@ function NewsEventDetail({
   intelligenceSource,
   isGenerating,
   intelligenceError,
+  navigationScope,
   onGenerate,
 }: {
   event: NewsEvent;
@@ -432,6 +449,7 @@ function NewsEventDetail({
   intelligenceSource: DataSourceState;
   isGenerating: boolean;
   intelligenceError: string | null;
+  navigationScope: WorldMapNavigationScope | null;
   onGenerate: (event: NewsEvent) => void;
 }) {
   const { text } = useI18n();
@@ -486,6 +504,7 @@ function NewsEventDetail({
         source={intelligenceSource}
         isGenerating={isGenerating}
         error={intelligenceError}
+        navigationScope={navigationScope}
         onGenerate={onGenerate}
       />
 
@@ -530,6 +549,7 @@ function EventIntelligencePanel({
   source,
   isGenerating,
   error,
+  navigationScope,
   onGenerate,
 }: {
   event: NewsEvent;
@@ -538,6 +558,7 @@ function EventIntelligencePanel({
   source: DataSourceState;
   isGenerating: boolean;
   error: string | null;
+  navigationScope: WorldMapNavigationScope | null;
   onGenerate: (event: NewsEvent) => void;
 }) {
   const { text } = useI18n();
@@ -593,6 +614,13 @@ function EventIntelligencePanel({
                   <Globe2 className="h-3.5 w-3.5" />
                   {text("地图")}
                 </Link>
+                <Link
+                  href={newsImpactCausalWebHref(intelligence, link)}
+                  className="inline-flex h-7 items-center gap-1.5 rounded-xs border border-brand-cyan/30 bg-brand-cyan/10 px-2 text-caption text-brand-cyan transition-colors hover:bg-brand-cyan/16"
+                >
+                  <Network className="h-3.5 w-3.5" />
+                  {text("因果网络")}
+                </Link>
               </div>
             ))}
             {impactLinks.length === 0 && (
@@ -602,13 +630,22 @@ function EventIntelligencePanel({
             )}
           </div>
 
-          <Link
-            href={`/event-intelligence?event=${encodeURIComponent(intelligence.id)}`}
-            className="inline-flex h-9 items-center gap-2 rounded-sm border border-brand-cyan/35 bg-brand-cyan/10 px-3 text-sm text-brand-cyan transition-colors hover:bg-brand-cyan/16"
-          >
-            <GitBranch className="h-4 w-4" />
-            {text("查看事件智能链")}
-          </Link>
+          <div className="flex flex-wrap gap-2">
+            <Link
+              href={newsEventIntelligenceHref(intelligence, navigationScope)}
+              className="inline-flex h-9 items-center gap-2 rounded-sm border border-brand-cyan/35 bg-brand-cyan/10 px-3 text-sm text-brand-cyan transition-colors hover:bg-brand-cyan/16"
+            >
+              <GitBranch className="h-4 w-4" />
+              {text("查看事件智能链")}
+            </Link>
+            <Link
+              href={newsEventCausalWebHref(intelligence, navigationScope)}
+              className="inline-flex h-9 items-center gap-2 rounded-sm border border-brand-emerald/35 bg-brand-emerald/10 px-3 text-sm text-brand-emerald-bright transition-colors hover:bg-brand-emerald/16"
+            >
+              <Network className="h-4 w-4" />
+              {text("打开因果网络")}
+            </Link>
+          </div>
         </div>
       ) : (
         <div className="space-y-4">
@@ -637,6 +674,39 @@ function EventIntelligencePanel({
       )}
     </Card>
   );
+}
+
+function newsEventIntelligenceHref(
+  intelligence: EventIntelligenceItem,
+  scope: WorldMapNavigationScope | null
+) {
+  return buildEventIntelligenceHref({
+    source: "news",
+    symbol: scope?.symbol ?? intelligence.symbols[0],
+    region: scope?.region ?? intelligence.regions[0],
+    event: intelligence.id,
+  });
+}
+
+function newsEventCausalWebHref(
+  intelligence: EventIntelligenceItem,
+  scope: WorldMapNavigationScope | null
+) {
+  return buildCausalWebHref({
+    source: "news",
+    symbol: scope?.symbol ?? intelligence.symbols[0],
+    region: scope?.region ?? intelligence.regions[0],
+    event: intelligence.id,
+  });
+}
+
+function newsImpactCausalWebHref(intelligence: EventIntelligenceItem, link: EventImpactLink) {
+  return buildCausalWebHref({
+    symbol: link.symbol,
+    region: link.regionId ?? intelligence.regions[0],
+    source: "news",
+    event: intelligence.id,
+  });
 }
 
 function newsImpactWorldMapHref(intelligence: EventIntelligenceItem, link: EventImpactLink) {
