@@ -1,9 +1,16 @@
 "use client";
 
 export const WORLD_MAP_NAV_SOURCE = "world-map";
+export const CAUSAL_WEB_NAV_SOURCE = "causal-web";
+export const EVENT_INTELLIGENCE_NAV_SOURCE = "event-intelligence";
+
+export type NavigationScopeSource =
+  | typeof WORLD_MAP_NAV_SOURCE
+  | typeof CAUSAL_WEB_NAV_SOURCE
+  | typeof EVENT_INTELLIGENCE_NAV_SOURCE;
 
 export interface WorldMapNavigationScope {
-  source: typeof WORLD_MAP_NAV_SOURCE;
+  source: NavigationScopeSource;
   symbol?: string;
   region?: string;
   event?: string;
@@ -58,19 +65,27 @@ export function normalizeWorldMapMechanismFilter(value: string | null | undefine
   return WORLD_MAP_MECHANISM_ALIASES[normalized] ?? normalized;
 }
 
+export function normalizeNavigationScopeSource(value: string | null | undefined): NavigationScopeSource | null {
+  const normalized = (value ?? "").trim().toLowerCase();
+  if (normalized === WORLD_MAP_NAV_SOURCE) return WORLD_MAP_NAV_SOURCE;
+  if (normalized === CAUSAL_WEB_NAV_SOURCE) return CAUSAL_WEB_NAV_SOURCE;
+  if (normalized === EVENT_INTELLIGENCE_NAV_SOURCE) return EVENT_INTELLIGENCE_NAV_SOURCE;
+  return null;
+}
+
 export function readWorldMapNavigationScope(
   search: string | URLSearchParams
 ): WorldMapNavigationScope | null {
   const params = search instanceof URLSearchParams ? search : new URLSearchParams(search);
-  const source = params.get("source");
+  const source = normalizeNavigationScopeSource(params.get("source"));
   const symbol = normalizeNavigationSymbol(params.get("symbol"));
   const region = params.get("region")?.trim();
   const event = params.get("event")?.trim();
 
-  if (source !== WORLD_MAP_NAV_SOURCE && !symbol && !region && !event) return null;
+  if (!source && !symbol && !region && !event) return null;
 
   return {
-    source: WORLD_MAP_NAV_SOURCE,
+    source: source ?? WORLD_MAP_NAV_SOURCE,
     ...(symbol ? { symbol } : {}),
     ...(region ? { region } : {}),
     ...(event ? { event } : {}),
@@ -126,4 +141,20 @@ export function buildCausalWebHref(scope: WorldMapHrefScope) {
 
   const query = params.toString();
   return query ? `/causal-web?${query}` : "/causal-web";
+}
+
+export function buildEventIntelligenceHref(scope: WorldMapHrefScope) {
+  const params = new URLSearchParams();
+  const symbol = normalizeNavigationSymbol(scope.symbol);
+  const region = scope.region?.trim();
+  const event = scope.event?.trim();
+  const source = scope.source?.trim();
+
+  if (source) params.set("source", source);
+  if (symbol) params.set("symbol", symbol);
+  if (region) params.set("region", region);
+  if (event) params.set("event", event);
+
+  const query = params.toString();
+  return query ? `/event-intelligence?${query}` : "/event-intelligence";
 }

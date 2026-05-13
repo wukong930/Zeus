@@ -383,7 +383,7 @@ function WorldMapScopeBanner({
   return (
     <div className="mb-5 flex flex-wrap items-center gap-2 rounded-sm border border-brand-cyan/25 bg-brand-cyan/10 px-3 py-2 text-sm text-text-secondary shadow-inner-panel">
       <GitBranch className="h-4 w-4 text-brand-cyan" />
-      <span className="font-semibold text-text-primary">{text("来自世界风险地图")}</span>
+      <span className="font-semibold text-text-primary">{text(scopeSourceLabel(scope.source))}</span>
       <span>{text("已按品种过滤事件智能结果")}</span>
       {scope.symbol && (
         <span className="rounded-xs border border-brand-cyan/25 bg-black/28 px-2 py-0.5 font-mono text-caption text-brand-cyan">
@@ -405,6 +405,12 @@ function WorldMapScopeBanner({
       </button>
     </div>
   );
+}
+
+function scopeSourceLabel(source: WorldMapNavigationScope["source"]) {
+  if (source === "causal-web") return "来自因果网络";
+  if (source === "event-intelligence") return "来自事件智能";
+  return "来自世界风险地图";
 }
 
 function EventQueueItem({

@@ -79,6 +79,8 @@ export default function CausalWebPage() {
           nodes={nodes}
           edges={edges}
           focusedEventId={scope?.event}
+          scopeSymbol={scope?.symbol}
+          scopeRegion={scope?.region}
           emptyMessage={emptyCausalGraphMessage(source)}
         />
       </div>

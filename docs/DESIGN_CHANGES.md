@@ -459,3 +459,9 @@ threshold_modifier、propagation_activator、risk_recalc、数据腐烂防护
 - 新增 `buildCausalWebHref`，统一生成带 `source / symbol / region / event` 的因果网络作用域链接。
 - `/event-intelligence` 事件详情新增“打开因果网络”和“打开世界风险地图”主入口，方便人工复核从源事件直接切换到图谱或地图。
 - 影响链、证据和反证面板新增同事件 Causal Web 入口，保持证据阅读与事件智能路径在同一个事件作用域里。
+
+# 2026-05-13 — Causal Web Phase 10.20 反向作用域入口
+
+- 新增 `buildEventIntelligenceHref`，让 Causal Web 能生成带 `source=causal-web`、`event`、`symbol` 和 `region` 的事件智能入口。
+- Causal Web 事件智能源节点和影响假设详情新增“打开事件智能 / 打开世界风险地图”入口，人工复核可从图谱反向回到事件详情或区域风险。
+- 事件智能页的来源提示现在能区分来自世界风险地图、因果网络或事件智能自身，避免从 Causal Web 进入时仍显示“来自世界风险地图”。

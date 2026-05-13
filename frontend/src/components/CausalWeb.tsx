@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   Background,
   BackgroundVariant,
@@ -27,10 +28,12 @@ import {
 import {
   Activity,
   AlertTriangle,
+  BrainCircuit,
   Briefcase,
   CheckCircle2,
   Clock,
   CircleDot,
+  Globe2,
   GitBranch,
   Layers,
   Maximize2,
@@ -45,6 +48,7 @@ import {
   X,
 } from "lucide-react";
 import type { CausalEdge, CausalNode } from "@/lib/domain";
+import { buildEventIntelligenceHref, buildWorldMapHref } from "@/lib/navigation-scope";
 import { cn } from "@/lib/utils";
 import { useI18n, type Language } from "@/lib/i18n";
 
@@ -62,6 +66,8 @@ interface CausalWebProps {
   edges?: CausalEdge[];
   emptyMessage?: string;
   focusedEventId?: string | null;
+  scopeSymbol?: string | null;
+  scopeRegion?: string | null;
 }
 
 interface CausalFlowNodeData extends Record<string, unknown> {
@@ -158,6 +164,29 @@ const VIEW_META: Record<View, { label: string; icon: IconComponent; brief: strin
 };
 
 const VIEW_ORDER: View[] = ["all", "portfolio", "counter", "alerts"];
+const EVENT_INTELLIGENCE_SCOPE_TAG_EXCLUSIONS = new Set([
+  "blocked",
+  "confirmed",
+  "decision_grade",
+  "geopolitical",
+  "human_review",
+  "inventory",
+  "logistics",
+  "macro",
+  "medium",
+  "policy",
+  "policy_shift",
+  "rejected",
+  "review",
+  "risk_sentiment",
+  "shadow_ready",
+  "shadow_review",
+  "short",
+  "supply",
+  "demand",
+  "weather",
+  "watch",
+]);
 
 const DENSITY_META: Record<Density, { label: string; icon: IconComponent; brief: string }> = {
   curated: {
@@ -256,6 +285,8 @@ function CausalWebCanvas({
   edges: runtimeEdges,
   emptyMessage = "当前暂无运行态因果图谱",
   focusedEventId = null,
+  scopeSymbol = null,
+  scopeRegion = null,
 }: CausalWebProps) {
   const flow = useReactFlow<CausalFlowNode, CausalFlowEdge>();
   const [mode, setMode] = useState<Mode>("live");
@@ -757,6 +788,8 @@ function CausalWebCanvas({
             meta={metaByNodeId.get(selected.id) ?? semanticMetaForNode(selected)}
             onClose={() => setSelectedNode(null)}
             pathFocused={pathFocusNode === selected.id && pathFocusActive}
+            scopeSymbol={scopeSymbol}
+            scopeRegion={scopeRegion}
             onTogglePathFocus={() => {
               setPathFocusNode((current) => (current === selected.id ? null : selected.id));
             }}
@@ -1563,6 +1596,8 @@ function NodeDetails({
   meta,
   onClose,
   pathFocused,
+  scopeSymbol,
+  scopeRegion,
   onTogglePathFocus,
 }: {
   node: CausalNode;
@@ -1571,6 +1606,8 @@ function NodeDetails({
   meta: NodeSemanticMeta;
   onClose: () => void;
   pathFocused: boolean;
+  scopeSymbol: string | null;
+  scopeRegion: string | null;
   onTogglePathFocus: () => void;
 }) {
   const { lang, text } = useI18n();
@@ -1599,6 +1636,14 @@ function NodeDetails({
     downstream,
     lang,
     text,
+  });
+  const eventScope = eventIntelligenceNavigationScope({
+    node,
+    nodes,
+    upstream,
+    downstream,
+    preferredSymbol: scopeSymbol,
+    preferredRegion: scopeRegion,
   });
 
   return (
@@ -1687,6 +1732,34 @@ function NodeDetails({
               </div>
             </div>
             <p className="mt-2 text-caption leading-relaxed text-text-secondary">{eventInsight.description}</p>
+            {eventScope && (
+              <div className="mt-3 flex flex-wrap gap-2">
+                <EventScopeLink
+                  href={buildEventIntelligenceHref({
+                    source: "causal-web",
+                    symbol: eventScope.symbol,
+                    region: eventScope.region,
+                    event: eventScope.eventId,
+                  })}
+                  icon={BrainCircuit}
+                  tone="cyan"
+                >
+                  {text("打开事件智能")}
+                </EventScopeLink>
+                <EventScopeLink
+                  href={buildWorldMapHref({
+                    source: "event_intelligence",
+                    symbol: eventScope.symbol,
+                    region: eventScope.region,
+                    event: eventScope.eventId,
+                  })}
+                  icon={Globe2}
+                  tone="emerald"
+                >
+                  {text("打开世界风险地图")}
+                </EventScopeLink>
+              </div>
+            )}
             <EventEvidencePanel node={node} />
             {eventInsight.peers.length > 0 ? (
               <div className="mt-3 space-y-1.5">
@@ -1813,6 +1886,36 @@ function EventEvidencePanel({ node }: { node: CausalNode }) {
   );
 }
 
+function EventScopeLink({
+  href,
+  icon: Icon,
+  tone,
+  children,
+}: {
+  href: string;
+  icon: IconComponent;
+  tone: "cyan" | "emerald";
+  children: ReactNode;
+}) {
+  const toneClass =
+    tone === "cyan"
+      ? "border-brand-cyan/30 bg-brand-cyan/10 text-brand-cyan hover:bg-brand-cyan/16"
+      : "border-brand-emerald/30 bg-brand-emerald/10 text-brand-emerald-bright hover:bg-brand-emerald/16";
+
+  return (
+    <Link
+      href={href}
+      className={cn(
+        "inline-flex h-7 items-center gap-1.5 rounded-xs border px-2 text-caption font-semibold transition-colors",
+        toneClass
+      )}
+    >
+      <Icon className="h-3.5 w-3.5" />
+      {children}
+    </Link>
+  );
+}
+
 function EvidenceGroup({
   title,
   icon: Icon,
@@ -1857,6 +1960,76 @@ function EvidenceGroup({
       </div>
     </details>
   );
+}
+
+function eventIntelligenceNavigationScope({
+  node,
+  nodes,
+  upstream,
+  downstream,
+  preferredSymbol,
+  preferredRegion,
+}: {
+  node: CausalNode;
+  nodes: CausalNode[];
+  upstream: CausalEdge[];
+  downstream: CausalEdge[];
+  preferredSymbol?: string | null;
+  preferredRegion?: string | null;
+}) {
+  const sourceNodeId = eventIntelligenceSourceNodeId(node, upstream);
+  if (!sourceNodeId) return null;
+
+  const nodeById = new Map(nodes.map((item) => [item.id, item]));
+  const relatedNodes = [
+    node,
+    ...upstream.flatMap((edge) => {
+      const peer = nodeById.get(edge.source);
+      return peer ? [peer] : [];
+    }),
+    ...downstream.flatMap((edge) => {
+      const peer = nodeById.get(edge.target);
+      return peer ? [peer] : [];
+    }),
+  ];
+
+  return {
+    eventId: sourceNodeId.replace(/^ei-/, ""),
+    symbol: preferredSymbol || firstEventScopeSymbol(relatedNodes),
+    region: preferredRegion || firstEventScopeRegion(relatedNodes),
+  };
+}
+
+function eventIntelligenceSourceNodeId(node: CausalNode, upstream: CausalEdge[]) {
+  if (node.id.startsWith("ei-") && !node.id.startsWith("ei-link-")) return node.id;
+  if (!node.id.startsWith("ei-link-")) return null;
+  return upstream.find((edge) => edge.source.startsWith("ei-") && !edge.source.startsWith("ei-link-"))?.source ?? null;
+}
+
+function firstEventScopeSymbol(nodes: CausalNode[]) {
+  for (const node of nodes) {
+    for (const tag of node.tags ?? []) {
+      const normalized = tag.trim().toUpperCase();
+      if (/^[A-Z]{1,4}$/.test(normalized)) return normalized;
+    }
+  }
+  return undefined;
+}
+
+function firstEventScopeRegion(nodes: CausalNode[]) {
+  for (const node of nodes) {
+    for (const tag of node.tags ?? []) {
+      const normalized = tag.trim();
+      const lower = normalized.toLowerCase();
+      if (
+        normalized.includes("_") &&
+        !EVENT_INTELLIGENCE_SCOPE_TAG_EXCLUSIONS.has(lower)
+      ) {
+        return normalized;
+      }
+    }
+  }
+  return undefined;
 }
 
 function evidenceText(
