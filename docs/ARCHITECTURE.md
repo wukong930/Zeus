@@ -1107,3 +1107,9 @@ zeus/
 - Causal Web 的事件智能节点详情也能反向打开 Event Intelligence 与 World Risk Map；`source=causal-web` 会被识别为浏览来源，而不是误标为世界地图来源。
 - News Events 也接入同一导航作用域；当 URL 带 `event` 时会按事件智能对象的来源新闻自动定位，并能继续打开同一 Causal Web / Event Intelligence / World Map 作用域。
 - Causal Web 读取 `source` 后只作为前端阅读上下文展示，不参与后端图谱计算；实际过滤仍由 `symbol`、`region`、`event` 控制。
+
+## 10. World Risk Map 增强渲染护栏
+
+- `/api/world-map/tiles` 负责按 `symbol`、`mechanism`、`source`、`viewport` 和 `resolution` 输出天气 / 风险瓦片。
+- 前端增强层用筛选条件、分辨率和近似视口生成瓦片缓存键；用户缩放或拖拽回到同一视口时优先复用缓存，避免大画布重复请求。
+- 视口瓦片请求使用去抖和请求序号保护：后发请求代表当前视图，旧请求晚返回时会被丢弃；自动运行态刷新仍强制更新瓦片缓存。

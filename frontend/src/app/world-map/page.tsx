@@ -58,6 +58,7 @@ import {
   type WorldMapSnapshot,
   type WorldMapStoryStep,
   type WorldMapTileCell,
+  type WorldMapTileResolution,
   type WorldMapTileSnapshot,
   type WorldMapViewport,
   type WorldRiskLevel,
@@ -143,6 +144,8 @@ type MapLibreRegionFeatureCollection = FeatureCollection<
 const MAP_WIDTH = 1000;
 const MAP_HEIGHT = 560;
 const WORLD_MAP_REFRESH_INTERVAL_MS = 30_000;
+const WORLD_MAP_TILE_REFRESH_DEBOUNCE_MS = 360;
+const WORLD_MAP_TILE_CACHE_LIMIT = 24;
 const MIN_MAP_SCALE = 0.85;
 const MAX_MAP_SCALE = 3.25;
 const DEFAULT_MAP_LAYERS: VisibleMapLayers = {
@@ -247,22 +250,54 @@ export default function WorldMapPage() {
   const snapshotRef = useRef<WorldMapSnapshot | null>(null);
   const tileSnapshotRef = useRef<WorldMapTileSnapshot | null>(null);
   const tileViewportRef = useRef<WorldMapViewport | null>(null);
+  const tileCacheRef = useRef<Map<string, WorldMapTileSnapshot>>(new Map());
+  const tileRequestSeqRef = useRef(0);
   const riskScoresRef = useRef<Record<string, number>>({});
   const mountedRef = useRef(false);
   const refreshInFlightRef = useRef(false);
-  const tileRefreshInFlightRef = useRef(false);
   const tileRefreshTimerRef = useRef<number | null>(null);
   const initialScopeAppliedRef = useRef(false);
+
+  const fetchTiles = useCallback(
+    async ({
+      resolution,
+      viewport,
+      force = false,
+    }: {
+      resolution: WorldMapTileResolution;
+      viewport?: WorldMapViewport | null;
+      force?: boolean;
+    }) => {
+      const cacheKey = worldMapTileCacheKey(scopeFilters, resolution, viewport);
+      const cached = tileCacheRef.current.get(cacheKey);
+      if (cached && !force) {
+        return cached;
+      }
+
+      const nextTileSnapshot = await fetchWorldMapTiles(
+        "all",
+        resolution,
+        worldMapFilterParams(scopeFilters, viewport)
+      );
+      rememberWorldMapTileSnapshot(tileCacheRef.current, cacheKey, nextTileSnapshot);
+      return nextTileSnapshot;
+    },
+    [scopeFilters]
+  );
 
   const loadSnapshot = useCallback(async () => {
     if (refreshInFlightRef.current) return;
     refreshInFlightRef.current = true;
     setIsRefreshing(true);
+    const tileRequestId = ++tileRequestSeqRef.current;
     try {
       const filterParams = worldMapFilterParams(scopeFilters);
-      const tileFilterParams = worldMapFilterParams(scopeFilters, tileViewportRef.current);
       const next = await fetchWorldMapSnapshot(filterParams);
-      const nextTileSnapshot = await fetchWorldMapTiles("all", "coarse", tileFilterParams).catch(() => tileSnapshotRef.current);
+      const nextTileSnapshot = await fetchTiles({
+        resolution: "coarse",
+        viewport: tileViewportRef.current,
+        force: true,
+      }).catch(() => tileSnapshotRef.current);
       if (!mountedRef.current) return;
 
       const previousScores = riskScoresRef.current;
@@ -278,9 +313,11 @@ export default function WorldMapPage() {
       }
       riskScoresRef.current = nextScores;
       snapshotRef.current = next;
-      tileSnapshotRef.current = nextTileSnapshot;
       setSnapshot(next);
-      setTileSnapshot(nextTileSnapshot);
+      if (tileRequestId === tileRequestSeqRef.current) {
+        tileSnapshotRef.current = nextTileSnapshot;
+        setTileSnapshot(nextTileSnapshot);
+      }
       setSource(next.summary.runtimeLinkedRegions > 0 ? "api" : "partial");
       setLastUpdatedAt(new Date());
     } catch {
@@ -295,7 +332,7 @@ export default function WorldMapPage() {
       refreshInFlightRef.current = false;
       if (mountedRef.current) setIsRefreshing(false);
     }
-  }, [scopeFilters]);
+  }, [fetchTiles, scopeFilters]);
 
   const loadViewportTiles = useCallback(
     (viewport: WorldMapViewport, scale: number) => {
@@ -304,23 +341,19 @@ export default function WorldMapPage() {
         window.clearTimeout(tileRefreshTimerRef.current);
       }
       tileRefreshTimerRef.current = window.setTimeout(() => {
-        if (!mountedRef.current || tileRefreshInFlightRef.current) return;
-        tileRefreshInFlightRef.current = true;
+        if (!mountedRef.current) return;
+        const requestId = ++tileRequestSeqRef.current;
         const resolution = scale >= 1.35 ? "medium" : "coarse";
-        const filterParams = worldMapFilterParams(scopeFilters, viewport);
-        fetchWorldMapTiles("all", resolution, filterParams)
+        fetchTiles({ resolution, viewport })
           .then((nextTileSnapshot) => {
-            if (!mountedRef.current) return;
+            if (!mountedRef.current || requestId !== tileRequestSeqRef.current) return;
             tileSnapshotRef.current = nextTileSnapshot;
             setTileSnapshot(nextTileSnapshot);
           })
-          .catch(() => undefined)
-          .finally(() => {
-            tileRefreshInFlightRef.current = false;
-          });
-      }, 260);
+          .catch(() => undefined);
+      }, WORLD_MAP_TILE_REFRESH_DEBOUNCE_MS);
     },
-    [scopeFilters]
+    [fetchTiles]
   );
 
   useEffect(() => {
@@ -3402,4 +3435,44 @@ function worldMapFilterParams(
     source: filters.source === "all" ? undefined : filters.source,
     viewport: viewport ?? undefined,
   };
+}
+
+function worldMapTileCacheKey(
+  filters: WorldMapScopeFilters,
+  resolution: WorldMapTileResolution,
+  viewport?: WorldMapViewport | null
+) {
+  const viewportKey = viewport
+    ? [
+        viewport.minLat,
+        viewport.maxLat,
+        viewport.minLon,
+        viewport.maxLon,
+      ].map((value) => value.toFixed(2)).join(":")
+    : "global";
+
+  return [
+    filters.symbol,
+    filters.mechanism,
+    filters.source,
+    resolution,
+    viewportKey,
+  ].join("|");
+}
+
+function rememberWorldMapTileSnapshot(
+  cache: Map<string, WorldMapTileSnapshot>,
+  key: string,
+  snapshot: WorldMapTileSnapshot
+) {
+  if (cache.has(key)) {
+    cache.delete(key);
+  }
+  cache.set(key, snapshot);
+
+  while (cache.size > WORLD_MAP_TILE_CACHE_LIMIT) {
+    const oldestKey = cache.keys().next().value;
+    if (!oldestKey) return;
+    cache.delete(oldestKey);
+  }
 }
