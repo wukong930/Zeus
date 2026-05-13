@@ -76,6 +76,13 @@ export function normalizeNavigationScopeSource(value: string | null | undefined)
   return null;
 }
 
+export function navigationScopeSourceLabel(source: NavigationScopeSource) {
+  if (source === CAUSAL_WEB_NAV_SOURCE) return "来自因果网络";
+  if (source === EVENT_INTELLIGENCE_NAV_SOURCE) return "来自事件智能";
+  if (source === NEWS_NAV_SOURCE) return "来自新闻事件";
+  return "来自世界风险地图";
+}
+
 export function readWorldMapNavigationScope(
   search: string | URLSearchParams
 ): WorldMapNavigationScope | null {

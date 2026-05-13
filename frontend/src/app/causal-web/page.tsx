@@ -8,12 +8,18 @@ import { DataSourceBadge, type DataSourceState } from "@/components/DataSourceBa
 import type { CausalEdge, CausalNode } from "@/lib/domain";
 import { fetchCausalWebGraph } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
+import {
+  normalizeNavigationScopeSource,
+  normalizeNavigationSymbol,
+  type NavigationScopeSource,
+} from "@/lib/navigation-scope";
 
-interface CausalWebScope {
+type CausalWebScope = {
+  source: NavigationScopeSource | null;
   symbol: string | null;
   region: string | null;
   event: string | null;
-}
+};
 
 export default function CausalWebPage() {
   const [nodes, setNodes] = useState<CausalNode[]>([]);
@@ -33,9 +39,10 @@ export default function CausalWebPage() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     setScope({
-      symbol: params.get("symbol"),
-      region: params.get("region"),
-      event: params.get("event"),
+      source: normalizeNavigationScopeSource(params.get("source")),
+      symbol: normalizeNavigationSymbol(params.get("symbol")) || null,
+      region: params.get("region")?.trim() || null,
+      event: params.get("event")?.trim() || null,
     });
   }, []);
 
@@ -81,6 +88,7 @@ export default function CausalWebPage() {
           focusedEventId={scope?.event}
           scopeSymbol={scope?.symbol}
           scopeRegion={scope?.region}
+          scopeSource={scope?.source}
           emptyMessage={emptyCausalGraphMessage(source)}
         />
       </div>

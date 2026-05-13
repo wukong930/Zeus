@@ -471,3 +471,9 @@ threshold_modifier、propagation_activator、risk_recalc、数据腐烂防护
 - `/news` 支持读取 `event` 作用域并按事件智能对象的 `source_id` 自动选中来源新闻，避免从地图或图谱回到新闻页后落到错误新闻。
 - 新闻事件的事件智能链新增“打开因果网络”入口，单条影响链也能带 `event + symbol + region` 进入 Causal Web。
 - 新闻页的“查看事件智能链”改用统一深链构造器，携带 `source=news`、品种、区域和事件，事件智能页会显示“来自新闻事件”。
+
+# 2026-05-13 — Causal Web Phase 10.22 跨页面作用域收口
+
+- `navigation-scope` 新增统一来源文案 helper，事件智能页、新闻页和因果网络不再各自维护一份来源标签。
+- `/causal-web` 现在读取 `source` 查询参数，并在全图工具栏显示“来自新闻事件 / 世界风险地图 / 事件智能”等作用域芯片。
+- Causal Web 来源芯片同时展示品种、区域和事件作用域，帮助用户确认当前图谱是深链过滤结果还是全量运行态图谱。

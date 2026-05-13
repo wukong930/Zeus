@@ -978,6 +978,7 @@ Causa 的 `event_driven` 评估器实际上是纯技术面（gap + volume），*
   - [x] Phase 10.19 Event Intelligence 到 Causal Web 深链：事件详情、单条影响链、证据/反证面板可带 `event + symbol + region` 直接打开同一 Causal Web 作用域。
   - [x] Phase 10.20 Causal Web 反向作用域入口：事件智能节点详情可直接打开 Event Intelligence 与 World Risk Map，并保留 `source=causal-web + event + symbol + region`。
   - [x] Phase 10.21 News Events 事件作用域深链：新闻事件页可按 `event` 自动选中来源新闻，并从事件智能链直接打开 Causal Web / Event Intelligence / World Risk Map。
+  - [x] Phase 10.22 跨页面作用域收口：统一来源文案 helper，Causal Web 显示来自新闻 / 地图 / 事件智能的作用域芯片，并继续保留 `event + symbol + region` 过滤。
   - [x] 新增 Event Intelligence 页面：事件池、影响链、证据/反证、人工确认队列。
   - [x] Event Intelligence 页面展示 LLM 语义假设与模型/提示版本。
   - [x] Event Intelligence 页面支持确认、拒绝、转人工复核，并写入审计日志。
@@ -999,6 +1000,7 @@ Causa 的 `event_driven` 评估器实际上是纯技术面（gap + volume），*
 - [x] Phase 10.19：从 Event Intelligence 进入 Causal Web 时保留事件、商品和区域作用域，证据/反证阅读不再脱离图谱上下文。
 - [x] Phase 10.20：从 Causal Web 返回 Event Intelligence / World Risk Map 时保留事件作用域，来源提示能区分世界地图和因果网络。
 - [x] Phase 10.21：从 News Events 进入 Event Intelligence / Causal Web / World Risk Map 时保留同一事件作用域，新闻证据入口不再断链。
+- [x] Phase 10.22：Causal Web 能明确显示当前深链来自新闻事件、世界风险地图或事件智能，四页作用域文案走同一来源 helper。
 
 ---
 

@@ -34,6 +34,7 @@ import {
   buildCausalWebHref,
   buildEventIntelligenceHref,
   buildWorldMapHref,
+  navigationScopeSourceLabel,
   normalizeNavigationSymbol,
   readWorldMapNavigationScope,
   type WorldMapNavigationScope,
@@ -341,7 +342,7 @@ function WorldMapScopeBanner({
     <div className="rounded-sm border border-brand-cyan/25 bg-brand-cyan/10 px-3 py-2 text-sm text-text-secondary shadow-inner-panel">
       <div className="mb-2 flex items-center gap-2">
         <GitBranch className="h-4 w-4 text-brand-cyan" />
-        <span className="font-semibold text-text-primary">{text(scopeSourceLabel(scope.source))}</span>
+        <span className="font-semibold text-text-primary">{text(navigationScopeSourceLabel(scope.source))}</span>
       </div>
       <p className="text-caption leading-4 text-text-secondary">{text("已按品种过滤新闻事件")}</p>
       <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -366,13 +367,6 @@ function WorldMapScopeBanner({
       </div>
     </div>
   );
-}
-
-function scopeSourceLabel(source: WorldMapNavigationScope["source"]) {
-  if (source === "causal-web") return "来自因果网络";
-  if (source === "event-intelligence") return "来自事件智能";
-  if (source === "news") return "来自新闻事件";
-  return "来自世界风险地图";
 }
 
 function emptyNewsMessage(

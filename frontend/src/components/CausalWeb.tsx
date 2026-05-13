@@ -48,7 +48,12 @@ import {
   X,
 } from "lucide-react";
 import type { CausalEdge, CausalNode } from "@/lib/domain";
-import { buildEventIntelligenceHref, buildWorldMapHref } from "@/lib/navigation-scope";
+import {
+  buildEventIntelligenceHref,
+  buildWorldMapHref,
+  navigationScopeSourceLabel,
+  type NavigationScopeSource,
+} from "@/lib/navigation-scope";
 import { cn } from "@/lib/utils";
 import { useI18n, type Language } from "@/lib/i18n";
 
@@ -68,6 +73,7 @@ interface CausalWebProps {
   focusedEventId?: string | null;
   scopeSymbol?: string | null;
   scopeRegion?: string | null;
+  scopeSource?: NavigationScopeSource | null;
 }
 
 interface CausalFlowNodeData extends Record<string, unknown> {
@@ -287,6 +293,7 @@ function CausalWebCanvas({
   focusedEventId = null,
   scopeSymbol = null,
   scopeRegion = null,
+  scopeSource = null,
 }: CausalWebProps) {
   const flow = useReactFlow<CausalFlowNode, CausalFlowEdge>();
   const [mode, setMode] = useState<Mode>("live");
@@ -568,6 +575,7 @@ function CausalWebCanvas({
       : null;
   const showEventPool = isFull && eventNodes.length > 0 && !selected;
   const pathFocusDetails = pathFocusCandidate ? graphNodeById.get(pathFocusCandidate) ?? null : null;
+  const scopeActive = isFull && Boolean(scopeSource || scopeSymbol || scopeRegion || focusedEventId);
 
   const fitCanvas = useCallback(() => {
     const fitOptions = isFull ? fitViewOptions : previewFitViewOptions;
@@ -654,6 +662,14 @@ function CausalWebCanvas({
               <DensityToolbar density={density} onChange={changeDensity} />
             </div>
             <StageRail viewNodeIds={viewNodeIds} nodes={displayGraph.nodes} metaByNodeId={metaByNodeId} />
+            {scopeActive && (
+              <ScopeContextPill
+                source={scopeSource}
+                symbol={scopeSymbol}
+                region={scopeRegion}
+                eventId={focusedEventId}
+              />
+            )}
             <div className="hidden xl:block">
               <GraphStats
                 focusId={activeFocusId}
@@ -1189,6 +1205,43 @@ function StageRail({
           </div>
         );
       })}
+    </div>
+  );
+}
+
+function ScopeContextPill({
+  source,
+  symbol,
+  region,
+  eventId,
+}: {
+  source: NavigationScopeSource | null;
+  symbol: string | null;
+  region: string | null;
+  eventId: string | null;
+}) {
+  const { text } = useI18n();
+  const label = source ? navigationScopeSourceLabel(source) : "当前事件作用域";
+
+  return (
+    <div className="flex max-w-[360px] items-center gap-2 rounded-sm border border-brand-cyan/25 bg-brand-cyan/10 px-2.5 py-1 text-caption text-text-secondary shadow-inner-panel">
+      <GitBranch className="h-3.5 w-3.5 shrink-0 text-brand-cyan" />
+      <span className="shrink-0 font-semibold text-text-primary">{text(label)}</span>
+      {symbol && (
+        <span className="rounded-xs border border-brand-cyan/25 bg-black/28 px-1.5 py-0.5 font-mono text-[10px] leading-none text-brand-cyan">
+          {symbol}
+        </span>
+      )}
+      {region && (
+        <span className="max-w-28 truncate rounded-xs border border-white/[0.12] bg-black/28 px-1.5 py-0.5 font-mono text-[10px] leading-none text-text-muted">
+          {region}
+        </span>
+      )}
+      {eventId && (
+        <span className="rounded-xs border border-brand-emerald/25 bg-black/28 px-1.5 py-0.5 text-[10px] leading-none text-brand-emerald-bright">
+          {text("事件作用域")}
+        </span>
+      )}
     </div>
   );
 }
