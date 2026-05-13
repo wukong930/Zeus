@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Background,
   BackgroundVariant,
@@ -61,6 +61,7 @@ interface CausalWebProps {
   nodes?: CausalNode[];
   edges?: CausalEdge[];
   emptyMessage?: string;
+  focusedEventId?: string | null;
 }
 
 interface CausalFlowNodeData extends Record<string, unknown> {
@@ -254,6 +255,7 @@ function CausalWebCanvas({
   nodes: runtimeNodes,
   edges: runtimeEdges,
   emptyMessage = "当前暂无运行态因果图谱",
+  focusedEventId = null,
 }: CausalWebProps) {
   const flow = useReactFlow<CausalFlowNode, CausalFlowEdge>();
   const [mode, setMode] = useState<Mode>("live");
@@ -263,6 +265,7 @@ function CausalWebCanvas({
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
   const [pathFocusNode, setPathFocusNode] = useState<string | null>(null);
   const [selectedEventIds, setSelectedEventIds] = useState<Set<string>>(new Set());
+  const appliedFocusedEventRef = useRef<string | null>(null);
   const isFull = variant === "full";
   const rawGraphNodes = runtimeNodes ?? [];
   const rawGraphEdges = runtimeEdges ?? [];
@@ -321,6 +324,7 @@ function CausalWebCanvas({
     },
     [graphNodes, metaByNodeId, relationCounts]
   );
+  const focusedEventNodeId = focusedEventId ? `ei-${focusedEventId}` : null;
 
   useEffect(() => {
     if (!isFull || eventNodes.length === 0) return;
@@ -331,6 +335,24 @@ function CausalWebCanvas({
       return new Set(eventNodes.slice(0, Math.min(2, eventNodes.length)).map((node) => node.id));
     });
   }, [eventNodes, isFull]);
+
+  useEffect(() => {
+    if (!isFull || !focusedEventNodeId) {
+      appliedFocusedEventRef.current = null;
+      return;
+    }
+    if (appliedFocusedEventRef.current === focusedEventNodeId) return;
+    if (!graphNodeById.has(focusedEventNodeId)) return;
+    appliedFocusedEventRef.current = focusedEventNodeId;
+    setView("all");
+    setHoveredNode(null);
+    setSelectedEventIds(new Set([focusedEventNodeId]));
+    setPathFocusNode(focusedEventNodeId);
+    setSelectedNode(focusedEventNodeId);
+    window.setTimeout(() => {
+      void flow.fitView(fitViewOptions);
+    }, 0);
+  }, [flow, focusedEventNodeId, graphNodeById, isFull]);
 
   const selectedEventChainIds = useMemo(() => {
     const ids = new Set<string>();

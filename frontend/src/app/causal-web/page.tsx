@@ -9,11 +9,17 @@ import type { CausalEdge, CausalNode } from "@/lib/domain";
 import { fetchCausalWebGraph } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 
+interface CausalWebScope {
+  symbol: string | null;
+  region: string | null;
+  event: string | null;
+}
+
 export default function CausalWebPage() {
   const [nodes, setNodes] = useState<CausalNode[]>([]);
   const [edges, setEdges] = useState<CausalEdge[]>([]);
   const [source, setSource] = useState<DataSourceState>("loading");
-  const [scope, setScope] = useState<{ symbol: string | null; region: string | null } | null>(null);
+  const [scope, setScope] = useState<CausalWebScope | null>(null);
   const { text } = useI18n();
   const activeCount = useMemo(
     () => nodes.filter((node) => node.active).length,
@@ -29,13 +35,14 @@ export default function CausalWebPage() {
     setScope({
       symbol: params.get("symbol"),
       region: params.get("region"),
+      event: params.get("event"),
     });
   }, []);
 
   useEffect(() => {
     if (scope === null) return;
     let mounted = true;
-    fetchCausalWebGraph({ limit: 10, symbol: scope.symbol, region: scope.region })
+    fetchCausalWebGraph({ limit: 10, symbol: scope.symbol, region: scope.region, event: scope.event })
       .then((graph) => {
         if (!mounted) return;
         setNodes(graph.nodes);
@@ -71,6 +78,7 @@ export default function CausalWebPage() {
           variant="full"
           nodes={nodes}
           edges={edges}
+          focusedEventId={scope?.event}
           emptyMessage={emptyCausalGraphMessage(source)}
         />
       </div>

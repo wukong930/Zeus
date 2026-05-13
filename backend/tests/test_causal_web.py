@@ -11,6 +11,7 @@ from app.api.causal_web import (
     _counter_seeds_from_alert,
     _latest_market_metrics_statement,
     _layout_nodes,
+    _merge_pinned_event_intelligence,
     _seed_from_event_intelligence_item,
     _seed_from_event_intelligence_link,
     _unique_recent_event_intelligence,
@@ -569,6 +570,43 @@ def test_unique_recent_event_intelligence_collapses_syndicated_titles() -> None:
     )
 
     assert [row.id for row in unique] == [first.id, unrelated.id]
+
+
+def test_merge_pinned_event_intelligence_keeps_deep_link_first() -> None:
+    now = datetime.now(timezone.utc)
+
+    def event(title: str) -> EventIntelligenceItem:
+        return EventIntelligenceItem(
+            id=uuid4(),
+            source_type="news_event",
+            source_id=title[:20],
+            title=title,
+            summary=title,
+            event_type="policy",
+            event_timestamp=now,
+            entities=["China", "rubber"],
+            symbols=["NR", "RU"],
+            regions=["southeast_asia_rubber"],
+            mechanisms=["policy"],
+            evidence=[],
+            counterevidence=[],
+            confidence=0.7,
+            impact_score=70,
+            status="shadow_review",
+            requires_manual_confirmation=False,
+            source_reliability=0.7,
+            freshness_score=0.9,
+            source_payload={},
+            created_at=now,
+            updated_at=now,
+        )
+
+    recent = event("China zero - tariff policy opens new rubber opportunities")
+    pinned = event("Pinned older rubber policy event")
+
+    merged = _merge_pinned_event_intelligence([recent, pinned], pinned=pinned)
+
+    assert [row.id for row in merged] == [pinned.id, recent.id]
 
 
 def test_latest_market_metrics_statement_prefers_latest_row_per_symbol() -> None:

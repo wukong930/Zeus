@@ -974,6 +974,7 @@ Causa 的 `event_driven` 评估器实际上是纯技术面（gap + volume），*
   - [x] Phase 10.15 World Risk Map 上下文跳转：推荐动作携带 `source=world-map`、`symbol`、`region` 和可用的 `event` 作用域，事件智能 / 新闻页自动带入筛选上下文。
   - [x] Phase 10.16 Event Intelligence 反向地图联动：事件智能影响链和新闻事件智能链可按 `symbol/source/mechanism/region/event` 打开世界风险地图，并自动聚焦区域档案。
   - [x] Phase 10.17 World Risk Map 事件作用域可见化：地图从事件智能进入时，在区域档案中显示当前事件作用域、命中证据、质量门和直接作用域命中状态。
+  - [x] Phase 10.18 Causal Web 事件作用域深链：世界风险地图打开因果网络时携带 `event`，后端固定带回指定事件，Causal Web 自动选中事件池并聚焦对应事件智能路径。
   - [x] 新增 Event Intelligence 页面：事件池、影响链、证据/反证、人工确认队列。
   - [x] Event Intelligence 页面展示 LLM 语义假设与模型/提示版本。
   - [x] Event Intelligence 页面支持确认、拒绝、转人工复核，并写入审计日志。
@@ -991,6 +992,7 @@ Causa 的 `event_driven` 评估器实际上是纯技术面（gap + volume），*
 - [x] 前端可直接查看事件级治理时间线，避免审计信息只留在后端接口里。
 - [x] 前端可查看跨模块治理队列，确认每条自动学习或事件智能建议是否仍停留在 Shadow / review 作用域。
 - [x] Phase 10.4：Causal Web / World Risk Map 使用同一 `event_intelligence:{event_id}` 作用域，不出现各讲各的情况。
+- [x] Phase 10.18：从 World Risk Map 进入 Causal Web 时可按同一 `event` 查询参数定位到具体事件智能节点。
 
 ---
 

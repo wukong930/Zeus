@@ -1477,10 +1477,12 @@ export async function fetchCausalWebGraph(params?: {
   limit?: number;
   symbol?: string | null;
   region?: string | null;
+  event?: string | null;
 }): Promise<CausalWebGraph> {
   const query = new URLSearchParams({ limit: String(params?.limit ?? 10) });
   if (params?.symbol) query.set("symbol", params.symbol);
   if (params?.region) query.set("region", params.region);
+  if (params?.event) query.set("event", params.event);
   return fetchJson<CausalWebGraph>(`/api/causal-web?${query.toString()}`);
 }
 

@@ -180,9 +180,13 @@ async def get_causal_web(
     limit: int = Query(default=12, ge=4, le=40),
     symbol: str | None = Query(default=None, min_length=1, max_length=20),
     region: str | None = Query(default=None, min_length=1, max_length=80),
+    event_id: UUID | None = Query(default=None, alias="event"),
     session: AsyncSession = Depends(get_db),
 ) -> CausalWebGraph:
     symbol_filter = _normalize_symbol(symbol) if symbol else None
+    pinned_event_item = await session.get(EventIntelligenceItem, event_id) if event_id else None
+    if pinned_event_item is not None and pinned_event_item.status == "rejected":
+        pinned_event_item = None
     news_limit = max(3, limit // 3)
     news = _unique_recent_news(
         list(
@@ -232,17 +236,21 @@ async def get_causal_web(
             )
         ).all()
     )
-    event_intelligence_items = _unique_recent_event_intelligence(
-        list(
-            (
-                await session.scalars(
-                    _event_intelligence_statement(
-                        limit=max(8, min(limit * 4, 64)),
-                        symbol=symbol_filter,
-                        region=region,
-                    )
+    event_intelligence_rows = list(
+        (
+            await session.scalars(
+                _event_intelligence_statement(
+                    limit=max(8, min(limit * 4, 64)),
+                    symbol=symbol_filter,
+                    region=region,
                 )
-            ).all()
+            )
+        ).all()
+    )
+    event_intelligence_items = _unique_recent_event_intelligence(
+        _merge_pinned_event_intelligence(
+            event_intelligence_rows,
+            pinned=pinned_event_item,
         ),
         limit=max(4, min(limit, 16)),
     )
@@ -950,6 +958,16 @@ def _unique_recent_event_intelligence(
         if len(unique) >= limit:
             break
     return unique
+
+
+def _merge_pinned_event_intelligence(
+    rows: list[EventIntelligenceItem],
+    *,
+    pinned: EventIntelligenceItem | None,
+) -> list[EventIntelligenceItem]:
+    if pinned is None:
+        return rows
+    return [pinned, *[row for row in rows if row.id != pinned.id]]
 
 
 def _news_display_key(row: NewsEvent) -> tuple[str, tuple[str, ...], str]:

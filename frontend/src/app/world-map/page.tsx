@@ -794,7 +794,7 @@ function regionRiskAction(region: WorldMapRegion) {
   const needsEvidence = health.densityScore < 45 || health.sourceReliability < 45 || health.freshnessScore < 45;
   const eventIntelligenceHref = scopedWorldMapHref("/event-intelligence", region, { includeEvent: true });
   const newsHref = scopedWorldMapHref("/news", region);
-  const causalWebHref = scopedWorldMapHref(region.causalScope.causalWebUrl, region);
+  const causalWebHref = scopedWorldMapHref(region.causalScope.causalWebUrl, region, { includeEvent: true });
 
   if (hasQualityReview) {
     return {
