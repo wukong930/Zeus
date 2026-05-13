@@ -453,3 +453,9 @@ threshold_modifier、propagation_activator、risk_recalc、数据腐烂防护
 - `/api/causal-web` 支持 `event` 查询参数，并会把该事件智能对象固定合并进图谱候选，避免深链事件被最近事件列表挤掉。
 - `/world-map` 打开因果网络的推荐动作现在携带同一个 `event` 作用域，和事件智能、新闻、地图使用同一事件上下文。
 - `/causal-web` 读取 `event` 后自动选中对应事件池条目、进入路径聚焦并打开事件节点详情，方便直接核对该事件的上下游链路。
+
+# 2026-05-13 — Event Intelligence Phase 10.19 Causal Web 深链入口
+
+- 新增 `buildCausalWebHref`，统一生成带 `source / symbol / region / event` 的因果网络作用域链接。
+- `/event-intelligence` 事件详情新增“打开因果网络”和“打开世界风险地图”主入口，方便人工复核从源事件直接切换到图谱或地图。
+- 影响链、证据和反证面板新增同事件 Causal Web 入口，保持证据阅读与事件智能路径在同一个事件作用域里。

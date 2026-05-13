@@ -111,3 +111,19 @@ export function buildWorldMapHref(scope: WorldMapHrefScope) {
   const query = params.toString();
   return query ? `/world-map?${query}` : "/world-map";
 }
+
+export function buildCausalWebHref(scope: WorldMapHrefScope) {
+  const params = new URLSearchParams();
+  const symbol = normalizeNavigationSymbol(scope.symbol);
+  const region = scope.region?.trim();
+  const event = scope.event?.trim();
+  const source = scope.source?.trim();
+
+  if (source) params.set("source", source);
+  if (symbol) params.set("symbol", symbol);
+  if (region) params.set("region", region);
+  if (event) params.set("event", event);
+
+  const query = params.toString();
+  return query ? `/causal-web?${query}` : "/causal-web";
+}

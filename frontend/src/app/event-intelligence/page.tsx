@@ -13,6 +13,7 @@ import {
   GitBranch,
   Globe2,
   Layers3,
+  Network,
   Pencil,
   Save,
   Search,
@@ -45,6 +46,7 @@ import {
 } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 import {
+  buildCausalWebHref,
   buildWorldMapHref,
   readWorldMapNavigationScope,
   type WorldMapNavigationScope,
@@ -356,6 +358,7 @@ export default function EventIntelligencePage() {
               linkEditError={linkEditError}
               auditLogs={auditLogs}
               auditSource={auditSource}
+              navigationScope={navigationScope}
             />
           ) : (
             <Card variant="flat" className="flex min-h-[420px] items-center justify-center text-sm text-text-secondary">
@@ -466,6 +469,7 @@ function EventDetail({
   linkEditError,
   auditLogs,
   auditSource,
+  navigationScope,
 }: {
   item: EventIntelligenceItem;
   links: EventImpactLink[];
@@ -477,12 +481,14 @@ function EventDetail({
   linkEditError: string | null;
   auditLogs: EventIntelligenceAuditLog[];
   auditSource: DataSourceState;
+  navigationScope: WorldMapNavigationScope | null;
 }) {
   const { text } = useI18n();
   const [editingLinkId, setEditingLinkId] = useState<string | null>(null);
   const semanticHypotheses = readSemanticHypotheses(item.sourcePayload);
   const semanticModel = readPayloadString(item.sourcePayload, "semantic_model");
   const semanticPrompt = readPayloadString(item.sourcePayload, "semantic_prompt_version");
+  const eventCausalWebHref = eventIntelligenceCausalWebHref(item, navigationScope);
 
   useEffect(() => {
     setEditingLinkId(null);
@@ -502,6 +508,14 @@ function EventDetail({
             </div>
             <h2 className="text-h2 text-text-primary">{text(item.title)}</h2>
             <p className="mt-2 max-w-4xl text-sm leading-6 text-text-secondary">{text(item.summary)}</p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <ScopeActionLink href={eventCausalWebHref} icon={Network} tone="cyan">
+                {text("打开因果网络")}
+              </ScopeActionLink>
+              <ScopeActionLink href={eventIntelligenceWorldMapHref(item, navigationScope)} icon={Globe2} tone="emerald">
+                {text("打开世界风险地图")}
+              </ScopeActionLink>
+            </div>
           </div>
           <div className="grid min-w-[220px] grid-cols-2 gap-2 text-right">
             <Score label="置信度" value={formatPercent(item.confidence * 100, 0, false)} />
@@ -622,6 +636,13 @@ function EventDetail({
                   <Globe2 className="h-3.5 w-3.5" />
                   {text("打开世界风险地图")}
                 </Link>
+                <Link
+                  href={eventImpactCausalWebHref(item, link)}
+                  className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-brand-cyan/30 bg-brand-cyan/10 px-2 text-caption text-brand-cyan transition-colors hover:bg-brand-cyan/16"
+                >
+                  <Network className="h-3.5 w-3.5" />
+                  {text("打开因果网络")}
+                </Link>
                 <button
                   type="button"
                   disabled={linkEditPendingId !== null}
@@ -657,13 +678,46 @@ function EventDetail({
       </Card>
 
       <div className="grid gap-5 lg:grid-cols-2">
-        <EvidencePanel title="证据" values={item.evidence} />
-        <EvidencePanel title="反证" values={item.counterevidence} />
+        <EvidencePanel title="证据" values={item.evidence} causalWebHref={eventCausalWebHref} />
+        <EvidencePanel title="反证" values={item.counterevidence} causalWebHref={eventCausalWebHref} />
       </div>
 
       <AuditTimeline logs={auditLogs} source={auditSource} />
     </div>
   );
+}
+
+function eventIntelligenceCausalWebHref(
+  item: EventIntelligenceItem,
+  scope: WorldMapNavigationScope | null
+) {
+  return buildCausalWebHref({
+    symbol: scope?.symbol ?? item.symbols[0],
+    region: scope?.region ?? item.regions[0],
+    source: "event-intelligence",
+    event: item.id,
+  });
+}
+
+function eventImpactCausalWebHref(item: EventIntelligenceItem, link: EventImpactLink) {
+  return buildCausalWebHref({
+    symbol: link.symbol,
+    region: link.regionId ?? item.regions[0],
+    source: "event-intelligence",
+    event: item.id,
+  });
+}
+
+function eventIntelligenceWorldMapHref(
+  item: EventIntelligenceItem,
+  scope: WorldMapNavigationScope | null
+) {
+  return buildWorldMapHref({
+    symbol: scope?.symbol ?? item.symbols[0],
+    region: scope?.region ?? item.regions[0],
+    source: "event_intelligence",
+    event: item.id,
+  });
 }
 
 function eventImpactWorldMapHref(item: EventIntelligenceItem, link: EventImpactLink) {
@@ -674,6 +728,36 @@ function eventImpactWorldMapHref(item: EventIntelligenceItem, link: EventImpactL
     source: "event_intelligence",
     event: item.id,
   });
+}
+
+function ScopeActionLink({
+  href,
+  icon: Icon,
+  tone,
+  children,
+}: {
+  href: string;
+  icon: typeof Network;
+  tone: "cyan" | "emerald";
+  children: ReactNode;
+}) {
+  const toneClass =
+    tone === "cyan"
+      ? "border-brand-cyan/30 bg-brand-cyan/10 text-brand-cyan hover:bg-brand-cyan/16"
+      : "border-brand-emerald/30 bg-brand-emerald/10 text-brand-emerald-bright hover:bg-brand-emerald/16";
+
+  return (
+    <Link
+      href={href}
+      className={cn(
+        "inline-flex h-8 items-center gap-1.5 rounded-sm border px-2.5 text-caption font-semibold transition-colors",
+        toneClass
+      )}
+    >
+      <Icon className="h-3.5 w-3.5" />
+      {children}
+    </Link>
+  );
 }
 
 function AuditTimeline({
@@ -1250,11 +1334,30 @@ function TokenGroup({
   );
 }
 
-function EvidencePanel({ title, values }: { title: string; values: string[] }) {
+function EvidencePanel({
+  title,
+  values,
+  causalWebHref,
+}: {
+  title: string;
+  values: string[];
+  causalWebHref?: string;
+}) {
   const { text } = useI18n();
   return (
     <Card variant="flat">
-      <CardTitle>{text(title)}</CardTitle>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <CardTitle>{text(title)}</CardTitle>
+        {causalWebHref && (
+          <Link
+            href={causalWebHref}
+            className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-brand-cyan/30 bg-brand-cyan/10 px-2 text-caption text-brand-cyan transition-colors hover:bg-brand-cyan/16"
+          >
+            <Network className="h-3.5 w-3.5" />
+            {text("核对证据链")}
+          </Link>
+        )}
+      </div>
       <div className="mt-3 space-y-2">
         {values.length > 0 ? (
           values.map((value, index) => (

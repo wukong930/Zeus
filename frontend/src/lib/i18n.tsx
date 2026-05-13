@@ -296,6 +296,7 @@ const EN: Record<string, string> = {
     "Backend APIs are unavailable; this view is showing an empty or unavailable state.",
   "世界风险地图": "World Risk Map",
   "打开世界风险地图": "Open World Risk Map",
+  "核对证据链": "Verify Evidence Chain",
   "地图": "Map",
   "将新闻、天气、市场和人工事件组织成商品影响链。":
     "Organize news, weather, market, and manual events into commodity impact chains.",

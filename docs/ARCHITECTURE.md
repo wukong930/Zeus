@@ -1103,3 +1103,4 @@ zeus/
 - Event Intelligence、World Risk Map、News Events 与 Causal Web 统一使用 `event_intelligence:{event_id}` 作为跨页面事件作用域。
 - `/api/causal-web` 支持 `symbol`、`region` 和 `event` 三个读取作用域；`event` 会固定带回指定事件智能对象，用于深链定位和路径聚焦。
 - 前端跨页跳转保留 `source`、`symbol`、`region`、`mechanism`、`event` 查询参数，页面只能把这些参数解释为读取上下文，不直接写入生产阈值或治理状态。
+- Event Intelligence 的事件详情、影响链、证据和反证入口使用同一个 Causal Web 深链构造器，避免人工复核时丢失事件、商品和区域上下文。
