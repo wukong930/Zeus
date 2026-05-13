@@ -441,3 +441,9 @@ threshold_modifier、propagation_activator、risk_recalc、数据腐烂防护
 - `/event-intelligence` 影响链新增“打开世界风险地图”入口，按单条影响链的品种、区域、机制、来源和事件作用域打开地图。
 - `/news` 的事件智能链摘要新增地图小入口，支持从新闻证据直接回到对应区域风险视图。
 - `/world-map` 支持 URL 初始筛选与区域聚焦，进入页面后会按 `symbol/source/mechanism/region` 自动请求作用域数据并打开区域档案。
+
+# 2026-05-13 — World Risk Map Phase 10.17 事件作用域可见化
+
+- `/world-map` 从事件智能或新闻链路进入时，区域档案新增“当前事件作用域”卡片。
+- 该卡片展示事件短 ID、命中证据、证据权重、质量门分数和该事件是否直接存在于区域 `causalScope`。
+- 未命中时会明确提示只是同品种 / 同机制观察，不把筛选结果误写成已验证因果传导。

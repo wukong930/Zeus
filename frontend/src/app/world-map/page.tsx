@@ -20,6 +20,7 @@ import {
   CloudRain,
   Compass,
   DatabaseZap,
+  GitBranch,
   Globe2,
   Layers3,
   Link2,
@@ -218,6 +219,10 @@ function initialWorldMapRegionParam() {
   return initialWorldMapSearchParams().get("region")?.trim() || null;
 }
 
+function initialWorldMapEventParam() {
+  return initialWorldMapSearchParams().get("event")?.trim() || null;
+}
+
 export default function WorldMapPage() {
   const { text } = useI18n();
   const [snapshot, setSnapshot] = useState<WorldMapSnapshot | null>(null);
@@ -237,6 +242,7 @@ export default function WorldMapPage() {
   const [visibleLayers, setVisibleLayers] = useState<VisibleMapLayers>(DEFAULT_MAP_LAYERS);
   const [rendererMode, setRendererMode] = useState<WorldMapRendererMode>("svg");
   const [focusRequest, setFocusRequest] = useState<MapFocusRequest | null>(null);
+  const [scopedEventId] = useState<string | null>(() => initialWorldMapEventParam());
   const [initialScopeReady, setInitialScopeReady] = useState(false);
   const snapshotRef = useRef<WorldMapSnapshot | null>(null);
   const tileSnapshotRef = useRef<WorldMapTileSnapshot | null>(null);
@@ -377,10 +383,11 @@ export default function WorldMapPage() {
   const selectedRegion = regions.find((region) => region.id === selectedId) ?? null;
   useEffect(() => {
     if (!selectedId) return;
+    if (!snapshot) return;
     if (regions.some((region) => region.id === selectedId)) return;
     setSelectedId(null);
     setDetailOpen(false);
-  }, [regions, selectedId]);
+  }, [regions, selectedId, snapshot]);
   const selectRegion = useCallback((id: string) => {
     setSelectedId(id);
     setDetailOpen(true);
@@ -488,7 +495,11 @@ export default function WorldMapPage() {
       </Card>
 
       {detailOpen && selectedRegion && (
-        <RegionInsightModal region={selectedRegion} onClose={() => setDetailOpen(false)} />
+        <RegionInsightModal
+          region={selectedRegion}
+          scopedEventId={scopedEventId}
+          onClose={() => setDetailOpen(false)}
+        />
       )}
     </div>
   );
@@ -2049,7 +2060,15 @@ function MapZoomControls({
   );
 }
 
-function RegionInsightModal({ region, onClose }: { region: WorldMapRegion; onClose: () => void }) {
+function RegionInsightModal({
+  region,
+  scopedEventId,
+  onClose,
+}: {
+  region: WorldMapRegion;
+  scopedEventId: string | null;
+  onClose: () => void;
+}) {
   const { lang, text } = useI18n();
   const color = riskColor(region.riskLevel);
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -2163,6 +2182,7 @@ function RegionInsightModal({ region, onClose }: { region: WorldMapRegion; onClo
               </div>
             </div>
 
+            {scopedEventId && <ScopedEventContextCard region={region} eventId={scopedEventId} />}
             <RiskReadingPathCard region={region} />
             <RiskMomentumCard region={region} />
             <EvidenceHealthCard region={region} />
@@ -2273,6 +2293,99 @@ function RuntimeGrid({ region }: { region: WorldMapRegion }) {
       <RuntimePill icon={Link2} label={text("事件智能")} value={eventIntelligence} />
     </div>
   );
+}
+
+function ScopedEventContextCard({
+  region,
+  eventId,
+}: {
+  region: WorldMapRegion;
+  eventId: string;
+}) {
+  const { lang, text } = useI18n();
+  const matchedEvidence = scopedEventEvidence(region, eventId);
+  const hasCausalScope = region.causalScope.eventIds.includes(`event_intelligence:${eventId}`);
+  const eventShortId = eventId.slice(0, 8);
+
+  return (
+    <section className="rounded-sm border border-brand-cyan/25 bg-brand-cyan/10 p-3 shadow-inner-panel backdrop-blur-xl">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="inline-flex items-center gap-2 text-sm font-semibold text-brand-cyan">
+            <GitBranch className="h-4 w-4 shrink-0" />
+            <span>{text("当前事件作用域")}</span>
+          </div>
+          <p className="mt-1 text-caption leading-4 text-text-secondary">
+            {text(
+              matchedEvidence.length > 0 || hasCausalScope
+                ? "地图已按这条事件智能链过滤，以下证据解释它为什么命中当前区域。"
+                : "当前区域未找到该事件智能链的直接证据，仅保留同品种 / 同机制观察。"
+            )}
+          </p>
+        </div>
+        <span className="rounded-xs border border-brand-cyan/25 bg-black/28 px-2 py-0.5 font-mono text-[10px] text-brand-cyan">
+          EI:{eventShortId}
+        </span>
+      </div>
+
+      <div className="mt-3 grid grid-cols-3 gap-2">
+        <ScopedEventMetric label={text("命中证据")} value={matchedEvidence.length} />
+        <ScopedEventMetric label={text("事件作用域")} value={hasCausalScope ? text("命中") : text("未命中")} />
+        <ScopedEventMetric label={text("质量门")} value={`${region.eventQuality.score}/100`} />
+      </div>
+
+      {matchedEvidence.length > 0 && (
+        <div className="mt-3 space-y-2">
+          {matchedEvidence.slice(0, 3).map((item) => (
+            <div
+              key={`${item.source}-${item.titleZh}`}
+              className="rounded-xs border border-white/[0.1] bg-black/24 px-2.5 py-2"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="min-w-0 truncate text-xs font-semibold text-text-primary">
+                  {lang === "zh" ? item.titleZh : item.titleEn}
+                </span>
+                <span className="font-mono text-caption text-brand-orange">{Math.round(item.weight * 100)}</span>
+              </div>
+              <div className="mt-1 flex items-center gap-2 text-[10px] text-text-muted">
+                <span>{text(evidenceKindLabel(item.kind))}</span>
+                <span className="truncate font-mono">{item.source}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function ScopedEventMetric({ label, value }: { label: string; value: string | number }) {
+  return (
+    <div className="min-w-0 rounded-xs border border-white/[0.1] bg-black/24 px-2 py-1.5">
+      <span className="block truncate text-[10px] text-text-muted">{label}</span>
+      <span className="mt-0.5 block truncate font-mono text-caption text-text-primary">{value}</span>
+    </div>
+  );
+}
+
+function scopedEventEvidence(region: WorldMapRegion, eventId: string) {
+  const token = `event_intelligence:${eventId}`;
+  return [...region.story.evidence, ...region.story.counterEvidence].filter((item) =>
+    item.source.includes(token)
+  );
+}
+
+function evidenceKindLabel(kind: WorldMapRegion["story"]["evidence"][number]["kind"]) {
+  const labels: Record<typeof kind, string> = {
+    weather: "天气",
+    alert: "预警",
+    news: "新闻",
+    signal: "信号",
+    position: "持仓",
+    event_intelligence: "事件智能",
+    baseline: "基线",
+  };
+  return labels[kind] ?? kind;
 }
 
 function RiskReadingPathCard({ region }: { region: WorldMapRegion }) {

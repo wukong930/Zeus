@@ -520,6 +520,14 @@ const EN: Record<string, string> = {
   "已按品种过滤事件智能结果": "Event intelligence results are filtered by symbol",
   "已按品种过滤新闻事件": "News events are filtered by symbol",
   "清除作用域": "Clear Scope",
+  "当前事件作用域": "Current Event Scope",
+  "地图已按这条事件智能链过滤，以下证据解释它为什么命中当前区域。":
+    "The map is filtered by this event intelligence chain; the evidence below explains why it hit this region.",
+  "当前区域未找到该事件智能链的直接证据，仅保留同品种 / 同机制观察。":
+    "No direct evidence for this event intelligence chain was found in this region; same-symbol / same-mechanism watch is retained.",
+  "命中证据": "Matched Evidence",
+  "命中": "Matched",
+  "未命中": "No Match",
   "先复核质量门": "Review Quality Gate First",
   "存在待复核或被阻断事件，先到事件智能确认质量，再追溯因果链。":
     "Review pending or blocked events in Event Intelligence before tracing the causal chain.",
