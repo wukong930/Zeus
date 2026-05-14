@@ -122,6 +122,22 @@ type RiskBridge = {
   sharedCommodity: boolean;
   weight: number;
 };
+type RegionMapLabel = {
+  anchorX: number;
+  anchorY: number;
+  height: number;
+  id: string;
+  priority: number;
+  width: number;
+  x: number;
+  y: number;
+};
+type ScreenBox = {
+  bottom: number;
+  left: number;
+  right: number;
+  top: number;
+};
 type WeatherTileCell = {
   id: string;
   polygon: Array<[number, number, number]>;
@@ -166,6 +182,18 @@ const WORLD_MAP_TILE_RENDER_BUDGETS: Record<TileRuntimeBudget, TileRenderBudgetS
   light: { densityCells: 220, routes: 10, weatherCells: 260 },
   normal: { densityCells: 170, routes: 8, weatherCells: 200 },
   dense: { densityCells: 120, routes: 6, weatherCells: 150 },
+};
+const WORLD_MAP_LABEL_SIZE = { height: 42, width: 154 };
+const WORLD_MAP_LABEL_SAFE_AREA = {
+  bottom: MAP_HEIGHT - 22,
+  left: 22,
+  right: MAP_WIDTH - 22,
+  top: 118,
+};
+const WORLD_MAP_LABEL_BUDGETS: Record<TileRuntimeBudget, number> = {
+  light: 12,
+  normal: 8,
+  dense: 5,
 };
 const MIN_MAP_SCALE = 0.85;
 const MAX_MAP_SCALE = 3.25;
@@ -1441,6 +1469,22 @@ function WorldMapCanvas({
     () => buildWeatherTileCells(regions, projection, tileCells, renderBudgetSpec.weatherCells),
     [projection, regions, renderBudgetSpec.weatherCells, tileCells]
   );
+  const regionLabels = useMemo(
+    () =>
+      buildRegionMapLabels({
+        projection,
+        regions,
+        renderBudget,
+        riskDeltas,
+        selectedId,
+        view,
+      }),
+    [projection, regions, renderBudget, riskDeltas, selectedId, view]
+  );
+  const regionLabelsById = useMemo(
+    () => new Map(regionLabels.map((label) => [label.id, label])),
+    [regionLabels]
+  );
   const viewport = useMemo(() => computeMapViewport(view, projection), [projection, view]);
 
   useEffect(() => {
@@ -1701,6 +1745,7 @@ function WorldMapCanvas({
           {regions.map((region) => {
             const center = project(region.center, projection);
             const selected = region.id === selectedId;
+            const label = regionLabelsById.get(region.id);
             const color = riskColor(region.riskLevel);
             const radius = 22 + region.riskScore * 0.42;
             const delta = riskDeltas[region.id] ?? 0;
@@ -1789,35 +1834,60 @@ function WorldMapCanvas({
                 )}
                 <circle cx={center.x} cy={center.y} r={7} fill={color.strokeStrong} filter="url(#worldMapRiskGlow)" />
                 <circle cx={center.x} cy={center.y} r={2.8} fill="#fff" opacity="0.72" />
-                {visibleLayers.labels && (
-                  <foreignObject x={center.x + 12} y={center.y - 18} width="132" height="38">
-                    <div className="rounded-sm border border-white/[0.12] bg-black/46 px-2 py-1 shadow-data-panel backdrop-blur-2xl">
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="truncate text-[11px] font-semibold text-text-primary">
-                          {lang === "zh" ? region.nameZh : region.nameEn}
+                {visibleLayers.labels && label && (
+                  <>
+                    <line
+                      x1={center.x}
+                      y1={center.y}
+                      x2={label.anchorX}
+                      y2={label.anchorY}
+                      stroke={selected ? color.strokeStrong : "rgba(148,163,184,0.28)"}
+                      strokeWidth={selected ? 1.25 : 0.8}
+                      strokeDasharray="2 4"
+                      opacity={selected ? 0.68 : 0.36}
+                      vectorEffect="non-scaling-stroke"
+                    />
+                    <g
+                      data-testid="world-map-region-label"
+                      transform={`translate(${label.x} ${label.y}) scale(${1 / view.scale})`}
+                    >
+                      <foreignObject width={label.width} height={label.height}>
+                        <div
+                          className={cn(
+                            "h-full rounded-sm border px-2 py-1 shadow-data-panel backdrop-blur-2xl",
+                            selected
+                              ? "border-brand-cyan/50 bg-brand-cyan/12"
+                              : "border-white/[0.12] bg-black/56"
+                          )}
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="truncate text-[11px] font-semibold text-text-primary">
+                              {lang === "zh" ? region.nameZh : region.nameEn}
+                            </div>
+                            <div className="font-mono text-[11px]" style={{ color: color.text }}>
+                              {region.riskScore}
+                            </div>
+                          </div>
+                          <div className="mt-0.5 flex items-center gap-1 truncate text-[10px] text-text-muted">
+                            {region.symbols.join("/")}
+                            {momentum.direction !== "steady" && (
+                              <span className="font-mono" style={{ color: momentumTone.text }}>
+                                {momentumSymbol(momentum.direction)}
+                                {momentum.delta > 0 ? "+" : ""}
+                                {momentum.delta}
+                              </span>
+                            )}
+                            {delta !== 0 && (
+                              <span className={cn("font-mono", delta > 0 ? "text-data-down" : "text-data-up")}>
+                                {delta > 0 ? "+" : ""}
+                                {delta}
+                              </span>
+                            )}
+                          </div>
                         </div>
-                        <div className="font-mono text-[11px]" style={{ color: color.text }}>
-                          {region.riskScore}
-                        </div>
-                      </div>
-                      <div className="mt-0.5 flex items-center gap-1 truncate text-[10px] text-text-muted">
-                        {region.symbols.join("/")}
-                        {momentum.direction !== "steady" && (
-                          <span className="font-mono" style={{ color: momentumTone.text }}>
-                            {momentumSymbol(momentum.direction)}
-                            {momentum.delta > 0 ? "+" : ""}
-                            {momentum.delta}
-                          </span>
-                        )}
-                        {delta !== 0 && (
-                          <span className={cn("font-mono", delta > 0 ? "text-data-down" : "text-data-up")}>
-                            {delta > 0 ? "+" : ""}
-                            {delta}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  </foreignObject>
+                      </foreignObject>
+                    </g>
+                  </>
                 )}
               </g>
             );
@@ -3354,6 +3424,201 @@ function buildRiskDensityCells(
   return Array.from(cells.values())
     .sort((left, right) => right.intensity - left.intensity)
     .slice(0, Math.min(maxCells, 180));
+}
+
+function buildRegionMapLabels({
+  projection,
+  regions,
+  renderBudget,
+  riskDeltas,
+  selectedId,
+  view,
+}: {
+  projection: GeoProjection;
+  regions: WorldMapRegion[];
+  renderBudget: TileRuntimeBudget;
+  riskDeltas: Record<string, number>;
+  selectedId: string | null;
+  view: MapViewTransform;
+}): RegionMapLabel[] {
+  if (regions.length === 0) return [];
+
+  const maxLabels = worldMapLabelBudget(view.scale, renderBudget, regions.length);
+  const labels: RegionMapLabel[] = [];
+  const occupied: ScreenBox[] = [];
+  const orderedRegions = regions
+    .map((region, index) => ({
+      index,
+      priority: regionMapLabelPriority(region, selectedId, riskDeltas[region.id] ?? 0),
+      region,
+    }))
+    .sort((left, right) => right.priority - left.priority || left.index - right.index);
+
+  for (const { priority, region } of orderedRegions) {
+    const selected = region.id === selectedId;
+    if (!selected && labels.length >= maxLabels) continue;
+
+    const center = project(region.center, projection);
+    const screenCenter = mapPointToScreen(center, view);
+    const width = selected ? WORLD_MAP_LABEL_SIZE.width + 16 : WORLD_MAP_LABEL_SIZE.width;
+    const candidate = chooseRegionLabelCandidate(
+      screenCenter,
+      width,
+      WORLD_MAP_LABEL_SIZE.height,
+      occupied,
+      selected
+    );
+    if (!candidate) continue;
+
+    occupied.push(candidate.box);
+    labels.push({
+      anchorX: screenToMapX(candidate.anchorX, view),
+      anchorY: screenToMapY(candidate.anchorY, view),
+      height: WORLD_MAP_LABEL_SIZE.height,
+      id: region.id,
+      priority,
+      width,
+      x: screenToMapX(candidate.box.left, view),
+      y: screenToMapY(candidate.box.top, view),
+    });
+  }
+
+  return labels;
+}
+
+function worldMapLabelBudget(scale: number, renderBudget: TileRuntimeBudget, regionCount: number): number {
+  const zoomBonus = scale >= 2.1 ? 6 : scale >= 1.55 ? 4 : scale >= 1.15 ? 2 : scale < 0.95 ? -2 : 0;
+  return Math.round(clamp(WORLD_MAP_LABEL_BUDGETS[renderBudget] + zoomBonus, 1, regionCount));
+}
+
+function regionMapLabelPriority(
+  region: WorldMapRegion,
+  selectedId: string | null,
+  riskDelta: number
+): number {
+  const momentum = regionRiskMomentum(region);
+  const health = regionEvidenceHealth(region);
+  let priority = region.riskScore;
+  if (region.id === selectedId) priority += 10_000;
+  if (region.causalScope.hasDirectLinks) priority += 30;
+  priority += Math.min(region.runtime.highSeverityAlerts * 8, 36);
+  priority += Math.min((region.runtime.eventIntelligence ?? 0) * 4, 28);
+  priority += Math.min(region.eventQuality.passed * 4, 24);
+  priority += Math.min(Math.abs(riskDelta) * 2, 26);
+  priority += Math.round(momentum.intensity * 18);
+  priority += Math.round(health.densityScore / 12);
+  return priority;
+}
+
+function chooseRegionLabelCandidate(
+  center: { x: number; y: number },
+  width: number,
+  height: number,
+  occupied: ScreenBox[],
+  allowClamp: boolean
+): { anchorX: number; anchorY: number; box: ScreenBox } | null {
+  const gap = 16;
+  const candidates = [
+    {
+      anchorX: center.x + gap,
+      anchorY: center.y,
+      box: {
+        bottom: center.y + height / 2,
+        left: center.x + gap,
+        right: center.x + gap + width,
+        top: center.y - height / 2,
+      },
+    },
+    {
+      anchorX: center.x - gap,
+      anchorY: center.y,
+      box: {
+        bottom: center.y + height / 2,
+        left: center.x - gap - width,
+        right: center.x - gap,
+        top: center.y - height / 2,
+      },
+    },
+    {
+      anchorX: center.x,
+      anchorY: center.y - gap,
+      box: {
+        bottom: center.y - gap,
+        left: center.x - width / 2,
+        right: center.x + width / 2,
+        top: center.y - gap - height,
+      },
+    },
+    {
+      anchorX: center.x,
+      anchorY: center.y + gap,
+      box: {
+        bottom: center.y + gap + height,
+        left: center.x - width / 2,
+        right: center.x + width / 2,
+        top: center.y + gap,
+      },
+    },
+  ];
+
+  const preferred = candidates.find(
+    (candidate) => boxFitsSafeArea(candidate.box) && !occupied.some((box) => boxesOverlap(candidate.box, box, 8))
+  );
+  if (preferred) return preferred;
+  if (!allowClamp) return null;
+
+  const clamped = clampScreenBox(candidates[0].box, WORLD_MAP_LABEL_SAFE_AREA);
+  return {
+    anchorX: clamped.left,
+    anchorY: clamp(center.y, clamped.top + 6, clamped.bottom - 6),
+    box: clamped,
+  };
+}
+
+function mapPointToScreen(point: { x: number; y: number }, view: MapViewTransform): { x: number; y: number } {
+  return {
+    x: view.x + point.x * view.scale,
+    y: view.y + point.y * view.scale,
+  };
+}
+
+function screenToMapX(value: number, view: MapViewTransform): number {
+  return (value - view.x) / view.scale;
+}
+
+function screenToMapY(value: number, view: MapViewTransform): number {
+  return (value - view.y) / view.scale;
+}
+
+function boxFitsSafeArea(box: ScreenBox): boolean {
+  return (
+    box.left >= WORLD_MAP_LABEL_SAFE_AREA.left &&
+    box.right <= WORLD_MAP_LABEL_SAFE_AREA.right &&
+    box.top >= WORLD_MAP_LABEL_SAFE_AREA.top &&
+    box.bottom <= WORLD_MAP_LABEL_SAFE_AREA.bottom
+  );
+}
+
+function boxesOverlap(left: ScreenBox, right: ScreenBox, padding = 0): boolean {
+  return !(
+    left.right + padding < right.left ||
+    left.left - padding > right.right ||
+    left.bottom + padding < right.top ||
+    left.top - padding > right.bottom
+  );
+}
+
+function clampScreenBox(box: ScreenBox, bounds: ScreenBox): ScreenBox {
+  const width = box.right - box.left;
+  const height = box.bottom - box.top;
+  const left = clamp(box.left, bounds.left, bounds.right - width);
+  const top = clamp(box.top, bounds.top, bounds.bottom - height);
+  return {
+    bottom: top + height,
+    left,
+    right: left + width,
+    top,
+  };
 }
 
 function buildRiskRoutes(regions: WorldMapRegion[], maxRoutes: number): RiskRoute[] {
