@@ -210,6 +210,13 @@ def test_weather_baseline_job_is_registered_but_disabled_by_default() -> None:
     assert DEFAULT_JOB_HANDLERS["weather-baseline"].__name__ == "weather_baseline_job"
 
 
+def test_event_intelligence_sync_job_is_registered() -> None:
+    definition = next(item for item in DEFAULT_JOB_DEFINITIONS if item.id == "event-intelligence-sync")
+
+    assert definition.enabled is True
+    assert DEFAULT_JOB_HANDLERS["event-intelligence-sync"].__name__ == "event_intelligence_sync_job"
+
+
 def test_default_jobs_are_registered_or_explicitly_unconfigured() -> None:
     for definition in DEFAULT_JOB_DEFINITIONS:
         assert definition.id in DEFAULT_JOB_HANDLERS or definition.enabled is False

@@ -6,7 +6,9 @@ from fastapi.testclient import TestClient
 from app.models.change_review_queue import ChangeReviewQueue
 from app.main import create_app
 from app.models.event_intelligence import EventImpactLink, EventIntelligenceAuditLog, EventIntelligenceItem
+from app.models.industry_data import IndustryData
 from app.models.news_events import NewsEvent
+from app.models.signal import SignalTrack
 from app.models.vector_chunks import VectorChunk
 from app.services.event_intelligence import (
     apply_event_intelligence_decision,
@@ -19,6 +21,10 @@ from app.services.event_intelligence import (
     update_event_impact_link,
 )
 from app.services.event_intelligence.eval_cases import EVENT_INTELLIGENCE_EVAL_CASES
+from app.services.event_intelligence.ingress import (
+    market_signal_event_candidate,
+    weather_event_candidates_from_industry_rows,
+)
 
 
 def test_build_event_intelligence_from_news_maps_weather_to_rubber_impacts() -> None:
@@ -91,6 +97,125 @@ def test_build_event_intelligence_requires_human_review_for_weak_single_source()
     assert links[0].symbol == "SC"
     assert links[0].status == "human_review"
     assert links[0].direction == "watch"
+
+
+def test_weather_ingress_builds_event_candidate_from_runtime_and_baseline_rows() -> None:
+    now = datetime(2026, 5, 14, tzinfo=UTC)
+    rows = [
+        IndustryData(
+            symbol="NR",
+            data_type="weather_precip_7d",
+            value=180,
+            unit="mm",
+            source="nasa_power:hat_yai",
+            timestamp=now,
+        ),
+        IndustryData(
+            symbol="NR",
+            data_type="weather_baseline_precip_7d",
+            value=80,
+            unit="mm",
+            source="nasa_power_baseline:hat_yai",
+            timestamp=now,
+        ),
+        IndustryData(
+            symbol="NR",
+            data_type="weather_precip_pctile_7d",
+            value=96,
+            unit="pctile",
+            source="nasa_power_baseline:hat_yai",
+            timestamp=now,
+        ),
+    ]
+
+    candidates = weather_event_candidates_from_industry_rows(rows, now=now)
+
+    assert len(candidates) == 1
+    event, links = candidates[0]
+    assert event.source_type == "weather"
+    assert event.source_id == "weather:southeast_asia_rubber:NR:2026-05-14"
+    assert event.symbols == ["NR"]
+    assert event.regions == ["southeast_asia_rubber"]
+    assert event.mechanisms == ["weather", "supply", "logistics"]
+    assert event.confidence >= 0.85
+    assert {link.mechanism for link in links} == {"weather", "supply", "logistics"}
+    assert all(link.region_id == "southeast_asia_rubber" for link in links)
+
+
+def test_weather_ingress_ignores_non_anomalous_weather_rows() -> None:
+    now = datetime(2026, 5, 14, tzinfo=UTC)
+    rows = [
+        IndustryData(
+            symbol="NR",
+            data_type="weather_precip_7d",
+            value=82,
+            unit="mm",
+            source="nasa_power:hat_yai",
+            timestamp=now,
+        ),
+        IndustryData(
+            symbol="NR",
+            data_type="weather_baseline_precip_7d",
+            value=80,
+            unit="mm",
+            source="nasa_power_baseline:hat_yai",
+            timestamp=now,
+        ),
+    ]
+
+    assert weather_event_candidates_from_industry_rows(rows, now=now) == []
+
+
+def test_market_signal_ingress_maps_high_confidence_signal_to_event_scope() -> None:
+    now = datetime(2026, 5, 14, tzinfo=UTC)
+    row = SignalTrack(
+        id=uuid4(),
+        signal_type="price_gap",
+        category="rubber",
+        confidence=0.81,
+        z_score=2.4,
+        regime="volatile",
+        regime_at_emission="volatile",
+        adversarial_passed=True,
+        outcome="pending",
+        created_at=now,
+    )
+
+    candidate = market_signal_event_candidate(row, now=now)
+
+    assert candidate is not None
+    event, links = candidate
+    assert event.source_type == "market"
+    assert event.source_id == str(row.id)
+    assert event.event_type == "market"
+    assert event.symbols == ["RU", "NR", "BR"]
+    assert event.mechanisms == ["risk_sentiment"]
+    assert event.confidence == 0.81
+    assert {link.symbol for link in links} == {"RU", "NR", "BR"}
+    assert all(link.direction == "watch" for link in links)
+
+
+def test_market_signal_ingress_skips_low_confidence_or_unmapped_category() -> None:
+    now = datetime(2026, 5, 14, tzinfo=UTC)
+    low_confidence = SignalTrack(
+        id=uuid4(),
+        signal_type="momentum",
+        category="rubber",
+        confidence=0.4,
+        outcome="pending",
+        created_at=now,
+    )
+    unmapped = SignalTrack(
+        id=uuid4(),
+        signal_type="momentum",
+        category="unknown",
+        confidence=0.9,
+        outcome="pending",
+        created_at=now,
+    )
+
+    assert market_signal_event_candidate(low_confidence, now=now) is None
+    assert market_signal_event_candidate(unmapped, now=now) is None
 
 
 async def test_event_intelligence_review_queue_records_high_impact_uncertainty() -> None:

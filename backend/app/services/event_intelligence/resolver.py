@@ -265,6 +265,66 @@ async def resolve_news_event_impacts(
     return item, links, True
 
 
+async def create_event_intelligence_from_draft(
+    session: AsyncSession,
+    event_draft: EventIntelligenceDraft,
+    link_drafts: list[EventImpactLinkDraft],
+    *,
+    actor: str,
+    action: str,
+    note: str,
+    enqueue_review: bool = True,
+) -> tuple[EventIntelligenceItem, list[EventImpactLink], bool]:
+    existing = None
+    if event_draft.source_id is not None:
+        existing = await session.scalar(
+            select(EventIntelligenceItem).where(
+                EventIntelligenceItem.source_type == event_draft.source_type,
+                EventIntelligenceItem.source_id == event_draft.source_id,
+            )
+        )
+    if existing is not None:
+        links = list(
+            (
+                await session.scalars(
+                    select(EventImpactLink)
+                    .where(EventImpactLink.event_item_id == existing.id)
+                    .order_by(EventImpactLink.impact_score.desc(), EventImpactLink.confidence.desc())
+                )
+            ).all()
+        )
+        return existing, links, False
+
+    item = _event_item_from_draft(event_draft)
+    session.add(item)
+    await session.flush()
+
+    links = _impact_links_from_drafts(item.id, link_drafts)
+    session.add_all(links)
+    await session.flush()
+    await record_event_intelligence_audit(
+        session,
+        event_item_id=item.id,
+        action=action,
+        actor=actor,
+        before_status=None,
+        after_status=item.status,
+        note=note,
+        payload={
+            "resolver_version": event_draft.source_payload.get("resolver_version"),
+            "source_type": event_draft.source_type,
+            "source_id": event_draft.source_id,
+            "link_count": len(links),
+            "symbols": list(item.symbols),
+            "mechanisms": list(item.mechanisms),
+            "production_effect": "none",
+        },
+    )
+    if enqueue_review:
+        await enqueue_event_intelligence_review(session, item, links, actor=actor)
+    return item, links, True
+
+
 async def enhance_news_event_impacts_with_semantics(
     session: AsyncSession,
     news_event_id: UUID,

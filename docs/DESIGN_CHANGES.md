@@ -549,3 +549,9 @@ threshold_modifier、propagation_activator、risk_recalc、数据腐烂防护
 - 新增 `backend/app/services/data_sources/shipping_index.py`，支持从 JSON / CSV feed 解析 CCFI、SCFI、Drewry WCI、Freightos FBX、BDI / CDFI 风格公开指数。
 - `run_free_data_ingest` 接入 `DATA_SOURCE_SHIPPING_INDEX_ENABLED`，配置 `SHIPPING_INDEX_URL` 后把航运指数按 `FREIGHT,RU,NR,BR,SC,I` 等目标符号写入 `industry_data`。
 - `/api/data-sources` 新增 `shipping_index` 状态；默认关闭，定位为公开 feed 或内部代理入口，避免直接依赖脆弱网页抓取。
+
+# 2026-05-14 — Phase 10.31 事件智能低频入口同步
+
+- 新增 `backend/app/services/event_intelligence/ingress.py`，把新闻、天气异常行业数据和高置信行情异常信号统一转成 Event Intelligence 候选对象。
+- 新增 `event-intelligence-sync` 调度任务，每 2 小时补齐事件智能入口；天气和行情候选通过 `source_type + source_id` 幂等创建，避免重复图谱节点。
+- 所有候选仍只进入 shadow/review 和质量门，`production_effect=none`，不直接改变生产预警或阈值。

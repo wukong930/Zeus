@@ -24,6 +24,7 @@ from app.services.learning.recommendation_attribution import update_open_recomme
 from app.services.data_sources.free_ingest import run_free_data_ingest
 from app.services.data_sources.nasa_power import collect_nasa_power_weather_baselines
 from app.services.etl.writers import append_industry_data
+from app.services.event_intelligence.ingress import sync_event_intelligence_inputs
 from app.services.news.collectors import (
     CailiansheCollector,
     ExchangeAnnouncementsCollector,
@@ -69,6 +70,7 @@ DEFAULT_JOB_DEFINITIONS: tuple[JobDefinition, ...] = (
     JobDefinition("rubber-cost-snapshots", "橡胶成本快照", "50 16 * * 1-5"),
     JobDefinition("learning-reflection", "月度反思 Agent", "0 6 1 * *"),
     JobDefinition("weather-baseline", "天气历史基线", "20 3 * * 0", enabled=False),
+    JobDefinition("event-intelligence-sync", "事件智能入口同步", "10 */2 * * *"),
 )
 
 
@@ -451,6 +453,16 @@ async def weather_baseline_job() -> dict[str, Any]:
     }
 
 
+async def event_intelligence_sync_job() -> dict[str, Any]:
+    async with AsyncSessionLocal() as session:
+        result = await sync_event_intelligence_inputs(session)
+        await session.commit()
+    return {
+        **result.to_dict(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+
 DEFAULT_JOB_HANDLERS: dict[str, JobHandler] = {
     "ingest": ingest_job,
     "track-outcomes": track_outcomes_job,
@@ -466,4 +478,5 @@ DEFAULT_JOB_HANDLERS: dict[str, JobHandler] = {
     "rubber-cost-snapshots": rubber_cost_snapshots_job,
     "learning-reflection": learning_reflection_job,
     "weather-baseline": weather_baseline_job,
+    "event-intelligence-sync": event_intelligence_sync_job,
 }

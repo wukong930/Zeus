@@ -1037,10 +1037,11 @@ Causa 的 `event_driven` 评估器实际上是纯技术面（gap + volume），*
 - [x] Phase 10.28 / Rubber Spot P2.1：新增 AKShare 100ppi 橡胶现货 / 期现基差采集器，覆盖 RU/NR/BR 的现货价、近月基差、主力基差和基差率，写入 `industry_data` 并进入 `/api/data-sources` 状态。
 - [x] Phase 10.29 / Rubber Text P2.2：新增橡胶区域报价文本抽取映射，新闻 ingest 可把青岛保税区、海南、云南、东南亚出口和进口运费文本转换为 `industry_data`。
 - [x] Phase 10.30 / Shipping Index P2.3：新增航运 / 运费指数适配器，支持 CCFI、SCFI、Drewry WCI、Freightos FBX、BDI / CDFI 风格 JSON 或 CSV feed，写入 `industry_data` 并进入 `/api/data-sources` 状态。
+- [x] Phase 10.31 / Event Intelligence Ingress P2.4：新增事件智能低频入口同步任务，新闻、天气异常和高置信行情异常可幂等进入 `event_intelligence_items` / `event_impact_links`，仍只走 shadow/review。
 - [ ] 橡胶现货价格深化：接入青岛保税区、海南天胶、云南天胶稳定公开源或付费源，替换文本抽取的低频补充口径。
 - [ ] 泰国、印尼、马来西亚橡胶出口价公开数据或 LLM 文本抽取。
 - [ ] 运费 / 航运公开指数生产源确认：为 `shipping_index` 配置稳定公开 feed 或内部代理，替换手工 URL。
-- [ ] 天气 baseline、当前天气、新闻、行情异常进入事件智能入口的低频调度稳定化。
+- [ ] 天气 / 新闻 / 行情异常入口生产观测：连续运行后检查重复率、候选质量门分布和人工复核负载。
 
 ### P3：模型治理与监控
 

@@ -13,6 +13,7 @@ from app.services.event_intelligence.quality import (
 )
 from app.services.event_intelligence.resolver import (
     build_event_intelligence_from_news,
+    create_event_intelligence_from_draft,
     enhance_news_event_impacts_with_semantics,
     resolve_news_event_impacts,
 )
@@ -27,6 +28,7 @@ __all__ = [
     "EventSemanticHypothesis",
     "apply_event_intelligence_decision",
     "build_event_intelligence_from_news",
+    "create_event_intelligence_from_draft",
     "enqueue_event_intelligence_review",
     "event_intelligence_review_reasons",
     "enhance_news_event_impacts_with_semantics",

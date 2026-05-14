@@ -227,6 +227,12 @@ Phase 10.17 已落地的 World Risk Map 事件作用域可见化：
 - 若当前区域没有直接证据，页面会明确提示仅保留同品种 / 同机制观察，避免把普通筛选误解为已验证传导。
 - 该阶段只增强阅读透明度，不改变事件质量门、风险分、治理状态或生产预警。
 
+Phase 10.31 已落地的事件智能低频入口边界：
+
+- `services/event_intelligence/ingress.py` 统一把已存在的新闻、天气行业数据和高置信行情异常转为事件智能候选对象；同一 `source_type + source_id` 幂等跳过，避免重复链路。
+- 新增 `event-intelligence-sync` 调度任务，每 2 小时低频 backfill：新闻补齐 `news_event` 作用域，天气异常生成 `weather` 作用域，行情异常信号生成 `market` 作用域。
+- 该入口只进入 `shadow_review` / `human_review` 与质量门，不直接改变 Alert Agent 阈值、持仓阈值或生产交易建议。
+
 治理约束：
 
 - 引擎判断默认只进入 Shadow / review，不直接修改生产阈值或自动发交易指令。
