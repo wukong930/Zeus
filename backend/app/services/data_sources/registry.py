@@ -134,6 +134,17 @@ def data_source_statuses(settings: Settings | None = None) -> list[DataSourceSta
             status=_status(current.data_source_rubber_spot_enabled, akshare_available),
             note="Natural-rubber spot price and basis for RU/NR/BR. No key required; availability depends on AKShare and 100ppi.",
         ),
+        DataSourceStatus(
+            id="rubber_text",
+            name="Rubber regional quote text extraction",
+            category="industry_data",
+            enabled=current.data_source_rubber_text_enabled,
+            configured=current.data_source_rubber_text_enabled,
+            requires_key=False,
+            free_tier="free_no_key",
+            status="ready" if current.data_source_rubber_text_enabled else "disabled",
+            note="Maps public text/news into Qingdao, Hainan, Yunnan, SEA export and freight rubber indicators.",
+        ),
     ]
 
 

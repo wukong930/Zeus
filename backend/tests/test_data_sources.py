@@ -41,6 +41,7 @@ from app.services.data_sources.rubber_spot import (
     parse_rubber_spot_symbols,
     rows_from_rubber_spot_frame,
 )
+from app.services.data_sources.rubber_text import extract_rubber_text_industry_rows
 from app.services.data_sources.types import DataSourceStatus
 from app.services.data_sources.tushare_futures import (
     collect_tushare_market_data,
@@ -222,6 +223,55 @@ async def test_rubber_spot_collector_reports_field_drift() -> None:
     assert result.rows == []
     assert result.errors[0]["source"] == "rubber_spot"
     assert "spot_price" in result.errors[0]["error"]
+
+
+def test_rubber_text_extractor_maps_regional_quotes() -> None:
+    rows = extract_rubber_text_industry_rows(
+        title="Qingdao bonded rubber spot and origin quotes",
+        content=(
+            "Qingdao bonded spot premium reached 320 yuan per tonne. "
+            "Hainan field latex quoted 12100 yuan/t while Yunnan collection cost was 430 yuan/t. "
+            "Thailand latex export reference moved to 11200 yuan/t and ocean freight was 260 yuan/t."
+        ),
+        source="public-rubber-feed",
+        published_at=pd.Timestamp("2026-05-13T00:00:00Z").to_pydatetime(),
+    )
+
+    by_type = {(row.symbol, row.data_type): row for row in rows}
+
+    assert by_type[("NR", "rubber_qingdao_premium_cny_t")].value == 320
+    assert by_type[("RU", "rubber_hainan_latex_cny_t")].value == 12100
+    assert by_type[("RU", "rubber_yunnan_collect_cny_t")].value == 430
+    assert by_type[("NR", "rubber_thai_export_cny_t")].value == 11200
+    assert by_type[("RU", "rubber_sea_freight_cny_t")].value == 260
+    assert all(row.source.startswith("rubber_text:") for row in rows)
+
+
+def test_rubber_text_extractor_maps_chinese_region_quotes() -> None:
+    rows = extract_rubber_text_industry_rows(
+        title="云南海南天然橡胶报价",
+        content="青岛保税区现货报价12850元/吨，海南胶水12100元/吨，云南收胶成本430元/吨。",
+        source="rubber-cn",
+        published_at=pd.Timestamp("2026-05-13T00:00:00Z").to_pydatetime(),
+    )
+
+    by_type = {(row.symbol, row.data_type): row for row in rows}
+
+    assert by_type[("NR", "rubber_qingdao_spot_cny_t")].value == 12850
+    assert by_type[("RU", "rubber_hainan_latex_cny_t")].value == 12100
+    assert by_type[("RU", "rubber_yunnan_collect_cny_t")].value == 430
+
+
+def test_rubber_text_extractor_respects_confidence_gate() -> None:
+    rows = extract_rubber_text_industry_rows(
+        title="Ocean freight update",
+        content="Rubber ocean freight was 260 yuan per tonne.",
+        source="freight-feed",
+        published_at=pd.Timestamp("2026-05-13T00:00:00Z").to_pydatetime(),
+        min_confidence=0.7,
+    )
+
+    assert rows == []
 
 
 def test_open_meteo_payload_creates_weather_industry_rows() -> None:
@@ -952,6 +1002,8 @@ def test_data_source_registry_marks_keyed_sources() -> None:
     assert statuses["nasa_power_baseline"].free_tier == "free_no_key"
     assert statuses["rubber_spot"].free_tier == "free_no_key"
     assert statuses["rubber_spot"].status == "disabled"
+    assert statuses["rubber_text"].free_tier == "free_no_key"
+    assert statuses["rubber_text"].status == "disabled"
     assert statuses["noaa_cdo"].status == "disabled"
     assert statuses["accuweather"].status == "disabled"
 

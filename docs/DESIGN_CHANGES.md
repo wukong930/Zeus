@@ -537,3 +537,9 @@ threshold_modifier、propagation_activator、risk_recalc、数据腐烂防护
 - 新增 `backend/app/services/data_sources/rubber_spot.py`，通过 AKShare `futures_spot_price_daily` 采集 100ppi 大宗商品现货与期现基差数据。
 - 新数据源 `rubber_spot` 默认关闭、无需 key，可配置 `DATA_SOURCE_RUBBER_SPOT_SYMBOLS` 和 `DATA_SOURCE_RUBBER_SPOT_HISTORY_DAYS`，采集结果写入 `industry_data`。
 - 输出指标覆盖 `rubber_spot_price_cny_t`、`rubber_near_basis_cny_t`、`rubber_dom_basis_cny_t`、`rubber_near_basis_rate` 和 `rubber_dom_basis_rate`，为后续青岛 / 海南 / 云南分地区源映射和事件智能入口打底。
+
+# 2026-05-14 — Phase 10.29 橡胶区域报价文本映射
+
+- 新增 `backend/app/services/data_sources/rubber_text.py`，把公开新闻或文本中的青岛保税区、海南胶水、云南收胶、泰国 / 印尼 / 马来西亚出口参考和海运费映射为规范化行业数据。
+- `news_ingest` 在 `DATA_SOURCE_RUBBER_TEXT_ENABLED=true` 时会把新新闻中的区域报价写入 `industry_data`，默认关闭，避免低置信文本自动污染运行态。
+- `/api/data-sources` 新增 `rubber_text` 状态；该路径定位为低频补充源，后续仍需要稳定公开源或付费源替换核心报价。

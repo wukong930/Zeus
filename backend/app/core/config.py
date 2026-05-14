@@ -73,6 +73,8 @@ class Settings(BaseSettings):
     data_source_rubber_spot_enabled: bool = False
     data_source_rubber_spot_symbols: str = "RU,NR,BR"
     data_source_rubber_spot_history_days: int = Field(default=7, ge=1, le=30)
+    data_source_rubber_text_enabled: bool = False
+    data_source_rubber_text_min_confidence: float = Field(default=0.62, ge=0.0, le=1.0)
 
     model_config = SettingsConfigDict(
         env_file=".env",

@@ -274,6 +274,7 @@ async def news_ingest_job() -> dict[str, Any]:
         "recorded": result.recorded,
         "duplicates": result.duplicates,
         "published": result.published,
+        "industry_rows": result.industry_rows,
         "collector_errors": collector_errors,
         "active_collectors": [
             getattr(collector, "source", collector.__class__.__name__)

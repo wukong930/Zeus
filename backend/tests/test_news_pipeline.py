@@ -2,10 +2,13 @@ from datetime import datetime, timezone
 
 import httpx
 
+from app.core.config import Settings
+from app.models.industry_data import IndustryData
 from app.services.news.collectors.gdelt import GdeltCollector
 from app.models.news_events import NewsEvent
 from app.services.news.collectors.rubber_supply import RubberSupplyCollector
 from app.services.news.dedup import news_dedup_hash, normalize_title
+from app.services.news.dedup import DedupDecision
 from app.services.news.event_publisher import (
     event_row_is_evaluable,
     jsonable_news_payload,
@@ -13,6 +16,7 @@ from app.services.news.event_publisher import (
     upsert_news_event,
 )
 from app.services.news.extractor import extract_news_event_sync
+from app.services.news.ingest import ingest_news_items
 from app.services.news.quality import is_evaluable_news_event, requires_manual_confirmation
 from app.services.news.types import RawNewsItem
 
@@ -35,6 +39,9 @@ class FakeSession:
 
     def add(self, row: object) -> None:
         self.rows.append(row)
+
+    def add_all(self, rows: list[object]) -> None:
+        self.rows.extend(rows)
 
     async def flush(self) -> None:
         self.flush_count += 1
@@ -289,3 +296,59 @@ async def test_record_news_event_creates_event_intelligence(monkeypatch) -> None
 
     assert result.should_publish is False
     assert called == {"session": session, "news_event_id": result.row.id}
+
+
+async def test_news_ingest_can_extract_rubber_text_industry_rows(monkeypatch) -> None:
+    session = FakeSession()
+
+    async def fake_resolve_news_event_impacts(fake_session, news_event_id):  # noqa: ANN001
+        return None, [], True
+
+    async def fake_publisher(*_args, **_kwargs):  # noqa: ANN002, ANN003
+        return None
+
+    async def fake_deduplicate_news_event(*_args, **_kwargs):  # noqa: ANN002, ANN003
+        return DedupDecision(duplicate=False)
+
+    monkeypatch.setattr(
+        "app.services.news.event_publisher.resolve_news_event_impacts",
+        fake_resolve_news_event_impacts,
+    )
+    monkeypatch.setattr(
+        "app.services.news.ingest.deduplicate_news_event",
+        fake_deduplicate_news_event,
+    )
+    monkeypatch.setattr(
+        "app.services.news.ingest.get_settings",
+        lambda: Settings(data_source_rubber_text_enabled=True, _env_file=None),
+    )
+
+    result = await ingest_news_items(
+        session,  # type: ignore[arg-type]
+        [
+            RawNewsItem(
+                source="rubber-public-feed",
+                title="Qingdao bonded rubber spot premium rises",
+                content_text=(
+                    "Qingdao bonded spot premium reached 320 yuan per tonne; "
+                    "Hainan field latex quoted 12100 yuan/t."
+                ),
+                published_at=datetime(2026, 5, 3, tzinfo=timezone.utc),
+                metadata={
+                    "affected_symbols": ["NR", "RU"],
+                    "source_count": 2,
+                    "verification_status": "cross_verified",
+                },
+            )
+        ],
+        publisher=fake_publisher,
+    )
+
+    industry_rows = [row for row in session.rows if isinstance(row, IndustryData)]
+
+    assert result.recorded == 1
+    assert result.industry_rows == 3
+    assert {row.data_type for row in industry_rows} == {
+        "rubber_qingdao_premium_cny_t",
+        "rubber_hainan_latex_cny_t",
+    }
