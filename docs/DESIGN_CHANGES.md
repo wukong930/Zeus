@@ -567,3 +567,9 @@ threshold_modifier、propagation_activator、risk_recalc、数据腐烂防护
 - 新增 `/api/calibration/dashboard`，汇总当前生效 `signal_calibration` 权重与近期已归因信号候选桶。
 - 后端输出每个 signal / category / regime 的样本量、命中率、当前权重、Bayesian posterior mean、90% 置信带、先验主导和 decay 状态。
 - Analytics 的“校准仪表盘”页扩展为两层：上半区看信号权重校准，下半区保留 Phase 9 阈值可靠性分箱。
+
+# 2026-05-15 — Phase 10.34 Concept Drift Indicator
+
+- `/api/drift/metrics` 新增 `notification` 摘要，按红 / 黄 / 绿 / 无数据输出通知级别、渠道、下一步动作和重点指标。
+- Heartbeat Bar 的 Drift 项接入 `notification.should_notify`，红黄状态会显示具体告警标题；仍然只做提示，不自动调整生产权重或阈值。
+- Analytics 的 Drift 监控页新增红黄绿计数和通知链路面板，明确展示 `production_effect=observe_only`、通知入口和人工复核动作。

@@ -1047,7 +1047,7 @@ Causa 的 `event_driven` 评估器实际上是纯技术面（gap + volume），*
 
 - [x] Phase 10.32 / Regime HMM Baseline P3.1：新增 HMM baseline 对比实验，不进入主链路。
 - [x] Phase 10.33 / Calibration Dashboard P3.2：校准仪表盘展示样本量、当前权重、置信带、先验主导提示。
-- [ ] Concept Drift 前端红 / 黄 / 绿指示器与通知链路；继续保持只告警、不自动改阈值。
+- [x] Phase 10.34 / Concept Drift Indicator P3.3：前端红 / 黄 / 绿指示器与通知链路接入 Heartbeat 和 Analytics；继续保持只告警、不自动改阈值。
 - [ ] 对抗引擎 warmup 手动覆盖开关。
 
 ### P4：系统质量续审

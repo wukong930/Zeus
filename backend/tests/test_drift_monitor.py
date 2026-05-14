@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from app.api.drift import build_drift_snapshot
+from app.api.drift import build_drift_notification, build_drift_snapshot
 from app.models.drift_metrics import DriftMetric
 from app.services.learning.drift_monitor import (
     calculate_psi,
@@ -164,3 +164,34 @@ def test_drift_snapshot_summarizes_highest_severity() -> None:
     assert snapshot.latest_at == datetime(2026, 5, 5, tzinfo=timezone.utc)
     assert snapshot.severity_counts["red"] == 1
     assert snapshot.severity_counts["yellow"] == 1
+    assert snapshot.notification.level == "review"
+    assert snapshot.notification.should_notify is True
+    assert snapshot.notification.production_effect == "observe_only"
+    assert snapshot.notification.top_metrics[0].drift_severity == "red"
+
+
+def test_drift_notification_keeps_green_and_no_data_observe_only() -> None:
+    green = build_drift_notification(
+        [
+            DriftMetric(
+                id=uuid4(),
+                metric_type="feature_distribution",
+                category="ferrous",
+                feature_name="volume",
+                current_value=0.11,
+                baseline_value=0.1,
+                psi=0.03,
+                drift_severity="green",
+                details={},
+                computed_at=datetime(2026, 5, 5, tzinfo=timezone.utc),
+            )
+        ],
+        status="green",
+    )
+    no_data = build_drift_notification([], status="no_data")
+
+    assert green.should_notify is False
+    assert green.production_effect == "observe_only"
+    assert green.next_actions == ["保持监控，不自动修改生产阈值"]
+    assert no_data.level == "no_data"
+    assert no_data.should_notify is False

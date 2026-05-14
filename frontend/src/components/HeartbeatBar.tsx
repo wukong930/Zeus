@@ -17,6 +17,7 @@ interface HeartbeatRuntimeState {
   activeSignals: number | null;
   drift: string;
   driftStatus: RuntimeStatus;
+  driftNotify: boolean;
   calibrationSamples: number | null;
   status: string;
   statusTone: RuntimeStatus;
@@ -99,6 +100,7 @@ export function HeartbeatBar() {
         dotClass={dot(runtime?.driftStatus ?? "warning")}
         label={text("漂移")}
         value={text(runtime?.drift ?? "同步中")}
+        pulse={runtime?.driftNotify}
       />
       <Item
         dotClass={dot(runtime?.calibrationSamples === null || runtime?.calibrationSamples === undefined ? "warning" : "healthy")}
@@ -141,8 +143,11 @@ async function fetchHeartbeatRuntimeState(): Promise<HeartbeatRuntimeState> {
     activeSignals: graph
       ? graph.nodes.filter((node) => node.type === "signal" && node.active).length
       : null,
-    drift: driftLabel(drift?.status),
+    drift: drift?.notification?.should_notify
+      ? drift.notification.title
+      : driftLabel(drift?.status),
     driftStatus: driftTone(drift?.status),
+    driftNotify: Boolean(drift?.notification?.should_notify),
     calibrationSamples: calibration?.samples ?? null,
     status:
       failedCount === 4
@@ -190,12 +195,24 @@ function formatAge(iso: string, now: Date, lang: Language): string {
   return lang === "zh" ? `${hours}h 前` : `${hours}h ago`;
 }
 
-function Item({ dotClass, label, value }: { dotClass: string; label: string; value: string }) {
+function Item({
+  dotClass,
+  label,
+  value,
+  pulse,
+}: {
+  dotClass: string;
+  label: string;
+  value: string;
+  pulse?: boolean;
+}) {
   return (
-    <div className="flex items-center gap-2 whitespace-nowrap">
+    <div className={cn("flex items-center gap-2 whitespace-nowrap", pulse && "text-text-primary")}>
       <div className={cn("w-1.5 h-1.5 rounded-full animate-heartbeat", dotClass)} />
       <span className="text-text-muted">{label}</span>
-      <span className="text-text-secondary font-medium">{value}</span>
+      <span className={cn("font-medium", pulse ? "text-text-primary" : "text-text-secondary")}>
+        {value}
+      </span>
     </div>
   );
 }

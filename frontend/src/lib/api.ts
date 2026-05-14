@@ -750,11 +750,23 @@ export interface DriftMetric {
   computed_at: string;
 }
 
+export interface DriftNotification {
+  level: "none" | "watch" | "review" | "no_data" | string;
+  title: string;
+  summary: string;
+  should_notify: boolean;
+  production_effect: "observe_only" | string;
+  channels: string[];
+  next_actions: string[];
+  top_metrics: DriftMetric[];
+}
+
 export interface DriftSnapshot {
   generated_at: string;
   latest_at: string | null;
   status: "green" | "yellow" | "red" | "no_data" | string;
   severity_counts: Record<string, number>;
+  notification: DriftNotification;
   metrics: DriftMetric[];
 }
 

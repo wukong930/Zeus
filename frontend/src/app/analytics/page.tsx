@@ -574,20 +574,25 @@ function DriftTab() {
         <DataSourceBadge state={source} />
       </div>
       <Card variant="flat" className={cn("border-l-[3px]", statusMeta.borderClass)}>
-        <div className="flex items-center gap-3">
-          <div className={cn("w-2 h-2 rounded-full animate-heartbeat", statusMeta.dotClass)} />
-          <div>
-            <div className="text-h3 text-text-primary">
-              {text("Drift 状态")}：{text(statusMeta.label)}
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex items-center gap-3">
+            <div className={cn("w-2 h-2 rounded-full animate-heartbeat", statusMeta.dotClass)} />
+            <div>
+              <div className="text-h3 text-text-primary">
+                {text("Drift 状态")}：{text(statusMeta.label)}
+              </div>
+              <p className="text-sm text-text-secondary mt-1">
+                {metrics.length > 0
+                  ? `${text("最近一次计算")} ${latestAt} · ${metrics.length} ${text("条漂移指标")} · red ${snapshot.severity_counts.red ?? 0} / yellow ${snapshot.severity_counts.yellow ?? 0}`
+                  : text("调度器尚未写入 Drift 指标。")}
+              </p>
             </div>
-            <p className="text-sm text-text-secondary mt-1">
-              {metrics.length > 0
-                ? `${text("最近一次计算")} ${latestAt} · ${metrics.length} ${text("条漂移指标")} · red ${snapshot.severity_counts.red ?? 0} / yellow ${snapshot.severity_counts.yellow ?? 0}`
-                : text("调度器尚未写入 Drift 指标。")}
-            </p>
           </div>
+          <DriftSeverityPills snapshot={snapshot} />
         </div>
       </Card>
+
+      <DriftNotificationPanel snapshot={snapshot} />
 
       <div className="grid grid-cols-2 gap-5">
         <Card variant="flat">
@@ -662,10 +667,126 @@ function metricLabel(metric: DriftMetric): string {
   return metric.feature_name || metric.category || metric.metric_type;
 }
 
+function DriftSeverityPills({ snapshot }: { snapshot: DriftSnapshot }) {
+  const { text } = useI18n();
+  const items = [
+    {
+      key: "green",
+      label: "正常",
+      count: snapshot.severity_counts.green ?? 0,
+      className: "border-brand-emerald/30 bg-brand-emerald/10 text-brand-emerald-bright",
+    },
+    {
+      key: "yellow",
+      label: "关注",
+      count: snapshot.severity_counts.yellow ?? 0,
+      className: "border-brand-orange/30 bg-brand-orange/10 text-brand-orange",
+    },
+    {
+      key: "red",
+      label: "严重",
+      count: snapshot.severity_counts.red ?? 0,
+      className: "border-data-down/30 bg-data-down/10 text-data-down",
+    },
+  ];
+  return (
+    <div className="grid grid-cols-3 gap-2">
+      {items.map((item) => (
+        <div
+          key={item.key}
+          className={cn("min-w-20 rounded-xs border px-3 py-2 text-center shadow-inner-panel", item.className)}
+        >
+          <div className="text-caption text-text-muted">{text(item.label)}</div>
+          <div className="mt-1 font-mono text-lg leading-none tabular-nums">{item.count}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function DriftNotificationPanel({ snapshot }: { snapshot: DriftSnapshot }) {
+  const { text } = useI18n();
+  const notification = snapshot.notification;
+  const borderClass =
+    notification.level === "review"
+      ? "border-l-data-down"
+      : notification.level === "watch"
+        ? "border-l-brand-orange"
+        : "border-l-brand-emerald";
+  const badgeVariant: "down" | "orange" | "emerald" =
+    notification.level === "review" ? "down" : notification.level === "watch" ? "orange" : "emerald";
+  const topMetrics = notification.top_metrics.length
+    ? notification.top_metrics
+    : snapshot.metrics.filter((metric) => metric.drift_severity !== "green").slice(0, 3);
+
+  return (
+    <Card variant="flat" className={cn("border-l-[3px]", borderClass)}>
+      <CardHeader>
+        <div>
+          <CardTitle>{text(notification.title)}</CardTitle>
+          <CardSubtitle>{text(notification.summary)}</CardSubtitle>
+        </div>
+        <div className="flex items-center gap-2">
+          <Badge variant={badgeVariant}>{text(notification.should_notify ? "notify" : "observe")}</Badge>
+          <Badge variant="neutral">{text(notification.production_effect)}</Badge>
+        </div>
+      </CardHeader>
+      <div className="grid gap-4 lg:grid-cols-[1.1fr_1fr_1fr]">
+        <div>
+          <div className="mb-2 text-caption uppercase text-text-muted">{text("通知链路")}</div>
+          <div className="flex flex-wrap gap-2">
+            {notification.channels.map((channel) => (
+              <Badge key={channel} variant="cyan">{text(channelLabel(channel))}</Badge>
+            ))}
+          </div>
+        </div>
+        <div>
+          <div className="mb-2 text-caption uppercase text-text-muted">{text("下一步行动")}</div>
+          <div className="space-y-1 text-sm text-text-secondary">
+            {notification.next_actions.map((action) => (
+              <div key={action}>{text(action)}</div>
+            ))}
+          </div>
+        </div>
+        <div>
+          <div className="mb-2 text-caption uppercase text-text-muted">{text("重点指标")}</div>
+          <div className="space-y-2">
+            {topMetrics.length === 0 ? (
+              <div className="text-sm text-text-muted">{text("暂无需要通知的 Drift 指标")}</div>
+            ) : (
+              topMetrics.slice(0, 3).map((metric) => (
+                <div key={metric.id} className="flex items-center justify-between gap-3 text-sm">
+                  <span className="truncate text-text-secondary">{metricLabel(metric)}</span>
+                  <span className={cn("font-mono tabular-nums", driftSeverityText(metric.drift_severity))}>
+                    {formatNullableNumber(metric.psi)}
+                  </span>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
 function driftSeverityBar(severity: string): string {
   if (severity === "red") return "bg-data-down";
   if (severity === "yellow") return "bg-brand-orange";
   return "bg-brand-emerald";
+}
+
+function driftSeverityText(severity: string): string {
+  if (severity === "red") return "text-data-down";
+  if (severity === "yellow") return "text-brand-orange";
+  return "text-brand-emerald";
+}
+
+function channelLabel(channel: string): string {
+  if (channel === "heartbeat") return "顶栏";
+  if (channel === "analytics_drift") return "Analytics / Drift";
+  if (channel === "notification_settings") return "通知渠道";
+  return channel;
 }
 
 function HypothesesTab() {
