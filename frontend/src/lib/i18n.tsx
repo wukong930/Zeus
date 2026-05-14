@@ -113,6 +113,29 @@ const EN: Record<string, string> = {
   "最新预警": "Latest Alerts",
   "vs 上月": "vs last month",
   "校准进度": "Calibration",
+  "校准样本": "Calibration Samples",
+  "校准桶": "Calibration Buckets",
+  "先验主导": "Prior Dominant",
+  "平均权重": "Avg Weight",
+  "信号权重校准": "Signal Weight Calibration",
+  "按 signal / category / regime 展示当前权重、样本量、置信带和先验主导状态":
+    "Current weights, samples, confidence bands, and prior dominance by signal / category / regime",
+  "阈值可靠性分箱": "Threshold Reliability Bins",
+  "按置信度分箱展示真实样本、命中率和校准偏差":
+    "Resolved samples, hit rate, and calibration gap by confidence bin",
+  "当前权重": "Current Weight",
+  "基准": "base",
+  "90% 置信带": "90% Confidence Band",
+  "暂无信号权重校准样本": "No signal weight calibration samples yet",
+  "mature": "mature",
+  "decay": "decay",
+  "suggested": "suggested",
+  "active weight": "active weight",
+  "candidate": "candidate",
+  "prior dominant": "prior dominant",
+  "No resolved calibration buckets are available yet.": "No resolved calibration buckets are available yet.",
+  "Some rows are recent resolved-signal candidates and are not active weights yet.":
+    "Some rows are recent resolved-signal candidates and are not active weights yet.",
   "样本量": "samples",
   "LLM 月度成本": "LLM Monthly Cost",
   "预算": "Budget",
@@ -1224,6 +1247,15 @@ const ZH: Record<string, string> = {
   "提及的预警": "提及的预警",
   "假设库": "假设库",
   "交易日志": "交易日志",
+  "mature": "成熟",
+  "decay": "衰减",
+  "suggested": "建议",
+  "active weight": "生效权重",
+  "candidate": "候选",
+  "prior dominant": "先验主导",
+  "No resolved calibration buckets are available yet.": "暂无已归因的校准桶。",
+  "Some rows are recent resolved-signal candidates and are not active weights yet.":
+    "部分行来自近期已归因信号候选，还不是生效权重。",
 };
 
 export function I18nProvider({ children }: { children: ReactNode }) {

@@ -700,6 +700,43 @@ export interface ThresholdCalibrationReport {
   review_required: boolean;
 }
 
+export interface SignalCalibrationDashboardRow {
+  target_key: string;
+  signal_type: string;
+  category: string;
+  regime: string;
+  source: "active_calibration" | "candidate_from_tracks" | string;
+  sample_size: number;
+  hit_count: number;
+  miss_count: number;
+  rolling_hit_rate: number | null;
+  posterior_mean: number;
+  confidence_low: number;
+  confidence_high: number;
+  base_weight: number;
+  effective_weight: number;
+  alpha_prior: number;
+  beta_prior: number;
+  prior_dominant: boolean;
+  decay_detected: boolean;
+  computed_at: string | null;
+  effective_from: string | null;
+}
+
+export interface SignalCalibrationDashboard {
+  generated_at: string;
+  lookback_days: number;
+  confidence_level: number;
+  total_buckets: number;
+  mature_buckets: number;
+  prior_dominant_buckets: number;
+  decay_buckets: number;
+  sample_size: number;
+  avg_effective_weight: number | null;
+  rows: SignalCalibrationDashboardRow[];
+  notes: string[];
+}
+
 export interface DriftMetric {
   id: string;
   metric_type: string;
@@ -1638,6 +1675,10 @@ export async function fetchBacktestQualitySummary(): Promise<BacktestQualitySumm
 
 export async function fetchThresholdCalibrationReport(): Promise<ThresholdCalibrationReport> {
   return fetchJson<ThresholdCalibrationReport>("/api/shadow/calibration");
+}
+
+export async function fetchSignalCalibrationDashboard(): Promise<SignalCalibrationDashboard> {
+  return fetchJson<SignalCalibrationDashboard>("/api/calibration/dashboard");
 }
 
 export async function fetchDriftSnapshot(): Promise<DriftSnapshot> {

@@ -561,3 +561,9 @@ threshold_modifier、propagation_activator、risk_recalc、数据腐烂防护
 - 新增 `backend/app/services/calibration/regime_hmm_baseline.py`，提供轻量 Gaussian-HMM / Viterbi regime 对比实验，用收益、日内波幅和成交量变化识别隐状态。
 - baseline 报告会输出最新 HMM regime、规则法 regime、滚动一致率、状态摘要和尾部观测样本，便于后续治理仪表盘展示。
 - 该能力只作为研究对照，不注册 scheduler、不写 `regime_state`、不影响生产信号校准阈值。
+
+# 2026-05-14 — Phase 10.33 校准仪表盘
+
+- 新增 `/api/calibration/dashboard`，汇总当前生效 `signal_calibration` 权重与近期已归因信号候选桶。
+- 后端输出每个 signal / category / regime 的样本量、命中率、当前权重、Bayesian posterior mean、90% 置信带、先验主导和 decay 状态。
+- Analytics 的“校准仪表盘”页扩展为两层：上半区看信号权重校准，下半区保留 Phase 9 阈值可靠性分箱。

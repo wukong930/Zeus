@@ -12,12 +12,15 @@ import {
   fetchAttributionReport,
   fetchDriftSnapshot,
   fetchLearningHypotheses,
+  fetchSignalCalibrationDashboard,
   fetchThresholdCalibrationReport,
   type AttributionReport,
   type AttributionSlice,
   type DriftMetric,
   type DriftSnapshot,
   type LearningHypothesis,
+  type SignalCalibrationDashboard,
+  type SignalCalibrationDashboardRow,
   type ThresholdCalibrationReport,
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -235,28 +238,27 @@ function formatPnl(value: number) {
 
 function CalibrationTab() {
   const [report, setReport] = useState<ThresholdCalibrationReport | null>(null);
+  const [dashboard, setDashboard] = useState<SignalCalibrationDashboard | null>(null);
   const [source, setSource] = useState<DataSourceState>("loading");
   const { text } = useI18n();
 
   useEffect(() => {
     let mounted = true;
-    fetchThresholdCalibrationReport()
-      .then((data) => {
+    Promise.allSettled([fetchThresholdCalibrationReport(), fetchSignalCalibrationDashboard()])
+      .then(([thresholdResult, dashboardResult]) => {
         if (!mounted) return;
-        setReport(data);
-        setSource("api");
-      })
-      .catch(() => {
-        if (!mounted) return;
-        setReport(null);
-        setSource("fallback");
+        const thresholdReport = thresholdResult.status === "fulfilled" ? thresholdResult.value : null;
+        const calibrationDashboard = dashboardResult.status === "fulfilled" ? dashboardResult.value : null;
+        setReport(thresholdReport);
+        setDashboard(calibrationDashboard);
+        setSource(thresholdReport || calibrationDashboard ? "api" : "fallback");
       });
     return () => {
       mounted = false;
     };
   }, []);
 
-  if (!report) {
+  if (!report && !dashboard) {
     return (
       <div className="space-y-5 animate-fade-in">
         <div className="flex justify-end">
@@ -271,38 +273,52 @@ function CalibrationTab() {
     );
   }
 
-  const auto = report.suggested_thresholds.auto;
-  const notify = report.suggested_thresholds.notify;
+  const auto = report?.suggested_thresholds.auto ?? 0;
+  const notify = report?.suggested_thresholds.notify ?? 0;
+  const sampleCount = dashboard?.sample_size ?? report?.samples ?? 0;
   return (
     <div className="space-y-5 animate-fade-in">
       <div className="flex justify-end">
         <DataSourceBadge state={source} />
       </div>
       <div className="grid grid-cols-1 md:grid-cols-4 gap-5">
-        <Stat label="校准样本" value={String(report.samples)} trend="resolved" />
+        <Stat label="校准样本" value={String(sampleCount)} trend="resolved" />
         <Stat
-          label="命中率"
-          value={`${report.samples > 0 ? ((report.hits / report.samples) * 100).toFixed(1) : "0.0"}%`}
-          trend={`${report.hits}/${report.samples}`}
+          label="校准桶"
+          value={String(dashboard?.total_buckets ?? 0)}
+          trend={`${dashboard?.mature_buckets ?? 0} ${text("mature")}`}
         />
         <Stat
-          label="建议 auto"
-          value={auto.toFixed(2)}
-          trend={`${text("current")} ${report.current_thresholds.auto.toFixed(2)}`}
-          trendNegative={report.review_required}
+          label="先验主导"
+          value={String(dashboard?.prior_dominant_buckets ?? 0)}
+          trend={`${dashboard?.decay_buckets ?? 0} ${text("decay")}`}
+          trendNegative={(dashboard?.prior_dominant_buckets ?? 0) > 0 || (dashboard?.decay_buckets ?? 0) > 0}
         />
         <Stat
-          label="建议 notify"
-          value={notify.toFixed(2)}
-          trend={`${text("current")} ${report.current_thresholds.notify.toFixed(2)}`}
-          trendNegative={report.review_required}
+          label="平均权重"
+          value={formatNullableNumber(dashboard?.avg_effective_weight)}
+          trend={`${text("suggested")} ${notify.toFixed(2)} / ${auto.toFixed(2)}`}
+          trendNegative={report?.review_required}
         />
       </div>
 
+      <CalibrationWeightsPanel dashboard={dashboard} />
+
+      {dashboard?.notes && dashboard.notes.length > 0 && (
+        <Card variant="flat" className="border-l-[3px] border-l-brand-orange">
+          <div className="space-y-1 text-sm text-text-secondary">
+            {dashboard.notes.map((note) => (
+              <div key={note}>{text(note)}</div>
+            ))}
+          </div>
+        </Card>
+      )}
+
+      {report && (
       <Card variant="flat">
         <CardHeader>
           <div>
-            <CardTitle>校准仪表盘</CardTitle>
+            <CardTitle>阈值可靠性分箱</CardTitle>
             <CardSubtitle>按置信度分箱展示真实样本、命中率和校准偏差</CardSubtitle>
           </div>
         </CardHeader>
@@ -351,7 +367,9 @@ function CalibrationTab() {
           </tbody>
         </table>
       </Card>
+      )}
 
+      {report && (
       <ChartFrame
         title="Reliability Diagram"
         subtitle={`ECE ${formatNullablePercent(report.expected_calibration_error)} -> ${formatNullablePercent(report.projected_calibration_error)} · Δ ${formatNullablePercent(report.calibration_error_improvement)}`}
@@ -365,8 +383,133 @@ function CalibrationTab() {
       >
         <ReliabilityDiagram report={report} />
       </ChartFrame>
+      )}
     </div>
   );
+}
+
+function CalibrationWeightsPanel({ dashboard }: { dashboard: SignalCalibrationDashboard | null }) {
+  const { text } = useI18n();
+  const rows = dashboard?.rows ?? [];
+
+  return (
+    <Card variant="flat">
+      <CardHeader>
+        <div>
+          <CardTitle>信号权重校准</CardTitle>
+          <CardSubtitle>按 signal / category / regime 展示当前权重、样本量、置信带和先验主导状态</CardSubtitle>
+        </div>
+        {dashboard && (
+          <Badge variant={dashboard.decay_buckets > 0 ? "orange" : "emerald"}>
+            {dashboard.decay_buckets > 0 ? "review" : "stable"}
+          </Badge>
+        )}
+      </CardHeader>
+      {rows.length === 0 ? (
+        <EmptyChartState label="暂无信号权重校准样本" />
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[960px] text-sm">
+            <thead>
+              <tr className="border-b border-border-subtle text-caption text-text-muted">
+                <th className="px-3 py-2 text-left font-medium">{text("校准桶")}</th>
+                <th className="px-3 py-2 text-right font-medium">{text("样本量")}</th>
+                <th className="px-3 py-2 text-right font-medium">{text("命中率")}</th>
+                <th className="px-3 py-2 text-left font-medium">{text("当前权重")}</th>
+                <th className="px-3 py-2 text-left font-medium">{text("90% 置信带")}</th>
+                <th className="px-3 py-2 text-left font-medium">{text("状态")}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => (
+                <tr key={row.target_key} className="border-b border-border-subtle hover:bg-bg-surface-raised">
+                  <td className="px-3 py-3">
+                    <div className="font-medium text-text-primary">{row.signal_type}</div>
+                    <div className="mt-1 font-mono text-caption text-text-muted">
+                      {row.category} · {text(regimeLabel(row.regime))}
+                    </div>
+                  </td>
+                  <td className="px-3 py-3 text-right font-mono tabular-nums">
+                    <span className="text-text-primary">{row.sample_size}</span>
+                    <span className="ml-2 text-text-muted">{row.hit_count}/{row.miss_count}</span>
+                  </td>
+                  <td className="px-3 py-3 text-right font-mono tabular-nums">
+                    {formatNullablePercent(row.rolling_hit_rate)}
+                  </td>
+                  <td className="px-3 py-3">
+                    <WeightBar row={row} />
+                  </td>
+                  <td className="px-3 py-3">
+                    <CalibrationInterval row={row} />
+                  </td>
+                  <td className="px-3 py-3">
+                    <div className="flex flex-wrap gap-2">
+                      <Badge variant={row.source === "active_calibration" ? "emerald" : "blue"}>
+                        {row.source === "active_calibration" ? "active weight" : "candidate"}
+                      </Badge>
+                      {row.prior_dominant && <Badge variant="orange">prior dominant</Badge>}
+                      {row.decay_detected && <Badge variant="down">decay</Badge>}
+                      {!row.prior_dominant && !row.decay_detected && <Badge variant="emerald">{text("mature")}</Badge>}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function WeightBar({ row }: { row: SignalCalibrationDashboardRow }) {
+  const { text } = useI18n();
+  const width = Math.min(100, (row.effective_weight / 2) * 100);
+  const tone = row.effective_weight >= row.base_weight ? "bg-data-up" : "bg-data-down";
+  return (
+    <div className="min-w-[150px]">
+      <div className="mb-1 flex items-center justify-between font-mono text-xs tabular-nums">
+        <span className="text-text-primary">{row.effective_weight.toFixed(2)}</span>
+        <span className="text-text-muted">{text("基准")} {row.base_weight.toFixed(2)}</span>
+      </div>
+      <div className="h-1.5 rounded-full bg-bg-surface-raised">
+        <div className={cn("h-full rounded-full", tone)} style={{ width: `${width}%` }} />
+      </div>
+    </div>
+  );
+}
+
+function CalibrationInterval({ row }: { row: SignalCalibrationDashboardRow }) {
+  const left = row.confidence_low * 100;
+  const width = Math.max(2, (row.confidence_high - row.confidence_low) * 100);
+  const mean = row.posterior_mean * 100;
+  return (
+    <div className="min-w-[190px]">
+      <div className="relative h-2 rounded-full bg-bg-surface-raised">
+        <div
+          className="absolute top-0 h-full rounded-full bg-brand-cyan/70"
+          style={{ left: `${left}%`, width: `${Math.min(100 - left, width)}%` }}
+        />
+        <div
+          className="absolute top-1/2 h-3 w-0.5 -translate-y-1/2 rounded-full bg-text-primary"
+          style={{ left: `${mean}%` }}
+        />
+      </div>
+      <div className="mt-1 flex items-center justify-between font-mono text-caption text-text-muted">
+        <span>{formatNullablePercent(row.confidence_low)}</span>
+        <span className="text-text-secondary">{formatNullablePercent(row.posterior_mean)}</span>
+        <span>{formatNullablePercent(row.confidence_high)}</span>
+      </div>
+    </div>
+  );
+}
+
+function regimeLabel(regime: string): string {
+  if (regime === "trend_up_low_vol") return "趋势上行 · 低波动";
+  if (regime === "trend_down_low_vol") return "趋势下行 · 低波动";
+  if (regime === "range_high_vol") return "震荡 · 高波动";
+  if (regime === "range_low_vol") return "震荡 · 低波动";
+  return regime;
 }
 
 function CalibrationBinBadge({ samples, gap }: { samples: number; gap: number | null }) {
