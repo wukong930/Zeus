@@ -290,7 +290,7 @@ zeus/
     - [x] ADX + ATR 百分位规则法（确定性主方法）
     - [x] 分类：trend_up_low_vol / trend_down_low_vol / range_high_vol / range_low_vol
     - [x] 每日 ETL 后按板块计算 regime 并写入 `regime_state` 表
-  - [ ] HMM baseline（hmmlearn）作为对比，不进主链路
+  - [x] HMM baseline 对照实验（轻量 Gaussian-HMM / Viterbi；不进主链路，不写 `regime_state`）
 - [x] **影子追踪器**（避免幸存者偏差，Zeus 核心机制）
   - [x] `services/calibration/shadow_tracker.py`
     - [x] 每个信号触发瞬间启动影子追踪，不依赖用户行为
@@ -1045,7 +1045,7 @@ Causa 的 `event_driven` 评估器实际上是纯技术面（gap + volume），*
 
 ### P3：模型治理与监控
 
-- [ ] Regime HMM baseline 对比实验，不进入主链路。
+- [x] Phase 10.32 / Regime HMM Baseline P3.1：新增 HMM baseline 对比实验，不进入主链路。
 - [ ] 校准仪表盘：样本量、当前权重、置信带、先验主导提示。
 - [ ] Concept Drift 前端红 / 黄 / 绿指示器与通知链路；继续保持只告警、不自动改阈值。
 - [ ] 对抗引擎 warmup 手动覆盖开关。

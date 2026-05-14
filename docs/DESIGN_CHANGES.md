@@ -555,3 +555,9 @@ threshold_modifier、propagation_activator、risk_recalc、数据腐烂防护
 - 新增 `backend/app/services/event_intelligence/ingress.py`，把新闻、天气异常行业数据和高置信行情异常信号统一转成 Event Intelligence 候选对象。
 - 新增 `event-intelligence-sync` 调度任务，每 2 小时补齐事件智能入口；天气和行情候选通过 `source_type + source_id` 幂等创建，避免重复图谱节点。
 - 所有候选仍只进入 shadow/review 和质量门，`production_effect=none`，不直接改变生产预警或阈值。
+
+# 2026-05-14 — Phase 10.32 Regime HMM baseline
+
+- 新增 `backend/app/services/calibration/regime_hmm_baseline.py`，提供轻量 Gaussian-HMM / Viterbi regime 对比实验，用收益、日内波幅和成交量变化识别隐状态。
+- baseline 报告会输出最新 HMM regime、规则法 regime、滚动一致率、状态摘要和尾部观测样本，便于后续治理仪表盘展示。
+- 该能力只作为研究对照，不注册 scheduler、不写 `regime_state`、不影响生产信号校准阈值。
