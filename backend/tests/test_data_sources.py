@@ -36,6 +36,11 @@ from app.services.data_sources.noaa_cdo import (
 )
 from app.services.data_sources.open_meteo import WeatherLocation, rows_from_weather_payload
 from app.services.data_sources.registry import data_source_statuses
+from app.services.data_sources.rubber_spot import (
+    collect_rubber_spot_indicators,
+    parse_rubber_spot_symbols,
+    rows_from_rubber_spot_frame,
+)
 from app.services.data_sources.types import DataSourceStatus
 from app.services.data_sources.tushare_futures import (
     collect_tushare_market_data,
@@ -101,6 +106,122 @@ async def test_akshare_collector_records_field_drift_error() -> None:
     assert result.rows == []
     assert result.errors[0]["source"] == "akshare:RB0"
     assert "close" in result.errors[0]["error"]
+
+
+def test_parse_rubber_spot_symbols_normalizes_and_bounds_settings() -> None:
+    assert parse_rubber_spot_symbols(" ru, nr, ru ,, br ") == ("RU", "NR", "BR")
+    assert parse_rubber_spot_symbols("") == ("RU", "NR", "BR")
+
+    with pytest.raises(ValueError, match="at most 20"):
+        parse_rubber_spot_symbols(",".join(f"R{i}" for i in range(21)))
+
+    with pytest.raises(ValueError, match="at most 12"):
+        parse_rubber_spot_symbols("R" * 13)
+
+
+def test_rubber_spot_rows_from_akshare_payload() -> None:
+    frame = pd.DataFrame(
+        [
+            {
+                "date": "20260513",
+                "symbol": "RU",
+                "spot_price": 17958.33,
+                "near_basis": 246.67,
+                "dom_basis": 366.67,
+                "near_basis_rate": 0.013736,
+                "dom_basis_rate": 0.020418,
+            },
+            {
+                "date": "20260513",
+                "symbol": "CU",
+                "spot_price": 81000,
+            },
+        ]
+    )
+
+    rows = rows_from_rubber_spot_frame(frame, symbols=("RU", "NR", "BR"))
+
+    assert len(rows) == 5
+    by_type = {row.data_type: row for row in rows}
+    assert by_type["rubber_spot_price_cny_t"].value == 17958.33
+    assert by_type["rubber_dom_basis_cny_t"].unit == "CNY/t"
+    assert by_type["rubber_dom_basis_rate"].unit == "ratio"
+    assert rows[0].source == "akshare_100ppi:RU"
+    assert rows[0].timestamp.date().isoformat() == "2026-05-13"
+
+
+def test_rubber_spot_rows_support_legacy_100ppi_columns() -> None:
+    frame = pd.DataFrame(
+        [
+            {
+                "date": "2026-05-13",
+                "var": "BR",
+                "sp": 15780.0,
+                "临近交割合约相对现货的基差": -510.0,
+                "主力合约相对现货的基差": 250.0,
+                "临近交割合约相对现货的基差率": -0.032319,
+                "主力合约相对现货的基差率": 0.015843,
+            }
+        ]
+    )
+
+    rows = rows_from_rubber_spot_frame(frame, symbols=("RU", "NR", "BR"))
+
+    assert len(rows) == 5
+    assert {row.symbol for row in rows} == {"BR"}
+    assert {row.data_type for row in rows} >= {
+        "rubber_spot_price_cny_t",
+        "rubber_near_basis_cny_t",
+        "rubber_dom_basis_rate",
+    }
+
+
+async def test_rubber_spot_collector_fetches_bounded_history_window() -> None:
+    calls: list[tuple[str, str, list[str]]] = []
+
+    def fetcher(start_day: str, end_day: str, vars_list: list[str]) -> pd.DataFrame:
+        calls.append((start_day, end_day, vars_list))
+        return pd.DataFrame(
+            [
+                {
+                    "date": "20260513",
+                    "symbol": "RU",
+                    "spot_price": 17958.33,
+                }
+            ]
+        )
+
+    result = await collect_rubber_spot_indicators(
+        symbols=("ru", "RU"),
+        history_days=99,
+        today=pd.Timestamp("2026-05-14").date(),
+        fetcher=fetcher,
+    )
+
+    assert result.errors == []
+    assert len(result.rows) == 1
+    assert calls == [("20260415", "20260514", ["RU"])]
+
+
+async def test_rubber_spot_collector_reports_fetch_errors() -> None:
+    def fetcher(_start_day: str, _end_day: str, _vars_list: list[str]) -> pd.DataFrame:
+        raise RuntimeError("100ppi unavailable")
+
+    result = await collect_rubber_spot_indicators(fetcher=fetcher)
+
+    assert result.rows == []
+    assert result.errors == [{"source": "rubber_spot", "error": "100ppi unavailable"}]
+
+
+async def test_rubber_spot_collector_reports_field_drift() -> None:
+    def fetcher(_start_day: str, _end_day: str, _vars_list: list[str]) -> pd.DataFrame:
+        return pd.DataFrame([{"date": "20260513", "symbol": "RU", "price": 17958.33}])
+
+    result = await collect_rubber_spot_indicators(fetcher=fetcher)
+
+    assert result.rows == []
+    assert result.errors[0]["source"] == "rubber_spot"
+    assert "spot_price" in result.errors[0]["error"]
 
 
 def test_open_meteo_payload_creates_weather_industry_rows() -> None:
@@ -829,6 +950,8 @@ def test_data_source_registry_marks_keyed_sources() -> None:
     assert statuses["open_meteo"].free_tier == "free_no_key"
     assert statuses["nasa_power"].free_tier == "free_no_key"
     assert statuses["nasa_power_baseline"].free_tier == "free_no_key"
+    assert statuses["rubber_spot"].free_tier == "free_no_key"
+    assert statuses["rubber_spot"].status == "disabled"
     assert statuses["noaa_cdo"].status == "disabled"
     assert statuses["accuweather"].status == "disabled"
 

@@ -20,6 +20,10 @@ from app.services.data_sources.fred import collect_fred_indicators
 from app.services.data_sources.nasa_power import collect_nasa_power_weather
 from app.services.data_sources.noaa_cdo import collect_noaa_cdo_daily_summaries
 from app.services.data_sources.open_meteo import collect_open_meteo_weather
+from app.services.data_sources.rubber_spot import (
+    collect_rubber_spot_indicators,
+    parse_rubber_spot_symbols,
+)
 from app.services.data_sources.tushare_futures import (
     DEFAULT_TUSHARE_EXCHANGES,
     DEFAULT_TUSHARE_SYMBOLS,
@@ -203,6 +207,18 @@ async def run_free_data_ingest(
         else:
             source_counts["tushare"] = 0
             errors.append({"source": "tushare", "error": "enabled source missing TUSHARE_TOKEN"})
+
+    if current.data_source_rubber_spot_enabled:
+        try:
+            rubber_spot_result = await collect_rubber_spot_indicators(
+                symbols=parse_rubber_spot_symbols(current.data_source_rubber_spot_symbols),
+                history_days=current.data_source_rubber_spot_history_days,
+            )
+            industry_payloads.extend(rubber_spot_result.rows)
+            errors.extend(sanitize_source_errors(rubber_spot_result.errors))
+            source_counts["rubber_spot"] = len(rubber_spot_result.rows)
+        except Exception as exc:
+            errors.append({"source": "rubber_spot", "error": safe_error_message(exc)})
 
     if market_payloads:
         await append_market_data(session, market_payloads)

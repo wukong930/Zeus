@@ -531,3 +531,9 @@ threshold_modifier、propagation_activator、risk_recalc、数据腐烂防护
 - 新增 `scripts/canvas_regression_baseline.mjs`，通过 Chrome DevTools Protocol 自动打开 World Risk Map / Causal Web，生成轻量模式、增强模式、筛选态、区域弹窗和因果网络截图。
 - 基准结果写入 `docs/design-references/regression/canvas-performance-baseline.json`，同时记录 DOM 节点、JS heap、FPS、canvas / WebGL canvas 数量和截图路径。
 - 2026-05-14 1440x900 严格基线全部通过预算：增强模式 81 FPS、964 DOM 节点、24.9 MB JS heap，Causal Web 121 FPS、895 DOM 节点、19.2 MB JS heap。
+
+# 2026-05-14 — Phase 10.28 橡胶现货 / 基差采集
+
+- 新增 `backend/app/services/data_sources/rubber_spot.py`，通过 AKShare `futures_spot_price_daily` 采集 100ppi 大宗商品现货与期现基差数据。
+- 新数据源 `rubber_spot` 默认关闭、无需 key，可配置 `DATA_SOURCE_RUBBER_SPOT_SYMBOLS` 和 `DATA_SOURCE_RUBBER_SPOT_HISTORY_DAYS`，采集结果写入 `industry_data`。
+- 输出指标覆盖 `rubber_spot_price_cny_t`、`rubber_near_basis_cny_t`、`rubber_dom_basis_cny_t`、`rubber_near_basis_rate` 和 `rubber_dom_basis_rate`，为后续青岛 / 海南 / 云南分地区源映射和事件智能入口打底。

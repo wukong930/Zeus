@@ -70,6 +70,9 @@ class Settings(BaseSettings):
     data_source_tushare_symbols: str = (
         "RB,HC,I,J,JM,RU,NR,BR,SC,TA,MA,PP,CU,AL,ZN,NI,M,Y,P,AU,AG"
     )
+    data_source_rubber_spot_enabled: bool = False
+    data_source_rubber_spot_symbols: str = "RU,NR,BR"
+    data_source_rubber_spot_history_days: int = Field(default=7, ge=1, le=30)
 
     model_config = SettingsConfigDict(
         env_file=".env",

@@ -276,6 +276,7 @@ class ZeusEvent:
 - 复用 Causa 的 tushare/akshare 数据采集逻辑（已有 Python 实现）
 - APScheduler 触发采集任务 → 发布 `market.update` 事件
 - 产业数据（库存、现货、基差）独立调度周期
+- 橡胶现货 / 期现基差先通过 AKShare 100ppi 免费源进入 `industry_data`，输出 RU/NR/BR 的现货价、近月基差、主力基差和基差率；青岛保税区、海南、云南分地区报价后续映射到同一橡胶指标通道。
 - 数据质量检查：缺失率 > 20% 时标记降级，不触发下游信号
 
 **Point-in-time 数据完整性**（Causa 用 `onConflictDoUpdate` 覆盖更新，Zeus 重写）：

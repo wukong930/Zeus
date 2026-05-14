@@ -123,6 +123,17 @@ def data_source_statuses(settings: Settings | None = None) -> list[DataSourceSta
             status=_keyed_status(current.data_source_tushare_enabled, current.tushare_token),
             note="Chinese futures backup feed. Token and sufficient points are required.",
         ),
+        DataSourceStatus(
+            id="rubber_spot",
+            name="AKShare 100ppi rubber spot/basis",
+            category="industry_data",
+            enabled=current.data_source_rubber_spot_enabled,
+            configured=current.data_source_rubber_spot_enabled and akshare_available,
+            requires_key=False,
+            free_tier="free_no_key",
+            status=_status(current.data_source_rubber_spot_enabled, akshare_available),
+            note="Natural-rubber spot price and basis for RU/NR/BR. No key required; availability depends on AKShare and 100ppi.",
+        ),
     ]
 
 
