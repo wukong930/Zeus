@@ -153,7 +153,7 @@ zeus/
 
 ### 第 1 周：数据层 + 核心 API（含 PIT 改造）
 
-- [ ] **SQLAlchemy 模型**（移植 Causa 的 18 张表 + PIT/合约改造）
+- [x] **SQLAlchemy 模型**（移植 Causa 的 18 张表 + PIT/合约改造）
   - [x] `models/market_data.py` — OHLCV + settle + OI + **vintage_at + contract_id**
   - [x] `models/contract_metadata.py` — **合约元数据表（新）**：symbol, contract_month, expiry_date, is_main, main_until, volume, open_interest
   - [x] `models/alert.py` — 预警（含 spread_info, trigger_chain）
@@ -168,16 +168,16 @@ zeus/
   - [x] `models/llm_config.py` — LLM 配置（加密存储字段占位）
   - [x] 生成 Alembic 迁移：`20260503_0001_phase1_core_schema.py`
   - [x] 运行 `alembic upgrade head` 创建表（已在 backend 容器内连接 compose Postgres 验证）
-- [ ] **PIT 数据架构**（Causa 用覆盖更新，Zeus 重写为 append-only）
+- [x] **PIT 数据架构**（Causa 用覆盖更新，Zeus 重写为 append-only）
   - [x] ETL 写入策略改造：所有数据行附 `vintage_at`，修订型数据每次拉取生成新 vintage 行
   - [x] 创建数据库视图 `market_data_latest`、`industry_data_latest`（默认查询使用）
   - [x] 实现 PIT 查询函数：`get_market_data_pit(symbol, as_of)`, `get_industry_data_pit(symbol, as_of)`
   - [x] 所有下游模块约定：实时决策用 `_latest`，回测/校准用 PIT 函数
-- [ ] **合约元数据初始化**
+- [x] **合约元数据初始化**
   - [x] 主力合约切换规则：成交量 + 持仓量综合排名第一，连续 3 天领先则切换
   - [x] `services/contracts/main_contract_detector.py`：每日识别主力合约
   - [x] `services/contracts/continuous.py`：拼接 `continuous_main_adjusted`（带跳空调整）和 `continuous_main_raw`
-- [ ] **核心 API 路由**
+- [x] **核心 API 路由**
   - [x] `api/market_data.py` — 行情数据 CRUD + 查询（可选 as_of 参数）
   - [x] `api/contracts.py` — 合约元数据查询
   - [x] `api/alerts.py` — 预警列表/详情/SSE 流
@@ -222,7 +222,7 @@ zeus/
   - [x] 更新 `frontend/` 的 API proxy 指向 Python 后端
   - [ ] 验证所有页面数据正常加载（Alerts / Portfolio 已接真实 API，其他 mock 页面待逐步替换）
   - [x] 行情数据展示加上"vintage" 标签（Portfolio 持仓行展示 latest market data vintage）
-- [ ] **性能基线**
+- [x] **性能基线**
   - [x] 信号检测全流程（6 评估器并行）耗时基线测试
     - 2026-05-03 Docker backend：200 次迭代，mean 0.244ms，p95 0.278ms
   - [x] PIT 查询性能测试（带 `as_of` 参数 vs 默认 latest）
@@ -706,7 +706,7 @@ Causa 的 `event_driven` 评估器实际上是纯技术面（gap + volume），*
 - [x] **前端**
   - [x] 橡胶成本页面（同黑色系结构）
   - [x] 增加产区季节性提示
-- [ ] **信号集成**
+- [x] **信号集成**
   - [x] 橡胶利润率信号
   - [x] 产区供给信号（与 Phase 4.5 新闻事件管线联动：产区天气、出口政策）
   - [x] GDELT 公开新闻橡胶供给采集器：泰国/印尼/马来西亚/海南/云南 + 天气/出口/政策关键词
@@ -820,7 +820,7 @@ Causa 的 `event_driven` 评估器实际上是纯技术面（gap + volume），*
   - [x] 种子数据：从 Causa 数据 + 公开退市记录补全（Phase 8.5 核心品种 bootstrap，生产前继续扩充退市记录）
   - [x] 回测必须基于 PIT 品种宇宙
 
-- [ ] **验证**
+- [x] **验证**
   - [x] PIT 校准回放正确性：用人工构造的"已知未来"权重验证不会泄露
   - [x] Deflated Sharpe 拒绝过拟合策略：构造 100 个随机策略，验证多数被拒
   - [x] 滑点模型在主力 vs 次主力上有显著差异
@@ -911,7 +911,7 @@ Causa 的 `event_driven` 评估器实际上是纯技术面（gap + volume），*
   - [x] 手工标注 50 条 query → relevant_chunk_ids 对作为种子
   - [x] `services/vector_search/eval.py` — 月度跑 NDCG@10 / Recall@10
   - [x] Embedding 模型/参数变更走 Shadow Mode 对比
-- [ ] **验证**
+- [x] **验证**
   - [x] 同一信号事件被生产和 shadow 同时处理
   - [x] 30 天后能产出有效对比报告
   - [x] 置信度阈值校准在 reliability diagram 上明显改善
@@ -947,7 +947,7 @@ Causa 的 `event_driven` 评估器实际上是纯技术面（gap + volume），*
   - [x] 首版规则 resolver 输出 `event -> mechanism -> symbol/region` 影响链。
   - [x] LLM 负责语义抽取与假设生成，规则层负责边界约束和可解释字段校验。
   - [x] 同一因素可影响多个商品，输出多条 `event → mechanism → symbol/region` 链路。
-- [ ] **治理与安全**
+- [x] **治理与安全**
   - [x] 事件影响判断默认进入 Shadow / review，不直接改生产阈值。
   - [x] 高影响、单源、低置信度事件必须要求人工确认。
   - [x] 每条链路保留原始证据引用、反证、数据新鲜度和置信度。
@@ -958,7 +958,7 @@ Causa 的 `event_driven` 评估器实际上是纯技术面（gap + volume），*
     - [x] Phase 10.3.2 支持人工修改单条影响链，修改后事件与链路回到 `human_review`，审计记录标记 `production_effect=none` 并重新进入治理队列。
     - [x] Phase 10.3.3 Event Intelligence 页面展示治理时间线，确认、复核、语义增强、规则解析和影响链修改均可追溯。
     - [x] Phase 10.3.4 新增统一治理队列工作台，支持查看 `change_review_queue`、批准 / 驳回 / 转影子复核 / 标记已审查；通用队列只记录治理结论，事件智能队列项通过专用决策服务同步状态。
-- [ ] **前端联动**
+- [x] **前端联动**
   - [x] Phase 10.4 最小联动：Causal Web 可按 `symbol + region` 加载事件智能链路，并把 `event_intelligence_items -> event_impact_links` 显示为源事件到影响假设。
   - [x] Phase 10.4 最小联动：World Risk Map 聚合事件智能对象和影响链，区域运行态、证据、风险分和 Causal Web URL 使用同一 `event_id` 作用域。
   - [x] Phase 10.5 聚合去重：Causal Web / World Risk Map 对同源转写、媒体转载和标题前后缀做展示层去重，保留数据库原始审计记录。
@@ -1007,6 +1007,44 @@ Causa 的 `event_driven` 评估器实际上是纯技术面（gap + volume），*
 - [x] Phase 10.23：World Risk Map 缩放 / 拖拽时瓦片刷新不会让旧请求覆盖新视图，同筛选同视口优先复用缓存。
 - [x] Phase 10.24：World Risk Map 增强模式能显示当前瓦片预算和缓存命中状态，不需要打开开发工具也能判断渲染负载。
 - [x] Phase 10.25：World Risk Map 在标准 / 密集瓦片负载下自动限制增强层渲染数量，并在顶部芯片显示“已降载”。
+
+---
+
+## 当前剩余工作队列（2026-05-14 复核）
+
+本节用于把早期计划中的陈旧未勾选项和真实剩余工作分开；后续阶段优先从这里推进。
+
+### P0：文档与部署收口
+
+- [ ] 全量核对 Phase 1-9 早期未勾选项，区分“已由后续阶段覆盖”与“真实未完成”。
+- [ ] `docker compose up` 全服务健康复测，并记录端口冲突、`.next` 缓存和容器重建排查步骤。
+- [ ] 前端所有已实现页面真实数据加载复测，标记仍依赖 mock 或 fallback 的页面。
+
+### P1：World Risk Map 生产级渲染收口
+
+- [ ] Phase B.2 总项收口：MapLibre/deck.gl 大数据量瓦片热力、天气栅格和交互性能基准。
+- [ ] 缩放 / 拖拽下的标签避让、弹窗层级、地图控制条拥挤度和增强模式截图回归。
+- [ ] 固化 Causal Web / World Risk Map 大画布性能预算和浏览器验证流程。
+
+### P2：数据源与采集
+
+- [ ] 橡胶现货价格：青岛保税区、海南天胶、云南天胶。
+- [ ] 泰国、印尼、马来西亚橡胶出口价公开数据或 LLM 文本抽取。
+- [ ] 运费 / 航运公开指数接入，例如 CCFI、Drewry 等可用公开源。
+- [ ] 天气 baseline、当前天气、新闻、行情异常进入事件智能入口的低频调度稳定化。
+
+### P3：模型治理与监控
+
+- [ ] Regime HMM baseline 对比实验，不进入主链路。
+- [ ] 校准仪表盘：样本量、当前权重、置信带、先验主导提示。
+- [ ] Concept Drift 前端红 / 黄 / 绿指示器与通知链路；继续保持只告警、不自动改阈值。
+- [ ] 对抗引擎 warmup 手动覆盖开关。
+
+### P4：系统质量续审
+
+- [ ] 后端慢查询、索引、分页和缓存复查。
+- [ ] 调度任务真实 handler 覆盖率复查，避免 enabled 但实际 noop。
+- [ ] 全量回归测试、浏览器验证和部署 smoke 流程固化。
 
 ---
 
