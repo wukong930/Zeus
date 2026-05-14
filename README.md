@@ -45,6 +45,14 @@ docker compose up --build
 # Postgres host port: 55432
 ```
 
+部署 smoke：
+
+```bash
+scripts/local_smoke.sh --start
+```
+
+`scripts/local_smoke.sh` 会检查 Compose 服务健康、后端 `/api/health`、前端首页和 World Risk Map 路由。端口冲突、`.next` 缓存和容器重建排查见 [`docs/LOCAL_DEPLOYMENT.md`](docs/LOCAL_DEPLOYMENT.md)。
+
 后端测试容器（不会把 dev 依赖装进生产 backend 镜像）：
 
 ```bash

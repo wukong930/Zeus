@@ -1016,8 +1016,10 @@ Causa 的 `event_driven` 评估器实际上是纯技术面（gap + volume），*
 
 ### P0：文档与部署收口
 
-- [ ] 全量核对 Phase 1-9 早期未勾选项，区分“已由后续阶段覆盖”与“真实未完成”。
-- [ ] `docker compose up` 全服务健康复测，并记录端口冲突、`.next` 缓存和容器重建排查步骤。
+- [x] 全量核对 Phase 1-9 早期未勾选项，区分“已由后续阶段覆盖”与“真实未完成”。
+- [x] `docker compose up` 全服务健康复测，并记录端口冲突、`.next` 缓存和容器重建排查步骤。
+  - [x] Phase 10.26 本地部署 smoke：新增 `scripts/local_smoke.sh`，覆盖 compose health、后端 health、前端首页和 World Risk Map 路由。
+  - [x] Phase 10.26 本地部署 runbook：新增 `docs/LOCAL_DEPLOYMENT.md`，记录端口冲突、`.next` 缓存、后端镜像重建和数据库状态排查。
 - [ ] 前端所有已实现页面真实数据加载复测，标记仍依赖 mock 或 fallback 的页面。
 
 ### P1：World Risk Map 生产级渲染收口

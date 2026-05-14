@@ -501,3 +501,9 @@ threshold_modifier、propagation_activator、risk_recalc、数据腐烂防护
 - 收口已完成但父项未勾选的 Phase 1 数据架构 / 核心 API、Phase 7b 信号集成、Phase 8.5 / 9 验证、Phase 10 治理与前端联动、World Risk Map Phase D/E。
 - 新增“当前剩余工作队列”，把真实未完成工作重新归并为部署收口、地图生产级渲染、数据源采集、模型治理和系统质量续审。
 - 保留 World Risk Map Phase B.2 总项未完成状态，因为 MapLibre/deck.gl 大数据量生产级渲染仍需后续基准和回归。
+
+# 2026-05-14 — Phase 10.26 本地部署 Smoke
+
+- 新增 `scripts/local_smoke.sh`，一键验证 Postgres、Redis、Backend、Frontend compose 状态和核心 HTTP 入口。
+- 新增 `docs/LOCAL_DEPLOYMENT.md`，沉淀端口冲突、`.next` 缓存、后端镜像重建和本地数据 reset 的排查步骤。
+- README 补充部署 smoke 入口，后续部署健康复测统一使用该脚本。
