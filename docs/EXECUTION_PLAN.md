@@ -1026,11 +1026,11 @@ Causa 的 `event_driven` 评估器实际上是纯技术面（gap + volume），*
 
 ### P1：World Risk Map 生产级渲染收口
 
-- [ ] Phase B.2 总项收口：MapLibre/deck.gl 大数据量瓦片热力、天气栅格和交互性能基准。
+- [x] Phase B.2 总项收口：MapLibre/deck.gl 大数据量瓦片热力、天气栅格和交互性能基准。
 - [x] Phase B.2.14 标签避让与缩放密度：地图标签改为固定屏幕尺寸，按负载预算、缩放倍率和区域优先级做碰撞避让。
 - [x] Phase B.2.15 控制条密度与浮层层级：筛选默认折叠为浮动面板，地图详情、错误遮罩、索引和缩放控件使用明确层级。
 - [x] Phase B.2.16 大画布浏览器验证流程：新增 `docs/CANVAS_BROWSER_VERIFICATION.md`，固化 Causal Web / World Risk Map 回归检查点。
-- [ ] 增强模式截图基线留档和 MapLibre/deck.gl 性能基准。
+- [x] Phase B.2.17 增强模式截图基线留档和 MapLibre/deck.gl 性能基准：新增 `scripts/canvas_regression_baseline.mjs`，生成 5 个大画布截图和 DOM / heap / FPS 预算结果。
 
 ### P2：数据源与采集
 

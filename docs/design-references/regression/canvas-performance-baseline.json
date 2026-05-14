@@ -1,0 +1,146 @@
+{
+  "baseUrl": "http://localhost:3000",
+  "generatedAt": "2026-05-14T11:43:02.097Z",
+  "strict": true,
+  "thresholds": {
+    "maxDomNodes": 6500,
+    "maxJsHeapMb": 180,
+    "minFps": 24
+  },
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  },
+  "scenarios": [
+    {
+      "checks": {
+        "domNodesWithinBudget": true,
+        "fpsWithinBudget": true,
+        "jsHeapWithinBudget": true
+      },
+      "name": "world-map-light-desktop",
+      "ok": true,
+      "screenshot": "/Users/ninoo/Zeus/docs/design-references/regression/world-map-light-desktop.png",
+      "stats": {
+        "canvases": 0,
+        "causalNodes": 0,
+        "domNodes": 923,
+        "fps": 78,
+        "jsHeapMb": 16.5,
+        "layoutCount": 205,
+        "mapLabels": 5,
+        "mapLibreReady": false,
+        "recalcStyleCount": 736,
+        "svgNodes": 44,
+        "taskDurationMs": 575,
+        "webglCanvases": 0
+      },
+      "url": "http://localhost:3000/world-map"
+    },
+    {
+      "checks": {
+        "domNodesWithinBudget": true,
+        "fpsWithinBudget": true,
+        "jsHeapWithinBudget": true
+      },
+      "name": "world-map-enhanced-desktop",
+      "ok": true,
+      "screenshot": "/Users/ninoo/Zeus/docs/design-references/regression/world-map-enhanced-desktop.png",
+      "stats": {
+        "canvases": 2,
+        "causalNodes": 0,
+        "domNodes": 964,
+        "fps": 81,
+        "jsHeapMb": 24.9,
+        "layoutCount": 247,
+        "mapLabels": 5,
+        "mapLibreReady": true,
+        "recalcStyleCount": 1344,
+        "svgNodes": 45,
+        "taskDurationMs": 729,
+        "webglCanvases": 1
+      },
+      "url": "http://localhost:3000/world-map"
+    },
+    {
+      "checks": {
+        "domNodesWithinBudget": true,
+        "fpsWithinBudget": true,
+        "jsHeapWithinBudget": true
+      },
+      "name": "world-map-filter-open",
+      "ok": true,
+      "screenshot": "/Users/ninoo/Zeus/docs/design-references/regression/world-map-filter-open.png",
+      "stats": {
+        "canvases": 0,
+        "causalNodes": 0,
+        "domNodes": 978,
+        "fps": 78,
+        "jsHeapMb": 20,
+        "layoutCount": 235,
+        "mapLabels": 5,
+        "mapLibreReady": false,
+        "recalcStyleCount": 1247,
+        "svgNodes": 46,
+        "taskDurationMs": 612,
+        "webglCanvases": 0
+      },
+      "url": "http://localhost:3000/world-map"
+    },
+    {
+      "checks": {
+        "domNodesWithinBudget": true,
+        "fpsWithinBudget": true,
+        "jsHeapWithinBudget": true
+      },
+      "name": "world-map-region-modal",
+      "ok": true,
+      "screenshot": "/Users/ninoo/Zeus/docs/design-references/regression/world-map-region-modal.png",
+      "stats": {
+        "canvases": 0,
+        "causalNodes": 0,
+        "domNodes": 1288,
+        "fps": 68,
+        "jsHeapMb": 28.7,
+        "layoutCount": 223,
+        "mapLabels": 4,
+        "mapLibreReady": false,
+        "recalcStyleCount": 968,
+        "svgNodes": 69,
+        "taskDurationMs": 582,
+        "webglCanvases": 0
+      },
+      "url": "http://localhost:3000/world-map"
+    },
+    {
+      "checks": {
+        "domNodesWithinBudget": true,
+        "fpsWithinBudget": true,
+        "jsHeapWithinBudget": true
+      },
+      "name": "causal-web-desktop",
+      "ok": true,
+      "screenshot": "/Users/ninoo/Zeus/docs/design-references/regression/causal-web-desktop.png",
+      "stats": {
+        "canvases": 0,
+        "causalNodes": 13,
+        "domNodes": 895,
+        "fps": 121,
+        "jsHeapMb": 19.2,
+        "layoutCount": 181,
+        "mapLabels": 0,
+        "mapLibreReady": false,
+        "recalcStyleCount": 240,
+        "svgNodes": 81,
+        "taskDurationMs": 678,
+        "webglCanvases": 0
+      },
+      "url": "http://localhost:3000/causal-web"
+    }
+  ],
+  "summary": {
+    "failedScenarios": [],
+    "ok": true,
+    "scenarioCount": 5
+  }
+}

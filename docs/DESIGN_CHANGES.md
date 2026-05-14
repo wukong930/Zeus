@@ -525,3 +525,9 @@ threshold_modifier、propagation_activator、risk_recalc、数据腐烂防护
 - 顶部事件源 / 品种 / 机制筛选改为默认折叠的浮动玻璃面板，常驻控制条只保留筛选摘要、渲染模式、图层、轮询和刷新。
 - 地图浮层层级重新整理：筛选弹层、区域详情、错误遮罩、高风险索引和缩放控件互不抢层，区域详情始终高于地图控制。
 - 新增 `docs/CANVAS_BROWSER_VERIFICATION.md`，记录 World Risk Map / Causal Web 大画布浏览器检查点和截图留档建议。
+
+# 2026-05-14 — World Risk Map Phase B.2.17 截图与性能基准
+
+- 新增 `scripts/canvas_regression_baseline.mjs`，通过 Chrome DevTools Protocol 自动打开 World Risk Map / Causal Web，生成轻量模式、增强模式、筛选态、区域弹窗和因果网络截图。
+- 基准结果写入 `docs/design-references/regression/canvas-performance-baseline.json`，同时记录 DOM 节点、JS heap、FPS、canvas / WebGL canvas 数量和截图路径。
+- 2026-05-14 1440x900 严格基线全部通过预算：增强模式 81 FPS、964 DOM 节点、24.9 MB JS heap，Causal Web 121 FPS、895 DOM 节点、19.2 MB JS heap。

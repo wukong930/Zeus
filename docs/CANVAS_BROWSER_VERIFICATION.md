@@ -51,3 +51,45 @@ scripts/local_smoke.sh
 - `causal-web-desktop.png`
 
 截图只作为人工视觉回归基线，不进入生产逻辑。
+
+## 5. 自动截图与性能基准
+
+可用脚本一次性生成截图和大画布性能指标：
+
+```bash
+node scripts/canvas_regression_baseline.mjs
+```
+
+常用参数：
+
+- `--base-url=http://localhost:3000`：指定前端地址。
+- `--out=docs/design-references/regression`：指定截图和 JSON 输出目录。
+- `--viewport=1440x900`：指定截图视口。
+- `--skip-screenshots`：只跑指标，不覆盖截图。
+- `--strict`：任一场景超过预算时返回非 0，适合发布前检查。
+
+脚本当前覆盖 5 个场景：
+
+- World Risk Map 轻量模式首屏。
+- World Risk Map 增强模式首屏，自动切换到 WebGL / deck.gl 预览层。
+- World Risk Map 筛选面板打开态。
+- World Risk Map 区域情报弹窗态。
+- Causal Web 独立页首屏。
+
+2026-05-14 基线，1440x900：
+
+| 场景 | FPS | DOM 节点 | JS Heap | 备注 |
+| --- | ---: | ---: | ---: | --- |
+| world-map-light-desktop | 78 | 923 | 16.5 MB | SVG 轻量模式 |
+| world-map-enhanced-desktop | 81 | 964 | 24.9 MB | 1 个 WebGL canvas |
+| world-map-filter-open | 78 | 978 | 20.0 MB | 筛选浮层打开 |
+| world-map-region-modal | 68 | 1288 | 28.7 MB | 区域档案弹窗打开 |
+| causal-web-desktop | 121 | 895 | 19.2 MB | 13 个因果节点 |
+
+预算阈值：
+
+- DOM 节点不超过 6500。
+- JS Heap 不超过 180 MB。
+- FPS 不低于 24。
+
+脚本会写入 `docs/design-references/regression/canvas-performance-baseline.json`，截图路径也会记录在 JSON 里。若页面不可访问，先运行 `scripts/local_smoke.sh --start` 拉起本地服务。
