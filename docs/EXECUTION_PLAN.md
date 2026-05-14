@@ -1028,8 +1028,9 @@ Causa 的 `event_driven` 评估器实际上是纯技术面（gap + volume），*
 
 - [ ] Phase B.2 总项收口：MapLibre/deck.gl 大数据量瓦片热力、天气栅格和交互性能基准。
 - [x] Phase B.2.14 标签避让与缩放密度：地图标签改为固定屏幕尺寸，按负载预算、缩放倍率和区域优先级做碰撞避让。
-- [ ] 弹窗层级、地图控制条拥挤度和增强模式截图回归。
-- [ ] 固化 Causal Web / World Risk Map 大画布性能预算和浏览器验证流程。
+- [x] Phase B.2.15 控制条密度与浮层层级：筛选默认折叠为浮动面板，地图详情、错误遮罩、索引和缩放控件使用明确层级。
+- [x] Phase B.2.16 大画布浏览器验证流程：新增 `docs/CANVAS_BROWSER_VERIFICATION.md`，固化 Causal Web / World Risk Map 回归检查点。
+- [ ] 增强模式截图基线留档和 MapLibre/deck.gl 性能基准。
 
 ### P2：数据源与采集
 

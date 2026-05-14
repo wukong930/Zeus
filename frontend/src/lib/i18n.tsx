@@ -55,6 +55,7 @@ const EN: Record<string, string> = {
   "品种": "Symbols",
   "机制": "Mechanism",
   "区域": "Region",
+  "筛选": "Filters",
   "合约同步中": "Syncing contracts",
   "合约接口暂不可用": "Contracts API is unavailable",
   "暂无合约数据": "No contract data",

@@ -293,6 +293,7 @@ export default function WorldMapPage() {
   const [riskDeltas, setRiskDeltas] = useState<Record<string, number>>({});
   const [visibleLayers, setVisibleLayers] = useState<VisibleMapLayers>(DEFAULT_MAP_LAYERS);
   const [rendererMode, setRendererMode] = useState<WorldMapRendererMode>("svg");
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [focusRequest, setFocusRequest] = useState<MapFocusRequest | null>(null);
   const [scopedEventId] = useState<string | null>(() => initialWorldMapEventParam());
   const [initialScopeReady, setInitialScopeReady] = useState(false);
@@ -492,8 +493,8 @@ export default function WorldMapPage() {
         variant="flat"
         className="relative h-[calc(100vh-88px)] min-h-[560px] flex-1 overflow-hidden p-0 md:min-h-[620px]"
       >
-        <div className="absolute left-3 right-3 top-3 z-20 grid gap-2 lg:left-4 lg:right-4 lg:top-4 xl:grid-cols-[minmax(280px,380px)_minmax(0,1fr)] xl:items-start">
-          <div className="rounded-sm border border-white/[0.12] bg-black/45 px-3 py-2 shadow-data-panel backdrop-blur-2xl">
+        <div className="absolute left-3 right-3 top-3 z-40 grid gap-2 lg:left-4 lg:right-4 lg:top-4 xl:grid-cols-[minmax(260px,360px)_minmax(0,1fr)] xl:items-start">
+          <div className="rounded-sm border border-white/[0.12] bg-black/38 px-3 py-2 shadow-data-panel backdrop-blur-2xl">
             <div className="flex items-start justify-between gap-3">
               <div>
                 <div className="flex items-center gap-2 text-text-primary">
@@ -509,19 +510,18 @@ export default function WorldMapPage() {
           </div>
 
           <div className="grid min-w-0 gap-2 xl:justify-items-end">
-            <div className="min-w-0 max-w-full rounded-sm border border-white/[0.12] bg-black/42 p-1 shadow-data-panel backdrop-blur-2xl xl:max-w-[620px]">
-              <WorldMapScopeFilterPanel
+            <div className="flex max-w-full flex-wrap items-center justify-end gap-1.5 rounded-sm border border-white/[0.12] bg-black/38 p-1.5 shadow-data-panel backdrop-blur-2xl">
+              <WorldMapFilterDock
                 filters={scopeFilters}
                 options={snapshot?.filters ?? null}
+                open={filtersOpen}
+                onToggle={() => setFiltersOpen((value) => !value)}
                 onChange={(nextFilters) => {
                   setScopeFilters(nextFilters);
                   setSelectedId(null);
                   setDetailOpen(false);
                 }}
               />
-            </div>
-
-            <div className="flex max-w-full flex-wrap items-center justify-end gap-1.5 rounded-sm border border-white/[0.12] bg-black/42 p-1.5 shadow-data-panel backdrop-blur-2xl">
               <span className="hidden h-7 items-center gap-1.5 rounded-xs border border-brand-emerald/20 bg-brand-emerald/10 px-2 text-caption text-brand-emerald-bright 2xl:inline-flex">
                 <Layers3 className="h-3 w-3" />
                 {text("活跃图层")} {snapshot?.layers.filter((layer) => layer.enabled).length ?? 0}
@@ -582,7 +582,7 @@ export default function WorldMapPage() {
         />
 
         {source === "fallback" && (
-          <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/65">
+          <div className="absolute inset-0 z-[70] flex items-center justify-center bg-black/65">
             <div className="rounded-sm border border-border-default bg-bg-surface px-5 py-4 text-sm text-text-secondary shadow-data-panel">
               {text("世界风险地图接口暂不可用")}
             </div>
@@ -1031,23 +1031,23 @@ function TileRuntimeBadge({ runtime }: { runtime: TileRuntimeMetrics | null }) {
       <DatabaseZap className="h-3 w-3 text-brand-cyan" />
       <span>{text("瓦片")}</span>
       <span className="font-mono text-text-primary">{runtime.totalCells}</span>
-      <span className="text-text-disabled">·</span>
-      <span className="font-mono text-brand-cyan">{text(runtime.resolution)}</span>
-      <span className="text-text-disabled">·</span>
-      <span className={cn("font-mono", tileBudgetTone(runtime.budget))}>
+      <span className="hidden text-text-disabled 2xl:inline">·</span>
+      <span className="hidden font-mono text-brand-cyan 2xl:inline">{text(runtime.resolution)}</span>
+      <span className="hidden text-text-disabled xl:inline">·</span>
+      <span className={cn("hidden font-mono xl:inline", tileBudgetTone(runtime.budget))}>
         {text(tileBudgetLabel(runtime.budget))}
       </span>
-      <span className="text-text-disabled">·</span>
-      <span className="font-mono text-text-muted">
+      <span className="hidden text-text-disabled 2xl:inline">·</span>
+      <span className="hidden font-mono text-text-muted 2xl:inline">
         {text("缓存")} {runtime.cacheEntries}
       </span>
-      <span className="text-text-disabled">·</span>
-      <span className="font-mono text-text-muted">
+      <span className="hidden text-text-disabled 2xl:inline">·</span>
+      <span className="hidden font-mono text-text-muted 2xl:inline">
         {text(tileRuntimeStatusLabel(runtime.status))}
       </span>
       {runtime.budget !== "light" && (
         <>
-          <span className="text-text-disabled">·</span>
+          <span className="hidden text-text-disabled xl:inline">·</span>
           <span className="font-mono text-brand-orange">{text("已降载")}</span>
         </>
       )}
@@ -1100,7 +1100,7 @@ function LiveUpdateBadge({
     <div className="inline-flex h-7 items-center gap-2 rounded-xs border border-brand-emerald/25 bg-brand-emerald/10 px-2 text-caption text-brand-emerald-bright backdrop-blur-xl">
       <span className={cn("h-1.5 w-1.5 rounded-full bg-brand-emerald-bright", autoRefresh && "animate-heartbeat")} />
       <span>{isRefreshing ? text("同步中") : autoRefresh ? text("轮询中") : text("手动刷新")}</span>
-      {lastUpdatedAt && <span className="font-mono text-text-muted">{formatUpdateTime(lastUpdatedAt)}</span>}
+      {lastUpdatedAt && <span className="hidden font-mono text-text-muted 2xl:inline">{formatUpdateTime(lastUpdatedAt)}</span>}
     </div>
   );
 }
@@ -1121,6 +1121,74 @@ function StatusPill({
         {label}
       </span>
       <span className="font-mono text-xs text-text-primary">{value}</span>
+    </div>
+  );
+}
+
+function WorldMapFilterDock({
+  filters,
+  onChange,
+  onToggle,
+  open,
+  options,
+}: {
+  filters: WorldMapScopeFilters;
+  onChange: (filters: WorldMapScopeFilters) => void;
+  onToggle: () => void;
+  open: boolean;
+  options: WorldMapSnapshot["filters"] | null;
+}) {
+  const { lang, text } = useI18n();
+  const summary = worldMapFilterSummary(filters, options, lang, text);
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        data-testid="world-map-filter-toggle"
+        aria-expanded={open}
+        onClick={onToggle}
+        className={cn(
+          "inline-flex h-7 max-w-[210px] items-center gap-1.5 rounded-xs border px-2 text-caption font-semibold transition-colors",
+          open
+            ? "border-brand-emerald/40 bg-brand-emerald/14 text-brand-emerald-bright"
+            : "border-white/[0.10] bg-black/28 text-text-secondary hover:border-brand-emerald/30 hover:text-text-primary"
+        )}
+        title={`${text("筛选")} · ${summary}`}
+      >
+        <ListChecks className="h-3.5 w-3.5 shrink-0" />
+        <span>{text("筛选")}</span>
+        <span className="min-w-0 truncate font-mono text-[10px] text-text-muted">{summary}</span>
+      </button>
+
+      {open && (
+        <div
+          data-testid="world-map-filter-popover"
+          className="absolute left-0 top-[calc(100%+8px)] z-50 w-[min(620px,calc(100vw-44px))] rounded-sm border border-white/[0.13] bg-black/62 p-2.5 shadow-data-panel backdrop-blur-2xl sm:left-auto sm:right-0 sm:w-[min(620px,calc(100vw-132px))]"
+        >
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <div>
+              <div className="flex items-center gap-2 text-sm font-semibold text-text-primary">
+                <ListChecks className="h-4 w-4 text-brand-cyan" />
+                {text("筛选")}
+              </div>
+              <div className="mt-0.5 max-w-[420px] truncate font-mono text-[10px] text-text-muted">
+                {summary}
+              </div>
+            </div>
+            <button
+              type="button"
+              className="flex h-7 w-7 items-center justify-center rounded-xs text-text-muted hover:bg-white/[0.06] hover:text-text-primary"
+              onClick={onToggle}
+              aria-label={text("关闭")}
+              title={text("关闭")}
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+          <WorldMapScopeFilterPanel filters={filters} options={options} onChange={onChange} />
+        </div>
+      )}
     </div>
   );
 }
@@ -1212,6 +1280,35 @@ function ScopeFilterRow({
   );
 }
 
+function worldMapFilterSummary(
+  filters: WorldMapScopeFilters,
+  options: WorldMapSnapshot["filters"] | null,
+  lang: "zh" | "en",
+  text: (source: string) => string
+): string {
+  const activeParts = [
+    filters.source !== "all"
+      ? worldMapFilterOptionLabel(filters.source, options?.sources ?? [], lang)
+      : null,
+    filters.symbol !== "all" ? filters.symbol : null,
+    filters.mechanism !== "all"
+      ? worldMapFilterOptionLabel(filters.mechanism, options?.mechanisms ?? [], lang)
+      : null,
+  ].filter(Boolean);
+
+  return activeParts.length > 0 ? activeParts.join(" / ") : text("全部");
+}
+
+function worldMapFilterOptionLabel(
+  value: ScopeFilterValue,
+  options: WorldMapFilterOption[],
+  lang: "zh" | "en"
+): string {
+  const option = options.find((item) => item.id === value);
+  if (!option) return value;
+  return lang === "zh" ? option.labelZh : option.labelEn;
+}
+
 function LayerLegend({ layers }: { layers: WorldMapLayer[] }) {
   const { lang, text } = useI18n();
   return (
@@ -1267,7 +1364,7 @@ function MapVisualLayerToggle({
             title={text(label)}
           >
             <Icon className="h-3 w-3" />
-            {text(label)}
+            <span className="hidden 2xl:inline">{text(label)}</span>
           </button>
         );
       })}
@@ -1307,7 +1404,7 @@ function RendererModeToggle({
             title={text(option.detail)}
           >
             <Sparkles className="h-3 w-3" />
-            {text(option.label)}
+            <span className="hidden sm:inline">{text(option.label)}</span>
           </button>
         );
       })}
@@ -1328,7 +1425,7 @@ function RiskRegionIndex({
   return (
     <div
       data-testid="world-map-region-index"
-      className="absolute bottom-4 left-4 z-20 w-[min(360px,calc(100%-112px))] rounded-sm border border-white/[0.12] bg-black/42 shadow-data-panel backdrop-blur-2xl"
+      className="absolute bottom-4 left-4 z-30 w-[min(360px,calc(100%-112px))] rounded-sm border border-white/[0.12] bg-black/42 shadow-data-panel backdrop-blur-2xl"
     >
       <div className="flex items-start justify-between gap-3 border-b border-border-subtle px-3 py-2">
         <div>
@@ -2214,7 +2311,7 @@ function MapZoomControls({
   return (
     <div
       data-testid="world-map-zoom-controls"
-      className="absolute bottom-4 right-4 z-20 flex items-center gap-1 rounded-sm border border-white/[0.12] bg-black/42 p-1 shadow-data-panel backdrop-blur-2xl"
+      className="absolute bottom-4 right-4 z-30 flex items-center gap-1 rounded-sm border border-white/[0.12] bg-black/42 p-1 shadow-data-panel backdrop-blur-2xl"
     >
       <button
         type="button"
@@ -2295,7 +2392,7 @@ function RegionInsightModal({
   }, []);
 
   return (
-    <div className="fixed inset-0 z-[80] overflow-hidden">
+    <div className="fixed inset-0 z-[90] overflow-hidden">
       <button
         type="button"
         aria-label={text("关闭")}
