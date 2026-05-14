@@ -142,6 +142,11 @@ type WebGlRoute = {
   to: [number, number, number];
   weight: number;
 };
+type TileRenderBudgetSpec = {
+  densityCells: number;
+  routes: number;
+  weatherCells: number;
+};
 type MapLibreRuntimeStatus = "loading" | "ready" | "error";
 type MapLibreRegionFeatureCollection = FeatureCollection<
   GeoJsonGeometryObject,
@@ -157,6 +162,11 @@ const MAP_HEIGHT = 560;
 const WORLD_MAP_REFRESH_INTERVAL_MS = 30_000;
 const WORLD_MAP_TILE_REFRESH_DEBOUNCE_MS = 360;
 const WORLD_MAP_TILE_CACHE_LIMIT = 24;
+const WORLD_MAP_TILE_RENDER_BUDGETS: Record<TileRuntimeBudget, TileRenderBudgetSpec> = {
+  light: { densityCells: 220, routes: 10, weatherCells: 260 },
+  normal: { densityCells: 170, routes: 8, weatherCells: 200 },
+  dense: { densityCells: 120, routes: 6, weatherCells: 150 },
+};
 const MIN_MAP_SCALE = 0.85;
 const MAX_MAP_SCALE = 3.25;
 const DEFAULT_MAP_LAYERS: VisibleMapLayers = {
@@ -531,6 +541,7 @@ export default function WorldMapPage() {
           tileCells={filteredTileCells}
           visibleLayers={visibleLayers}
           rendererMode={rendererMode}
+          renderBudget={tileRuntime?.budget ?? "light"}
           focusRequest={focusRequest}
           onViewportChange={loadViewportTiles}
           onSelect={selectRegion}
@@ -1006,6 +1017,12 @@ function TileRuntimeBadge({ runtime }: { runtime: TileRuntimeMetrics | null }) {
       <span className="font-mono text-text-muted">
         {text(tileRuntimeStatusLabel(runtime.status))}
       </span>
+      {runtime.budget !== "light" && (
+        <>
+          <span className="text-text-disabled">·</span>
+          <span className="font-mono text-brand-orange">{text("已降载")}</span>
+        </>
+      )}
     </span>
   );
 }
@@ -1362,6 +1379,7 @@ function WorldMapCanvas({
   tileCells,
   visibleLayers,
   rendererMode,
+  renderBudget,
   focusRequest,
   onViewportChange,
   onSelect,
@@ -1372,6 +1390,7 @@ function WorldMapCanvas({
   tileCells: WorldMapTileCell[];
   visibleLayers: VisibleMapLayers;
   rendererMode: WorldMapRendererMode;
+  renderBudget: TileRuntimeBudget;
   focusRequest: MapFocusRequest | null;
   onViewportChange: (viewport: WorldMapViewport, scale: number) => void;
   onSelect: (id: string) => void;
@@ -1409,14 +1428,18 @@ function WorldMapCanvas({
   );
   const graticulePath = useMemo(() => path(WORLD_GRATICULE as GeoPermissibleObjects) ?? "", [path]);
   const borderPath = useMemo(() => path(WORLD_BORDERS as GeoPermissibleObjects) ?? "", [path]);
-  const riskRoutes = useMemo(() => buildRiskRoutes(regions), [regions]);
+  const renderBudgetSpec = WORLD_MAP_TILE_RENDER_BUDGETS[renderBudget];
+  const riskRoutes = useMemo(
+    () => buildRiskRoutes(regions, renderBudgetSpec.routes),
+    [regions, renderBudgetSpec.routes]
+  );
   const densityCells = useMemo(
-    () => buildRiskDensityCells(regions, projection, tileCells),
-    [projection, regions, tileCells]
+    () => buildRiskDensityCells(regions, projection, tileCells, renderBudgetSpec.densityCells),
+    [projection, regions, renderBudgetSpec.densityCells, tileCells]
   );
   const weatherTileCells = useMemo(
-    () => buildWeatherTileCells(regions, projection, tileCells),
-    [projection, regions, tileCells]
+    () => buildWeatherTileCells(regions, projection, tileCells, renderBudgetSpec.weatherCells),
+    [projection, regions, renderBudgetSpec.weatherCells, tileCells]
   );
   const viewport = useMemo(() => computeMapViewport(view, projection), [projection, view]);
 
@@ -3177,7 +3200,8 @@ function weatherTileTone(cell: WorldMapTileCell): string {
 function buildWeatherTileCells(
   regions: WorldMapRegion[],
   projection: GeoProjection,
-  tileCells: WorldMapTileCell[]
+  tileCells: WorldMapTileCell[],
+  maxCells: number
 ): WeatherTileCell[] {
   const backendCells = tileCells.filter((cell) => cell.layer === "weather");
   if (backendCells.length > 0) {
@@ -3195,7 +3219,7 @@ function buildWeatherTileCells(
         };
       })
       .sort((left, right) => right.intensity - left.intensity)
-      .slice(0, 260);
+      .slice(0, maxCells);
   }
 
   const cellSize = 20;
@@ -3254,13 +3278,14 @@ function buildWeatherTileCells(
 
   return Array.from(cells.values())
     .sort((left, right) => right.intensity - left.intensity)
-    .slice(0, 220);
+    .slice(0, maxCells);
 }
 
 function buildRiskDensityCells(
   regions: WorldMapRegion[],
   projection: GeoProjection,
-  tileCells: WorldMapTileCell[]
+  tileCells: WorldMapTileCell[],
+  maxCells: number
 ): RiskDensityCell[] {
   const backendCells = tileCells.filter((cell) => cell.layer === "risk");
   if (backendCells.length > 0) {
@@ -3278,7 +3303,7 @@ function buildRiskDensityCells(
         };
       })
       .sort((left, right) => right.intensity - left.intensity)
-      .slice(0, 220);
+      .slice(0, maxCells);
   }
 
   const cellSize = 24;
@@ -3328,12 +3353,12 @@ function buildRiskDensityCells(
 
   return Array.from(cells.values())
     .sort((left, right) => right.intensity - left.intensity)
-    .slice(0, 180);
+    .slice(0, Math.min(maxCells, 180));
 }
 
-function buildRiskRoutes(regions: WorldMapRegion[]): RiskRoute[] {
+function buildRiskRoutes(regions: WorldMapRegion[], maxRoutes: number): RiskRoute[] {
   return buildRiskBridges(regions)
-    .slice(0, 10)
+    .slice(0, maxRoutes)
     .map((bridge) => ({
       id: bridge.id,
       from: bridge.source.center,

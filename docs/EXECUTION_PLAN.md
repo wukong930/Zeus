@@ -981,6 +981,7 @@ Causa 的 `event_driven` 评估器实际上是纯技术面（gap + volume），*
   - [x] Phase 10.22 跨页面作用域收口：统一来源文案 helper，Causal Web 显示来自新闻 / 地图 / 事件智能的作用域芯片，并继续保留 `event + symbol + region` 过滤。
   - [x] Phase 10.23 / World Risk Map B.2.11：增强模式瓦片请求增加缓存、去抖和过期响应保护，为更大数据量天气 / 风险热力图层做性能护栏。
   - [x] Phase 10.24 / World Risk Map B.2.12：增强模式显示瓦片预算、缓存状态和渲染负载等级，便于本地性能调优和后续大数据量扩展。
+  - [x] Phase 10.25 / World Risk Map B.2.13：增强模式根据瓦片预算主动降载天气瓦片、密度点和飞线渲染数量，优先保留最高强度信息。
   - [x] 新增 Event Intelligence 页面：事件池、影响链、证据/反证、人工确认队列。
   - [x] Event Intelligence 页面展示 LLM 语义假设与模型/提示版本。
   - [x] Event Intelligence 页面支持确认、拒绝、转人工复核，并写入审计日志。
@@ -1005,6 +1006,7 @@ Causa 的 `event_driven` 评估器实际上是纯技术面（gap + volume），*
 - [x] Phase 10.22：Causal Web 能明确显示当前深链来自新闻事件、世界风险地图或事件智能，四页作用域文案走同一来源 helper。
 - [x] Phase 10.23：World Risk Map 缩放 / 拖拽时瓦片刷新不会让旧请求覆盖新视图，同筛选同视口优先复用缓存。
 - [x] Phase 10.24：World Risk Map 增强模式能显示当前瓦片预算和缓存命中状态，不需要打开开发工具也能判断渲染负载。
+- [x] Phase 10.25：World Risk Map 在标准 / 密集瓦片负载下自动限制增强层渲染数量，并在顶部芯片显示“已降载”。
 
 ---
 
