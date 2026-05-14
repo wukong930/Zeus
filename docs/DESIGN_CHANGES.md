@@ -507,3 +507,9 @@ threshold_modifier、propagation_activator、risk_recalc、数据腐烂防护
 - 新增 `scripts/local_smoke.sh`，一键验证 Postgres、Redis、Backend、Frontend compose 状态和核心 HTTP 入口。
 - 新增 `docs/LOCAL_DEPLOYMENT.md`，沉淀端口冲突、`.next` 缓存、后端镜像重建和本地数据 reset 的排查步骤。
 - README 补充部署 smoke 入口，后续部署健康复测统一使用该脚本。
+
+# 2026-05-14 — Phase 10.27 前端数据加载审计
+
+- 新增 `docs/FRONTEND_DATA_LOAD_AUDIT.md`，按页面记录运行态 API、降级空态、静态输入模板和后续验证边界。
+- Sectors 页面移除按板块 id 生成的确定性 factor 假数，改为从行情覆盖、活跃信号、方向强度和内部一致性推导运行态因子。
+- 补充新因子的中英文文案，避免语言切换后出现未翻译标签。

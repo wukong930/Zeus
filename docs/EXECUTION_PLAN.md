@@ -1020,7 +1020,9 @@ Causa 的 `event_driven` 评估器实际上是纯技术面（gap + volume），*
 - [x] `docker compose up` 全服务健康复测，并记录端口冲突、`.next` 缓存和容器重建排查步骤。
   - [x] Phase 10.26 本地部署 smoke：新增 `scripts/local_smoke.sh`，覆盖 compose health、后端 health、前端首页和 World Risk Map 路由。
   - [x] Phase 10.26 本地部署 runbook：新增 `docs/LOCAL_DEPLOYMENT.md`，记录端口冲突、`.next` 缓存、后端镜像重建和数据库状态排查。
-- [ ] 前端所有已实现页面真实数据加载复测，标记仍依赖 mock 或 fallback 的页面。
+- [x] 前端所有已实现页面真实数据加载复测，标记仍依赖 mock 或 fallback 的页面。
+  - [x] Phase 10.27 前端数据加载审计：新增 `docs/FRONTEND_DATA_LOAD_AUDIT.md`，按页面记录运行态 API、降级行为和仍保留的静态输入模板。
+  - [x] Phase 10.27 Sectors 页面去假数：移除按板块 id 生成的确定性四维 factor，改为由行情覆盖、信号活跃、方向强度和内部一致性推导运行态因子。
 
 ### P1：World Risk Map 生产级渲染收口
 
