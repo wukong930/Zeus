@@ -24,6 +24,10 @@ from app.services.data_sources.rubber_spot import (
     collect_rubber_spot_indicators,
     parse_rubber_spot_symbols,
 )
+from app.services.data_sources.shipping_index import (
+    collect_shipping_index_indicators,
+    parse_shipping_index_symbols,
+)
 from app.services.data_sources.tushare_futures import (
     DEFAULT_TUSHARE_EXCHANGES,
     DEFAULT_TUSHARE_SYMBOLS,
@@ -219,6 +223,22 @@ async def run_free_data_ingest(
             source_counts["rubber_spot"] = len(rubber_spot_result.rows)
         except Exception as exc:
             errors.append({"source": "rubber_spot", "error": safe_error_message(exc)})
+
+    if current.data_source_shipping_index_enabled:
+        if current.shipping_index_url:
+            try:
+                shipping_index_rows = await collect_shipping_index_indicators(
+                    url=current.shipping_index_url,
+                    symbols=parse_shipping_index_symbols(current.shipping_index_symbols),
+                    timeout=current.shipping_index_timeout_seconds,
+                )
+                industry_payloads.extend(shipping_index_rows)
+                source_counts["shipping_index"] = len(shipping_index_rows)
+            except Exception as exc:
+                errors.append({"source": "shipping_index", "error": safe_error_message(exc)})
+        else:
+            source_counts["shipping_index"] = 0
+            errors.append({"source": "shipping_index", "error": "enabled source missing SHIPPING_INDEX_URL"})
 
     if market_payloads:
         await append_market_data(session, market_payloads)

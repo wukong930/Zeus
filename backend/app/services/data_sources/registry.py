@@ -145,6 +145,17 @@ def data_source_statuses(settings: Settings | None = None) -> list[DataSourceSta
             status="ready" if current.data_source_rubber_text_enabled else "disabled",
             note="Maps public text/news into Qingdao, Hainan, Yunnan, SEA export and freight rubber indicators.",
         ),
+        DataSourceStatus(
+            id="shipping_index",
+            name="Public shipping/freight index adapter",
+            category="industry_data",
+            enabled=current.data_source_shipping_index_enabled,
+            configured=current.data_source_shipping_index_enabled and bool(_clean(current.shipping_index_url)),
+            requires_key=False,
+            free_tier="free_no_key_or_public_proxy",
+            status=_url_status(current.data_source_shipping_index_enabled, current.shipping_index_url),
+            note="Ingests CCFI/SCFI/Drewry WCI/Freightos/BDI-style JSON or CSV feeds into industry_data.",
+        ),
     ]
 
 
@@ -162,3 +173,9 @@ def _keyed_status(enabled: bool, key: str | None) -> str:
     if not enabled:
         return "disabled"
     return "ready" if _clean(key) else "missing_key"
+
+
+def _url_status(enabled: bool, url: str | None) -> str:
+    if not enabled:
+        return "disabled"
+    return "ready" if _clean(url) else "missing_config"

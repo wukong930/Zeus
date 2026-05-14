@@ -278,6 +278,7 @@ class ZeusEvent:
 - 产业数据（库存、现货、基差）独立调度周期
 - 橡胶现货 / 期现基差先通过 AKShare 100ppi 免费源进入 `industry_data`，输出 RU/NR/BR 的现货价、近月基差、主力基差和基差率；青岛保税区、海南、云南分地区报价后续映射到同一橡胶指标通道。
 - 公开文本中的橡胶区域报价通过 `rubber_text` 抽取器低频写入 `industry_data`，覆盖青岛、海南、云南、东南亚出口和进口运费；默认关闭，启用后只接受明确金额 + 区域关键词的文本。
+- 航运 / 运费公开指数通过 `shipping_index` 适配器写入 `industry_data`，支持 CCFI、SCFI、Drewry WCI、Freightos FBX、BDI / CDFI 风格 JSON 或 CSV 源；默认关闭，需配置公开 feed 或内部代理 URL。
 - 数据质量检查：缺失率 > 20% 时标记降级，不触发下游信号
 
 **Point-in-time 数据完整性**（Causa 用 `onConflictDoUpdate` 覆盖更新，Zeus 重写）：

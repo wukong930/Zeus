@@ -42,6 +42,11 @@ from app.services.data_sources.rubber_spot import (
     rows_from_rubber_spot_frame,
 )
 from app.services.data_sources.rubber_text import extract_rubber_text_industry_rows
+from app.services.data_sources.shipping_index import (
+    collect_shipping_index_indicators,
+    parse_shipping_index_symbols,
+    rows_from_shipping_index_payload,
+)
 from app.services.data_sources.types import DataSourceStatus
 from app.services.data_sources.tushare_futures import (
     collect_tushare_market_data,
@@ -272,6 +277,88 @@ def test_rubber_text_extractor_respects_confidence_gate() -> None:
     )
 
     assert rows == []
+
+
+def test_parse_shipping_index_symbols_normalizes_and_bounds_settings() -> None:
+    assert parse_shipping_index_symbols(" freight, ru, RU ,, sc ") == ("FREIGHT", "RU", "SC")
+    assert parse_shipping_index_symbols("") == ("FREIGHT", "RU", "NR", "BR", "SC", "I")
+
+    with pytest.raises(ValueError, match="at most 50"):
+        parse_shipping_index_symbols(",".join(f"S{i}" for i in range(51)))
+
+    with pytest.raises(ValueError, match="at most 32"):
+        parse_shipping_index_symbols("S" * 33)
+
+
+def test_shipping_index_json_payload_maps_known_public_indices() -> None:
+    rows = rows_from_shipping_index_payload(
+        {
+            "data": [
+                {
+                    "series": "CCFI Composite",
+                    "date": "2026-05-08",
+                    "value": "1280.5",
+                    "unit": "index",
+                },
+                {
+                    "series": "Drewry World Container Index",
+                    "period": "2026-05-09",
+                    "value": "2,350",
+                    "unit": "USD/FEU",
+                },
+            ]
+        },
+        symbols=("FREIGHT", "RU"),
+    )
+
+    by_key = {(row.symbol, row.data_type): row for row in rows}
+
+    assert len(rows) == 4
+    assert by_key[("FREIGHT", "shipping_ccfi_index")].value == 1280.5
+    assert by_key[("RU", "shipping_wci_usd_feu")].value == 2350
+    assert by_key[("RU", "shipping_wci_usd_feu")].source_key == (
+        "shipping_index:wci:RU:shipping_wci_usd_feu:2026-05-09"
+    )
+
+
+def test_shipping_index_csv_payload_maps_scfi_and_bdi() -> None:
+    rows = rows_from_shipping_index_payload(
+        "index_name,date,value\n"
+        "Shanghai Containerized Freight Index,2026-05-08,1450.2\n"
+        "Baltic Dry Index,2026-05-08,2100\n"
+        "Unknown Route,2026-05-08,999\n",
+        symbols=("FREIGHT",),
+    )
+
+    assert {row.data_type for row in rows} == {
+        "shipping_scfi_index",
+        "shipping_bdi_index",
+    }
+
+
+def test_shipping_index_payload_rejects_field_drift() -> None:
+    with pytest.raises(RuntimeError, match="date/value/series"):
+        rows_from_shipping_index_payload({"data": [{"foo": "bar"}]})
+
+
+async def test_shipping_index_collector_fetches_configured_feed() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url == "https://shipping.test/feed.csv"
+        return httpx.Response(
+            200,
+            text="series,date,value\nCCFI Composite,2026-05-08,1280.5\n",
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        rows = await collect_shipping_index_indicators(
+            url="https://shipping.test/feed.csv",
+            symbols=("FREIGHT", "NR"),
+            client=client,
+        )
+
+    assert len(rows) == 2
+    assert {row.symbol for row in rows} == {"FREIGHT", "NR"}
+    assert rows[0].data_type == "shipping_ccfi_index"
 
 
 def test_open_meteo_payload_creates_weather_industry_rows() -> None:
@@ -957,6 +1044,8 @@ async def test_free_data_ingest_reports_enabled_keyed_sources_without_keys() -> 
         eia_api_key="",
         data_source_tushare_enabled=True,
         tushare_token="",
+        data_source_shipping_index_enabled=True,
+        shipping_index_url="",
         _env_file=None,
     )
 
@@ -970,6 +1059,7 @@ async def test_free_data_ingest_reports_enabled_keyed_sources_without_keys() -> 
         "fred": 0,
         "eia": 0,
         "tushare": 0,
+        "shipping_index": 0,
     }
     assert [error["source"] for error in result.errors] == [
         "accuweather",
@@ -977,6 +1067,7 @@ async def test_free_data_ingest_reports_enabled_keyed_sources_without_keys() -> 
         "fred",
         "eia",
         "tushare",
+        "shipping_index",
     ]
     assert all("missing" in error["error"] for error in result.errors)
 
@@ -989,6 +1080,8 @@ def test_data_source_registry_marks_keyed_sources() -> None:
         eia_api_key="",
         data_source_tushare_enabled=True,
         tushare_token="tushare-test",
+        data_source_shipping_index_enabled=True,
+        shipping_index_url="",
         _env_file=None,
     )
 
@@ -1004,6 +1097,8 @@ def test_data_source_registry_marks_keyed_sources() -> None:
     assert statuses["rubber_spot"].status == "disabled"
     assert statuses["rubber_text"].free_tier == "free_no_key"
     assert statuses["rubber_text"].status == "disabled"
+    assert statuses["shipping_index"].free_tier == "free_no_key_or_public_proxy"
+    assert statuses["shipping_index"].status == "missing_config"
     assert statuses["noaa_cdo"].status == "disabled"
     assert statuses["accuweather"].status == "disabled"
 

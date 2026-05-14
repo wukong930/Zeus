@@ -75,6 +75,10 @@ class Settings(BaseSettings):
     data_source_rubber_spot_history_days: int = Field(default=7, ge=1, le=30)
     data_source_rubber_text_enabled: bool = False
     data_source_rubber_text_min_confidence: float = Field(default=0.62, ge=0.0, le=1.0)
+    data_source_shipping_index_enabled: bool = False
+    shipping_index_url: str | None = None
+    shipping_index_symbols: str = "FREIGHT,RU,NR,BR,SC,I"
+    shipping_index_timeout_seconds: float = Field(default=15.0, ge=1.0, le=60.0)
 
     model_config = SettingsConfigDict(
         env_file=".env",

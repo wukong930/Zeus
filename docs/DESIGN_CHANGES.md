@@ -543,3 +543,9 @@ threshold_modifier、propagation_activator、risk_recalc、数据腐烂防护
 - 新增 `backend/app/services/data_sources/rubber_text.py`，把公开新闻或文本中的青岛保税区、海南胶水、云南收胶、泰国 / 印尼 / 马来西亚出口参考和海运费映射为规范化行业数据。
 - `news_ingest` 在 `DATA_SOURCE_RUBBER_TEXT_ENABLED=true` 时会把新新闻中的区域报价写入 `industry_data`，默认关闭，避免低置信文本自动污染运行态。
 - `/api/data-sources` 新增 `rubber_text` 状态；该路径定位为低频补充源，后续仍需要稳定公开源或付费源替换核心报价。
+
+# 2026-05-14 — Phase 10.30 航运 / 运费指数适配器
+
+- 新增 `backend/app/services/data_sources/shipping_index.py`，支持从 JSON / CSV feed 解析 CCFI、SCFI、Drewry WCI、Freightos FBX、BDI / CDFI 风格公开指数。
+- `run_free_data_ingest` 接入 `DATA_SOURCE_SHIPPING_INDEX_ENABLED`，配置 `SHIPPING_INDEX_URL` 后把航运指数按 `FREIGHT,RU,NR,BR,SC,I` 等目标符号写入 `industry_data`。
+- `/api/data-sources` 新增 `shipping_index` 状态；默认关闭，定位为公开 feed 或内部代理入口，避免直接依赖脆弱网页抓取。
