@@ -85,6 +85,17 @@ type MapFocusRequest = {
   nonce: number;
   regionId: string;
 };
+type TileRuntimeStatus = "cache_hit" | "network_miss" | "forced_refresh";
+type TileRuntimeBudget = "light" | "normal" | "dense";
+type TileRuntimeMetrics = {
+  budget: TileRuntimeBudget;
+  cacheEntries: number;
+  resolution: WorldMapTileResolution;
+  riskCells: number;
+  status: TileRuntimeStatus;
+  totalCells: number;
+  weatherCells: number;
+};
 type RiskDensityCell = {
   id: string;
   x: number;
@@ -247,6 +258,7 @@ export default function WorldMapPage() {
   const [focusRequest, setFocusRequest] = useState<MapFocusRequest | null>(null);
   const [scopedEventId] = useState<string | null>(() => initialWorldMapEventParam());
   const [initialScopeReady, setInitialScopeReady] = useState(false);
+  const [tileRuntime, setTileRuntime] = useState<TileRuntimeMetrics | null>(null);
   const snapshotRef = useRef<WorldMapSnapshot | null>(null);
   const tileSnapshotRef = useRef<WorldMapTileSnapshot | null>(null);
   const tileViewportRef = useRef<WorldMapViewport | null>(null);
@@ -271,6 +283,7 @@ export default function WorldMapPage() {
       const cacheKey = worldMapTileCacheKey(scopeFilters, resolution, viewport);
       const cached = tileCacheRef.current.get(cacheKey);
       if (cached && !force) {
+        setTileRuntime(buildTileRuntimeMetrics(cached, tileCacheRef.current.size, resolution, "cache_hit"));
         return cached;
       }
 
@@ -280,6 +293,14 @@ export default function WorldMapPage() {
         worldMapFilterParams(scopeFilters, viewport)
       );
       rememberWorldMapTileSnapshot(tileCacheRef.current, cacheKey, nextTileSnapshot);
+      setTileRuntime(
+        buildTileRuntimeMetrics(
+          nextTileSnapshot,
+          tileCacheRef.current.size,
+          resolution,
+          force ? "forced_refresh" : "network_miss"
+        )
+      );
       return nextTileSnapshot;
     },
     [scopeFilters]
@@ -482,6 +503,9 @@ export default function WorldMapPage() {
                 isRefreshing={isRefreshing}
                 lastUpdatedAt={lastUpdatedAt}
               />
+              {rendererMode === "webgl-ready" && (
+                <TileRuntimeBadge runtime={tileRuntime} />
+              )}
               <Button
                 variant={autoRefresh ? "primary" : "secondary"}
                 size="sm"
@@ -945,6 +969,44 @@ function ReadingMetric({
       <div className="mt-1 truncate text-xs font-semibold text-text-primary">{value}</div>
       <div className="mt-0.5 truncate text-[10px] text-text-muted">{detail}</div>
     </div>
+  );
+}
+
+function TileRuntimeBadge({ runtime }: { runtime: TileRuntimeMetrics | null }) {
+  const { text } = useI18n();
+
+  if (!runtime) {
+    return (
+      <span className="inline-flex h-7 items-center gap-1.5 rounded-xs border border-border-subtle bg-black/28 px-2 text-caption text-text-muted">
+        <DatabaseZap className="h-3 w-3 text-brand-cyan" />
+        {text("瓦片准备中")}
+      </span>
+    );
+  }
+
+  return (
+    <span
+      title={`${text("天气瓦片")} ${runtime.weatherCells} / ${text("风险瓦片")} ${runtime.riskCells}`}
+      className="inline-flex h-7 items-center gap-1.5 rounded-xs border border-brand-cyan/20 bg-brand-cyan/10 px-2 text-caption text-text-secondary"
+    >
+      <DatabaseZap className="h-3 w-3 text-brand-cyan" />
+      <span>{text("瓦片")}</span>
+      <span className="font-mono text-text-primary">{runtime.totalCells}</span>
+      <span className="text-text-disabled">·</span>
+      <span className="font-mono text-brand-cyan">{text(runtime.resolution)}</span>
+      <span className="text-text-disabled">·</span>
+      <span className={cn("font-mono", tileBudgetTone(runtime.budget))}>
+        {text(tileBudgetLabel(runtime.budget))}
+      </span>
+      <span className="text-text-disabled">·</span>
+      <span className="font-mono text-text-muted">
+        {text("缓存")} {runtime.cacheEntries}
+      </span>
+      <span className="text-text-disabled">·</span>
+      <span className="font-mono text-text-muted">
+        {text(tileRuntimeStatusLabel(runtime.status))}
+      </span>
+    </span>
   );
 }
 
@@ -3475,4 +3537,46 @@ function rememberWorldMapTileSnapshot(
     if (!oldestKey) return;
     cache.delete(oldestKey);
   }
+}
+
+function buildTileRuntimeMetrics(
+  snapshot: WorldMapTileSnapshot,
+  cacheEntries: number,
+  resolution: WorldMapTileResolution,
+  status: TileRuntimeStatus
+): TileRuntimeMetrics {
+  const totalCells = snapshot.cells.length;
+  return {
+    budget: tileRuntimeBudget(totalCells),
+    cacheEntries,
+    resolution,
+    riskCells: snapshot.summary.riskCells,
+    status,
+    totalCells,
+    weatherCells: snapshot.summary.weatherCells,
+  };
+}
+
+function tileRuntimeBudget(totalCells: number): TileRuntimeBudget {
+  if (totalCells >= 160) return "dense";
+  if (totalCells >= 72) return "normal";
+  return "light";
+}
+
+function tileBudgetLabel(budget: TileRuntimeBudget) {
+  if (budget === "dense") return "密集负载";
+  if (budget === "normal") return "标准负载";
+  return "轻负载";
+}
+
+function tileBudgetTone(budget: TileRuntimeBudget) {
+  if (budget === "dense") return "text-brand-orange";
+  if (budget === "normal") return "text-brand-cyan";
+  return "text-brand-emerald-bright";
+}
+
+function tileRuntimeStatusLabel(status: TileRuntimeStatus) {
+  if (status === "cache_hit") return "瓦片缓存命中";
+  if (status === "forced_refresh") return "已刷新";
+  return "网络请求";
 }
