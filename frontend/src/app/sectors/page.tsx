@@ -81,6 +81,7 @@ export default function SectorsPage() {
       <div className="grid grid-cols-2 gap-5">
         {sectors.length > 0 ? sectors.map((s) => {
           const factors = runtimeFactorsForSector(s, unavailableSections);
+          const maxAbsChange = Math.max(0.01, ...s.symbols.map((symbol) => Math.abs(symbol.change)));
           return (
             <Card key={s.id} variant="data" interactive>
               <CardHeader>
@@ -93,16 +94,7 @@ export default function SectorsPage() {
               </CardHeader>
               <div className="space-y-2">
                 {s.symbols.map((sym) => (
-                  <div key={sym.code} className="flex items-center gap-3">
-                    <div className="font-mono text-sm w-12">{sym.code}</div>
-                    <div className="text-text-secondary text-sm flex-1">{text(sym.name)}</div>
-                    {sym.signalActive && (
-                      <span className="w-1.5 h-1.5 rounded-full bg-brand-orange animate-heartbeat" />
-                    )}
-                    <div className={cn("font-mono text-sm tabular-nums w-16 text-right", sym.change >= 0 ? "text-data-up" : "text-data-down")}>
-                      {sym.change >= 0 ? "+" : ""}{sym.change.toFixed(2)}%
-                    </div>
-                  </div>
+                  <SectorSymbolRow key={sym.code} symbol={sym} maxAbsChange={maxAbsChange} />
                 ))}
               </div>
               <div className="border-t border-border-subtle pt-3 mt-3">
@@ -123,6 +115,49 @@ export default function SectorsPage() {
             {text(emptySectorSnapshotMessage(source))}
           </Card>
         )}
+      </div>
+    </div>
+  );
+}
+
+function SectorSymbolRow({
+  symbol,
+  maxAbsChange,
+}: {
+  symbol: SectorData["symbols"][number];
+  maxAbsChange: number;
+}) {
+  const { text } = useI18n();
+  const isUp = symbol.change >= 0;
+  const magnitude = Math.min(1, Math.abs(symbol.change) / maxAbsChange);
+  const barWidth = `${Math.max(4, magnitude * 48)}%`;
+
+  return (
+    <div
+      data-testid="sector-change-row"
+      className="grid grid-cols-[48px_minmax(88px,1fr)_minmax(132px,0.9fr)_74px] items-center gap-3"
+    >
+      <div className="font-mono text-sm text-text-primary">{symbol.code}</div>
+      <div className="min-w-0 text-sm text-text-secondary">
+        <span className="block truncate">{text(symbol.name)}</span>
+      </div>
+      <div className="relative h-4 min-w-0">
+        <div className="absolute inset-x-0 top-1/2 h-1 -translate-y-1/2 rounded-full bg-bg-surface-raised" />
+        <div className="absolute left-1/2 top-0 h-full w-px bg-border-strong/70" />
+        <div
+          data-testid="sector-change-bar"
+          className={cn(
+            "absolute top-1/2 h-2 -translate-y-1/2 rounded-full shadow-inner-panel",
+            isUp ? "left-1/2 bg-data-up" : "right-1/2 bg-data-down"
+          )}
+          style={{ width: barWidth }}
+        />
+        {symbol.signalActive && (
+          <span className="absolute right-0 top-1/2 h-1.5 w-1.5 -translate-y-1/2 rounded-full bg-brand-orange shadow-glow-orange animate-heartbeat" />
+        )}
+      </div>
+      <div className={cn("font-mono text-sm tabular-nums text-right", isUp ? "text-data-up" : "text-data-down")}>
+        {symbol.change >= 0 ? "+" : ""}{symbol.change.toFixed(2)}%
       </div>
     </div>
   );

@@ -267,6 +267,7 @@ const previewFitViewOptions = { padding: 0.08, duration: 500 };
 const flowProOptions = { hideAttribution: true };
 const FIT_ANCHOR_TOP_ID = "__causal-fit-top";
 const FIT_ANCHOR_BOTTOM_ID = "__causal-fit-bottom";
+const EMPTY_NODE_ID_SET = new Set<string>();
 
 const FLOW_NODE_TYPES = {
   causalNode: CausalNodeCard,
@@ -447,8 +448,9 @@ function CausalWebCanvas({
     return ids.size > 0 ? ids : scopedBaseNodeIds;
   }, [graphNodeById, pathFocusActive, pathFocusNodeIds, scopedBaseNodeIds]);
 
-  const focusId = isFull ? (pathFocusActive ? pathFocusCandidate : selectedNode ?? hoveredNode) : null;
-  const activeFocusId = focusId && effectiveBaseNodeIds.has(focusId) ? focusId : null;
+  const interactionFocusId = isFull ? (pathFocusActive ? pathFocusCandidate : selectedNode ?? hoveredNode) : null;
+  const activeFocusId =
+    interactionFocusId && effectiveBaseNodeIds.has(interactionFocusId) ? interactionFocusId : null;
 
   const highlightedNodeIds = useMemo(
     () => {
@@ -459,6 +461,7 @@ function CausalWebCanvas({
     },
     [activeFocusId, effectiveBaseNodeIds, graphEdges, pathFocusActive, pathFocusNodeIds]
   );
+  const layoutFocusNodeIds = pathFocusActive ? pathFocusNodeIds : EMPTY_NODE_ID_SET;
   const displayGraph = useMemo(
     () =>
       buildDisplayGraph({
@@ -469,9 +472,9 @@ function CausalWebCanvas({
         relationCounts,
         density: isFull ? density : "curated",
         variant,
-        focusNodeIds: highlightedNodeIds,
+        focusNodeIds: layoutFocusNodeIds,
       }),
-    [density, effectiveBaseNodeIds, graphEdges, graphNodes, highlightedNodeIds, isFull, metaByNodeId, relationCounts, variant]
+    [density, effectiveBaseNodeIds, graphEdges, graphNodes, isFull, layoutFocusNodeIds, metaByNodeId, relationCounts, variant]
   );
   const eventScopeEmpty = eventScopeActive && displayGraph.visibleRealCount === 0;
   const displayNodeById = useMemo(
@@ -521,6 +524,7 @@ function CausalWebCanvas({
           },
           draggable: isFull && mode === "explorer" && node.type !== "cluster",
           selectable: isFull,
+          selected: isFull && selectedNode === node.id,
         };
       });
       return [
@@ -528,7 +532,7 @@ function CausalWebCanvas({
         ...fitAnchorNodes(displayGraph.height, variant),
       ];
     },
-    [activeFocusId, density, displayGraph.height, displayGraph.nodes, highlightedNodeIds, isFull, metaByNodeId, mode, relationCounts, variant, viewNodeIds]
+    [activeFocusId, density, displayGraph.height, displayGraph.nodes, highlightedNodeIds, isFull, metaByNodeId, mode, relationCounts, selectedNode, variant, viewNodeIds]
   );
 
   const edges = useMemo<CausalFlowEdge[]>(
@@ -1308,7 +1312,7 @@ function CausalNodeCard({ data, selected }: NodeProps<CausalFlowNode>) {
   const sector = SECTOR_META[meta.sector];
   const color = NODE_COLORS[node.type];
   const quality = qualityMeta(node.qualityStatus ?? null);
-  const compact = data.variant === "preview" || (data.density === "curated" && !data.focused && !selected);
+  const compact = data.variant === "preview" || (data.density === "curated" && !selected);
   const Icon = nodeIcon(node.type);
 
   return (
