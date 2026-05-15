@@ -191,6 +191,11 @@ EVENT_TYPE_LABELS = {
     "geopolitical": "地缘政治",
     "weather": "天气",
     "breaking": "突发",
+    "market": "行情",
+    "macro": "宏观",
+    "manual": "人工",
+    "social": "社媒",
+    "shipping": "航运",
 }
 
 DIRECTION_LABELS = {
@@ -206,6 +211,48 @@ SEVERITY_LABELS = {
     "high": "高",
     "medium": "中",
     "low": "低",
+}
+
+SIGNAL_TYPE_LABELS = {
+    "spread_anomaly": "价差异常",
+    "basis_shift": "基差变动",
+    "momentum": "动量信号",
+    "regime_shift": "状态切换",
+    "inventory_shock": "库存冲击",
+    "event_driven": "事件驱动",
+    "price_gap": "价格跳空",
+    "news_event": "新闻事件",
+    "rubber_supply_shock": "橡胶供应冲击",
+    "capacity_contraction": "产能收缩",
+    "restart_expectation": "复产预期",
+    "median_pressure": "中位成本压力",
+    "marginal_capacity_squeeze": "边际产能挤压",
+}
+
+CATEGORY_LABELS = {
+    "rubber": "橡胶",
+    "ferrous": "黑色",
+    "energy": "能源",
+    "chemical": "能化",
+    "metals": "有色",
+    "nonferrous": "有色",
+    "agri": "农产",
+    "agriculture": "农产",
+    "precious": "贵金属",
+    "precious_metals": "贵金属",
+}
+
+MECHANISM_LABELS = {
+    "supply": "供应",
+    "demand": "需求",
+    "logistics": "物流",
+    "policy": "政策",
+    "inventory": "库存",
+    "cost": "成本",
+    "risk_sentiment": "风险情绪",
+    "geopolitical": "地缘",
+    "weather": "天气",
+    "macro": "宏观",
 }
 
 
@@ -376,3 +423,21 @@ def direction_label(value: str) -> str:
 
 def severity_label_zh(value: str) -> str:
     return SEVERITY_LABELS.get(value, value)
+
+
+def signal_type_label(value: str | None) -> str:
+    if not value:
+        return "未知信号"
+    return SIGNAL_TYPE_LABELS.get(str(value), glossary_translate(str(value).replace("_", " ")))
+
+
+def category_label(value: str | None) -> str:
+    if not value:
+        return "未知板块"
+    return CATEGORY_LABELS.get(str(value), glossary_translate(str(value).replace("_", " ")))
+
+
+def mechanism_label(value: str | None) -> str:
+    if not value:
+        return "待识别"
+    return MECHANISM_LABELS.get(str(value), glossary_translate(str(value).replace("_", " ")))

@@ -22,6 +22,7 @@ from app.schemas.event_intelligence import EventImpactLinkQualityRead, EventInte
 from app.services.data_sources.akshare_futures import COMMODITY_NAMES
 from app.services.data_sources.free_ingest import CATEGORY_BY_SYMBOL
 from app.services.event_intelligence import evaluate_event_intelligence_quality
+from app.services.translation.market import category_label, signal_type_label
 
 router = APIRouter(prefix="/api/causal-web", tags=["causal-web"])
 
@@ -601,21 +602,36 @@ def _seed_from_market_metric(row: MarketData) -> GraphNodeSeed:
 
 
 def _seed_from_signal(row: SignalTrack) -> GraphNodeSeed:
+    signal_zh = signal_type_label(row.signal_type)
+    category_zh = category_label(row.category)
+    category_en = _humanize_token(row.category)
+    signal_en = _humanize_token(row.signal_type)
+    regime = row.regime_at_emission or row.regime or "unknown"
     return GraphNodeSeed(
         id=f"signal-{row.id}",
         type="signal",
-        label=f"{row.signal_type} / {row.category}",
+        label=f"{signal_zh} / {category_zh}",
         timestamp=row.created_at,
         category=row.category,
         confidence=row.confidence,
         direction="neutral",
         tags=tuple(filter(None, (row.signal_type, row.category, row.regime_at_emission))),
         narrative=(
-            f"{row.signal_type} confidence {row.confidence:.0%}; "
-            f"outcome={row.outcome}; regime={row.regime_at_emission or row.regime or 'unknown'}"
+            f"{signal_zh}置信度 {row.confidence:.0%}；"
+            f"结果={_zh_text(row.outcome or 'pending')}；状态={_zh_text(regime)}"
         ),
         alert_linked=row.alert_id is not None,
         ref_id=row.id,
+        label_zh=f"{signal_zh} / {category_zh}",
+        label_en=f"{signal_en} / {category_en}",
+        narrative_zh=(
+            f"{category_zh}板块出现{signal_zh}，置信度 {row.confidence:.0%}；"
+            f"结果={_zh_text(row.outcome or 'pending')}；状态={_zh_text(regime)}。"
+        ),
+        narrative_en=(
+            f"{category_en} emitted {signal_en}; confidence {row.confidence:.0%}; "
+            f"outcome={row.outcome or 'pending'}; regime={regime}."
+        ),
     )
 
 
@@ -1297,6 +1313,14 @@ _TEXT_ZH_REPLACEMENTS: tuple[tuple[str, str], ...] = (
     ("cost_support", "成本支撑"),
     ("momentum", "动量"),
     ("price_gap", "价差偏离"),
+    ("spread_anomaly", "价差异常"),
+    ("basis_shift", "基差变动"),
+    ("rubber_supply_shock", "橡胶供应冲击"),
+    ("marginal_capacity_squeeze", "边际产能挤压"),
+    ("capacity_contraction", "产能收缩"),
+    ("restart_expectation", "复产预期"),
+    ("median_pressure", "中位成本压力"),
+    ("market", "行情"),
     ("weather", "天气"),
     ("supply", "供应"),
     ("demand", "需求"),

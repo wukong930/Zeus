@@ -240,6 +240,12 @@ Phase 10.37 已落地的新闻 / 预警翻译边界：
 - `translation-backfill` 调度任务按配置批量回填历史 `news_events` 与 `alerts`，术语表版本升级后会重新刷新旧记录。
 - 前端和聚合 API 优先消费中文字段，但保留 `*_original` 用于审计、反证、LLM 复核和后续双语展示。
 
+Phase 10.38 已落地的枚举字段本地化边界：
+
+- 信号类型、板块、机制和事件类型增加统一标签映射；`inventory_shock`、`marginal_capacity_squeeze` 等内部枚举只作为审计和过滤字段保留。
+- Event Intelligence 的行情异常入口会生成中文标题、摘要、证据和影响链理由；已存在的 market-ingress 候选会在 `event-intelligence-sync` 中刷新阅读字段。
+- Causal Web、World Risk Map、Alerts 和 Analytics 展示层使用中文可读标签，避免用户看到原始 `signal_type`。
+
 治理约束：
 
 - 引擎判断默认只进入 Shadow / review，不直接修改生产阈值或自动发交易指令。

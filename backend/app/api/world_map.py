@@ -21,6 +21,7 @@ from app.models.signal import SignalTrack
 from app.schemas.event_intelligence import EventImpactLinkQualityRead, EventIntelligenceQualityRead
 from app.services.data_sources.open_meteo import DEFAULT_WEATHER_LOCATIONS
 from app.services.event_intelligence import evaluate_event_intelligence_quality
+from app.services.translation.market import signal_type_label
 
 router = APIRouter(prefix="/api/world-map", tags=["world-map"])
 
@@ -2098,13 +2099,14 @@ def _factor_signals(
         )
     for row in matched_signals[:8]:
         factor = _factor_from_text(row.signal_type)
+        signal_zh = signal_type_label(row.signal_type)
         signals.append(
             FactorSignal(
                 factor=factor,
                 weight=min(max(row.confidence, 0.3), 1.0),
                 evidence_kind="signal",
-                label_zh=f"{row.signal_type} 信号",
-                label_en=f"{row.signal_type} signal",
+                label_zh=f"{signal_zh}信号",
+                label_en=f"{str(row.signal_type).replace('_', ' ')} signal",
                 source=f"signal:{row.id}",
             )
         )

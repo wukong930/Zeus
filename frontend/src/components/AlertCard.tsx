@@ -81,7 +81,7 @@ export function AlertCard({ alert, onClick, glow }: AlertCardProps) {
             <Badge variant={alert.severity}>{alert.severity.toUpperCase()}</Badge>
             <span className="text-xs text-text-muted font-mono">{alert.symbol}</span>
             <span className="text-xs text-text-muted">·</span>
-            <span className="text-xs text-text-muted">{alert.evaluator}</span>
+            <span className="text-xs text-text-muted">{text(alert.evaluator)}</span>
             {alert.confidenceTier && (
               <Badge variant={alert.humanActionRequired ? "orange" : "neutral"}>
                 {alert.confidenceTier}

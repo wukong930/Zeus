@@ -7,6 +7,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.event_intelligence import EventImpactLink, EventIntelligenceItem
 from app.models.industry_data import IndustryData
 from app.models.news_events import NewsEvent
 from app.models.signal import SignalTrack
@@ -19,6 +20,7 @@ from app.services.event_intelligence.resolver import (
     create_event_intelligence_from_draft,
     resolve_news_event_impacts,
 )
+from app.services.translation.market import category_label, mechanism_label, signal_type_label
 
 WEATHER_DATA_TYPES = frozenset(
     {
@@ -279,7 +281,7 @@ def weather_event_candidate(
             confidence=round(confidence * (1.0 if mechanism == "weather" else 0.86), 4),
             impact_score=round(confidence * (100 if mechanism == "weather" else 86), 2),
             horizon="short",
-            rationale=f"{symbol} 对 {mechanism} 机制敏感，{trigger['label']} 进入事件智能候选链。",
+            rationale=f"{symbol} 对{mechanism_label(mechanism)}机制敏感，{trigger['label']} 进入事件智能候选链。",
             evidence=tuple(evidence),
             counterevidence=tuple(counterevidence),
             status="shadow_review",
@@ -303,11 +305,14 @@ def market_signal_event_candidate(
     observed_at = _ensure_tz(now or datetime.now(UTC))
     event_timestamp = _ensure_tz(row.created_at or observed_at)
     mechanism = _mechanism_for_signal_type(row.signal_type)
+    mechanism_zh = mechanism_label(mechanism)
+    signal_zh = signal_type_label(row.signal_type)
+    category_zh = category_label(row.category)
     confidence = round(min(max(row.confidence, 0.0), 1.0), 4)
     source_reliability = 0.74 if row.adversarial_passed is True else 0.62
     evidence = _compact(
         [
-            f"{row.signal_type} / {row.category} 信号置信度 {confidence:.0%}。",
+            f"{signal_zh} / {category_zh} 信号置信度 {confidence:.0%}。",
             f"z-score {row.z_score:.2f}。" if row.z_score is not None else "",
             f"regime: {row.regime_at_emission or row.regime}" if row.regime_at_emission or row.regime else "",
             f"outcome: {row.outcome}",
@@ -322,11 +327,11 @@ def market_signal_event_candidate(
     draft = EventIntelligenceDraft(
         source_type="market",
         source_id=str(row.id),
-        title=f"行情异常：{row.signal_type}",
-        summary=f"{row.category} 出现 {row.signal_type} 信号，进入事件智能候选链。",
+        title=f"行情异常：{signal_zh}",
+        summary=f"{category_zh}板块出现{signal_zh}，进入事件智能候选链。",
         event_type="market",
         event_timestamp=event_timestamp,
-        entities=[row.category],
+        entities=[category_zh],
         symbols=symbols,
         regions=_regions_for_symbols(symbols),
         mechanisms=[mechanism],
@@ -342,7 +347,10 @@ def market_signal_event_candidate(
             "resolver_version": "event-intelligence-ingress-v1",
             "signal_track_id": str(row.id),
             "signal_type": row.signal_type,
+            "signal_type_label": signal_zh,
             "category": row.category,
+            "category_label": category_zh,
+            "mechanism_label": mechanism_zh,
             "z_score": row.z_score,
             "outcome": row.outcome,
             "adversarial_passed": row.adversarial_passed,
@@ -358,7 +366,7 @@ def market_signal_event_candidate(
             confidence=confidence,
             impact_score=round(confidence * 100, 2),
             horizon="short",
-            rationale=f"{symbol} 所属 {row.category} 板块出现 {row.signal_type} 行情异常，需结合外部事件确认方向。",
+            rationale=f"{symbol} 所属{category_zh}板块出现{signal_zh}，当前先归入{mechanism_zh}机制，需结合外部事件确认方向。",
             evidence=tuple(evidence),
             counterevidence=tuple(counterevidence),
             status="shadow_review",
@@ -423,6 +431,16 @@ async def _create_candidates(
                     note="Ingress candidate had no impact links.",
                     payload={"source_type": item.source_type, "source_id": item.source_id},
                 )
+            if not was_created:
+                await _refresh_existing_ingress_candidate(
+                    session,
+                    item,
+                    links,
+                    event_draft,
+                    link_drafts,
+                    actor=actor,
+                    action=action,
+                )
             created += int(was_created)
             existing += int(not was_created)
         except Exception as exc:
@@ -433,6 +451,78 @@ async def _create_candidates(
                 }
             )
     return created, existing
+
+
+async def _refresh_existing_ingress_candidate(
+    session: AsyncSession,
+    item: EventIntelligenceItem,
+    links: list[EventImpactLink],
+    event_draft: EventIntelligenceDraft,
+    link_drafts: list[EventImpactLinkDraft],
+    *,
+    actor: str,
+    action: str,
+) -> None:
+    if event_draft.source_type != "market" or item.status != "shadow_review":
+        return
+
+    changed_fields: list[str] = []
+    for field_name in (
+        "title",
+        "summary",
+        "entities",
+        "symbols",
+        "regions",
+        "mechanisms",
+        "evidence",
+        "counterevidence",
+    ):
+        next_value = getattr(event_draft, field_name)
+        if isinstance(next_value, tuple):
+            next_value = list(next_value)
+        if getattr(item, field_name) != next_value:
+            setattr(item, field_name, next_value)
+            changed_fields.append(field_name)
+
+    next_payload = {**(item.source_payload or {}), **event_draft.source_payload}
+    if item.source_payload != next_payload:
+        item.source_payload = next_payload
+        changed_fields.append("source_payload")
+
+    draft_by_scope = {
+        (draft.symbol, draft.region_id, draft.mechanism): draft
+        for draft in link_drafts
+    }
+    for link in links:
+        if link.status != "shadow_review":
+            continue
+        draft = draft_by_scope.get((link.symbol, link.region_id, link.mechanism))
+        if draft is None:
+            continue
+        for field_name in ("rationale", "evidence", "counterevidence"):
+            next_value = getattr(draft, field_name)
+            if isinstance(next_value, tuple):
+                next_value = list(next_value)
+            if getattr(link, field_name) != next_value:
+                setattr(link, field_name, next_value)
+                changed_fields.append(f"link.{field_name}")
+
+    if changed_fields:
+        await record_event_intelligence_audit(
+            session,
+            event_item_id=item.id,
+            action=f"{action}.refresh_labels",
+            actor=actor,
+            before_status=item.status,
+            after_status=item.status,
+            note="Refreshed display labels for an existing market-ingress candidate.",
+            payload={
+                "source_type": item.source_type,
+                "source_id": item.source_id,
+                "changed_fields": sorted(set(changed_fields)),
+                "production_effect": "none",
+            },
+        )
 
 
 async def _load_weather_rows(session: AsyncSession, *, limit: int) -> list[IndustryData]:

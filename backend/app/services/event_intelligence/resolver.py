@@ -18,6 +18,7 @@ from app.services.event_intelligence.semantic import (
     SemanticCompleter,
     extract_news_event_semantics,
 )
+from app.services.translation.market import mechanism_label
 
 
 @dataclass(frozen=True)
@@ -714,7 +715,7 @@ def _rationale(symbol: str, region_id: str | None, mechanism: str, direction: st
     profile = profile_for_symbol(symbol)
     name = profile.name_zh if profile else symbol
     region_label = region_id or "global"
-    return f"{name} 对 {mechanism} 机制敏感，当前事件在 {region_label} 形成 {direction} 方向的候选影响链。"
+    return f"{name} 对{mechanism_label(mechanism)}机制敏感，当前事件在 {region_label} 形成 {direction} 方向的候选影响链。"
 
 
 def _event_item_from_draft(event_draft: EventIntelligenceDraft) -> EventIntelligenceItem:

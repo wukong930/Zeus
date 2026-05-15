@@ -195,6 +195,29 @@ def test_market_signal_ingress_maps_high_confidence_signal_to_event_scope() -> N
     assert all(link.direction == "watch" for link in links)
 
 
+def test_market_signal_ingress_uses_translated_signal_labels() -> None:
+    now = datetime(2026, 5, 14, tzinfo=UTC)
+    row = SignalTrack(
+        id=uuid4(),
+        signal_type="inventory_shock",
+        category="rubber",
+        confidence=0.78,
+        outcome="pending",
+        created_at=now,
+    )
+
+    candidate = market_signal_event_candidate(row, now=now)
+
+    assert candidate is not None
+    event, links = candidate
+    assert event.title == "行情异常：库存冲击"
+    assert event.summary == "橡胶板块出现库存冲击，进入事件智能候选链。"
+    assert event.source_payload["signal_type_label"] == "库存冲击"
+    assert "inventory_shock" not in event.title
+    assert all("inventory_shock" not in link.rationale for link in links)
+    assert all("库存冲击" in link.rationale for link in links)
+
+
 def test_market_signal_ingress_skips_low_confidence_or_unmapped_category() -> None:
     now = datetime(2026, 5, 14, tzinfo=UTC)
     low_confidence = SignalTrack(

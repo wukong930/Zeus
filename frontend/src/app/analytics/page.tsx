@@ -424,9 +424,9 @@ function CalibrationWeightsPanel({ dashboard }: { dashboard: SignalCalibrationDa
               {rows.map((row) => (
                 <tr key={row.target_key} className="border-b border-border-subtle hover:bg-bg-surface-raised">
                   <td className="px-3 py-3">
-                    <div className="font-medium text-text-primary">{row.signal_type}</div>
+                    <div className="font-medium text-text-primary">{text(row.signal_type)}</div>
                     <div className="mt-1 font-mono text-caption text-text-muted">
-                      {row.category} · {text(regimeLabel(row.regime))}
+                      {text(row.category)} · {text(regimeLabel(row.regime))}
                     </div>
                   </td>
                   <td className="px-3 py-3 text-right font-mono tabular-nums">
@@ -923,7 +923,7 @@ function SliceTable({
       <div className="space-y-2">
         {data.map((d) => (
           <div key={d.label} className="flex items-center gap-3 text-sm">
-            <div className="w-44 text-text-secondary truncate">{d.label}</div>
+            <div className="w-44 text-text-secondary truncate">{text(d.label)}</div>
             <div className="flex-1 h-1.5 bg-bg-surface-raised rounded-full">
               <div
                 className="h-full rounded-full bg-brand-emerald"

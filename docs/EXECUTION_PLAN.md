@@ -10,6 +10,7 @@
 - 默认走本地商品术语表，离线、低成本、可回放；可通过 `TRANSLATION_LLM_ENABLED=true` 切到已配置 LLM 翻译。
 - 新增 `translation-backfill` 调度任务，支持历史新闻和预警批量补翻译。
 - News Events、Alerts、Causal Web、World Risk Map 和 Event Intelligence 聚合层统一优先读取中文字段，英文原文继续用于审计和复核。
+- 2026-05-16 补充 Phase 10.38 枚举字段本地化审计：信号类型、板块、机制、事件类型不再裸露内部枚举值，`inventory_shock` 等字段只保留在审计 payload。
 
 ## 变更说明（v1.7 — Event Intelligence Engine）
 
@@ -1001,6 +1002,11 @@ Causa 的 `event_driven` 评估器实际上是纯技术面（gap + volume），*
   - [x] 新闻入库、Alert Agent、手动创建预警、事件智能、因果网络和世界风险地图统一优先使用中文展示字段。
   - [x] 默认本地术语表翻译，`TRANSLATION_LLM_ENABLED=true` 时可调用统一 LLM registry 进行全文翻译。
   - [x] 新增 `translation-backfill` 调度任务，历史数据可按版本批量补翻译。
+- [x] **Phase 10.38 枚举字段本地化审计**
+  - [x] 信号类型、板块、机制和事件类型增加统一中文标签映射。
+  - [x] Event Intelligence 行情异常入口不再把 `signal_type` 原样拼进标题、摘要、证据和理由。
+  - [x] Causal Web / World Risk Map / Alerts / Analytics 里直接展示的 evaluator、signal type 和 factor signal 标签改为中文可读标签。
+  - [x] 已存在 market-ingress 事件在 `event-intelligence-sync` 时刷新标题、摘要、证据和链路理由。
 
 ### 验证
 
@@ -1022,6 +1028,7 @@ Causa 的 `event_driven` 评估器实际上是纯技术面（gap + volume），*
 - [x] Phase 10.24：World Risk Map 增强模式能显示当前瓦片预算和缓存命中状态，不需要打开开发工具也能判断渲染负载。
 - [x] Phase 10.25：World Risk Map 在标准 / 密集瓦片负载下自动限制增强层渲染数量，并在顶部芯片显示“已降载”。
 - [x] Phase 10.37：新闻事件和预警 API 返回中文优先文本，同时保留英文原文；历史数据可通过调度任务回填翻译。
+- [x] Phase 10.38：行情异常、信号校准和风险地图阅读层不再裸露 `inventory_shock` 等内部枚举。
 
 ---
 
@@ -1069,6 +1076,7 @@ Causa 的 `event_driven` 评估器实际上是纯技术面（gap + volume），*
 ### P4：系统质量续审
 
 - [x] Phase 10.37 / Translation Layer P4.1：新闻事件和预警新增原文保留、中文展示字段、确定性术语表翻译、可选 LLM 翻译和历史回填调度任务。
+- [x] Phase 10.38 / Enum Localization P4.2：深度排查并修复信号类型、板块、机制、事件类型在前后端阅读层裸露内部枚举的问题。
 - [ ] 后端慢查询、索引、分页和缓存复查。
 - [ ] 调度任务真实 handler 覆盖率复查，避免 enabled 但实际 noop。
 - [ ] 全量回归测试、浏览器验证和部署 smoke 流程固化。

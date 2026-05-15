@@ -593,3 +593,9 @@ threshold_modifier、propagation_activator、risk_recalc、数据腐烂防护
 - 默认使用本地商品术语表做确定性翻译，覆盖商品、区域、天气、政策、供需、价格方向和常见新闻源；`TRANSLATION_LLM_ENABLED=true` 后可切换到已配置 LLM 做更自然的全文翻译。
 - 新增 `translation-backfill` 调度任务，可对历史 `news_events` 和 `alerts` 批量补翻译，并在术语表版本升级后自动重刷旧记录。
 - News Events、Alerts、Causal Web、World Risk Map 和 Event Intelligence 聚合层统一优先读取中文字段，仍保留英文原文用于审计和后续 LLM 复核。
+
+# 2026-05-16 — Phase 10.38 枚举字段本地化审计
+
+- 补齐信号类型、板块、机制和事件类型标签映射，避免 `inventory_shock`、`marginal_capacity_squeeze` 等内部字段直接出现在阅读层。
+- Event Intelligence 的行情异常入口改为生成中文标题、摘要、证据和影响链理由；历史 market-ingress 候选会在低频同步时刷新展示标签。
+- Causal Web、World Risk Map、Alerts 和 Analytics 改为展示中文可读信号标签，同时保留原始枚举在 payload 中用于审计、过滤和幂等。
