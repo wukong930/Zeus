@@ -19,11 +19,22 @@ class Alert(Base):
         Index("ix_alerts_confidence_tier", "confidence_tier"),
         Index("ix_alerts_human_action_required", "human_action_required"),
         Index("ix_alerts_dedup_suppressed", "dedup_suppressed"),
+        Index("ix_alerts_translation_status", "translation_status"),
     )
 
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
     title: Mapped[str] = mapped_column(Text, nullable=False)
     summary: Mapped[str] = mapped_column(Text, nullable=False)
+    title_original: Mapped[str | None] = mapped_column(Text)
+    summary_original: Mapped[str | None] = mapped_column(Text)
+    title_zh: Mapped[str | None] = mapped_column(Text)
+    summary_zh: Mapped[str | None] = mapped_column(Text)
+    source_language: Mapped[str] = mapped_column(String(12), default="unknown", nullable=False)
+    translation_status: Mapped[str] = mapped_column(String(20), default="pending", nullable=False)
+    translation_model: Mapped[str | None] = mapped_column(String(100))
+    translation_prompt_version: Mapped[str | None] = mapped_column(String(60))
+    translation_glossary_version: Mapped[str | None] = mapped_column(String(60))
+    translated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     severity: Mapped[str] = mapped_column(String(20), nullable=False)
     category: Mapped[str] = mapped_column(String(20), nullable=False)
     type: Mapped[str] = mapped_column(String(30), nullable=False)

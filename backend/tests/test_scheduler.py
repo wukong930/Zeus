@@ -224,6 +224,13 @@ def test_trade_plan_activation_job_is_registered() -> None:
     assert DEFAULT_JOB_HANDLERS["trade-plan-activation"].__name__ == "trade_plan_activation_job"
 
 
+def test_translation_backfill_job_is_registered() -> None:
+    definition = next(item for item in DEFAULT_JOB_DEFINITIONS if item.id == "translation-backfill")
+
+    assert definition.enabled is True
+    assert DEFAULT_JOB_HANDLERS["translation-backfill"].__name__ == "translation_backfill_job"
+
+
 def test_default_jobs_are_registered_or_explicitly_unconfigured() -> None:
     for definition in DEFAULT_JOB_DEFINITIONS:
         assert definition.id in DEFAULT_JOB_HANDLERS or definition.enabled is False

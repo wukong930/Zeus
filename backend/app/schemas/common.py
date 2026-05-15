@@ -122,6 +122,16 @@ class ContractRead(ContractCreate, ORMModel):
 class AlertCreate(StrictInputModel):
     title: str = Field(min_length=1, max_length=MAX_ALERT_TITLE_LENGTH)
     summary: str = Field(min_length=1, max_length=MAX_ALERT_SUMMARY_LENGTH)
+    title_original: str | None = Field(default=None, max_length=MAX_ALERT_TITLE_LENGTH)
+    summary_original: str | None = Field(default=None, max_length=MAX_ALERT_SUMMARY_LENGTH)
+    title_zh: str | None = Field(default=None, max_length=MAX_ALERT_TITLE_LENGTH)
+    summary_zh: str | None = Field(default=None, max_length=MAX_ALERT_SUMMARY_LENGTH)
+    source_language: str = Field(default="unknown", max_length=12)
+    translation_status: str = Field(default="pending", max_length=20)
+    translation_model: str | None = Field(default=None, max_length=100)
+    translation_prompt_version: str | None = Field(default=None, max_length=60)
+    translation_glossary_version: str | None = Field(default=None, max_length=60)
+    translated_at: datetime | None = None
     severity: str = Field(pattern="^(low|medium|high|critical)$")
     category: str = Field(min_length=1, max_length=20)
     type: str = Field(min_length=1, max_length=30)
@@ -197,6 +207,16 @@ class NewsEventCreate(StrictInputModel):
     raw_url: str | None = Field(default=None, max_length=MAX_NEWS_URL_LENGTH)
     title: str = Field(min_length=1, max_length=MAX_NEWS_TITLE_LENGTH)
     summary: str | None = Field(default=None, max_length=MAX_NEWS_SUMMARY_LENGTH)
+    title_original: str | None = Field(default=None, max_length=MAX_NEWS_TITLE_LENGTH)
+    summary_original: str | None = Field(default=None, max_length=MAX_NEWS_SUMMARY_LENGTH)
+    title_zh: str | None = Field(default=None, max_length=MAX_NEWS_TITLE_LENGTH)
+    summary_zh: str | None = Field(default=None, max_length=MAX_NEWS_SUMMARY_LENGTH)
+    source_language: str = Field(default="unknown", max_length=12)
+    translation_status: str = Field(default="pending", max_length=20)
+    translation_model: str | None = Field(default=None, max_length=100)
+    translation_prompt_version: str | None = Field(default=None, max_length=60)
+    translation_glossary_version: str | None = Field(default=None, max_length=60)
+    translated_at: datetime | None = None
     content_text: str | None = Field(default=None, max_length=MAX_NEWS_CONTENT_LENGTH)
     published_at: datetime
     event_type: str = Field(

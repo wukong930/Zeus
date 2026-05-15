@@ -840,7 +840,13 @@ export interface NewsEvent {
   source: string;
   rawUrl?: string | null;
   title: string;
+  titleOriginal?: string | null;
+  titleZh?: string | null;
   summary: string;
+  summaryOriginal?: string | null;
+  summaryZh?: string | null;
+  sourceLanguage?: string;
+  translationStatus?: string;
   publishedAt: string;
   eventType: string;
   affectedSymbols: string[];
@@ -1007,6 +1013,12 @@ interface BackendAlert {
   id: string;
   title: string;
   summary: string;
+  title_original?: string | null;
+  summary_original?: string | null;
+  title_zh?: string | null;
+  summary_zh?: string | null;
+  source_language?: string;
+  translation_status?: string;
   severity: string;
   category: string;
   type: string;
@@ -1030,6 +1042,16 @@ interface BackendNewsEvent {
   raw_url?: string | null;
   title: string;
   summary: string;
+  title_original?: string | null;
+  summary_original?: string | null;
+  title_zh?: string | null;
+  summary_zh?: string | null;
+  source_language?: string;
+  translation_status?: string;
+  translation_model?: string | null;
+  translation_prompt_version?: string | null;
+  translation_glossary_version?: string | null;
+  translated_at?: string | null;
   published_at: string;
   event_type: string;
   affected_symbols: string[];
@@ -1978,12 +2000,20 @@ function marketChangePct(rows: BackendMarketData[]): number | null {
 }
 
 function mapNewsEvent(event: BackendNewsEvent): NewsEvent {
+  const title = preferredText(event.title_zh, event.title);
+  const summary = preferredText(event.summary_zh, event.summary);
   return {
     id: event.id,
     source: event.source,
     rawUrl: event.raw_url,
-    title: event.title,
-    summary: event.summary,
+    title,
+    titleOriginal: event.title_original ?? event.title,
+    titleZh: event.title_zh,
+    summary,
+    summaryOriginal: event.summary_original ?? event.summary,
+    summaryZh: event.summary_zh,
+    sourceLanguage: event.source_language,
+    translationStatus: event.translation_status,
     publishedAt: event.published_at,
     eventType: event.event_type,
     affectedSymbols: event.affected_symbols,
@@ -1995,6 +2025,11 @@ function mapNewsEvent(event: BackendNewsEvent): NewsEvent {
     verificationStatus: event.verification_status,
     requiresManualConfirmation: event.requires_manual_confirmation,
   };
+}
+
+function preferredText(translated: string | null | undefined, fallback: string): string {
+  const text = translated?.trim();
+  return text || fallback;
 }
 
 function mapEventIntelligenceItem(event: BackendEventIntelligenceItem): EventIntelligenceItem {
@@ -2199,6 +2234,8 @@ function sampleSizeFromBacktestSummary(summary: Record<string, unknown> | null |
 
 function mapAlert(alert: BackendAlert): Alert {
   const symbol = alert.related_assets[0] ?? "N/A";
+  const title = preferredText(alert.title_zh, alert.title);
+  const narrative = preferredText(alert.summary_zh, alert.summary);
   return {
     id: alert.id,
     symbol,
@@ -2208,8 +2245,12 @@ function mapAlert(alert: BackendAlert): Alert {
     confidence: alert.confidence,
     sampleSize: alert.trigger_chain.length,
     triggeredAt: alert.triggered_at,
-    title: alert.title,
-    narrative: alert.summary,
+    title,
+    titleOriginal: alert.title_original ?? alert.title,
+    titleZh: alert.title_zh,
+    narrative,
+    narrativeOriginal: alert.summary_original ?? alert.summary,
+    narrativeZh: alert.summary_zh,
     signalChain: alert.trigger_chain.map((step) => step.description || step.label || "trigger"),
     counterEvidence: alert.risk_items,
     sector: categoryToSector(alert.category),

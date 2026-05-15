@@ -54,6 +54,12 @@ class NewsEventPoint:
     verification_status: str = "single_source"
     requires_manual_confirmation: bool = False
     raw_url: str | None = None
+    title_original: str | None = None
+    summary_original: str | None = None
+    title_zh: str | None = None
+    summary_zh: str | None = None
+    source_language: str = "unknown"
+    translation_status: str = "pending"
 
 
 @dataclass(frozen=True)

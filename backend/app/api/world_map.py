@@ -1114,12 +1114,27 @@ def _apply_mechanism_filter(
         return matched_alerts, matched_news, matched_signals, matched_positions, matched_event_items, matched_event_links
     factor = filters.mechanism
     filtered_alerts = [
-        row for row in matched_alerts if _factor_from_text(" ".join([row.title, row.summary, row.type])) == factor
+        row
+        for row in matched_alerts
+        if _factor_from_text(
+            " ".join([row.title_zh or row.title, row.summary_zh or row.summary, row.type])
+        )
+        == factor
     ]
     filtered_news = [
         row
         for row in matched_news
-        if _factor_from_text(" ".join([row.title, row.summary, row.event_type, row.direction])) == factor
+        if _factor_from_text(
+            " ".join(
+                [
+                    row.title_zh or row.title,
+                    row.summary_zh or row.summary,
+                    row.event_type,
+                    row.direction,
+                ]
+            )
+        )
+        == factor
     ]
     filtered_signals = [row for row in matched_signals if _factor_from_text(row.signal_type) == factor]
     filtered_positions = matched_positions if factor == "demand_shift" else []
@@ -2052,28 +2067,32 @@ def _factor_signals(
         )
     )
     for row in matched_alerts[:8]:
-        factor = _factor_from_text(" ".join([row.title, row.summary, row.type]))
+        title = row.title_zh or row.title
+        summary = row.summary_zh or row.summary
+        factor = _factor_from_text(" ".join([title, summary, row.type]))
         signals.append(
             FactorSignal(
                 factor=factor,
                 weight=min(max(row.confidence, 0.35), 1.0),
                 evidence_kind="alert",
-                label_zh=row.title[:40],
+                label_zh=title[:40],
                 label_en=_english_hint(row.type, row.category),
                 source=f"alert:{row.id}",
             )
         )
     for row in matched_news[:8]:
+        title = row.title_zh or row.title
+        summary = row.summary_zh or row.summary
         factor = _factor_from_text(
-            " ".join([row.title, row.summary, row.event_type, row.direction])
+            " ".join([title, summary, row.event_type, row.direction])
         )
         signals.append(
             FactorSignal(
                 factor=factor,
                 weight=min(max(row.llm_confidence, row.severity / 5), 1.0),
                 evidence_kind="news",
-                label_zh=row.title[:40],
-                label_en=row.title[:80],
+                label_zh=title[:40],
+                label_en=(row.title_original or row.title)[:80],
                 source=f"news:{row.id}",
             )
         )
@@ -2400,6 +2419,8 @@ def _alert_symbols(alert: Alert) -> set[str]:
     values = {str(value).upper() for value in (alert.related_assets or [])}
     values.update(_extract_symbol_tokens(alert.title))
     values.update(_extract_symbol_tokens(alert.summary))
+    values.update(_extract_symbol_tokens(alert.title_zh or ""))
+    values.update(_extract_symbol_tokens(alert.summary_zh or ""))
     return values
 
 

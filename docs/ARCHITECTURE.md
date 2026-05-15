@@ -233,6 +233,13 @@ Phase 10.31 已落地的事件智能低频入口边界：
 - 新增 `event-intelligence-sync` 调度任务，每 2 小时低频 backfill：新闻补齐 `news_event` 作用域，天气异常生成 `weather` 作用域，行情异常信号生成 `market` 作用域。
 - 该入口只进入 `shadow_review` / `human_review` 与质量门，不直接改变 Alert Agent 阈值、持仓阈值或生产交易建议。
 
+Phase 10.37 已落地的新闻 / 预警翻译边界：
+
+- `services/translation` 在新闻事件和预警入库时保留英文原文，生成中文展示字段，并记录 `source_language`、`translation_status`、`translation_model`、`translation_prompt_version` 和 `translation_glossary_version`。
+- 默认翻译路径使用本地商品术语表，保证离线、低成本、可回放；当 `TRANSLATION_LLM_ENABLED=true` 时，可通过统一 LLM registry 使用已配置模型做更自然的全文翻译。
+- `translation-backfill` 调度任务按配置批量回填历史 `news_events` 与 `alerts`，术语表版本升级后会重新刷新旧记录。
+- 前端和聚合 API 优先消费中文字段，但保留 `*_original` 用于审计、反证、LLM 复核和后续双语展示。
+
 治理约束：
 
 - 引擎判断默认只进入 Shadow / review，不直接修改生产阈值或自动发交易指令。
@@ -1011,7 +1018,7 @@ final_score = α × cosine_sim + β × bm25_score + γ × time_decay
 |------|------|---------|
 | `contract_metadata` | 合约元数据 + 主力切换 | symbol, contract_month, expiry_date, is_main, main_until, volume, oi |
 | `regime_state` | 每日板块 regime | category, date, regime, adx, atr_pct |
-| `news_events` | 结构化新闻事件 | source, raw_url, event_type, affected_symbols, direction, severity, llm_confidence |
+| `news_events` | 结构化新闻事件 | source, raw_url, event_type, affected_symbols, direction, severity, llm_confidence, title_original/title_zh, translation_status |
 | `null_distribution_cache` | 零分布预计算缓存 | signal_type, category, distribution_stats(jsonb), computed_at |
 | `llm_cache` | LLM 调用缓存 | cache_key, response, ttl, hit_count |
 | `llm_usage_log` | LLM 调用日志 | module, model, input_tokens, output_tokens, cost_usd, cache_hit |
@@ -1048,7 +1055,7 @@ final_score = α × cosine_sim + β × bm25_score + γ × time_decay
 
 ### 7.2 修改表
 
-- **`alerts`** — 新增: `adversarial_passed`, `llm_involved`, `confidence_tier`, `human_action_required`, `dedup_suppressed`
+- **`alerts`** — 新增: `adversarial_passed`, `llm_involved`, `confidence_tier`, `human_action_required`, `dedup_suppressed`, `title_original/title_zh`, `summary_original/summary_zh`, `translation_status`
 - **`positions`** — 新增: `manual_entry`, `avg_entry_price`, `monitoring_priority`, `propagation_nodes(jsonb)`
 - **`signal_track`** — 新增: `adversarial_passed`, `calibration_weight_at_emission`, `signal_combination_hash`, `forward_return_1d`, `forward_return_5d`, `forward_return_20d`, `regime_at_emission`
 - **`market_data`** — 新增: `vintage_at`（PIT 数据），`contract_id`（关联 contract_metadata）
@@ -1076,6 +1083,7 @@ zeus/
 │   │   │   ├── contracts/       # 合约元数据 + 换月（新）
 │   │   │   ├── signals/         # 信号检测（7 evaluators，含 news_event）
 │   │   │   ├── news/            # 新闻事件管线（新）
+│   │   │   ├── translation/     # 新闻 / 预警翻译层（原文保留 + 中文展示）
 │   │   │   ├── adversarial/     # 对抗引擎
 │   │   │   ├── scoring/         # 评分引擎
 │   │   │   ├── alert_agent/     # 混合决策（规则 + LLM + 去重）

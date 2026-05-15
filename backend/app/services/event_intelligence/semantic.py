@@ -216,6 +216,12 @@ def build_semantic_extraction_payload(news_event: NewsEvent) -> dict[str, Any]:
             "source": news_event.source,
             "title": news_event.title,
             "summary": news_event.summary,
+            "title_original": news_event.title_original or news_event.title,
+            "summary_original": news_event.summary_original or news_event.summary,
+            "title_zh": news_event.title_zh,
+            "summary_zh": news_event.summary_zh,
+            "source_language": news_event.source_language,
+            "translation_status": news_event.translation_status,
             "content_text": news_event.content_text,
             "event_type": news_event.event_type,
             "affected_symbols": news_event.affected_symbols,
@@ -275,6 +281,8 @@ def _combined_news_text(news_event: NewsEvent) -> str:
         for part in (
             news_event.title,
             news_event.summary or "",
+            news_event.title_zh or "",
+            news_event.summary_zh or "",
             news_event.content_text or "",
         )
         if part

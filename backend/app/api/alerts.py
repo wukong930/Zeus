@@ -10,6 +10,7 @@ from app.core.database import get_db
 from app.core.events import ZeusEvent, iter_events
 from app.models.alert import Alert
 from app.schemas.common import AlertCreate, AlertRead
+from app.services.translation import apply_alert_translation
 
 router = APIRouter(prefix="/api/alerts", tags=["alerts"])
 
@@ -33,7 +34,8 @@ async def list_alerts(
 
 @router.post("", response_model=AlertRead, status_code=status.HTTP_201_CREATED)
 async def create_alert(payload: AlertCreate, session: AsyncSession = Depends(get_db)) -> Alert:
-    row = Alert(**payload.model_dump(exclude_none=True))
+    data = payload.model_dump(exclude_none=True)
+    row = Alert(**apply_alert_translation(data))
     session.add(row)
     await session.commit()
     await session.refresh(row)

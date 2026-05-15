@@ -12,7 +12,11 @@ export interface Alert {
   sampleSize: number;
   triggeredAt: string;
   title: string;
+  titleOriginal?: string | null;
+  titleZh?: string | null;
   narrative: string;
+  narrativeOriginal?: string | null;
+  narrativeZh?: string | null;
   signalChain: string[];
   counterEvidence: string[];
   sector: Sector;

@@ -260,6 +260,9 @@ async def test_new_manual_confirmation_event_is_not_published() -> None:
     assert created is True
     assert row.requires_manual_confirmation is True
     assert should_publish is False
+    assert row.title_original == "交易所提示铁矿石合约交易风险"
+    assert row.title_zh == "交易所提示铁矿石合约交易风险"
+    assert row.translation_status == "source_zh"
 
 
 async def test_record_news_event_creates_event_intelligence(monkeypatch) -> None:
@@ -296,6 +299,7 @@ async def test_record_news_event_creates_event_intelligence(monkeypatch) -> None
 
     assert result.should_publish is False
     assert called == {"session": session, "news_event_id": result.row.id}
+    assert result.row.title_zh == result.row.title
 
 
 async def test_news_ingest_can_extract_rubber_text_industry_rows(monkeypatch) -> None:

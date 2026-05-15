@@ -549,16 +549,22 @@ def _humanize_token(value: str | None) -> str:
 def _seed_from_news(row: NewsEvent) -> GraphNodeSeed:
     symbols = [str(symbol).upper() for symbol in row.affected_symbols[:3]]
     category = _category_from_symbols(symbols)
+    label = row.title_zh or row.title
+    narrative = row.summary_zh or row.summary or label
     return GraphNodeSeed(
         id=f"news-{row.id}",
         type="event",
-        label=row.title,
+        label=label,
         timestamp=row.published_at,
         category=category,
         confidence=row.llm_confidence,
         direction=_direction(row.direction),
         tags=tuple([row.event_type, row.source, *symbols[:2]]),
-        narrative=row.summary or row.title,
+        narrative=narrative,
+        label_zh=row.title_zh,
+        label_en=row.title_original or row.title,
+        narrative_zh=row.summary_zh,
+        narrative_en=row.summary_original or row.summary,
         alert_linked=not row.requires_manual_confirmation,
         ref_id=row.id,
     )
@@ -615,16 +621,22 @@ def _seed_from_signal(row: SignalTrack) -> GraphNodeSeed:
 
 def _seed_from_alert(row: Alert) -> GraphNodeSeed:
     assets = [str(asset).upper() for asset in row.related_assets[:3]]
+    label = row.title_zh or row.title
+    narrative = row.summary_zh or row.one_liner or row.summary or label
     return GraphNodeSeed(
         id=f"alert-{row.id}",
         type="alert",
-        label=row.title,
+        label=label,
         timestamp=row.triggered_at,
         category=row.category,
         confidence=row.confidence,
-        direction=_direction_from_text(f"{row.title} {row.summary}"),
+        direction=_direction_from_text(f"{label} {narrative}"),
         tags=tuple(filter(None, (row.type, row.severity, *assets[:2]))),
-        narrative=row.one_liner or row.summary or row.title,
+        narrative=narrative,
+        label_zh=row.title_zh,
+        label_en=row.title_original or row.title,
+        narrative_zh=row.summary_zh,
+        narrative_en=row.summary_original or row.summary,
         portfolio_linked=bool(assets),
         alert_linked=True,
         ref_id=row.id,

@@ -1,6 +1,15 @@
 # Zeus 执行计划
 
-> 版本: 1.7 | 日期: 2026-05-10 | 总工期: ~22 周
+> 版本: 1.8 | 日期: 2026-05-15 | 总工期: ~22 周
+
+## 变更说明（v1.8 — News / Alert Translation Layer）
+
+新增 **Phase 10.37 新闻 / 预警翻译层**，解决英文新闻和英文预警在前端直接展示的问题：
+
+- 新闻事件和预警入库时保留原文，并生成中文展示字段。
+- 默认走本地商品术语表，离线、低成本、可回放；可通过 `TRANSLATION_LLM_ENABLED=true` 切到已配置 LLM 翻译。
+- 新增 `translation-backfill` 调度任务，支持历史新闻和预警批量补翻译。
+- News Events、Alerts、Causal Web、World Risk Map 和 Event Intelligence 聚合层统一优先读取中文字段，英文原文继续用于审计和复核。
 
 ## 变更说明（v1.7 — Event Intelligence Engine）
 
@@ -987,6 +996,11 @@ Causa 的 `event_driven` 评估器实际上是纯技术面（gap + volume），*
   - [x] Event Intelligence 页面支持确认、拒绝、转人工复核，并写入审计日志。
   - [x] Event Intelligence 页面支持编辑影响链的品种、区域、机制、方向、置信度、证据和反证；保存后必须重新复核。
   - [x] Event Intelligence 页面展示审计历史摘要，包含状态流转、操作者、备注、变更字段、复核原因和生产影响。
+- [x] **Phase 10.37 新闻 / 预警翻译层**
+  - [x] `news_events` / `alerts` 新增原文、中文字段、源语言、翻译状态、模型版本、prompt 版本和术语表版本。
+  - [x] 新闻入库、Alert Agent、手动创建预警、事件智能、因果网络和世界风险地图统一优先使用中文展示字段。
+  - [x] 默认本地术语表翻译，`TRANSLATION_LLM_ENABLED=true` 时可调用统一 LLM registry 进行全文翻译。
+  - [x] 新增 `translation-backfill` 调度任务，历史数据可按版本批量补翻译。
 
 ### 验证
 
@@ -1007,6 +1021,7 @@ Causa 的 `event_driven` 评估器实际上是纯技术面（gap + volume），*
 - [x] Phase 10.23：World Risk Map 缩放 / 拖拽时瓦片刷新不会让旧请求覆盖新视图，同筛选同视口优先复用缓存。
 - [x] Phase 10.24：World Risk Map 增强模式能显示当前瓦片预算和缓存命中状态，不需要打开开发工具也能判断渲染负载。
 - [x] Phase 10.25：World Risk Map 在标准 / 密集瓦片负载下自动限制增强层渲染数量，并在顶部芯片显示“已降载”。
+- [x] Phase 10.37：新闻事件和预警 API 返回中文优先文本，同时保留英文原文；历史数据可通过调度任务回填翻译。
 
 ---
 
@@ -1053,6 +1068,7 @@ Causa 的 `event_driven` 评估器实际上是纯技术面（gap + volume），*
 
 ### P4：系统质量续审
 
+- [x] Phase 10.37 / Translation Layer P4.1：新闻事件和预警新增原文保留、中文展示字段、确定性术语表翻译、可选 LLM 翻译和历史回填调度任务。
 - [ ] 后端慢查询、索引、分页和缓存复查。
 - [ ] 调度任务真实 handler 覆盖率复查，避免 enabled 但实际 noop。
 - [ ] 全量回归测试、浏览器验证和部署 smoke 流程固化。

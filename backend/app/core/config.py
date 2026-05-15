@@ -24,6 +24,8 @@ class Settings(BaseSettings):
 
     llm_model: str | None = None
     llm_timeout_seconds: float = 120.0
+    translation_llm_enabled: bool = False
+    translation_backfill_limit: int = Field(default=100, ge=1, le=1000)
     openai_api_key: str | None = None
     openai_base_url: str = "https://api.openai.com/v1"
     xai_api_key: str | None = None

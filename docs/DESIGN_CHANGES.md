@@ -586,3 +586,10 @@ threshold_modifier、propagation_activator、risk_recalc、数据腐烂防护
 - 无需人工确认的计划为 `pending`；需要 Alert Agent / 场景复核的计划为 `pending_review`，保留在交易计划页阅读但不能直接采纳。
 - 交易计划页改为展示 `pending` 与 `pending_review`，并用“可执行 / 待确认”区分状态，避免 watchlist-only 观察信号污染交易建议。
 - 新增 `trade-plan-activation` 调度任务：从已经 `handled` 的 `signal.scored` 事件回填缺失推荐，按 alert 关联幂等跳过重复项，并跳过已过期的历史信号，避免把陈旧回放包装成有效交易建议。
+
+# 2026-05-15 — Phase 10.37 新闻 / 预警翻译层
+
+- 新增 `services/translation`，新闻事件和预警在入库时保留原文，并生成中文展示字段、语言状态、模型版本、prompt 版本和术语表版本。
+- 默认使用本地商品术语表做确定性翻译，覆盖商品、区域、天气、政策、供需、价格方向和常见新闻源；`TRANSLATION_LLM_ENABLED=true` 后可切换到已配置 LLM 做更自然的全文翻译。
+- 新增 `translation-backfill` 调度任务，可对历史 `news_events` 和 `alerts` 批量补翻译，并在术语表版本升级后自动重刷旧记录。
+- News Events、Alerts、Causal Web、World Risk Map 和 Event Intelligence 聚合层统一优先读取中文字段，仍保留英文原文用于审计和后续 LLM 复核。

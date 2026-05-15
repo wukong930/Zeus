@@ -18,6 +18,7 @@ from app.services.news.quality import (
     requires_manual_confirmation,
     verification_status_for,
 )
+from app.services.translation import apply_news_event_translation
 from app.services.vector_search.embedder import EmbeddingResult
 
 
@@ -103,7 +104,7 @@ def normalize_news_payload(payload: StructuredNewsEvent | BaseModel | dict[str, 
         sources.append(source)
     extraction_payload["sources"] = sources
 
-    return {
+    row_data = {
         "source": source,
         "raw_url": data.get("raw_url"),
         "title": str(data["title"]),
@@ -131,6 +132,21 @@ def normalize_news_payload(payload: StructuredNewsEvent | BaseModel | dict[str, 
         ),
         "extraction_payload": extraction_payload,
     }
+    for key in (
+        "title_original",
+        "summary_original",
+        "title_zh",
+        "summary_zh",
+        "source_language",
+        "translation_status",
+        "translation_model",
+        "translation_prompt_version",
+        "translation_glossary_version",
+        "translated_at",
+    ):
+        if key in data:
+            row_data[key] = data[key]
+    return apply_news_event_translation(row_data)
 
 
 def merge_duplicate_event(row: NewsEvent, data: dict[str, Any]) -> None:
@@ -179,6 +195,8 @@ def store_vector_chunk(
         for part in (
             row.title,
             row.summary,
+            row.title_zh or "",
+            row.summary_zh or "",
             row.content_text or "",
         )
         if part
@@ -196,6 +214,8 @@ def store_vector_chunk(
             "affected_symbols": row.affected_symbols,
             "direction": row.direction,
             "severity": row.severity,
+            "source_language": row.source_language,
+            "translation_status": row.translation_status,
             "published_at": row.published_at.isoformat(),
             "sector": infer_category_from_symbols(row.affected_symbols),
         },
@@ -225,6 +245,16 @@ def news_event_payload(row: NewsEvent) -> dict[str, Any]:
         "raw_url": row.raw_url,
         "title": row.title,
         "summary": row.summary,
+        "title_original": row.title_original,
+        "summary_original": row.summary_original,
+        "title_zh": row.title_zh,
+        "summary_zh": row.summary_zh,
+        "source_language": row.source_language,
+        "translation_status": row.translation_status,
+        "translation_model": row.translation_model,
+        "translation_prompt_version": row.translation_prompt_version,
+        "translation_glossary_version": row.translation_glossary_version,
+        "translated_at": row.translated_at.isoformat() if row.translated_at is not None else None,
         "published_at": row.published_at.isoformat(),
         "event_type": row.event_type,
         "affected_symbols": row.affected_symbols,

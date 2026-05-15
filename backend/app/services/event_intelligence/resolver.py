@@ -407,11 +407,13 @@ def build_event_intelligence_from_news(
     status = "human_review" if requires_manual_confirmation else "shadow_review"
     entities = _merge_text_lists(_semantic_entities(semantic), _extract_entities(news_event, text))
     regions = _merge_text_lists(_semantic_regions(semantic), _regions_for_symbols(symbols))
+    display_title = news_event.title_zh or news_event.title
+    display_summary = news_event.summary_zh or news_event.summary
     evidence = tuple(
         _compact_evidence(
             [
-                news_event.title,
-                news_event.summary,
+                display_title,
+                display_summary,
                 news_event.raw_url or "",
                 *_semantic_evidence(semantic),
             ]
@@ -443,8 +445,8 @@ def build_event_intelligence_from_news(
     event_draft = EventIntelligenceDraft(
         source_type="news_event",
         source_id=str(news_event.id),
-        title=news_event.title,
-        summary=news_event.summary,
+        title=display_title,
+        summary=display_summary,
         event_type=news_event.event_type,
         event_timestamp=news_event.published_at,
         entities=tuple(entities),
@@ -463,6 +465,11 @@ def build_event_intelligence_from_news(
             "resolver_version": "event-intelligence-rules-v2",
             "news_event_id": str(news_event.id),
             "source": news_event.source,
+            "title_original": news_event.title_original or news_event.title,
+            "summary_original": news_event.summary_original or news_event.summary,
+            "title_zh": news_event.title_zh,
+            "summary_zh": news_event.summary_zh,
+            "translation_status": news_event.translation_status,
             "source_count": news_event.source_count,
             "verification_status": news_event.verification_status,
             "severity": news_event.severity,
@@ -864,6 +871,8 @@ def _combined_news_text(news_event: NewsEvent) -> str:
         for part in (
             news_event.title,
             news_event.summary or "",
+            news_event.title_zh or "",
+            news_event.summary_zh or "",
             news_event.content_text or "",
         )
         if part

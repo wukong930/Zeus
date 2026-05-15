@@ -43,6 +43,7 @@ from app.services.signals.types import (
     SpreadStatistics,
     TriggerContext,
 )
+from app.services.translation import apply_alert_translation
 
 EventPublisher = Callable[..., Awaitable[ZeusEvent]]
 
@@ -151,6 +152,12 @@ def trigger_context_from_payload(payload: dict[str, Any]) -> TriggerContext:
                 verification_status=str(row.get("verification_status") or "single_source"),
                 requires_manual_confirmation=bool(row.get("requires_manual_confirmation", False)),
                 raw_url=row.get("raw_url"),
+                title_original=row.get("title_original"),
+                summary_original=row.get("summary_original"),
+                title_zh=row.get("title_zh"),
+                summary_zh=row.get("summary_zh"),
+                source_language=str(row.get("source_language") or "unknown"),
+                translation_status=str(row.get("translation_status") or "pending"),
             )
             for row in payload.get("news_events", [])
         ],
@@ -425,10 +432,26 @@ async def handle_signal_scored(
         if agent_decision.human_action_required
         else "active"
     )
+    translated_alert = apply_alert_translation(
+        {
+            "title": str(signal["title"]),
+            "summary": agent_decision.narrative,
+        }
+    )
     alert = Alert(
         id=alert_id,
-        title=str(signal["title"]),
-        summary=agent_decision.narrative,
+        title=str(translated_alert.get("title_zh") or translated_alert["title"]),
+        summary=str(translated_alert.get("summary_zh") or translated_alert["summary"]),
+        title_original=translated_alert.get("title_original"),
+        summary_original=translated_alert.get("summary_original"),
+        title_zh=translated_alert.get("title_zh"),
+        summary_zh=translated_alert.get("summary_zh"),
+        source_language=str(translated_alert.get("source_language") or "unknown"),
+        translation_status=str(translated_alert.get("translation_status") or "pending"),
+        translation_model=translated_alert.get("translation_model"),
+        translation_prompt_version=translated_alert.get("translation_prompt_version"),
+        translation_glossary_version=translated_alert.get("translation_glossary_version"),
+        translated_at=translated_alert.get("translated_at"),
         severity=str(signal["severity"]),
         category=str(context.get("category") or "unknown"),
         type=str(signal["signal_type"]),

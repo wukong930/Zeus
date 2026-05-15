@@ -18,6 +18,7 @@ class NewsEvent(Base):
         Index("ix_news_events_severity", "severity"),
         Index("ix_news_events_dedup_hash", "dedup_hash", unique=True),
         Index("ix_news_events_affected_symbols", "affected_symbols", postgresql_using="gin"),
+        Index("ix_news_events_translation_status", "translation_status"),
     )
 
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
@@ -25,6 +26,16 @@ class NewsEvent(Base):
     raw_url: Mapped[str | None] = mapped_column(Text)
     title: Mapped[str] = mapped_column(Text, nullable=False)
     summary: Mapped[str] = mapped_column(Text, nullable=False)
+    title_original: Mapped[str | None] = mapped_column(Text)
+    summary_original: Mapped[str | None] = mapped_column(Text)
+    title_zh: Mapped[str | None] = mapped_column(Text)
+    summary_zh: Mapped[str | None] = mapped_column(Text)
+    source_language: Mapped[str] = mapped_column(String(12), default="unknown", nullable=False)
+    translation_status: Mapped[str] = mapped_column(String(20), default="pending", nullable=False)
+    translation_model: Mapped[str | None] = mapped_column(String(100))
+    translation_prompt_version: Mapped[str | None] = mapped_column(String(60))
+    translation_glossary_version: Mapped[str | None] = mapped_column(String(60))
+    translated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     content_text: Mapped[str | None] = mapped_column(Text)
     published_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     event_type: Mapped[str] = mapped_column(String(40), nullable=False)
