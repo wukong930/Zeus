@@ -36,6 +36,7 @@ from app.services.news.ingest import ingest_news_items
 from app.services.news.types import RawNewsItem
 from app.services.positions.data_freshness import check_position_freshness
 from app.services.signals.watchlist import get_enabled_watchlist
+from app.services.trade_plans.activation import sync_trade_plan_recommendations
 
 
 JobHandler = Callable[[], Awaitable[dict[str, Any]]]
@@ -71,6 +72,7 @@ DEFAULT_JOB_DEFINITIONS: tuple[JobDefinition, ...] = (
     JobDefinition("learning-reflection", "月度反思 Agent", "0 6 1 * *"),
     JobDefinition("weather-baseline", "天气历史基线", "20 3 * * 0", enabled=False),
     JobDefinition("event-intelligence-sync", "事件智能入口同步", "10 */2 * * *"),
+    JobDefinition("trade-plan-activation", "交易计划激活", "20 */1 * * *"),
 )
 
 
@@ -463,6 +465,16 @@ async def event_intelligence_sync_job() -> dict[str, Any]:
     }
 
 
+async def trade_plan_activation_job() -> dict[str, Any]:
+    async with AsyncSessionLocal() as session:
+        result = await sync_trade_plan_recommendations(session)
+        await session.commit()
+    return {
+        **result.to_dict(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+
 DEFAULT_JOB_HANDLERS: dict[str, JobHandler] = {
     "ingest": ingest_job,
     "track-outcomes": track_outcomes_job,
@@ -479,4 +491,5 @@ DEFAULT_JOB_HANDLERS: dict[str, JobHandler] = {
     "learning-reflection": learning_reflection_job,
     "weather-baseline": weather_baseline_job,
     "event-intelligence-sync": event_intelligence_sync_job,
+    "trade-plan-activation": trade_plan_activation_job,
 }

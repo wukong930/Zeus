@@ -1049,6 +1049,7 @@ Causa 的 `event_driven` 评估器实际上是纯技术面（gap + volume），*
 - [x] Phase 10.33 / Calibration Dashboard P3.2：校准仪表盘展示样本量、当前权重、置信带、先验主导提示。
 - [x] Phase 10.34 / Concept Drift Indicator P3.3：前端红 / 黄 / 绿指示器与通知链路接入 Heartbeat 和 Analytics；继续保持只告警、不自动改阈值。
 - [x] Phase 10.35 / Adversarial Warmup Override P3.4：Settings 可手动覆盖对抗引擎 warmup；默认历史组合检验只记录，关闭后样本充足失败可压制信号。
+- [x] Phase 10.36 / Trade Plan Activation P3.5：`signal.scored` 中满足 open_spread、对抗通过、综合分达标和可执行 legs 的信号会生成 Recommendation；需要人工/场景复核的计划标记为 `pending_review`，前端展示“待确认”且禁止直接采纳；新增 `trade-plan-activation` 调度任务，可从已处理的历史 `signal.scored` 幂等恢复缺失交易计划，并跳过过期信号。
 
 ### P4：系统质量续审
 

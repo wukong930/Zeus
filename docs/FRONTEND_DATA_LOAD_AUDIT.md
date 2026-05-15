@@ -68,7 +68,7 @@ docker compose up -d --build backend
 | --- | --- | --- | --- |
 | `/` Command Center | alerts, positions, causal web, sector snapshot, LLM usage, calibration | empty/degraded state per card | No fixed demo results are rendered when APIs fail. |
 | `/alerts` | `/api/alerts` | empty unavailable state | Real alert rows only. |
-| `/trade-plans` | `/api/recommendations` plus latest market rows | empty unavailable state | Real recommendations only. |
+| `/trade-plans` | `/api/recommendations` plus latest market rows | empty unavailable state | Real `pending` / `pending_review` recommendations only; `pending_review` plans are visible but not adoptable. Backend `trade-plan-activation` job can recover missing rows from handled open-spread signal events, while stale signals are skipped. |
 | `/portfolio` | positions, VaR, stress, correlation, market rows | partial degradation by section | Positions are required; risk sections can degrade independently. |
 | `/causal-web` | `/api/causal-web` | empty unavailable state | Scope filters use URL params; no sample graph fallback. |
 | `/news` | news events plus event-intelligence links | empty unavailable state | Event-intelligence sidebar degrades independently. |

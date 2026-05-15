@@ -1519,18 +1519,19 @@ export async function updateEventImpactLink(
 }
 
 export async function fetchTradePlansFromApi(): Promise<TradePlan[]> {
-  const rows = await fetchJson<BackendRecommendation[]>(
-    "/api/recommendations?status_filter=pending&limit=100"
+  const rows = await fetchJson<BackendRecommendation[]>("/api/recommendations?limit=200");
+  const visibleRows = rows.filter(
+    (row) => isVisibleTradePlanStatus(row.status) && isUnexpiredRecommendation(row)
   );
   const symbols = Array.from(
     new Set(
-      rows
+      visibleRows
         .map((row) => recommendationSymbol(row))
         .filter((symbol): symbol is string => symbol !== null)
     )
   );
   const latestRows = await fetchLatestMarketRows(symbols);
-  return rows
+  return visibleRows
     .map((row) => mapTradePlan(row, latestRows))
     .filter((plan): plan is TradePlan => plan !== null);
 }
@@ -2146,6 +2147,8 @@ function mapTradePlan(
   return {
     id: recommendation.id,
     alertId: recommendation.alert_id ?? recommendation.id,
+    status: recommendation.status,
+    reviewRequired: recommendation.status !== "pending",
     symbol,
     symbolName: symbol,
     direction,
@@ -2168,6 +2171,14 @@ function mapTradePlan(
     sampleSize: sampleSizeFromBacktestSummary(recommendation.backtest_summary),
     createdAt: recommendation.created_at,
   };
+}
+
+function isVisibleTradePlanStatus(status: string): boolean {
+  return status === "pending" || status === "pending_review";
+}
+
+function isUnexpiredRecommendation(recommendation: BackendRecommendation): boolean {
+  return new Date(recommendation.expires_at).getTime() > Date.now();
 }
 
 function sampleSizeFromBacktestSummary(summary: Record<string, unknown> | null | undefined): number {

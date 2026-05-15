@@ -780,6 +780,9 @@ const EN: Record<string, string> = {
   "组合风险": "Portfolio Risk",
   "信号摘要": "Signal Summary",
   "采纳建议": "Accept",
+  "可执行": "Actionable",
+  "待确认": "Needs Review",
+  "等待复核": "Awaiting Review",
   "修改": "Edit",
   "拒绝": "Reject",
   "成本支撑 + 库存低位 + 历史类比命中率 0.72": "Cost support + low inventory + 0.72 historical analogue hit rate",
@@ -870,6 +873,7 @@ const EN: Record<string, string> = {
   "每条建议是一份完整的飞行计划——入场、止损、目标、保证金、组合风险一目了然。":
     "Each recommendation is a complete flight plan: entry, stop, target, margin, and portfolio risk at a glance.",
   "计划数": "Plans",
+  "当前暂无待执行或待确认交易计划": "No actionable or review-pending trade plans right now",
   "平均置信度": "Avg Confidence",
   "平均保证金": "Avg Margin",
   "板块层方向判断 + 各品种活跃度 + conviction 因子":

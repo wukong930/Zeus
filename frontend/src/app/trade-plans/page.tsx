@@ -27,6 +27,8 @@ export default function TradePlansPage() {
     () => plans.reduce((sum, plan) => sum + plan.marginUsage, 0) / Math.max(plans.length, 1),
     [plans]
   );
+  const executableCount = useMemo(() => plans.filter((plan) => !plan.reviewRequired).length, [plans]);
+  const reviewCount = plans.length - executableCount;
 
   useEffect(() => {
     let mounted = true;
@@ -59,7 +61,7 @@ export default function TradePlansPage() {
       </div>
 
       <div className="grid grid-cols-1 gap-5 md:grid-cols-4">
-        <MetricTile label={text("计划数")} value={String(plans.length)} caption="actionable" icon={Activity} tone="cyan" />
+        <MetricTile label={text("计划数")} value={String(plans.length)} caption={`${executableCount} ${text("可执行")} / ${reviewCount} ${text("待确认")}`} icon={Activity} tone="cyan" />
         <MetricTile label={text("平均置信度")} value={`${Math.round(avgConfidence * 100)}%`} caption="model score" icon={Gauge} tone="up" />
         <MetricTile label="平均 R:R" value={`1:${avgRiskReward.toFixed(2)}`} caption="reward/risk" icon={Target} tone="warning" />
         <MetricTile label={text("平均保证金")} value={`${avgMargin.toFixed(1)}%`} caption="margin usage" icon={WalletCards} tone={avgMargin > 25 ? "warning" : "violet"} />
@@ -81,5 +83,5 @@ export default function TradePlansPage() {
 
 function emptyTradePlanMessage(source: DataSourceState): string {
   if (source === "fallback") return "交易建议接口暂不可用";
-  return "当前暂无待执行建议";
+  return "当前暂无待执行或待确认交易计划";
 }

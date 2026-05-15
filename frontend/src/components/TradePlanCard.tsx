@@ -32,6 +32,9 @@ export function TradePlanCard({ plan }: TradePlanCardProps) {
               {isLong ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />}
               {isLong ? text("做多") : text("做空")} {plan.size} {text("手")}
             </Badge>
+            <Badge variant={plan.reviewRequired ? "orange" : "emerald"}>
+              {text(plan.reviewRequired ? "待确认" : "可执行")}
+            </Badge>
           </div>
           <div className="text-caption text-text-muted">{text(plan.symbolName)}</div>
         </div>
@@ -124,8 +127,8 @@ export function TradePlanCard({ plan }: TradePlanCardProps) {
       </div>
 
       <div className="flex gap-2">
-        <Button variant="action" size="md" className="flex-1">
-          {text("采纳建议")}
+        <Button variant="action" size="md" className="flex-1" disabled={plan.reviewRequired}>
+          {text(plan.reviewRequired ? "等待复核" : "采纳建议")}
         </Button>
         <Button variant="secondary" size="md">
           {text("修改")}

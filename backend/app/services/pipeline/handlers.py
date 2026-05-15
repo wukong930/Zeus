@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.events import ZeusEvent, publish
 from app.models.alert import Alert
 from app.models.position import Position
+from app.models.recommendation import Recommendation
 from app.models.signal import SignalTrack
 from app.services.adversarial.engine import (
     attach_signal_track_to_adversarial_result,
@@ -48,6 +49,11 @@ EventPublisher = Callable[..., Awaitable[ZeusEvent]]
 DEFAULT_ACCOUNT_NET_VALUE = 1_000_000.0
 DEFAULT_MARGIN_REQUIRED = 100_000.0
 NEWS_EVENT_SIGNAL_TYPES = {"news_event", "rubber_supply_shock"}
+TRADE_PLAN_ACTIONS = {"open_spread"}
+TRADE_PLAN_MIN_COMBINED_SCORE = 80.0
+TRADE_PLAN_MIN_CONFIDENCE = 0.70
+TRADE_PLAN_DEFAULT_HOLDING_DAYS = 20
+TRADE_PLAN_EXPIRES_AFTER = timedelta(days=1)
 
 logger = logging.getLogger(__name__)
 
@@ -492,11 +498,44 @@ async def handle_signal_scored(
         emitted_at=triggered_at,
         score=score,
     )
+    recommendation = build_trade_plan_recommendation(
+        alert=alert,
+        signal=signal,
+        context=context,
+        score=score,
+        event_payload=event.payload,
+        triggered_at=triggered_at,
+    )
+    if recommendation is not None:
+        session.add(recommendation)
+        await session.flush()
+        alert.related_recommendation_id = recommendation.id
+        await publisher(
+            "recommendation.created",
+            {
+                "recommendation_id": str(recommendation.id),
+                "alert_id": str(alert.id),
+                "recommended_action": recommendation.recommended_action,
+                "priority_score": recommendation.priority_score,
+                "portfolio_fit_score": recommendation.portfolio_fit_score,
+                "margin_efficiency_score": recommendation.margin_efficiency_score,
+                "source_signal_type": alert.type,
+                "source_alert_severity": alert.severity,
+            },
+            source="trade-plan-generator",
+            correlation_id=event.correlation_id,
+            session=session,
+        )
 
     return await publisher(
         "alert.created",
         {
             "alert_id": str(alert.id),
+            "recommendation_id": (
+                str(alert.related_recommendation_id)
+                if alert.related_recommendation_id is not None
+                else None
+            ),
             "signal_type": alert.type,
             "severity": alert.severity,
             "category": alert.category,
@@ -679,6 +718,166 @@ def recommended_action(signal: dict[str, Any]) -> str:
     if signal.get("spread_info") is not None:
         return "open_spread"
     return "watchlist_only"
+
+
+def build_trade_plan_recommendation(
+    *,
+    alert: Alert,
+    signal: dict[str, Any],
+    context: dict[str, Any],
+    score: dict[str, Any] | Any | None,
+    event_payload: dict[str, Any],
+    triggered_at: datetime,
+) -> Recommendation | None:
+    action = str(event_payload.get("recommended_action") or recommended_action(signal))
+    if action not in TRADE_PLAN_ACTIONS:
+        return None
+    if alert.dedup_suppressed:
+        return None
+    if not alert.adversarial_passed:
+        return None
+    expires_at = triggered_at + TRADE_PLAN_EXPIRES_AFTER
+    if expires_at <= datetime.now(timezone.utc):
+        return None
+
+    score_payload = score if isinstance(score, dict) else {}
+    combined_score = float(score_payload.get("combined") or 0)
+    confidence = float(signal.get("confidence") or alert.confidence or 0)
+    if combined_score < TRADE_PLAN_MIN_COMBINED_SCORE or confidence < TRADE_PLAN_MIN_CONFIDENCE:
+        return None
+
+    legs = executable_trade_legs(event_payload.get("legs"), signal)
+    if len(legs) < 2:
+        return None
+
+    direction = str(legs[0].get("direction") or "long")
+    entry_price = trade_plan_entry_price(signal, context)
+    stop_loss, take_profit = trade_plan_bounds(entry_price, direction)
+    risk_items = trade_plan_risk_items(signal, event_payload)
+    adversarial_result = adversarial_payload(event_payload)
+    if adversarial_result.get("warmup_enabled") is True:
+        risk_items.append(
+            "Adversarial engine warmup: historical combo is audit-only; confirm before adopting."
+        )
+
+    return Recommendation(
+        id=uuid4(),
+        alert_id=alert.id,
+        status=trade_plan_status(alert),
+        recommended_action=action,
+        legs=legs,
+        priority_score=float(score_payload.get("priority") or combined_score),
+        portfolio_fit_score=float(score_payload.get("portfolio_fit") or 0),
+        margin_efficiency_score=float(score_payload.get("margin_efficiency") or 0),
+        margin_required=float(event_payload.get("margin_required") or DEFAULT_MARGIN_REQUIRED),
+        reasoning=trade_plan_reasoning(alert, combined_score, confidence),
+        one_liner=alert.one_liner or alert.summary,
+        risk_items=risk_items,
+        expires_at=expires_at,
+        max_holding_days=TRADE_PLAN_DEFAULT_HOLDING_DAYS,
+        position_size_pct=trade_plan_position_size_pct(combined_score, confidence),
+        risk_reward_ratio=2.0,
+        backtest_summary=trade_plan_backtest_summary(signal, event_payload),
+        entry_price=entry_price,
+        stop_loss=stop_loss,
+        take_profit=take_profit,
+    )
+
+
+def executable_trade_legs(raw_legs: Any, signal: dict[str, Any]) -> list[dict[str, Any]]:
+    candidates = raw_legs if isinstance(raw_legs, list) else jsonable(recommendation_legs_from_signal(signal))
+    legs: list[dict[str, Any]] = []
+    for raw_leg in candidates:
+        if not isinstance(raw_leg, dict):
+            continue
+        asset = str(raw_leg.get("asset") or raw_leg.get("symbol") or "").strip().upper()
+        direction = str(raw_leg.get("direction") or "").strip().lower()
+        if not asset or direction not in {"long", "short"}:
+            continue
+        legs.append(
+            {
+                **raw_leg,
+                "asset": asset,
+                "direction": direction,
+                "lots": float(raw_leg.get("lots") or raw_leg.get("size") or 1),
+            }
+        )
+    return legs
+
+
+def trade_plan_entry_price(signal: dict[str, Any], context: dict[str, Any]) -> float:
+    latest_price = _latest_context_price(context)
+    if latest_price is not None and latest_price > 0:
+        return latest_price
+    spread_info = signal.get("spread_info")
+    if isinstance(spread_info, dict):
+        current_spread = float(spread_info.get("current_spread") or 0)
+        if current_spread != 0:
+            return max(abs(current_spread), 1.0)
+    return 1.0
+
+
+def trade_plan_status(alert: Alert) -> str:
+    if alert.status == "active" and not alert.human_action_required:
+        return "pending"
+    return "pending_review"
+
+
+def trade_plan_bounds(entry_price: float, direction: str) -> tuple[float, float]:
+    if direction == "short":
+        return round(entry_price * 1.03, 4), round(entry_price * 0.94, 4)
+    return round(entry_price * 0.97, 4), round(entry_price * 1.06, 4)
+
+
+def trade_plan_position_size_pct(combined_score: float, confidence: float) -> float:
+    raw = 0.02 + max(0.0, combined_score - TRADE_PLAN_MIN_COMBINED_SCORE) * 0.001 + max(
+        0.0, confidence - TRADE_PLAN_MIN_CONFIDENCE
+    ) * 0.05
+    return round(min(0.05, raw), 4)
+
+
+def trade_plan_risk_items(signal: dict[str, Any], event_payload: dict[str, Any]) -> list[str]:
+    items = [
+        str(item)
+        for item in [
+            *list(signal.get("risk_items") or []),
+            *list(signal.get("manual_check_items") or []),
+        ]
+        if item
+    ]
+    adversarial_result = adversarial_payload(event_payload)
+    if adversarial_result.get("runtime_mode"):
+        items.append(f"Adversarial runtime: {adversarial_result['runtime_mode']}.")
+    return sorted(set(items))
+
+
+def trade_plan_reasoning(alert: Alert, combined_score: float, confidence: float) -> str:
+    return (
+        f"{alert.title}: score {combined_score:.0f}, confidence {confidence:.0%}, "
+        "adversarial checks passed and Alert Agent marked it actionable."
+    )
+
+
+def trade_plan_backtest_summary(
+    signal: dict[str, Any],
+    event_payload: dict[str, Any],
+) -> dict[str, Any]:
+    adversarial_result = adversarial_payload(event_payload)
+    spread_info = signal.get("spread_info") if isinstance(signal.get("spread_info"), dict) else {}
+    return {
+        "source": "signal_scored_trade_plan_gate",
+        "signal_type": signal.get("signal_type"),
+        "sample_size": int(adversarial_result.get("historical_combo_sample_size") or 0),
+        "adversarial_runtime_mode": adversarial_result.get("runtime_mode"),
+        "historical_combo_mode": adversarial_result.get("historical_combo_mode"),
+        "spread_z_score": spread_info.get("z_score"),
+        "spread_half_life": spread_info.get("half_life"),
+    }
+
+
+def adversarial_payload(event_payload: dict[str, Any]) -> dict[str, Any]:
+    value = event_payload.get("adversarial_result")
+    return value if isinstance(value, dict) else {}
 
 
 def position_conflict_warnings(

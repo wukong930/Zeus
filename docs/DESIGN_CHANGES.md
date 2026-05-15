@@ -579,3 +579,10 @@ threshold_modifier、propagation_activator、risk_recalc、数据腐烂防护
 - 新增 `backend/app/services/adversarial/runtime.py`，用 `alert_agent_config` 存储对抗引擎 warmup 运行态配置，默认保持 `warmup_enabled=true`。
 - 对抗引擎在评估前读取 runtime 配置；warmup 开启时强制历史组合检验为 informational，关闭后恢复样本充足后的 enforcing。
 - Settings 页面新增“对抗引擎 Warmup”卡片，可手动切换 warmup，并明确展示当前模式、历史组合检验模式和生产影响。
+
+# 2026-05-15 — Phase 10.36 Trade Plan Activation
+
+- `signal.scored` 链路新增保守交易计划激活门：仅 `open_spread`、对抗通过、综合分与置信度达标且具备 long/short legs 的信号会落成 `Recommendation`。
+- 无需人工确认的计划为 `pending`；需要 Alert Agent / 场景复核的计划为 `pending_review`，保留在交易计划页阅读但不能直接采纳。
+- 交易计划页改为展示 `pending` 与 `pending_review`，并用“可执行 / 待确认”区分状态，避免 watchlist-only 观察信号污染交易建议。
+- 新增 `trade-plan-activation` 调度任务：从已经 `handled` 的 `signal.scored` 事件回填缺失推荐，按 alert 关联幂等跳过重复项，并跳过已过期的历史信号，避免把陈旧回放包装成有效交易建议。

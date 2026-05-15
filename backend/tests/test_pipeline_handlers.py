@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 
 from app.core.events import ZeusEvent
 from app.models.alert import Alert
+from app.models.recommendation import Recommendation
 from app.services.pipeline.handlers import (
     handle_market_update,
     handle_news_event,
@@ -282,6 +283,62 @@ async def test_signal_scored_handler_creates_alert_and_publishes_event() -> None
     assert created.payload["alert_id"] == str(alert.id)
 
 
+async def test_signal_scored_handler_creates_review_trade_plan_for_actionable_spread() -> None:
+    signal_publisher = CapturingPublisher()
+    event = _market_update_event()
+    event.payload["contexts"][0]["timestamp"] = datetime.now(timezone.utc).isoformat()
+    detected = (await handle_market_update(event, publisher=signal_publisher))[0]
+    score_publisher = CapturingPublisher()
+    scored = await handle_signal_detected(detected, publisher=score_publisher)
+    assert scored is not None
+
+    session = FakeSession()
+    alert_publisher = CapturingPublisher()
+    created = await handle_signal_scored(
+        scored,
+        session=session,  # type: ignore[arg-type]
+        publisher=alert_publisher,
+    )
+
+    assert created is not None
+    alert = next(row for row in session.rows if isinstance(row, Alert))
+    recommendation = next(row for row in session.rows if isinstance(row, Recommendation))
+    assert recommendation.status == "pending_review"
+    assert recommendation.alert_id == alert.id
+    assert alert.related_recommendation_id == recommendation.id
+    assert recommendation.recommended_action == "open_spread"
+    assert [leg["direction"] for leg in recommendation.legs] == ["short", "long"]
+    assert recommendation.priority_score >= 80
+    assert recommendation.entry_price > 0
+    assert recommendation.stop_loss is not None
+    assert recommendation.take_profit is not None
+    assert created.payload["recommendation_id"] == str(recommendation.id)
+    recommendation_event = next(
+        call["event"] for call in alert_publisher.calls if call["event"].channel == "recommendation.created"
+    )
+    assert recommendation_event.payload["recommendation_id"] == str(recommendation.id)
+
+
+async def test_signal_scored_handler_skips_trade_plan_for_stale_spread_signal() -> None:
+    signal_publisher = CapturingPublisher()
+    detected = (await handle_market_update(_market_update_event(), publisher=signal_publisher))[0]
+    score_publisher = CapturingPublisher()
+    scored = await handle_signal_detected(detected, publisher=score_publisher)
+    assert scored is not None
+
+    session = FakeSession()
+    alert_publisher = CapturingPublisher()
+    created = await handle_signal_scored(
+        scored,
+        session=session,  # type: ignore[arg-type]
+        publisher=alert_publisher,
+    )
+
+    assert created is not None
+    assert next((row for row in session.rows if isinstance(row, Recommendation)), None) is None
+    assert created.payload["recommendation_id"] is None
+
+
 async def test_signal_scored_handler_requests_scenario_for_arbitration_route() -> None:
     event = ZeusEvent(
         channel="signal.scored",
@@ -321,3 +378,44 @@ async def test_signal_scored_handler_requests_scenario_for_arbitration_route() -
     assert requested.payload["request"]["shocks"] == {"RB": 0.08}
     assert requested.payload["request"]["base_price"] == 3250
     assert requested.payload["trigger"]["route"] == "arbitrate"
+
+
+async def test_signal_scored_handler_does_not_create_trade_plan_for_watchlist_signal() -> None:
+    event = ZeusEvent(
+        channel="signal.scored",
+        payload={
+            "signal": {
+                "signal_type": "momentum",
+                "severity": "high",
+                "confidence": 0.82,
+                "title": "RB momentum watch",
+                "summary": "Momentum is strong but not a spread trade.",
+                "related_assets": ["RB"],
+                "risk_items": [],
+                "manual_check_items": [],
+            },
+            "context": {
+                "category": "ferrous",
+                "timestamp": datetime(2026, 5, 3, tzinfo=timezone.utc).isoformat(),
+                "market_data": [{"close": 3250}],
+            },
+            "score": {"priority": 85, "combined": 85},
+            "recommended_action": "watchlist_only",
+            "adversarial_result": {"passed": True},
+            "legs": [{"asset": "RB", "direction": "watch"}],
+        },
+        source="test",
+    )
+    session = FakeSession()
+    publisher = CapturingPublisher()
+
+    created = await handle_signal_scored(
+        event,
+        session=session,  # type: ignore[arg-type]
+        publisher=publisher,
+    )
+
+    assert created is not None
+    assert next((row for row in session.rows if isinstance(row, Recommendation)), None) is None
+    assert all(call["event"].channel != "recommendation.created" for call in publisher.calls)
+    assert created.payload["recommendation_id"] is None

@@ -28,6 +28,8 @@ export interface Alert {
 export interface TradePlan {
   id: string;
   alertId: string;
+  status: string;
+  reviewRequired: boolean;
   symbol: string;
   symbolName: string;
   direction: Direction;
