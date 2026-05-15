@@ -112,6 +112,29 @@ def test_historical_combo_low_sample_failure_is_informational() -> None:
     assert result.mode == MODE_INFORMATIONAL
 
 
+def test_historical_combo_warmup_override_forces_informational_mode() -> None:
+    result = evaluate_historical_combo(
+        signal_types={"spread_anomaly", "basis_shift"},
+        category="ferrous",
+        regime="range_low_vol",
+        candidates=[
+            HistoricalComboCandidate(
+                signal_types=frozenset({"spread_anomaly", "basis_shift"}),
+                category="ferrous",
+                regime="range_low_vol",
+                hit_rate=0.1,
+                sample_size=120,
+            )
+        ],
+        force_mode=MODE_INFORMATIONAL,
+    )
+
+    assert result.passed is False
+    assert result.mode == MODE_INFORMATIONAL
+    assert result.details is not None
+    assert result.details["mode_source"] == "manual_warmup_override"
+
+
 def test_structural_counter_fails_on_reverse_path_and_context_pressure() -> None:
     result = evaluate_structural_counter(
         signal={"signal_type": "momentum", "related_assets": ["RB"]},
@@ -145,6 +168,8 @@ def test_warmup_historical_failure_does_not_suppress_signal() -> None:
     assert decision.suppressed is False
     assert decision.confidence_multiplier == 0.7
     assert round(decision.adjusted_signal["confidence"], 2) == 0.56
+    assert decision.to_payload()["runtime_mode"] == "warmup"
+    assert decision.to_payload()["warmup_enabled"] is True
 
 
 def test_all_enforcing_failures_suppress_signal() -> None:

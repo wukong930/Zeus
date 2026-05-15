@@ -7,16 +7,19 @@ import { Badge } from "@/components/Badge";
 import { Button } from "@/components/Button";
 import { MetricTile } from "@/components/MetricTile";
 import { cn } from "@/lib/utils";
-import { Bell, BrainCircuit, RadioTower, ShieldCheck } from "lucide-react";
+import { Bell, BrainCircuit, RadioTower, ShieldAlert, ShieldCheck } from "lucide-react";
 import { useI18n } from "@/lib/i18n";
 import {
+  fetchAdversarialRuntimeSettings,
   fetchAlertDedupSettings,
   fetchDataSourceStatuses,
   fetchLLMProviderSettings,
   fetchLLMUsageSummary,
   fetchNotificationSettings,
   fetchSchedulerSnapshot,
+  updateAdversarialRuntimeSettings,
   updateNotificationSettings,
+  type AdversarialRuntimeSettings,
   type AlertDedupSettings,
   type DataSourceStatus,
   type LLMProviderSettings,
@@ -41,6 +44,9 @@ export default function SettingsPage() {
   const [notificationSettings, setNotificationSettings] = useState<NotificationSettings | null>(null);
   const [notificationSource, setNotificationSource] = useState<DataSourceState>("loading");
   const [savingNotification, setSavingNotification] = useState<NotificationKey | null>(null);
+  const [adversarialSettings, setAdversarialSettings] = useState<AdversarialRuntimeSettings | null>(null);
+  const [adversarialSource, setAdversarialSource] = useState<DataSourceState>("loading");
+  const [savingAdversarial, setSavingAdversarial] = useState(false);
   const readySources = dataSources.filter((source) => source.status === "ready").length;
   const degradedJobs = scheduler?.health.degraded_jobs.length ?? 0;
   const warningJobs = scheduler?.health.warning_jobs.length ?? 0;
@@ -99,6 +105,15 @@ export default function SettingsPage() {
       .catch(() => {
         if (mounted) setNotificationSource("fallback");
       });
+    fetchAdversarialRuntimeSettings()
+      .then((settings) => {
+        if (!mounted) return;
+        setAdversarialSettings(settings);
+        setAdversarialSource("api");
+      })
+      .catch(() => {
+        if (mounted) setAdversarialSource("fallback");
+      });
     return () => {
       mounted = false;
     };
@@ -125,6 +140,36 @@ export default function SettingsPage() {
       })
       .finally(() => {
         setSavingNotification(null);
+      });
+  }
+
+  function toggleAdversarialWarmup() {
+    if (!adversarialSettings || savingAdversarial) return;
+
+    const previous = adversarialSettings;
+    const nextValue = !adversarialSettings.warmup_enabled;
+    const optimistic: AdversarialRuntimeSettings = {
+      ...adversarialSettings,
+      warmup_enabled: nextValue,
+      mode: nextValue ? "warmup" : "enforcing",
+      historical_combo_mode: nextValue ? "informational" : "sample_based_enforcing",
+      production_effect: nextValue ? "observe_only" : "may_suppress_signals",
+      source: "database",
+    };
+
+    setAdversarialSettings(optimistic);
+    setSavingAdversarial(true);
+    updateAdversarialRuntimeSettings({ warmup_enabled: nextValue })
+      .then((settings) => {
+        setAdversarialSettings(settings);
+        setAdversarialSource("api");
+      })
+      .catch(() => {
+        setAdversarialSettings(previous);
+        setAdversarialSource("fallback");
+      })
+      .finally(() => {
+        setSavingAdversarial(false);
       });
   }
 
@@ -323,6 +368,59 @@ export default function SettingsPage() {
         </Card>
       </div>
 
+      <Card
+        variant="data"
+        className={cn(
+          "border-l-[3px]",
+          adversarialSettings?.warmup_enabled ? "border-l-brand-orange" : "border-l-data-down"
+        )}
+      >
+        <CardHeader>
+          <div>
+            <CardTitle>{text("对抗引擎 Warmup")}</CardTitle>
+            <CardSubtitle>{text("人工覆盖历史组合检验是否只记录不压制信号")}</CardSubtitle>
+          </div>
+          <DataSourceBadge state={adversarialSource} compact />
+        </CardHeader>
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1.2fr_1fr]">
+          <div className="space-y-3 text-sm">
+            <Toggle
+              label="Warmup 模式（历史组合只记录）"
+              checked={Boolean(adversarialSettings?.warmup_enabled)}
+              disabled={!adversarialSettings || savingAdversarial}
+              onToggle={toggleAdversarialWarmup}
+            />
+            <div className="rounded-sm border border-border-subtle bg-bg-base px-3 py-2 text-sm text-text-secondary shadow-inner-panel">
+              {text(
+                adversarialSettings?.warmup_enabled
+                  ? "历史组合检验失败只进入审计记录，不会压制信号。"
+                  : "样本充足的历史组合检验失败可进入 enforcing，并可能压制信号。"
+              )}
+            </div>
+          </div>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <SettingRow label="当前模式" value={adversarialModeLabel(adversarialSettings?.mode)} />
+            <SettingRow
+              label="历史组合检验"
+              value={historicalComboModeLabel(adversarialSettings?.historical_combo_mode)}
+            />
+            <SettingRow
+              label="生产影响"
+              value={productionEffectLabel(adversarialSettings?.production_effect)}
+            />
+            <div className="flex items-center justify-between rounded-sm border border-border-subtle bg-bg-base px-3 py-2 shadow-inner-panel">
+              <span className="flex items-center gap-2 text-text-secondary">
+                <ShieldAlert className="h-4 w-4 text-brand-orange" />
+                {text("审计状态")}
+              </span>
+              <Badge variant={adversarialSettings?.warmup_enabled ? "orange" : "down"}>
+                {text(adversarialSettings?.warmup_enabled ? "只告警" : "可压制")}
+              </Badge>
+            </div>
+          </div>
+        </div>
+      </Card>
+
       <Card variant="data" className="border-l-[3px] border-l-brand-emerald">
         <div className="flex items-start justify-between gap-5">
           <div>
@@ -374,6 +472,24 @@ function formatHours(value?: number | null): string {
 
 function formatAlertLimit(value?: number | null): string {
   return value == null ? "--" : `${value} 条`;
+}
+
+function adversarialModeLabel(value?: string): string {
+  if (value === "warmup") return "Warmup";
+  if (value === "enforcing") return "Enforcing";
+  return "--";
+}
+
+function historicalComboModeLabel(value?: string): string {
+  if (value === "informational") return "只记录";
+  if (value === "sample_based_enforcing") return "样本充足后执行";
+  return "--";
+}
+
+function productionEffectLabel(value?: string): string {
+  if (value === "observe_only") return "只告警";
+  if (value === "may_suppress_signals") return "可压制";
+  return "--";
 }
 
 function Toggle({

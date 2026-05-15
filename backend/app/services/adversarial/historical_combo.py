@@ -55,6 +55,7 @@ def evaluate_historical_combo(
     min_samples: int = MIN_ENFORCING_SAMPLES,
     min_hit_rate: float = MIN_ACCEPTABLE_HIT_RATE,
     min_similarity: float = MIN_JACCARD_SIMILARITY,
+    force_mode: str | None = None,
 ) -> AdversarialCheckResult:
     candidate, similarity = best_historical_candidate(
         signal_types=signal_types,
@@ -80,7 +81,7 @@ def evaluate_historical_combo(
             },
         )
 
-    mode = MODE_ENFORCING if candidate.sample_size >= min_samples else MODE_INFORMATIONAL
+    mode = force_mode or (MODE_ENFORCING if candidate.sample_size >= min_samples else MODE_INFORMATIONAL)
     hit_rate = candidate.hit_rate if candidate.hit_rate is not None else 0.5
     passed = hit_rate >= min_hit_rate
     return AdversarialCheckResult(
@@ -103,6 +104,7 @@ def evaluate_historical_combo(
             "similarity": similarity,
             "min_hit_rate": min_hit_rate,
             "min_enforcing_samples": min_samples,
+            "mode_source": "manual_warmup_override" if force_mode else "sample_size",
         },
     )
 

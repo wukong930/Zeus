@@ -1,6 +1,6 @@
 from fastapi.testclient import TestClient
 
-from app.api.settings import NotificationSettingsRead
+from app.api.settings import AdversarialRuntimeSettingsRead, NotificationSettingsRead
 from app.core.config import Settings
 from app.core.database import get_db
 from app.main import create_app
@@ -150,6 +150,109 @@ def test_notification_settings_rejects_string_booleans(monkeypatch) -> None:
     response = client.put(
         "/api/settings/notifications",
         json={"realtime_sse": "false"},
+    )
+
+    assert response.status_code == 422
+
+
+def test_adversarial_runtime_settings_api_returns_runtime_config(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+    session = object()
+
+    async def fake_db():
+        yield session
+
+    async def fake_load_adversarial_runtime_config(db_session) -> AdversarialRuntimeSettingsRead:
+        captured["session"] = db_session
+        return AdversarialRuntimeSettingsRead(
+            warmup_enabled=True,
+            mode="warmup",
+            historical_combo_mode="informational",
+            production_effect="observe_only",
+            source="database",
+        )
+
+    monkeypatch.setattr(
+        "app.api.settings.load_adversarial_runtime_config",
+        fake_load_adversarial_runtime_config,
+    )
+    app = create_app()
+    app.dependency_overrides[get_db] = fake_db
+    client = TestClient(app)
+
+    response = client.get("/api/settings/adversarial-runtime")
+
+    assert response.status_code == 200
+    assert captured["session"] is session
+    assert response.json() == {
+        "warmup_enabled": True,
+        "mode": "warmup",
+        "historical_combo_mode": "informational",
+        "production_effect": "observe_only",
+        "source": "database",
+    }
+
+
+def test_adversarial_runtime_settings_api_persists_manual_override(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+    session = object()
+
+    async def fake_db():
+        yield session
+
+    async def fake_save_adversarial_runtime_config(
+        db_session,
+        *,
+        warmup_enabled,
+    ) -> AdversarialRuntimeSettingsRead:
+        captured["session"] = db_session
+        captured["warmup_enabled"] = warmup_enabled
+        return AdversarialRuntimeSettingsRead(
+            warmup_enabled=False,
+            mode="enforcing",
+            historical_combo_mode="sample_based_enforcing",
+            production_effect="may_suppress_signals",
+            source="database",
+        )
+
+    monkeypatch.setattr(
+        "app.api.settings.save_adversarial_runtime_config",
+        fake_save_adversarial_runtime_config,
+    )
+    app = create_app()
+    app.dependency_overrides[get_db] = fake_db
+    client = TestClient(app)
+
+    response = client.put(
+        "/api/settings/adversarial-runtime",
+        json={"warmup_enabled": False},
+    )
+
+    assert response.status_code == 200
+    assert captured["session"] is session
+    assert captured["warmup_enabled"] is False
+    assert response.json()["mode"] == "enforcing"
+    assert response.json()["production_effect"] == "may_suppress_signals"
+
+
+def test_adversarial_runtime_settings_rejects_string_booleans(monkeypatch) -> None:
+    async def fake_db():
+        yield object()
+
+    async def fake_save_adversarial_runtime_config(db_session, *, warmup_enabled):
+        raise AssertionError("save should not run for invalid payload")
+
+    monkeypatch.setattr(
+        "app.api.settings.save_adversarial_runtime_config",
+        fake_save_adversarial_runtime_config,
+    )
+    app = create_app()
+    app.dependency_overrides[get_db] = fake_db
+    client = TestClient(app)
+
+    response = client.put(
+        "/api/settings/adversarial-runtime",
+        json={"warmup_enabled": "false"},
     )
 
     assert response.status_code == 422

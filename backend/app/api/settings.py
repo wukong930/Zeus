@@ -15,6 +15,11 @@ from app.services.alert_agent.dedup import (
     DEFAULT_DAILY_ALERT_LIMIT,
     DEFAULT_REPEAT_WINDOW_HOURS,
 )
+from app.services.adversarial.runtime import (
+    AdversarialRuntimeConfig,
+    load_adversarial_runtime_config,
+    save_adversarial_runtime_config,
+)
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
@@ -57,6 +62,18 @@ class NotificationSettingsUpdate(StrictInputModel):
     custom_webhook: StrictBool | None = None
 
 
+class AdversarialRuntimeSettingsRead(BaseModel):
+    warmup_enabled: bool
+    mode: str
+    historical_combo_mode: str
+    production_effect: str
+    source: str
+
+
+class AdversarialRuntimeSettingsUpdate(StrictInputModel):
+    warmup_enabled: StrictBool
+
+
 class LLMProviderSettingsRead(BaseModel):
     provider: str
     name: str
@@ -92,6 +109,25 @@ async def update_notification_settings(
     session: AsyncSession = Depends(get_db),
 ) -> NotificationSettingsRead:
     return await save_notification_settings(session, payload)
+
+
+@router.get("/adversarial-runtime", response_model=AdversarialRuntimeSettingsRead)
+async def get_adversarial_runtime_settings(
+    session: AsyncSession = Depends(get_db),
+) -> AdversarialRuntimeSettingsRead:
+    return _adversarial_runtime_read(await load_adversarial_runtime_config(session))
+
+
+@router.put("/adversarial-runtime", response_model=AdversarialRuntimeSettingsRead)
+async def update_adversarial_runtime_settings(
+    payload: AdversarialRuntimeSettingsUpdate,
+    session: AsyncSession = Depends(get_db),
+) -> AdversarialRuntimeSettingsRead:
+    config = await save_adversarial_runtime_config(
+        session,
+        warmup_enabled=payload.warmup_enabled,
+    )
+    return _adversarial_runtime_read(config)
 
 
 @router.get("/llm-providers", response_model=list[LLMProviderSettingsRead])
@@ -179,6 +215,18 @@ def _notification_values(values: dict[str, Any]) -> dict[str, bool]:
 
 def _bool_value(value: Any, default: bool) -> bool:
     return value if isinstance(value, bool) else default
+
+
+def _adversarial_runtime_read(
+    config: AdversarialRuntimeConfig,
+) -> AdversarialRuntimeSettingsRead:
+    return AdversarialRuntimeSettingsRead(
+        warmup_enabled=config.warmup_enabled,
+        mode=config.mode,
+        historical_combo_mode=config.historical_combo_mode,
+        production_effect=config.production_effect,
+        source=config.source,
+    )
 
 
 def _llm_provider_read(

@@ -17,11 +17,16 @@ from app.services.adversarial.null_hypothesis import (
     evaluate_null_hypothesis,
     latest_null_distribution_cache,
 )
+from app.services.adversarial.runtime import load_adversarial_runtime_config
 from app.services.adversarial.structural_counter import (
     evaluate_structural_counter,
     load_structural_edges,
 )
-from app.services.adversarial.types import AdversarialCheckResult, MODE_ENFORCING
+from app.services.adversarial.types import (
+    AdversarialCheckResult,
+    MODE_ENFORCING,
+    MODE_INFORMATIONAL,
+)
 
 CONFIDENCE_PENALTY = 0.7
 
@@ -34,6 +39,8 @@ class AdversarialDecision:
     adjusted_signal: dict[str, Any]
     results: list[AdversarialCheckResult]
     signal_combination_hash: str
+    runtime_mode: str = "warmup"
+    warmup_enabled: bool = True
     result_id: str | None = None
 
     def to_payload(self) -> dict[str, Any]:
@@ -42,6 +49,8 @@ class AdversarialDecision:
             "suppressed": self.suppressed,
             "confidence_multiplier": self.confidence_multiplier,
             "signal_combination_hash": self.signal_combination_hash,
+            "runtime_mode": self.runtime_mode,
+            "warmup_enabled": self.warmup_enabled,
             "result_id": self.result_id,
             "checks": [result.to_dict() for result in self.results],
         }
@@ -65,6 +74,7 @@ async def evaluate_adversarial_signal(
         category=category,
         regime=regime,
     )
+    runtime_config = await load_adversarial_runtime_config(session)
 
     null_cache = (
         await latest_null_distribution_cache(
@@ -90,6 +100,7 @@ async def evaluate_adversarial_signal(
             if session is not None
             else []
         ),
+        force_mode=MODE_INFORMATIONAL if runtime_config.warmup_enabled else None,
     )
     structural_result = evaluate_structural_counter(
         signal=signal,
@@ -105,6 +116,8 @@ async def evaluate_adversarial_signal(
         signal=signal,
         results=[null_result, historical_result, structural_result],
         signal_combination_hash=combination_hash,
+        runtime_mode=runtime_config.mode,
+        warmup_enabled=runtime_config.warmup_enabled,
     )
     if session is None:
         return decision
@@ -124,6 +137,8 @@ async def evaluate_adversarial_signal(
         adjusted_signal=decision.adjusted_signal,
         results=decision.results,
         signal_combination_hash=decision.signal_combination_hash,
+        runtime_mode=decision.runtime_mode,
+        warmup_enabled=decision.warmup_enabled,
         result_id=str(row.id),
     )
 
@@ -133,6 +148,8 @@ def decide_adversarial_outcome(
     signal: dict[str, Any],
     results: list[AdversarialCheckResult],
     signal_combination_hash: str,
+    runtime_mode: str = "warmup",
+    warmup_enabled: bool = True,
 ) -> AdversarialDecision:
     enforced_failures = [result for result in results if result.enforcing_failure]
     all_failed = all(not result.passed for result in results)
@@ -159,6 +176,8 @@ def decide_adversarial_outcome(
         adjusted_signal=adjusted_signal,
         results=results,
         signal_combination_hash=signal_combination_hash,
+        runtime_mode=runtime_mode,
+        warmup_enabled=warmup_enabled,
     )
 
 

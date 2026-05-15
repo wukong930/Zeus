@@ -573,3 +573,9 @@ threshold_modifier、propagation_activator、risk_recalc、数据腐烂防护
 - `/api/drift/metrics` 新增 `notification` 摘要，按红 / 黄 / 绿 / 无数据输出通知级别、渠道、下一步动作和重点指标。
 - Heartbeat Bar 的 Drift 项接入 `notification.should_notify`，红黄状态会显示具体告警标题；仍然只做提示，不自动调整生产权重或阈值。
 - Analytics 的 Drift 监控页新增红黄绿计数和通知链路面板，明确展示 `production_effect=observe_only`、通知入口和人工复核动作。
+
+# 2026-05-15 — Phase 10.35 Adversarial Warmup Override
+
+- 新增 `backend/app/services/adversarial/runtime.py`，用 `alert_agent_config` 存储对抗引擎 warmup 运行态配置，默认保持 `warmup_enabled=true`。
+- 对抗引擎在评估前读取 runtime 配置；warmup 开启时强制历史组合检验为 informational，关闭后恢复样本充足后的 enforcing。
+- Settings 页面新增“对抗引擎 Warmup”卡片，可手动切换 warmup，并明确展示当前模式、历史组合检验模式和生产影响。

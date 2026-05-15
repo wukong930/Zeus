@@ -541,11 +541,24 @@ export interface NotificationSettings {
   source: string;
 }
 
+export interface AdversarialRuntimeSettings {
+  warmup_enabled: boolean;
+  mode: "warmup" | "enforcing" | string;
+  historical_combo_mode: "informational" | "sample_based_enforcing" | string;
+  production_effect: "observe_only" | "may_suppress_signals" | string;
+  source: string;
+}
+
 export type NotificationSettingsUpdate = Partial<
   Pick<
     NotificationSettings,
     "realtime_sse" | "feishu_webhook" | "email" | "custom_webhook"
   >
+>;
+
+export type AdversarialRuntimeSettingsUpdate = Pick<
+  AdversarialRuntimeSettings,
+  "warmup_enabled"
 >;
 
 export interface ScenarioSimulationRequest {
@@ -1619,6 +1632,20 @@ export async function updateNotificationSettings(
   payload: NotificationSettingsUpdate,
 ): Promise<NotificationSettings> {
   return fetchJson<NotificationSettings>("/api/settings/notifications", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function fetchAdversarialRuntimeSettings(): Promise<AdversarialRuntimeSettings> {
+  return fetchJson<AdversarialRuntimeSettings>("/api/settings/adversarial-runtime");
+}
+
+export async function updateAdversarialRuntimeSettings(
+  payload: AdversarialRuntimeSettingsUpdate,
+): Promise<AdversarialRuntimeSettings> {
+  return fetchJson<AdversarialRuntimeSettings>("/api/settings/adversarial-runtime", {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),

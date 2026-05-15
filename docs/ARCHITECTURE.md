@@ -335,8 +335,9 @@ class ZeusEvent:
 - 系统上线初期，`signal_calibration` 表无历史数据
 - 历史组合检验切换到"informational mode"：执行检查并记录结果，但**不阻塞信号、不施加置信度惩罚**
 - 零假设检验和结构性反驳从第一天就生效（不依赖历史）
-- 90 天后或样本量满足条件（每个 signal_combination_hash 累积 ≥ 20 个 outcome）后，历史组合检验切换为"enforcing mode"
-- 切换时机由调度任务每日检查，可手动覆盖
+- `alert_agent_config[key=adversarial_runtime]` 记录当前 warmup 覆盖状态，默认 `warmup_enabled=true`
+- Settings 页面可手动关闭 warmup；关闭后样本量满足条件（每个 signal_combination_hash 累积 ≥ 20 个 outcome）时，历史组合检验恢复"enforcing mode"
+- 手动覆盖会写入对抗结果 payload 的 `runtime_mode` / `warmup_enabled`，便于回放和审计
 
 **计算优化**：
 - 1000 次 Bootstrap 置换太重，改为预计算策略：每个 (signal_type, category) 在每日 ETL 后预计算零分布的统计量分布并缓存
