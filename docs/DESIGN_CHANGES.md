@@ -761,3 +761,4 @@ threshold_modifier、propagation_activator、risk_recalc、数据腐烂防护
 - 交易计划门槛使用 warmup 有效置信度：历史 `warmup_enabled=true` 且带有 `confidence_multiplier<1` 的 scored payload，会在交易计划评估时恢复到未惩罚前的有效置信度，并在风险项和 backtest summary 中记录恢复值；新 warmup 事件不再被惩罚，低置信新信号仍保持 `score_below_gate`。
 - 交易计划生成增加同品种/同方向聚合：实时 handler 和 `trade-plan-activation` 在创建前会复用未过期、同 action、同交易腿的计划，并把新增 alert 作为支持证据合并到主计划；补偿任务还会清理历史重复计划，将重复项标为 `ignored` 并回链到保留计划。
 - 非方向信号进入交易计划证据层而非下单层：`regime_shift`、缺方向 `inventory_shock` 这类上下文信号如果不能通过方向/分数门槛，不会创建交易建议；当同品种只有一个开放计划可承接时，会作为 `linked_context_alerts` 挂到主计划，保留运行态、波动和库存背景，但不提高计划分数。
+- 有方向但低于交易计划置信门槛的近门槛信号继续保持 `score_below_gate`，不会新建交易建议；如果同品种同方向已有开放计划，则作为弱上下文证据挂载，帮助最终计划解释“还有哪些边缘信号在同向共振”。

@@ -115,7 +115,12 @@ async def sync_trade_plan_recommendations(
         recommendation = evaluation.recommendation
         if recommendation is None:
             if evaluation.skip_reason in TRADE_PLAN_CONTEXT_SKIP_REASONS:
-                context_plan = await open_trade_plan_for_context_signal(session, signal, as_of=now)
+                context_plan = await open_trade_plan_for_context_signal(
+                    session,
+                    signal,
+                    skip_reason=evaluation.skip_reason,
+                    as_of=now,
+                )
                 if context_plan is not None:
                     attach_trade_plan_context_evidence(
                         context_plan,

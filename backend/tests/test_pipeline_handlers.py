@@ -800,6 +800,108 @@ async def test_context_signal_does_not_link_when_symbol_has_conflicting_open_dir
     assert linked_plan is None
 
 
+async def test_score_below_gate_directional_signal_links_as_weak_context_only() -> None:
+    now = datetime.now(timezone.utc)
+    plan = Recommendation(
+        id=uuid4(),
+        alert_id=uuid4(),
+        status="pending_review",
+        recommended_action="open_directional",
+        legs=[{"asset": "RB", "direction": "short", "lots": 1.0}],
+        priority_score=66,
+        portfolio_fit_score=75,
+        margin_efficiency_score=80,
+        margin_required=100000,
+        reasoning="RB short thesis.",
+        risk_items=[],
+        expires_at=now + timedelta(hours=8),
+    )
+    signal = {
+        "signal_type": "marginal_capacity_squeeze",
+        "confidence": 0.79,
+        "direction": "bearish",
+        "title": "RB marginal capacity squeeze",
+        "summary": "Capacity stress is building but confidence is below gate.",
+        "related_assets": ["RB"],
+    }
+
+    linked_plan = await open_trade_plan_for_context_signal(
+        FakeOpenPlanSession([plan]),
+        signal,
+        skip_reason="score_below_gate",
+        as_of=now,
+    )
+
+    assert linked_plan is plan
+
+
+async def test_score_below_gate_directional_signal_respects_existing_plan_direction() -> None:
+    now = datetime.now(timezone.utc)
+    long_plan = Recommendation(
+        id=uuid4(),
+        alert_id=uuid4(),
+        status="pending_review",
+        recommended_action="open_directional",
+        legs=[{"asset": "RB", "direction": "long", "lots": 1.0}],
+        priority_score=66,
+        portfolio_fit_score=75,
+        margin_efficiency_score=80,
+        margin_required=100000,
+        reasoning="RB long thesis.",
+        risk_items=[],
+        expires_at=now + timedelta(hours=8),
+    )
+    signal = {
+        "signal_type": "marginal_capacity_squeeze",
+        "confidence": 0.79,
+        "direction": "bearish",
+        "title": "RB marginal capacity squeeze",
+        "summary": "Capacity stress is building but confidence is below gate.",
+        "related_assets": ["RB"],
+    }
+
+    linked_plan = await open_trade_plan_for_context_signal(
+        FakeOpenPlanSession([long_plan]),
+        signal,
+        skip_reason="score_below_gate",
+        as_of=now,
+    )
+
+    assert linked_plan is None
+
+
+async def test_directional_non_context_signal_without_score_gate_skip_is_not_linked() -> None:
+    now = datetime.now(timezone.utc)
+    plan = Recommendation(
+        id=uuid4(),
+        alert_id=uuid4(),
+        status="pending_review",
+        recommended_action="open_directional",
+        legs=[{"asset": "RB", "direction": "short", "lots": 1.0}],
+        priority_score=66,
+        portfolio_fit_score=75,
+        margin_efficiency_score=80,
+        margin_required=100000,
+        reasoning="RB short thesis.",
+        risk_items=[],
+        expires_at=now + timedelta(hours=8),
+    )
+
+    linked_plan = await open_trade_plan_for_context_signal(
+        FakeOpenPlanSession([plan]),
+        {
+            "signal_type": "marginal_capacity_squeeze",
+            "confidence": 0.79,
+            "direction": "bearish",
+            "title": "RB marginal capacity squeeze",
+            "related_assets": ["RB"],
+        },
+        as_of=now,
+    )
+
+    assert linked_plan is None
+
+
 def test_structured_direction_drives_directional_candidate_without_text_markers() -> None:
     now = datetime.now(timezone.utc)
     alert = Alert(

@@ -632,6 +632,7 @@ async def handle_signal_scored(
         context_plan = await open_trade_plan_for_context_signal(
             session,
             signal,
+            skip_reason=evaluation.skip_reason,
             as_of=datetime.now(timezone.utc),
         )
         if context_plan is not None:
@@ -1077,9 +1078,10 @@ async def open_trade_plan_for_context_signal(
     session: AsyncSession | None,
     signal: dict[str, Any],
     *,
+    skip_reason: str | None = None,
     as_of: datetime | None = None,
 ) -> Recommendation | None:
-    if session is None or not trade_plan_context_signal(signal):
+    if session is None or not trade_plan_context_signal(signal, skip_reason=skip_reason):
         return None
     symbol = primary_symbol(signal).strip().upper()
     if not symbol or symbol == "UNKNOWN":
@@ -1118,8 +1120,11 @@ async def open_trade_plan_for_context_signal(
     return matches[0][0]
 
 
-def trade_plan_context_signal(signal: dict[str, Any]) -> bool:
-    return str(signal.get("signal_type") or "unknown") in TRADE_PLAN_CONTEXT_SIGNAL_TYPES
+def trade_plan_context_signal(signal: dict[str, Any], *, skip_reason: str | None = None) -> bool:
+    signal_type = str(signal.get("signal_type") or "unknown")
+    if signal_type in TRADE_PLAN_CONTEXT_SIGNAL_TYPES:
+        return True
+    return skip_reason == "score_below_gate" and directional_trade_leg(signal) is not None
 
 
 def trade_plan_direction_from_signal(signal: dict[str, Any]) -> str | None:
