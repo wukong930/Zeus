@@ -166,10 +166,30 @@ def test_warmup_historical_failure_does_not_suppress_signal() -> None:
     )
 
     assert decision.suppressed is False
-    assert decision.confidence_multiplier == 0.7
-    assert round(decision.adjusted_signal["confidence"], 2) == 0.56
+    assert decision.passed is True
+    assert decision.confidence_multiplier == 1.0
+    assert round(decision.adjusted_signal["confidence"], 2) == 0.8
     assert decision.to_payload()["runtime_mode"] == "warmup"
     assert decision.to_payload()["warmup_enabled"] is True
+
+
+def test_enforcing_failure_penalizes_signal_when_warmup_is_disabled() -> None:
+    decision = decide_adversarial_outcome(
+        signal={"signal_type": "spread_anomaly", "confidence": 0.8},
+        signal_combination_hash="hash",
+        results=[
+            AdversarialCheckResult("null_hypothesis", passed=False, mode=MODE_ENFORCING),
+            AdversarialCheckResult("historical_combo", passed=True, mode=MODE_INFORMATIONAL),
+            AdversarialCheckResult("structural_counter", passed=True, mode=MODE_ENFORCING),
+        ],
+        runtime_mode="enforcing",
+        warmup_enabled=False,
+    )
+
+    assert decision.passed is False
+    assert decision.suppressed is False
+    assert decision.confidence_multiplier == 0.7
+    assert round(decision.adjusted_signal["confidence"], 2) == 0.56
 
 
 def test_all_enforcing_failures_suppress_signal() -> None:
@@ -181,6 +201,8 @@ def test_all_enforcing_failures_suppress_signal() -> None:
             AdversarialCheckResult("historical_combo", passed=False, mode=MODE_ENFORCING),
             AdversarialCheckResult("structural_counter", passed=False, mode=MODE_ENFORCING),
         ],
+        runtime_mode="enforcing",
+        warmup_enabled=False,
     )
 
     assert decision.suppressed is True

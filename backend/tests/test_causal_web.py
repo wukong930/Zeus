@@ -1,22 +1,35 @@
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+from sqlalchemy.dialects import postgresql
+
 from app.api.causal_web import (
+    CausalWebGraph,
     CounterContext,
     EventIntelligenceLinkContext,
     GraphNodeSeed,
     MetricContext,
+    router as causal_web_router,
     _append_edge,
     _build_edges,
+    _causal_scope_symbols,
+    _clear_causal_web_cache,
     _counter_seeds_from_alert,
     _latest_market_metrics_statement,
     _layout_nodes,
     _merge_pinned_event_intelligence,
+    _recent_alerts_statement,
+    _recent_industry_metrics_statement,
+    _recent_news_statement,
+    _recent_signals_statement,
     _seed_from_event_intelligence_item,
     _seed_from_event_intelligence_link,
     _unique_recent_event_intelligence,
     _unique_recent_news,
 )
+from app.core.database import get_db
 from app.models.alert import Alert
 from app.models.event_intelligence import EventImpactLink, EventIntelligenceItem
 from app.models.news_events import NewsEvent
@@ -46,6 +59,57 @@ def test_layout_nodes_includes_runtime_semantics() -> None:
     assert nodes[0].freshness > 0.9
     assert nodes[0].alertLinked is True
     assert nodes[0].labelZh is not None
+
+
+def test_causal_web_endpoint_uses_short_ttl_cache(monkeypatch) -> None:
+    _clear_causal_web_cache()
+    calls = {"count": 0}
+
+    async def fake_db():
+        yield object()
+
+    async def fake_build_graph(
+        session,
+        *,
+        limit: int,
+        symbol_filter: str | None,
+        region: str | None,
+        pinned_event_item: EventIntelligenceItem | None,
+    ) -> CausalWebGraph:
+        calls["count"] += 1
+        assert session is not None
+        assert limit == 8
+        assert symbol_filter == "SC"
+        assert region is None
+        assert pinned_event_item is None
+        return CausalWebGraph(
+            generated_at=datetime(2026, 5, 18, tzinfo=timezone.utc)
+            + timedelta(seconds=calls["count"]),
+            nodes=[],
+            edges=[],
+            source_counts={"signals": calls["count"]},
+        )
+
+    monkeypatch.setattr("app.api.causal_web.build_causal_web_graph", fake_build_graph)
+    app = FastAPI()
+    app.include_router(causal_web_router)
+    app.dependency_overrides[get_db] = fake_db
+
+    try:
+        client = TestClient(app)
+        first = client.get("/api/causal-web?limit=8&symbol=sc")
+        second = client.get("/api/causal-web?limit=8&symbol=sc")
+        refreshed = client.get("/api/causal-web?limit=8&symbol=sc&refresh=true")
+
+        assert first.status_code == 200
+        assert second.status_code == 200
+        assert refreshed.status_code == 200
+        assert calls["count"] == 2
+        assert first.json()["generated_at"] == second.json()["generated_at"]
+        assert first.json()["source_counts"]["signals"] == 1
+        assert refreshed.json()["source_counts"]["signals"] == 2
+    finally:
+        _clear_causal_web_cache()
 
 
 def test_append_edge_skips_missing_nodes_and_duplicates() -> None:
@@ -622,3 +686,51 @@ def test_latest_market_metrics_statement_prefers_latest_row_per_symbol() -> None
     assert "market_data.timestamp DESC" in compiled
     assert "anon_1.rn = 1" in compiled
     assert "LIMIT 6" in compiled
+
+
+def test_causal_web_scoped_statements_push_symbol_filters_to_database() -> None:
+    news_sql = _compile_postgres(_recent_news_statement(limit=8, symbols=["SC"]))
+    signal_sql = _compile_postgres(_recent_signals_statement(limit=8, category="energy"))
+    alert_sql = _compile_postgres(_recent_alerts_statement(limit=8, symbols=["SC"]))
+    industry_sql = _compile_postgres(_recent_industry_metrics_statement(limit=8, symbols=["SC"]))
+    market_sql = _compile_postgres(_latest_market_metrics_statement(limit=8, symbols=["SC"]))
+
+    assert "news_events.affected_symbols" in news_sql
+    assert "signal_track.category" in signal_sql
+    assert "alerts.related_assets" in alert_sql
+    assert "industry_data.symbol IN" in industry_sql
+    assert "market_data.symbol IN" in market_sql
+
+
+def test_causal_scope_symbols_merges_query_and_pinned_event_symbols() -> None:
+    now = datetime.now(timezone.utc)
+    event_item = EventIntelligenceItem(
+        id=uuid4(),
+        source_type="news_event",
+        source_id="scope-1",
+        title="Scope event",
+        summary="Scope event",
+        event_type="weather",
+        event_timestamp=now,
+        entities=[],
+        symbols=["SC", "RU"],
+        regions=[],
+        mechanisms=[],
+        evidence=[],
+        counterevidence=[],
+        confidence=0.8,
+        impact_score=80,
+        status="shadow_review",
+        requires_manual_confirmation=False,
+        source_reliability=0.8,
+        freshness_score=0.9,
+        source_payload={},
+        created_at=now,
+        updated_at=now,
+    )
+
+    assert _causal_scope_symbols("sc", event_item) == ["SC", "RU"]
+
+
+def _compile_postgres(statement) -> str:
+    return str(statement.compile(dialect=postgresql.dialect()))

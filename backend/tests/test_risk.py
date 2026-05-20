@@ -1,13 +1,20 @@
 from datetime import datetime, timedelta, timezone
+from uuid import uuid4
 
 from fastapi.testclient import TestClient
 
 from app.core.database import get_db
 from app.main import create_app
 from app.models.market_data import MarketData
+from app.models.position import Position
 from app.services.risk.correlation import build_correlation_matrix
 from app.services.risk.market_data import _risk_market_data_statement, load_risk_market_data
-from app.services.risk.stress import StressScenario, extract_historical_extremes, run_stress_test
+from app.services.risk.stress import (
+    STRESS_SCENARIOS,
+    StressScenario,
+    extract_historical_extremes,
+    run_stress_test,
+)
 from app.services.risk.types import RiskLeg, RiskMarketPoint, RiskPosition
 from app.services.risk.var import calculate_var
 
@@ -443,6 +450,47 @@ def test_correlation_api_rejects_oversized_symbol_query(monkeypatch) -> None:
     assert response.status_code == 422
 
 
+def test_portfolio_snapshot_api_reuses_positions_and_market_data(monkeypatch) -> None:
+    calls: dict[str, object] = {"position_rows": 0, "market_data": 0}
+    row = _position_row()
+
+    async def fake_db():
+        yield object()
+
+    async def fake_open_position_rows(_session, *, limit=None):
+        calls["position_rows"] = int(calls["position_rows"]) + 1
+        calls["position_limit"] = limit
+        return [row]
+
+    async def fake_load_risk_market_data(_session, symbols, *, limit):
+        calls["market_data"] = int(calls["market_data"]) + 1
+        calls["symbols"] = symbols
+        calls["market_limit"] = limit
+        return {"RB2506": _market_data("RB2506", [3500 + idx for idx in range(20)])}
+
+    monkeypatch.setattr("app.api.risk._open_position_rows", fake_open_position_rows)
+    monkeypatch.setattr("app.api.risk.load_risk_market_data", fake_load_risk_market_data)
+
+    app = create_app()
+    app.dependency_overrides[get_db] = fake_db
+    client = TestClient(app)
+
+    response = client.get("/api/risk/portfolio-snapshot?correlation_window=5")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["success"] is True
+    assert calls["position_rows"] == 1
+    assert calls["position_limit"] == 500
+    assert calls["market_data"] == 1
+    assert calls["symbols"] == ["RB2506"]
+    assert calls["market_limit"] == 252
+    assert payload["data"]["positions"][0]["id"] == str(row.id)
+    assert payload["data"]["var"]["horizon"] == 1
+    assert len(payload["data"]["stress"]) == len(STRESS_SCENARIOS)
+    assert payload["data"]["latest_market_rows"][0]["symbol"] == "RB2506"
+
+
 def _risk_api_client(
     monkeypatch,
     *,
@@ -468,6 +516,40 @@ def _risk_api_client(
     app = create_app()
     app.dependency_overrides[get_db] = fake_db
     return TestClient(app)
+
+
+def _position_row() -> Position:
+    opened_at = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    return Position(
+        id=uuid4(),
+        strategy_name="test",
+        legs=[
+            {
+                "asset": "RB2506",
+                "direction": "long",
+                "lots": 10,
+                "entry_price": 3500,
+                "current_price": 3500,
+            }
+        ],
+        opened_at=opened_at,
+        entry_spread=3500,
+        current_spread=3500,
+        spread_unit="price",
+        unrealized_pnl=0,
+        total_margin_used=10000,
+        exit_condition="manual_close",
+        target_z_score=0,
+        current_z_score=0,
+        half_life_days=0,
+        days_held=0,
+        status="open",
+        manual_entry=True,
+        avg_entry_price=3500,
+        monitoring_priority=5,
+        data_mode="position_aware",
+        propagation_nodes=[],
+    )
 
 
 def _market_row(symbol: str, *, close: float, days: int) -> MarketData:

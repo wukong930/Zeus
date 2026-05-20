@@ -151,6 +151,18 @@ def decide_adversarial_outcome(
     runtime_mode: str = "warmup",
     warmup_enabled: bool = True,
 ) -> AdversarialDecision:
+    if warmup_enabled or runtime_mode == "warmup":
+        return AdversarialDecision(
+            passed=True,
+            suppressed=False,
+            confidence_multiplier=1.0,
+            adjusted_signal=dict(signal),
+            results=results,
+            signal_combination_hash=signal_combination_hash,
+            runtime_mode=runtime_mode,
+            warmup_enabled=warmup_enabled,
+        )
+
     enforced_failures = [result for result in results if result.enforcing_failure]
     all_failed = all(not result.passed for result in results)
     all_failures_enforcing = all(result.mode == MODE_ENFORCING for result in results)

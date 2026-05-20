@@ -17,6 +17,12 @@ Use `--build` when dependencies or Dockerfiles changed:
 scripts/local_smoke.sh --start --build
 ```
 
+Use `--regression` after API or page-level routing changes:
+
+```bash
+scripts/local_smoke.sh --regression
+```
+
 The smoke checks:
 
 - Docker Compose services: `postgres`, `redis`, `backend`, `frontend`
@@ -24,6 +30,15 @@ The smoke checks:
 - `GET /api/health`
 - frontend shell at `/`
 - World Risk Map route at `/world-map`
+
+The regression mode additionally checks:
+
+- `GET /api/runtime/heartbeat`
+- `GET /api/causal-web?limit=8`
+- `GET /api/world-map`
+- `GET /api/alerts?limit=5`
+- `GET /api/recommendations?limit=5`
+- frontend routes `/causal-web`, `/event-intelligence`, `/trade-plans`
 
 ## Expected Local URLs
 
@@ -102,7 +117,7 @@ docker compose up -d --build
 
 ## Verification Boundary
 
-`scripts/local_smoke.sh` proves the local stack is reachable and core routes render. It does not replace:
+`scripts/local_smoke.sh` proves the local stack is reachable and core routes render. `--regression` adds API shape checks for critical read paths, but it still does not replace:
 
 - backend unit tests: `cd backend && .venv/bin/python -m pytest -q`
 - frontend build: `cd frontend && npm run build`

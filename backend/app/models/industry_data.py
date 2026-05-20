@@ -14,6 +14,7 @@ class IndustryData(Base):
         Index("ix_industry_data_symbol", "symbol"),
         Index("ix_industry_data_type", "data_type"),
         Index("ix_industry_data_symbol_type", "symbol", "data_type"),
+        Index("ix_industry_data_symbol_ingested_at", "symbol", "ingested_at"),
         Index("ix_industry_data_pit", "symbol", "data_type", "timestamp", "vintage_at"),
     )
 

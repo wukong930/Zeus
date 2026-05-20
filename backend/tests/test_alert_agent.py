@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 import pytest
@@ -11,7 +11,11 @@ from app.models.signal import SignalTrack
 from app.schemas.common import HumanDecisionCreate
 from app.services.alert_agent.classifier import classify_alert
 from app.services.alert_agent.config import ConfidenceThresholds, load_confidence_thresholds
-from app.services.alert_agent.dedup import check_alert_dedup, signal_direction
+from app.services.alert_agent.dedup import (
+    check_alert_dedup,
+    combination_dedup_lookup_statement,
+    signal_direction,
+)
 from app.services.alert_agent.human_decision import apply_decision_to_alert
 from app.services.alert_agent.router import lacks_history, route_alert
 
@@ -61,6 +65,20 @@ class FailingSecondLookupSession:
 
     async def rollback(self) -> None:
         self.rollback_count += 1
+
+
+class SequencedLookupSession:
+    def __init__(self, rows: list[object | None]) -> None:
+        self.rows = list(rows)
+        self.statements = []
+
+    async def scalars(self, statement):
+        self.statements.append(statement)
+        row = self.rows.pop(0) if self.rows else None
+        return SingleScalarResult(row)
+
+    async def scalar(self, _):
+        return 0
 
 
 class TargetSession:
@@ -197,6 +215,87 @@ async def test_dedup_rolls_back_after_combination_lookup_failure() -> None:
     assert decision.suppressed is False
     assert session.scalars_count == 2
     assert session.rollback_count == 1
+
+
+def test_combination_dedup_lookup_is_scoped_to_symbol_and_direction() -> None:
+    statement = combination_dedup_lookup_statement(
+        symbol="RB",
+        direction="bullish",
+        evaluator="momentum",
+        signal_combination_hash="combo-hash",
+    )
+
+    compiled = str(statement.compile(compile_kwargs={"literal_binds": True}))
+
+    assert "alert_dedup_cache.signal_combination_hash = 'combo-hash'" in compiled
+    assert "alert_dedup_cache.symbol = 'RB'" in compiled
+    assert "alert_dedup_cache.direction = 'bullish'" in compiled
+    assert "alert_dedup_cache.evaluator != 'momentum'" in compiled
+
+
+async def test_dedup_suppresses_recent_same_symbol_direction_without_upgrade() -> None:
+    now = datetime(2026, 5, 19, tzinfo=timezone.utc)
+    row = AlertDedupCache(
+        symbol="RB",
+        direction="bullish",
+        evaluator="momentum",
+        signal_combination_hash="combo-hash",
+        last_emitted_at=now - timedelta(hours=1),
+        last_severity="high",
+        last_score=80,
+        hit_count=1,
+        details={},
+    )
+    session = SequencedLookupSession([row])
+
+    decision = await check_alert_dedup(
+        session,  # type: ignore[arg-type]
+        signal={
+            "signal_type": "momentum",
+            "severity": "high",
+            "direction": "bullish",
+            "related_assets": ["RB"],
+        },
+        context={},
+        score={"combined": 82},
+        signal_combination_hash="combo-hash",
+        as_of=now,
+    )
+
+    assert decision.suppressed is True
+    assert decision.reason == "same_symbol_direction_evaluator"
+
+
+async def test_dedup_allows_recent_same_symbol_direction_when_score_breaks_out() -> None:
+    now = datetime(2026, 5, 19, tzinfo=timezone.utc)
+    row = AlertDedupCache(
+        symbol="RB",
+        direction="bullish",
+        evaluator="momentum",
+        signal_combination_hash="combo-hash",
+        last_emitted_at=now - timedelta(hours=1),
+        last_severity="high",
+        last_score=70,
+        hit_count=1,
+        details={},
+    )
+    session = SequencedLookupSession([row, None])
+
+    decision = await check_alert_dedup(
+        session,  # type: ignore[arg-type]
+        signal={
+            "signal_type": "momentum",
+            "severity": "high",
+            "direction": "bullish",
+            "related_assets": ["RB"],
+        },
+        context={},
+        score={"combined": 80},
+        signal_combination_hash="combo-hash",
+        as_of=now,
+    )
+
+    assert decision.suppressed is False
 
 
 def test_signal_direction_extracts_bullish_and_bearish_text() -> None:

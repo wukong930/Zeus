@@ -3,8 +3,9 @@ from __future__ import annotations
 import re
 from collections import defaultdict
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, time, timedelta, timezone
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -68,20 +69,24 @@ class FreeDataIngestResult:
     source_counts: dict[str, int] = field(default_factory=dict)
     errors: list[dict[str, str]] = field(default_factory=list)
     contexts: list[dict[str, Any]] = field(default_factory=list)
+    stale_market_contexts: int = 0
+    stale_market_context_details: list[dict[str, Any]] = field(default_factory=list)
 
     @property
     def status(self) -> str:
-        return "degraded" if self.errors else "completed"
+        return "degraded" if self.errors or self.stale_market_contexts else "completed"
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "status": self.status,
-            "degraded": bool(self.errors),
+            "degraded": self.status == "degraded",
             "market_rows": self.market_rows,
             "industry_rows": self.industry_rows,
             "source_counts": self.source_counts,
             "errors": self.errors,
             "contexts": len(self.contexts),
+            "stale_market_contexts": self.stale_market_contexts,
+            "stale_market_context_details": self.stale_market_context_details,
         }
 
 
@@ -244,30 +249,84 @@ async def run_free_data_ingest(
         await append_market_data(session, market_payloads)
     if industry_payloads:
         await append_industry_data(session, industry_payloads)
+    context_result = build_market_context_payloads(
+        market_payloads,
+        as_of=datetime.now(timezone.utc),
+        max_age_hours=current.data_source_market_context_max_age_hours,
+    )
 
     return FreeDataIngestResult(
         market_rows=len(market_payloads),
         industry_rows=len(industry_payloads),
         source_counts=source_counts,
         errors=errors,
-        contexts=market_context_payloads(market_payloads),
+        contexts=context_result.contexts,
+        stale_market_contexts=context_result.stale_contexts,
+        stale_market_context_details=context_result.stale_context_details,
     )
 
 
-def market_context_payloads(rows: list[MarketDataCreate], *, per_symbol_limit: int = 80) -> list[dict[str, Any]]:
+@dataclass(frozen=True)
+class MarketContextBuildResult:
+    contexts: list[dict[str, Any]]
+    stale_contexts: int = 0
+    stale_context_details: list[dict[str, Any]] = field(default_factory=list)
+
+
+def market_context_payloads(
+    rows: list[MarketDataCreate],
+    *,
+    per_symbol_limit: int = 80,
+    as_of: datetime | None = None,
+    max_age_hours: int | None = None,
+) -> list[dict[str, Any]]:
+    return build_market_context_payloads(
+        rows,
+        per_symbol_limit=per_symbol_limit,
+        as_of=as_of,
+        max_age_hours=max_age_hours,
+    ).contexts
+
+
+def build_market_context_payloads(
+    rows: list[MarketDataCreate],
+    *,
+    per_symbol_limit: int = 80,
+    as_of: datetime | None = None,
+    max_age_hours: int | None = None,
+) -> MarketContextBuildResult:
     rows_by_symbol: dict[str, list[MarketDataCreate]] = defaultdict(list)
     for row in rows:
         rows_by_symbol[row.symbol].append(row)
 
     contexts = []
+    stale_contexts = 0
+    stale_context_details: list[dict[str, Any]] = []
+    max_age = timedelta(hours=max_age_hours) if max_age_hours is not None else None
+    effective_as_of = aware_utc(as_of or datetime.now(timezone.utc))
     for symbol, symbol_rows in rows_by_symbol.items():
         ordered = sorted(symbol_rows, key=lambda item: item.timestamp)[-per_symbol_limit:]
         latest = ordered[-1]
+        freshness_timestamp = market_data_freshness_timestamp(latest)
+        if max_age is not None and freshness_timestamp < effective_as_of - max_age:
+            stale_contexts += 1
+            stale_context_details.append(
+                {
+                    "symbol": symbol,
+                    "timestamp": latest.timestamp.isoformat(),
+                    "freshness_timestamp": freshness_timestamp.isoformat(),
+                    "age_hours": round((effective_as_of - freshness_timestamp).total_seconds() / 3600, 2),
+                    "max_age_hours": max_age_hours,
+                    "source": market_data_source(latest.source_key),
+                }
+            )
+            continue
         contexts.append(
             {
                 "symbol1": symbol,
                 "category": CATEGORY_BY_SYMBOL.get(symbol, "unknown"),
                 "timestamp": latest.timestamp.isoformat(),
+                "freshness_timestamp": freshness_timestamp.isoformat(),
                 "regime": "free_data_ingest",
                 "market_data": [
                     {
@@ -284,7 +343,49 @@ def market_context_payloads(rows: list[MarketDataCreate], *, per_symbol_limit: i
                 "source": "free_data_ingest",
             }
         )
-    return contexts
+    return MarketContextBuildResult(
+        contexts=contexts,
+        stale_contexts=stale_contexts,
+        stale_context_details=stale_context_details,
+    )
+
+
+def market_data_freshness_timestamp(row: MarketDataCreate) -> datetime:
+    timestamp = aware_utc(row.timestamp)
+    if is_daily_market_row(row):
+        local_tz = timezone_from_name(row.timezone)
+        local_timestamp = timestamp.astimezone(local_tz)
+        next_local_midnight = datetime.combine(
+            local_timestamp.date() + timedelta(days=1),
+            time.min,
+            tzinfo=local_tz,
+        )
+        return next_local_midnight.astimezone(timezone.utc)
+    return timestamp
+
+
+def is_daily_market_row(row: MarketDataCreate) -> bool:
+    source_key = row.source_key or ""
+    return source_key.startswith("akshare_sina:") or source_key.startswith("tushare:fut_daily:")
+
+
+def timezone_from_name(value: str) -> ZoneInfo:
+    try:
+        return ZoneInfo(value)
+    except ZoneInfoNotFoundError:
+        return ZoneInfo("UTC")
+
+
+def market_data_source(source_key: str | None) -> str:
+    if not source_key:
+        return "unknown"
+    return source_key.split(":", maxsplit=1)[0]
+
+
+def aware_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
 
 
 def now_utc_iso() -> str:

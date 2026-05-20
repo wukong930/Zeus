@@ -13,6 +13,7 @@ from app.services.signals.outcomes import direction_from_signal
 DEFAULT_REPEAT_WINDOW_HOURS = 12
 DEFAULT_COMBINATION_WINDOW_HOURS = 24
 DEFAULT_DAILY_ALERT_LIMIT = 50
+DEFAULT_SCORE_UPGRADE_DELTA = 8.0
 
 SEVERITY_RANK = {"low": 1, "medium": 2, "high": 3, "critical": 4}
 
@@ -45,6 +46,7 @@ async def check_alert_dedup(
     effective_at = as_of or datetime.now(timezone.utc)
     severity = str(signal.get("severity") or "low")
     severity_rank = SEVERITY_RANK.get(severity, 1)
+    score_value = combined_score(score)
 
     try:
         same_key = (
@@ -64,7 +66,12 @@ async def check_alert_dedup(
 
     if same_key is not None:
         recent = same_key.last_emitted_at >= effective_at - timedelta(hours=DEFAULT_REPEAT_WINDOW_HOURS)
-        if recent and severity_rank <= SEVERITY_RANK.get(same_key.last_severity, 1):
+        if recent and not is_meaningful_alert_upgrade(
+            severity_rank=severity_rank,
+            previous_severity=same_key.last_severity,
+            score_value=score_value,
+            previous_score=same_key.last_score,
+        ):
             return AlertDedupDecision(
                 True,
                 reason="same_symbol_direction_evaluator",
@@ -77,9 +84,12 @@ async def check_alert_dedup(
         try:
             same_hash = (
                 await session.scalars(
-                    select(AlertDedupCache)
-                    .where(AlertDedupCache.signal_combination_hash == signal_combination_hash)
-                    .limit(1)
+                    combination_dedup_lookup_statement(
+                        symbol=symbol,
+                        direction=direction,
+                        evaluator=evaluator,
+                        signal_combination_hash=signal_combination_hash,
+                    )
                 )
             ).first()
         except Exception:
@@ -89,7 +99,12 @@ async def check_alert_dedup(
             recent_hash = same_hash.last_emitted_at >= effective_at - timedelta(
                 hours=DEFAULT_COMBINATION_WINDOW_HOURS
             )
-            if recent_hash and severity_rank <= SEVERITY_RANK.get(same_hash.last_severity, 1):
+            if recent_hash and not is_meaningful_alert_upgrade(
+                severity_rank=severity_rank,
+                previous_severity=same_hash.last_severity,
+                score_value=score_value,
+                previous_score=same_hash.last_score,
+            ):
                 return AlertDedupDecision(
                     True,
                     reason="same_signal_combination",
@@ -99,7 +114,6 @@ async def check_alert_dedup(
                 )
 
     if await daily_limit_reached(session, as_of=effective_at, daily_limit=daily_limit):
-        score_value = combined_score(score)
         if score_value < 90:
             return AlertDedupDecision(
                 True,
@@ -110,6 +124,41 @@ async def check_alert_dedup(
             )
 
     return AlertDedupDecision(False, symbol=symbol, direction=direction, evaluator=evaluator)
+
+
+def combination_dedup_lookup_statement(
+    *,
+    symbol: str,
+    direction: str,
+    evaluator: str,
+    signal_combination_hash: str,
+):
+    return (
+        select(AlertDedupCache)
+        .where(
+            AlertDedupCache.signal_combination_hash == signal_combination_hash,
+            AlertDedupCache.symbol == symbol,
+            AlertDedupCache.direction == direction,
+            AlertDedupCache.evaluator != evaluator,
+        )
+        .limit(1)
+    )
+
+
+def is_meaningful_alert_upgrade(
+    *,
+    severity_rank: int,
+    previous_severity: str,
+    score_value: float,
+    previous_score: int | None,
+    score_delta: float = DEFAULT_SCORE_UPGRADE_DELTA,
+) -> bool:
+    previous_rank = SEVERITY_RANK.get(previous_severity, 1)
+    if severity_rank > previous_rank:
+        return True
+    if severity_rank < previous_rank or previous_score is None:
+        return False
+    return score_value >= float(previous_score) + score_delta
 
 
 async def record_alert_emitted(

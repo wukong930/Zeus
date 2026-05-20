@@ -13,10 +13,14 @@ class SignalTrack(Base):
     __table_args__ = (
         Index("ix_signal_track_type", "signal_type"),
         Index("ix_signal_track_category", "category"),
+        Index("ix_signal_track_category_created_at", "category", "created_at"),
         Index("ix_signal_track_outcome", "outcome"),
         Index("ix_signal_track_alert_id", "alert_id"),
         Index("ix_signal_track_combination_hash", "signal_combination_hash"),
         Index("ix_signal_track_regime_at_emission", "regime_at_emission"),
+        Index("ix_signal_track_created_at", "created_at"),
+        Index("ix_signal_track_outcome_created_at", "outcome", "created_at"),
+        Index("ix_signal_track_direction", "direction"),
     )
 
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
@@ -24,6 +28,7 @@ class SignalTrack(Base):
     signal_type: Mapped[str] = mapped_column(String(30), nullable=False)
     category: Mapped[str] = mapped_column(String(20), nullable=False)
     confidence: Mapped[float] = mapped_column(Float, nullable=False)
+    direction: Mapped[str | None] = mapped_column(String(20))
     z_score: Mapped[float | None] = mapped_column(Float)
     regime: Mapped[str | None] = mapped_column(String(30))
     regime_at_emission: Mapped[str | None] = mapped_column(String(40))

@@ -118,6 +118,7 @@ class CapacityContractionEvaluator(CostModelOutcomeMixin):
                 f"{context.symbol1} margins stayed below -5% for two trading weeks; "
                 "bearish supply contraction pressure is building."
             ),
+            direction="bearish",
         )
 
 
@@ -176,6 +177,7 @@ class RestartExpectationEvaluator(CostModelOutcomeMixin):
                 f"{context.symbol1} profit margin turned positive after a negative window; "
                 "restart expectation signal triggered."
             ),
+            direction="bullish",
         )
 
 
@@ -231,6 +233,7 @@ class MedianPressureEvaluator(CostModelOutcomeMixin):
                 f"{context.symbol1} price fell below P50 breakeven; "
                 "median cost pressure signal triggered."
             ),
+            direction="bearish",
         )
 
 
@@ -287,4 +290,5 @@ class MarginalCapacitySqueezeEvaluator(CostModelOutcomeMixin):
                 f"{context.symbol1} price is below {tier} breakeven; "
                 "marginal capacity squeeze signal triggered."
             ),
+            direction="bearish",
         )

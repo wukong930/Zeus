@@ -14,11 +14,18 @@ scripts/local_smoke.sh --start
 scripts/local_smoke.sh
 ```
 
+如果刚改过后端 API、页面路由或数据加载链路：
+
+```bash
+scripts/local_smoke.sh --regression
+```
+
 通过标准：
 
 - Postgres、Redis、backend、frontend compose service healthy。
 - `http://localhost:8000/api/health` 返回 OK。
 - `http://localhost:3000` 和 `http://localhost:3000/world-map` 可访问。
+- `--regression` 模式下，Heartbeat、Causal Web、World Risk Map、Alerts、Trade Plans 的关键 JSON 字段可解析，Causal Web / Event Intelligence / Trade Plans 前端路由可访问。
 
 ## 2. World Risk Map 回归点
 

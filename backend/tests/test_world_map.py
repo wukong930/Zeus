@@ -1,21 +1,43 @@
 from datetime import datetime, timezone
 from uuid import uuid4
 
+from fastapi.testclient import TestClient
+from sqlalchemy.dialects import postgresql
+
 from app.api.world_map import (
     WORLD_RISK_REGIONS,
     WorldMapFilterScope,
     WorldMapTileViewport,
     _build_region_snapshot,
     _build_world_map_tile_cells,
+    _clear_world_map_caches,
     _filter_tile_cells_for_viewport,
     _risk_level,
     _unique_recent_event_intelligence,
+    _world_map_alerts_statement,
+    _world_map_event_items_statement,
+    _world_map_event_links_statement,
+    _world_map_news_statement,
+    _world_map_should_load_source,
+    _world_map_signals_statement,
 )
+from app.core.database import get_db
+from app.main import create_app
 from app.models.alert import Alert
 from app.models.event_intelligence import EventImpactLink, EventIntelligenceItem
 from app.models.industry_data import IndustryData
 from app.models.news_events import NewsEvent
 from app.models.signal import SignalTrack
+
+
+def _baseline_region():
+    return _build_region_snapshot(
+        WORLD_RISK_REGIONS[0],
+        alerts=[],
+        news=[],
+        signals=[],
+        positions=[],
+    )
 
 
 def test_risk_level_buckets_are_ordered() -> None:
@@ -24,6 +46,103 @@ def test_risk_level_buckets_are_ordered() -> None:
     assert _risk_level(58) == "elevated"
     assert _risk_level(75) == "high"
     assert _risk_level(90) == "critical"
+
+
+def test_world_map_scoped_statements_push_filters_to_database() -> None:
+    filters = WorldMapFilterScope(symbol="SC", mechanism="energy_cost", source="all")
+    alert_sql = _compile_postgres(_world_map_alerts_statement(limit=20, filters=filters))
+    news_sql = _compile_postgres(_world_map_news_statement(limit=20, filters=filters))
+    signal_sql = _compile_postgres(_world_map_signals_statement(limit=20, alert_ids=[uuid4()]))
+    event_item_sql = _compile_postgres(_world_map_event_items_statement(limit=20, filters=filters))
+    event_link_sql = _compile_postgres(
+        _world_map_event_links_statement(event_item_ids=[uuid4()], limit=20, filters=filters)
+    )
+
+    assert "alerts.related_assets" in alert_sql
+    assert "news_events.affected_symbols" in news_sql
+    assert "signal_track.alert_id IN" in signal_sql
+    assert "event_intelligence_items.symbols" in event_item_sql
+    assert "event_impact_links.symbol =" in event_link_sql
+    assert "event_impact_links.mechanism =" in event_link_sql
+
+
+def test_world_map_source_filter_skips_unneeded_runtime_sources() -> None:
+    weather_filters = WorldMapFilterScope(source="weather")
+    signal_filters = WorldMapFilterScope(source="signal")
+
+    assert _world_map_should_load_source(weather_filters, "alert") is False
+    assert _world_map_should_load_source(weather_filters, "event_intelligence") is False
+    assert _world_map_should_load_source(signal_filters, "signal") is True
+    assert _world_map_should_load_source(signal_filters, "alert") is False
+    assert _world_map_should_load_source(None, "position") is True
+
+
+def test_world_map_snapshot_endpoint_uses_short_ttl_cache(monkeypatch) -> None:
+    _clear_world_map_caches()
+    calls: dict[str, int] = {"load": 0}
+    region = _baseline_region()
+
+    async def fake_db():
+        yield object()
+
+    async def fake_load_regions(_session, *, limit, filters):
+        calls["load"] += 1
+        assert limit == 20
+        assert filters.symbol is None
+        return [region]
+
+    monkeypatch.setattr("app.api.world_map._load_world_map_regions", fake_load_regions)
+    app = create_app()
+    app.dependency_overrides[get_db] = fake_db
+    client = TestClient(app)
+
+    first = client.get("/api/world-map?limit=20")
+    second = client.get("/api/world-map?limit=20")
+    refreshed = client.get("/api/world-map?limit=20&refresh=true")
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert refreshed.status_code == 200
+    assert calls["load"] == 2
+    assert first.json()["generatedAt"] == second.json()["generatedAt"]
+    assert first.json()["regions"][0]["id"] == WORLD_RISK_REGIONS[0].id
+    _clear_world_map_caches()
+
+
+def test_world_map_tiles_endpoint_uses_short_ttl_cache(monkeypatch) -> None:
+    _clear_world_map_caches()
+    calls: dict[str, int] = {"load": 0}
+    region = _baseline_region()
+
+    async def fake_db():
+        yield object()
+
+    async def fake_load_regions(_session, *, limit, filters):
+        calls["load"] += 1
+        assert limit == 20
+        assert filters.symbol == "RU"
+        return [region]
+
+    monkeypatch.setattr("app.api.world_map._load_world_map_regions", fake_load_regions)
+    app = create_app()
+    app.dependency_overrides[get_db] = fake_db
+    client = TestClient(app)
+    path = (
+        "/api/world-map/tiles?limit=20&symbol=RU&resolution=coarse"
+        "&min_lat=-20&max_lat=20&min_lon=80&max_lon=140"
+    )
+
+    first = client.get(path)
+    second = client.get(path)
+    refreshed = client.get(f"{path}&refresh=true")
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert refreshed.status_code == 200
+    assert calls["load"] == 2
+    assert first.json()["generatedAt"] == second.json()["generatedAt"]
+    assert first.json()["resolution"] == "coarse"
+    _clear_world_map_caches()
 
 
 def test_region_snapshot_links_runtime_sources() -> None:
@@ -681,3 +800,7 @@ def test_world_map_tile_viewport_filters_cells() -> None:
     assert filtered
     assert len(filtered) < len(cells)
     assert selected.id in {cell.id for cell in filtered}
+
+
+def _compile_postgres(statement) -> str:
+    return str(statement.compile(dialect=postgresql.dialect()))

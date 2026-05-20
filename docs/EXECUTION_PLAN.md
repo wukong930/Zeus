@@ -1077,9 +1077,54 @@ Causa 的 `event_driven` 评估器实际上是纯技术面（gap + volume），*
 
 - [x] Phase 10.37 / Translation Layer P4.1：新闻事件和预警新增原文保留、中文展示字段、确定性术语表翻译、可选 LLM 翻译和历史回填调度任务。
 - [x] Phase 10.38 / Enum Localization P4.2：深度排查并修复信号类型、板块、机制、事件类型在前后端阅读层裸露内部枚举的问题。
-- [ ] 后端慢查询、索引、分页和缓存复查。
-- [ ] 调度任务真实 handler 覆盖率复查，避免 enabled 但实际 noop。
-- [ ] 全量回归测试、浏览器验证和部署 smoke 流程固化。
+- [x] Phase 10.39 / Directional Trade Plan Activation P4.3：交易计划链路新增高置信单品种方向计划 `open_directional`，仅对方向明确、对抗通过且价格可定位的信号生成 `pending_review`，并修复历史回填按 correlation 误关联多信号的问题。
+- [x] Phase 10.40 / Trade Plan Review Explainability P4.4：推荐层新增复核原因元数据，Trade Plans 卡片展示待确认原因，明确区分人工复核、LLM 仲裁、置信档、预警状态和历史校准缺失。
+- [x] Phase 10.41 / Trade Plan Governance Actions P4.5：新增交易计划复核 API 与前端动作，`pending_review` 可人工批准为可执行或驳回，`pending` 计划可从 Trade Plans 页面采纳并生成持仓。
+- [x] Phase 10.42 / List Query Hot Paths P4.6：交易计划按状态分页拉取，列表热路径补组合索引，调度任务未接 handler 的项保持 disabled / unconfigured。
+- [x] Phase 10.43 / Scheduler Health Semantics P4.7：调度器区分 `planned` 与 `unconfigured`，规划中停用任务不再触发 Heartbeat 调度降级，`startAll` 跳过未接 handler 的规划任务。
+- [x] Phase 10.44 / Causal Web Scoped Queries P4.8：Causal Web 按 `symbol` / 事件智能作用域把新闻、预警、行业、行情和信号查询下推到数据库，并补充对应索引。
+- [x] Phase 10.45 / Scheduler Handler Coverage P4.9：调度健康接口输出 handler 覆盖率和 job 级 handler 状态，Settings 展示覆盖计数，并用测试禁止默认任务回到 placeholder/noop。
+- [x] Phase 10.46 / World Risk Map Scoped Queries P4.10：世界风险地图按 source 跳过无关运行态查询，并把 symbol / mechanism 筛选下推到地图相关 DB 查询。
+- [x] Phase 10.47 / Event Intelligence Query Indexes P4.11：事件智能列表、质量门、影响链和审计日志查询 helper 化，并补充事件时间、状态、mechanism、link scope 和 audit timeline 索引。
+- [x] Phase 10.48 / Event Intelligence Snapshot P4.12：新增事件智能快照接口，事件列表、影响链和质量门用同一作用域一次返回，前端初载从三次请求收敛为一次。
+- [x] Phase 10.49 / News Events Source Lookup P4.13：新闻事件页按当前新闻 ID 批量查询事件智能和影响链，不再全量拉取事件智能池后前端过滤。
+- [x] Phase 10.50 / News Events Query Pushdown P4.14：新闻事件页把搜索、事件类型和方向筛选下推到 `/api/news-events`，减少无关新闻进入前端状态。
+- [x] Phase 10.51 / Alerts Query Pushdown P4.15：预警页搜索框接入真实筛选，并把严重度、品种、人工复核、对抗状态和文本搜索下推到 `/api/alerts`。
+- [x] Phase 10.52 / Portfolio Risk Snapshot P4.16：新增组合风险快照接口，持仓、VaR、压力测试、相关性和最新行情一次返回，Portfolio 首屏从多请求收敛为单请求。
+- [x] Phase 10.53 / Runtime Heartbeat Snapshot P4.17：新增轻量运行态心跳接口，顶栏 30 秒轮询从 Causal Web、Drift、Calibration、Scheduler 四接口收敛为单接口，并补信号时间索引。
+- [x] Phase 10.54 / Regression Smoke Contracts P4.18：`scripts/local_smoke.sh` 新增 `--regression` 模式，固化 Heartbeat、Causal Web、World Map、Alerts、Trade Plans 的关键 API 契约和高风险前端路由检查。
+- [x] Phase 10.55 / World Map Snapshot Cache P4.19：World Risk Map 主快照和瓦片快照新增短 TTL 缓存，自动轮询复用 12 秒内结果，手动刷新通过 `refresh=true` 绕过缓存。
+- [x] Phase 10.56 / Causal Web Snapshot Cache P4.20：Causal Web 主图新增短 TTL 缓存，首页预览、独立页面和 AI Companion 在 12 秒内复用同一作用域快照，`refresh=true` 可强制重算。
+- [x] Phase 10.57 / Settings Snapshot P4.21：设置页新增运行态聚合快照，首屏从 7 个接口收敛为 1 个接口，并保留前端分接口降级兜底。
+- [x] Phase 10.58 / Market Data Batch Cache P4.22：行情批量 latest/recent 接口新增短 TTL 缓存，首页报价条、板块页和板块快照在 12 秒内复用同组符号查询，写入行情时自动失效。
+- [x] Phase 10.59 / Command Center Runtime Summary P4.23：首页校准进度改用 Runtime Heartbeat 轻量摘要，Heartbeat 接口新增短 TTL 缓存，顶栏与首页同步加载时复用运行态快照。
+- [ ] Phase 10.60 / Review Load Reduction P4.24：复核负载压缩，把人工注意力从“信息级复核”收敛到“交易计划 / 生产变更 / 极端异常”。
+  - [x] Phase 10.60.1：保存复核负载压缩路线，明确事件、新闻、预警默认作为证据池，人工重点处理交易计划和生产变更。
+  - [x] Phase 10.60.2：新增 Review Triage / attention_score，事件智能入队前分为 `pending`、`shadow_review`、`evidence_only`。
+  - [x] Phase 10.60.3：事件智能低注意力候选只写审计和证据池，中注意力留在 shadow review，高注意力或人工修改才进入 pending 人工队列。
+  - [x] Phase 10.60.4：预警列表默认过滤过期预警，避免历史 `human_action_required` 噪声淹没当前人工视图。
+  - [x] Phase 10.60.5：交易计划卡片聚合上游事件、信号、反证和预警为“证据包摘要”，让人只读最终候选。
+  - [x] Phase 10.60.6：治理工作台增加 attention_score / 分流状态筛选与可视化，区分必须复核、影子观察和证据归档。
+  - [x] Phase 10.60.7：增加自动降级 / 过期归档调度任务，清理历史过期预警和低价值复核项。
+  - [x] Phase 10.60.8：Cleanup 调度同步归档过期 active/pending 预警和 pending/pending_review 交易计划，避免已失效机会继续污染 Alerts/Trade Plans 与生成率排查。
+  - [x] Phase 10.60.9：交易计划激活调度新增 `skip_reasons` 诊断，区分缺 alert、已有推荐、过期、对抗未过、分数不足、缺交易腿和缺入场价等生成阻断原因。
+  - [x] Phase 10.60.10：交易计划激活默认只扫描有效窗口内的 scored 事件，并识别 `alert.suppressed`，避免过期历史占满扫描额度或把去重抑制误判为缺 alert。
+  - [x] Phase 10.60.11：数据采集入口增加实时上下文新鲜度门，历史行情仍可入库，但过旧行情不再发布到 `market.update.contexts`，并在 ingest 调度结果中暴露 `stale_market_contexts`。
+  - [x] Phase 10.60.12：实时上下文新鲜度改为识别日线有效窗口；日线行情按本地下一日 00:00 作为 freshness timestamp，避免有效 EOD 行情在次日凌晨被误判为过期，并输出 stale 明细便于源级诊断。
+  - [x] Phase 10.60.13：`freshness_timestamp` 从 market context 透传到 scored signal 和 alert，alert 过期时间按有效数据窗口计算，避免日线信号刚生成就被 `stale_alert` 拦截。
+  - [x] Phase 10.60.14：方向交易候选从置信度门槛中拆出，先识别可交易方向，再由分数/置信度/对抗门决定是否生成交易计划；缺方向的库存/波动类信号返回 `missing_direction`，避免误报为 unsupported。
+  - [x] Phase 10.60.15：信号结果新增结构化 `direction` 字段，新闻、橡胶供应、动量、价差和成本模型信号直接输出 bullish / bearish，交易计划方向推断优先读取结构化字段，减少对英文标题/摘要的依赖。
+  - [x] Phase 10.60.16：`signal_track` 持久化结构化方向，事件智能 market ingress 读取该方向生成 `event_impact_links.direction`；旧行情异常没有方向时保持 `watch`，成本模型信号用稳定类型规则兜底。
+  - [x] Phase 10.60.17：交易计划激活任务按 scored event 的实际生效时间过滤未过期候选，避免最近处理的历史行情信号占用扫描额度并把诊断噪声集中到 `stale_alert`。
+  - [x] Phase 10.60.18：库存/波动冲击信号新增保守方向输出，只有库存方向或价格冲击方向清晰时才写入 `direction`，方向冲突时继续作为非方向证据。
+  - [x] Phase 10.60.19：对抗引擎 warmup 恢复为 observe-only，检查失败只写审计 payload，不再把信号标为生产未通过或降低置信度；交易计划激活可恢复历史 warmup 事件。
+  - [x] Phase 10.60.20：Alert 去重组合 hash 限定到同主合约、同方向、不同 evaluator，避免跨合约误抑制，也避免组合窗口延长同 evaluator 的重复窗口；同合约重复信号分数显著跃升时允许重新评估。
+  - [x] Phase 10.60.21：交易计划评估恢复历史 warmup payload 的有效置信度，避免旧的 0.7 审计惩罚继续造成 `score_below_gate`；恢复值写入风险项和 backtest summary。
+  - [x] Phase 10.60.22：交易计划按同 action、同品种、同方向复用未过期候选，把多 evaluator 共振合并成一个主计划；历史重复计划会被标为 `ignored` 并回链到主计划。
+  - [x] Phase 10.60.23：非方向上下文信号不再硬生成交易计划；`regime_shift`、缺方向 `inventory_shock` 等只会在同品种已有唯一开放计划时作为上下文证据挂载，写入 `linked_context_alerts` / `context_signal_types`，避免弱方向证据污染最终交易建议。
+- [ ] 后端慢查询、索引、分页和缓存继续复查。
+- [x] 调度任务真实 handler 覆盖率继续复查，避免 enabled 但实际 noop。
+- [x] 全量回归测试、浏览器验证和部署 smoke 流程固化。
 
 ---
 

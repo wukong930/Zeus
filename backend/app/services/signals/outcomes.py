@@ -55,6 +55,11 @@ def pending_result(reason: str, horizon_days: int, market_data: list[MarketBar])
 
 
 def direction_from_signal(signal: dict[str, Any]) -> int:
+    structured_direction = str(signal.get("direction") or "").lower()
+    if structured_direction == "bullish":
+        return 1
+    if structured_direction == "bearish":
+        return -1
     text = " ".join(
         str(item).lower()
         for item in (

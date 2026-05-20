@@ -1,9 +1,11 @@
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.api.market_data import (
+    _clear_market_data_cache,
     _latest_market_data_statement,
     _parse_market_symbols,
     _recent_market_data_statement,
@@ -11,6 +13,13 @@ from app.api.market_data import (
 from app.core.database import get_db
 from app.main import create_app
 from app.models.market_data import MarketData
+
+
+@pytest.fixture(autouse=True)
+def clear_market_data_cache_between_tests():
+    _clear_market_data_cache()
+    yield
+    _clear_market_data_cache()
 
 
 def test_parse_market_symbols_dedupes_and_normalizes() -> None:
@@ -152,6 +161,72 @@ def test_recent_market_data_batch_endpoint_returns_requested_rows(monkeypatch) -
     assert response.status_code == 200
     assert captured == {"session": session, "symbols": ["RB", "HC"], "limit": 2}
     assert [row["symbol"] for row in response.json()] == ["RB", "RB", "HC"]
+
+
+def test_latest_market_data_batch_endpoint_uses_short_ttl_cache(monkeypatch) -> None:
+    calls = {"count": 0}
+    session = object()
+
+    async def fake_db():
+        yield session
+
+    async def fake_latest_market_data_for_symbols(db_session, symbols):
+        calls["count"] += 1
+        assert db_session is session
+        assert symbols == ["RB", "HC"]
+        return [_market_row("RB", days=calls["count"]), _market_row("HC", days=calls["count"])]
+
+    monkeypatch.setattr(
+        "app.api.market_data.latest_market_data_for_symbols",
+        fake_latest_market_data_for_symbols,
+    )
+    app = create_app()
+    app.dependency_overrides[get_db] = fake_db
+    client = TestClient(app)
+
+    first = client.get("/api/market-data/latest?symbols=rb,hc")
+    second = client.get("/api/market-data/latest?symbols=rb,hc")
+    refreshed = client.get("/api/market-data/latest?symbols=rb,hc&refresh=true")
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert refreshed.status_code == 200
+    assert calls["count"] == 2
+    assert first.json() == second.json()
+    assert refreshed.json()[0]["close"] != first.json()[0]["close"]
+
+
+def test_recent_market_data_batch_endpoint_uses_limit_sensitive_cache(monkeypatch) -> None:
+    calls = {"count": 0}
+    session = object()
+
+    async def fake_db():
+        yield session
+
+    async def fake_recent_market_data_for_symbols(db_session, symbols, *, limit):
+        calls["count"] += 1
+        assert db_session is session
+        assert symbols == ["RB"]
+        return [_market_row("RB", days=calls["count"])]
+
+    monkeypatch.setattr(
+        "app.api.market_data.recent_market_data_for_symbols",
+        fake_recent_market_data_for_symbols,
+    )
+    app = create_app()
+    app.dependency_overrides[get_db] = fake_db
+    client = TestClient(app)
+
+    first = client.get("/api/market-data/recent?symbols=rb&limit=2")
+    second = client.get("/api/market-data/recent?symbols=rb&limit=2")
+    different_limit = client.get("/api/market-data/recent?symbols=rb&limit=3")
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert different_limit.status_code == 200
+    assert calls["count"] == 2
+    assert first.json() == second.json()
+    assert different_limit.json()[0]["close"] != first.json()[0]["close"]
 
 
 def test_single_latest_market_data_endpoint_uses_shared_lookup(monkeypatch) -> None:

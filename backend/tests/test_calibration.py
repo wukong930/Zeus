@@ -72,8 +72,29 @@ async def test_track_signal_emission_records_calibration_metadata() -> None:
     assert row is session.rows[0]
     assert row.calibration_weight_at_emission == 1.2
     assert row.regime_at_emission == "range_low_vol"
+    assert row.direction is None
     assert row.signal_combination_hash is not None
     assert session.flush_count == 1
+
+
+async def test_track_signal_emission_persists_structured_direction() -> None:
+    session = FakeSession()
+
+    row = await track_signal_emission(
+        session,  # type: ignore[arg-type]
+        signal={
+            "signal_type": "momentum",
+            "confidence": 0.86,
+            "direction": "bearish",
+            "related_assets": ["RB"],
+        },
+        category="ferrous",
+        regime="downtrend",
+        calibration_weight=1.0,
+    )
+
+    assert row is session.rows[0]
+    assert row.direction == "bearish"
 
 
 def test_summarize_outcomes_counts_hit_and_miss_only() -> None:

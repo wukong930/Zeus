@@ -99,6 +99,7 @@ async def track_signal_emission(
         signal_type=str(signal["signal_type"]),
         category=category,
         confidence=float(signal.get("confidence", 0)),
+        direction=_normalized_direction(signal.get("direction")),
         z_score=float(spread_info["z_score"]) if spread_info is not None else None,
         regime=regime,
         regime_at_emission=regime,
@@ -116,3 +117,8 @@ async def track_signal_emission(
     session.add(row)
     await session.flush()
     return row
+
+
+def _normalized_direction(value: Any) -> str | None:
+    direction = str(value or "").strip().lower()
+    return direction if direction in {"bullish", "bearish", "mixed"} else None

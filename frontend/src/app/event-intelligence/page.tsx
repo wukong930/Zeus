@@ -26,11 +26,10 @@ import { Card, CardHeader, CardSubtitle, CardTitle } from "@/components/Card";
 import { DataSourceBadge, type DataSourceState } from "@/components/DataSourceBadge";
 import {
   decideEventIntelligence,
-  fetchEventImpactLinks,
   fetchEventIntelligenceAuditLogs,
   fetchEventIntelligenceDetail,
-  fetchEventIntelligenceItems,
   fetchEventIntelligenceQualitySummary,
+  fetchEventIntelligenceSnapshot,
   updateEventImpactLink,
   type EventIntelligenceDecision,
   type EventImpactDirection,
@@ -104,36 +103,32 @@ export default function EventIntelligencePage() {
       setNavigationScope(initialScope);
       if (initialScope.symbol) setQuery(initialScope.symbol);
     }
-    Promise.all([
-      fetchEventIntelligenceItems(200),
-      fetchEventImpactLinks({ limit: 300 }),
-      fetchEventIntelligenceQualitySummary(200),
-    ])
-      .then(async ([eventRows, linkRows, qualitySummary]) => {
+    fetchEventIntelligenceSnapshot({ limit: 200 })
+      .then(async (snapshot) => {
         if (!mounted) return;
-        let nextItems = eventRows;
-        let nextLinks = linkRows;
+        let nextItems = snapshot.items;
+        let nextLinks = snapshot.impactLinks;
         let nextSelectedId =
-          initialEventId && eventRows.some((item) => item.id === initialEventId)
+          initialEventId && snapshot.items.some((item) => item.id === initialEventId)
             ? initialEventId
-            : eventRows[0]?.id ?? null;
-        if (initialEventId && !eventRows.some((item) => item.id === initialEventId)) {
+            : snapshot.items[0]?.id ?? null;
+        if (initialEventId && !snapshot.items.some((item) => item.id === initialEventId)) {
           try {
             const detail = await fetchEventIntelligenceDetail(initialEventId);
-            nextItems = [detail.event, ...eventRows];
+            nextItems = [detail.event, ...snapshot.items];
             nextLinks = [
               ...detail.impactLinks,
-              ...linkRows.filter((link) => link.eventItemId !== detail.event.id),
+              ...snapshot.impactLinks.filter((link) => link.eventItemId !== detail.event.id),
             ];
             nextSelectedId = detail.event.id;
           } catch {
-            nextSelectedId = eventRows[0]?.id ?? null;
+            nextSelectedId = snapshot.items[0]?.id ?? null;
           }
         }
         if (!mounted) return;
         setItems(nextItems);
         setLinks(nextLinks);
-        setQualityReports(qualitySummary.reports);
+        setQualityReports(snapshot.quality.reports);
         setSource("api");
         setSelectedId(nextSelectedId);
       })

@@ -1,6 +1,15 @@
 "use client";
 
-import { ArrowDown, ArrowUp, TrendingUp, TrendingDown } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowUp,
+  CircleAlert,
+  ListChecks,
+  ShieldAlert,
+  ShieldCheck,
+  TrendingDown,
+  TrendingUp,
+} from "lucide-react";
 import { Card } from "./Card";
 import { Badge } from "./Badge";
 import { Button } from "./Button";
@@ -11,9 +20,19 @@ import { useI18n } from "@/lib/i18n";
 
 interface TradePlanCardProps {
   plan: TradePlan;
+  actionPending?: boolean;
+  onApproveReview?: (plan: TradePlan) => void;
+  onRejectReview?: (plan: TradePlan) => void;
+  onAdoptPlan?: (plan: TradePlan) => void;
 }
 
-export function TradePlanCard({ plan }: TradePlanCardProps) {
+export function TradePlanCard({
+  plan,
+  actionPending = false,
+  onApproveReview,
+  onRejectReview,
+  onAdoptPlan,
+}: TradePlanCardProps) {
   const isLong = plan.direction === "long";
   const { text } = useI18n();
   // Normalize prices to 0..1 range for visualization
@@ -126,18 +145,132 @@ export function TradePlanCard({ plan }: TradePlanCardProps) {
         <span className="text-text-muted">{text("信号摘要")} ·</span> {text(plan.signalSummary)}
       </div>
 
+      <EvidencePacket plan={plan} />
+
+      {plan.reviewRequired && plan.reviewReasons.length > 0 && (
+        <div className="rounded-sm border border-severity-high-fg/25 bg-severity-high-bg/20 px-3 py-2 text-xs text-text-secondary">
+          <div className="mb-1 flex items-center gap-2 text-severity-high-fg">
+            <ShieldAlert className="h-3.5 w-3.5" />
+            <span>{text("复核原因")}</span>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {plan.reviewReasons.map((reason) => (
+              <span
+                key={reason}
+                className="rounded-sm border border-border-subtle bg-bg-base/70 px-2 py-1"
+              >
+                {text(reason)}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="flex gap-2">
-        <Button variant="action" size="md" className="flex-1" disabled={plan.reviewRequired}>
-          {text(plan.reviewRequired ? "等待复核" : "采纳建议")}
-        </Button>
-        <Button variant="secondary" size="md">
-          {text("修改")}
-        </Button>
-        <Button variant="ghost" size="md">
-          {text("拒绝")}
-        </Button>
+        {plan.reviewRequired ? (
+          <>
+            <Button
+              variant="primary"
+              size="md"
+              className="flex-1"
+              disabled={actionPending || !onApproveReview}
+              onClick={() => onApproveReview?.(plan)}
+            >
+              {text(actionPending ? "复核通过中" : "确认可执行")}
+            </Button>
+            <Button
+              variant="destructive"
+              size="md"
+              disabled={actionPending || !onRejectReview}
+              onClick={() => onRejectReview?.(plan)}
+            >
+              {text(actionPending ? "处理中" : "驳回计划")}
+            </Button>
+          </>
+        ) : (
+          <>
+            <Button
+              variant="action"
+              size="md"
+              className="flex-1"
+              disabled={actionPending || !onAdoptPlan}
+              onClick={() => onAdoptPlan?.(plan)}
+            >
+              {text(actionPending ? "采纳中" : "采纳建议")}
+            </Button>
+            <Button variant="secondary" size="md">
+              {text("修改")}
+            </Button>
+            <Button variant="ghost" size="md">
+              {text("拒绝")}
+            </Button>
+          </>
+        )}
       </div>
     </Card>
+  );
+}
+
+function EvidencePacket({ plan }: { plan: TradePlan }) {
+  const { text } = useI18n();
+  const { supports, counterEvidence, decisionGates } = plan.evidenceSummary;
+  return (
+    <div className="space-y-3 rounded-sm border border-border-subtle bg-bg-base/70 p-3 text-xs shadow-inner-panel">
+      <div className="flex items-center gap-2 text-text-secondary">
+        <ListChecks className="h-3.5 w-3.5 text-brand-cyan" />
+        <span>{text("证据包摘要")}</span>
+      </div>
+      <EvidenceList
+        icon={<ShieldCheck className="h-3.5 w-3.5 text-brand-emerald" />}
+        label={text("支持要点")}
+        items={supports}
+      />
+      {counterEvidence.length > 0 && (
+        <EvidenceList
+          icon={<CircleAlert className="h-3.5 w-3.5 text-brand-orange" />}
+          label={text("反证 / 待确认")}
+          items={counterEvidence}
+        />
+      )}
+      {decisionGates.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 border-t border-border-subtle pt-2">
+          {decisionGates.map((gate) => (
+            <span key={gate} className="rounded-sm border border-border-subtle bg-bg-surface/70 px-2 py-1 text-text-muted">
+              {text(gate)}
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function EvidenceList({
+  icon,
+  label,
+  items,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  items: string[];
+}) {
+  const { text } = useI18n();
+  const visibleItems = items.slice(0, 3);
+  if (visibleItems.length === 0) return null;
+  return (
+    <div className="grid gap-1.5">
+      <div className="flex items-center gap-2 text-text-muted">
+        {icon}
+        <span>{label}</span>
+      </div>
+      <div className="grid gap-1">
+        {visibleItems.map((item) => (
+          <div key={item} className="truncate text-text-secondary" title={item}>
+            {text(item)}
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 

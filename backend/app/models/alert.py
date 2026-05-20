@@ -13,6 +13,8 @@ class Alert(Base):
     __table_args__ = (
         Index("ix_alerts_status", "status"),
         Index("ix_alerts_category", "category"),
+        Index("ix_alerts_status_triggered_at", "status", "triggered_at"),
+        Index("ix_alerts_category_triggered_at", "category", "triggered_at"),
         Index("ix_alerts_severity", "severity"),
         Index("ix_alerts_triggered_at", "triggered_at"),
         Index("ix_alerts_adversarial_passed", "adversarial_passed"),
@@ -20,6 +22,7 @@ class Alert(Base):
         Index("ix_alerts_human_action_required", "human_action_required"),
         Index("ix_alerts_dedup_suppressed", "dedup_suppressed"),
         Index("ix_alerts_translation_status", "translation_status"),
+        Index("ix_alerts_related_assets", "related_assets", postgresql_using="gin"),
     )
 
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)

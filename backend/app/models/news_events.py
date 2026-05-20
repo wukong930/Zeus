@@ -12,10 +12,13 @@ class NewsEvent(Base):
     __tablename__ = "news_events"
     __table_args__ = (
         Index("ix_news_events_source", "source"),
+        Index("ix_news_events_source_published_at", "source", "published_at"),
         Index("ix_news_events_published_at", "published_at"),
         Index("ix_news_events_event_type", "event_type"),
+        Index("ix_news_events_event_type_published_at", "event_type", "published_at"),
         Index("ix_news_events_direction", "direction"),
         Index("ix_news_events_severity", "severity"),
+        Index("ix_news_events_verification_published_at", "verification_status", "published_at"),
         Index("ix_news_events_dedup_hash", "dedup_hash", unique=True),
         Index("ix_news_events_affected_symbols", "affected_symbols", postgresql_using="gin"),
         Index("ix_news_events_translation_status", "translation_status"),

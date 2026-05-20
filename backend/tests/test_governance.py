@@ -3,7 +3,9 @@ from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy.dialects import postgresql
 
+from app.api.governance import change_reviews_statement
 from app.core.database import get_db
 from app.main import create_app
 from app.models.change_review_queue import ChangeReviewQueue
@@ -184,3 +186,25 @@ def test_governance_api_rejects_invalid_filters_and_decisions() -> None:
 
     assert invalid_filter.status_code == 422
     assert invalid_decision.status_code == 422
+
+
+def test_change_reviews_statement_pushes_triage_filters_to_database() -> None:
+    sql = str(
+        change_reviews_statement(
+            status_filter="shadow_review",
+            source="event_intelligence",
+            target_table="event_intelligence_items",
+            triage_tier="shadow_review",
+            min_attention_score=45,
+            requires_human_attention=False,
+            limit=50,
+        ).compile(dialect=postgresql.dialect())
+    )
+
+    assert "change_review_queue.status =" in sql
+    assert "change_review_queue.source =" in sql
+    assert "change_review_queue.target_table =" in sql
+    assert "proposed_change" in sql
+    assert "CAST" in sql
+    assert "BOOLEAN" in sql
+    assert "LIMIT" in sql

@@ -12,6 +12,8 @@ class Recommendation(Base):
     __tablename__ = "recommendations"
     __table_args__ = (
         Index("ix_recommendations_status", "status"),
+        Index("ix_recommendations_status_created_at", "status", "created_at"),
+        Index("ix_recommendations_status_expires_at", "status", "expires_at"),
         Index("ix_recommendations_strategy_id", "strategy_id"),
         Index("ix_recommendations_alert_id", "alert_id"),
         Index("ix_recommendations_created_at", "created_at"),

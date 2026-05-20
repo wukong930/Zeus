@@ -25,6 +25,7 @@ from app.services.data_sources.free_ingest import run_free_data_ingest
 from app.services.data_sources.nasa_power import collect_nasa_power_weather_baselines
 from app.services.etl.writers import append_industry_data
 from app.services.event_intelligence.ingress import sync_event_intelligence_inputs
+from app.services.governance.cleanup import run_review_load_cleanup
 from app.services.news.collectors import (
     CailiansheCollector,
     ExchangeAnnouncementsCollector,
@@ -62,7 +63,7 @@ DEFAULT_JOB_DEFINITIONS: tuple[JobDefinition, ...] = (
     JobDefinition("calibration", "校准更新", "0 2 * * *"),
     JobDefinition("regime-detect", "Regime 检测", "20 16 * * 1-5"),
     JobDefinition("drift-monitor", "漂移监控", "40 16 * * 1-5"),
-    JobDefinition("cleanup", "数据清理", "0 3 * * *", enabled=False),
+    JobDefinition("cleanup", "数据清理", "0 3 * * *"),
     JobDefinition("main-contract", "主力合约日检", "10 16 * * 1-5"),
     JobDefinition("adversarial-cache", "对抗零分布", "25 16 * * 1-5"),
     JobDefinition("news-ingest", "新闻事件采集", "*/30 * * * *"),
@@ -487,12 +488,23 @@ async def translation_backfill_job() -> dict[str, Any]:
     }
 
 
+async def cleanup_job() -> dict[str, Any]:
+    async with AsyncSessionLocal() as session:
+        result = await run_review_load_cleanup(session)
+        await session.commit()
+    return {
+        **result.to_dict(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+
 DEFAULT_JOB_HANDLERS: dict[str, JobHandler] = {
     "ingest": ingest_job,
     "track-outcomes": track_outcomes_job,
     "calibration": calibration_job,
     "regime-detect": regime_detection_job,
     "drift-monitor": drift_monitor_job,
+    "cleanup": cleanup_job,
     "main-contract": main_contract_job,
     "adversarial-cache": adversarial_cache_job,
     "news-ingest": news_ingest_job,

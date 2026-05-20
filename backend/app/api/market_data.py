@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
@@ -14,6 +14,11 @@ from app.services.market_data.pit import get_market_data_pit
 router = APIRouter(prefix="/api/market-data", tags=["market-data"])
 MAX_BATCH_SYMBOLS = 50
 MAX_MARKET_SYMBOL_QUERY_LENGTH = 2000
+MARKET_DATA_CACHE_TTL_SECONDS = 12
+MARKET_DATA_CACHE_MAX_ENTRIES = 128
+
+MarketDataCacheKey = tuple[object, ...]
+_MARKET_DATA_CACHE: dict[MarketDataCacheKey, tuple[datetime, list[MarketDataRead]]] = {}
 
 
 @router.get("", response_model=list[MarketDataRead])
@@ -43,28 +48,47 @@ async def create_market_data(
     row = (await append_market_data(session, [payload]))[0]
     await session.commit()
     await session.refresh(row)
+    _clear_market_data_cache()
     return row
 
 
 @router.get("/latest", response_model=list[MarketDataRead])
 async def get_latest_market_data_batch(
     symbols: str = Query(..., min_length=1, max_length=MAX_MARKET_SYMBOL_QUERY_LENGTH),
+    refresh: bool = Query(default=False),
     session: AsyncSession = Depends(get_db),
-) -> list[MarketData]:
-    return await latest_market_data_for_symbols(session, _parse_market_symbols(symbols))
+) -> list[MarketDataRead]:
+    parsed_symbols = _parse_market_symbols(symbols)
+    cache_key = _market_data_cache_key("latest", parsed_symbols)
+    if not refresh:
+        cached = _market_data_cache_get(cache_key)
+        if cached is not None:
+            return cached
+
+    rows = _market_data_read_rows(await latest_market_data_for_symbols(session, parsed_symbols))
+    _market_data_cache_set(cache_key, rows)
+    return rows
 
 
 @router.get("/recent", response_model=list[MarketDataRead])
 async def get_recent_market_data_batch(
     symbols: str = Query(..., min_length=1, max_length=MAX_MARKET_SYMBOL_QUERY_LENGTH),
     limit: int = Query(default=5, ge=1, le=200),
+    refresh: bool = Query(default=False),
     session: AsyncSession = Depends(get_db),
-) -> list[MarketData]:
-    return await recent_market_data_for_symbols(
-        session,
-        _parse_market_symbols(symbols),
-        limit=limit,
+) -> list[MarketDataRead]:
+    parsed_symbols = _parse_market_symbols(symbols)
+    cache_key = _market_data_cache_key("recent", parsed_symbols, limit=limit)
+    if not refresh:
+        cached = _market_data_cache_get(cache_key)
+        if cached is not None:
+            return cached
+
+    rows = _market_data_read_rows(
+        await recent_market_data_for_symbols(session, parsed_symbols, limit=limit)
     )
+    _market_data_cache_set(cache_key, rows)
+    return rows
 
 
 @router.get("/{market_data_id}", response_model=MarketDataRead)
@@ -210,3 +234,57 @@ def _parse_market_symbols(value: str) -> list[str]:
             ),
         )
     return symbols
+
+
+def _market_data_cache_key(
+    kind: str,
+    symbols: list[str],
+    *,
+    limit: int | None = None,
+) -> MarketDataCacheKey:
+    normalized_symbols = tuple(
+        dict.fromkeys(symbol.strip().upper() for symbol in symbols if symbol.strip())
+    )
+    return (kind, normalized_symbols, limit)
+
+
+def _market_data_cache_get(
+    key: MarketDataCacheKey,
+    *,
+    now: datetime | None = None,
+) -> list[MarketDataRead] | None:
+    current = now or datetime.now(timezone.utc)
+    cached = _MARKET_DATA_CACHE.get(key)
+    if cached is None:
+        return None
+    cached_at, rows = cached
+    if (current - cached_at).total_seconds() > MARKET_DATA_CACHE_TTL_SECONDS:
+        _MARKET_DATA_CACHE.pop(key, None)
+        return None
+    return [row.model_copy(deep=True) for row in rows]
+
+
+def _market_data_cache_set(
+    key: MarketDataCacheKey,
+    rows: list[MarketDataRead],
+    *,
+    now: datetime | None = None,
+) -> None:
+    if len(_MARKET_DATA_CACHE) >= MARKET_DATA_CACHE_MAX_ENTRIES and key not in _MARKET_DATA_CACHE:
+        oldest_key = min(_MARKET_DATA_CACHE, key=lambda item: _MARKET_DATA_CACHE[item][0])
+        _MARKET_DATA_CACHE.pop(oldest_key, None)
+    _MARKET_DATA_CACHE[key] = (
+        now or datetime.now(timezone.utc),
+        [row.model_copy(deep=True) for row in rows],
+    )
+
+
+def _market_data_read_rows(rows: list[MarketData | MarketDataRead]) -> list[MarketDataRead]:
+    return [
+        row if isinstance(row, MarketDataRead) else MarketDataRead.model_validate(row)
+        for row in rows
+    ]
+
+
+def _clear_market_data_cache() -> None:
+    _MARKET_DATA_CACHE.clear()

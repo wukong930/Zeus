@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.change_review_queue import ChangeReviewQueue
+from app.services.governance.triage import triage_change_review
 
 F = TypeVar("F", bound=Callable[..., Awaitable[Any]])
 
@@ -22,7 +23,23 @@ async def enqueue_review(
     target_key: str,
     proposed_change: dict[str, Any],
     reason: str | None = None,
+    status: str = "pending",
+    active_statuses: tuple[str, ...] | None = None,
 ) -> ChangeReviewQueue:
+    triage = triage_change_review(
+        source=source,
+        proposed_change=proposed_change,
+        default_status=status,
+    )
+    queue_status = triage.queue_status
+    if queue_status is None:
+        raise ReviewRequiredError(f"{target_table} change triaged as evidence-only: {target_key}")
+
+    proposed_change = {
+        **proposed_change,
+        "review_triage": triage.to_payload(),
+    }
+    lookup_statuses = active_statuses or ("pending", queue_status)
     existing = (
         await session.scalars(
             select(ChangeReviewQueue)
@@ -30,7 +47,7 @@ async def enqueue_review(
                 ChangeReviewQueue.source == source,
                 ChangeReviewQueue.target_table == target_table,
                 ChangeReviewQueue.target_key == target_key,
-                ChangeReviewQueue.status == "pending",
+                ChangeReviewQueue.status.in_(tuple(dict.fromkeys(lookup_statuses))),
             )
             .limit(1)
         )
@@ -43,7 +60,7 @@ async def enqueue_review(
         target_table=target_table,
         target_key=target_key,
         proposed_change=proposed_change,
-        status="pending",
+        status=queue_status,
         reason=reason,
     )
     session.add(row)

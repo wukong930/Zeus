@@ -7,7 +7,7 @@ import { Card } from "@/components/Card";
 import { DataSourceBadge, type DataSourceState } from "@/components/DataSourceBadge";
 import { TradePlanCard } from "@/components/TradePlanCard";
 import { MetricTile } from "@/components/MetricTile";
-import { fetchTradePlansFromApi } from "@/lib/api";
+import { adoptTradePlan, fetchTradePlansFromApi, reviewTradePlan } from "@/lib/api";
 import { Activity, Gauge, Target, WalletCards } from "lucide-react";
 import { useI18n } from "@/lib/i18n";
 
@@ -15,6 +15,9 @@ export default function TradePlansPage() {
   const { text } = useI18n();
   const [plans, setPlans] = useState<TradePlan[]>([]);
   const [source, setSource] = useState<DataSourceState>("loading");
+  const [actingPlanId, setActingPlanId] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [actionErrorTitle, setActionErrorTitle] = useState<string>("交易计划复核失败");
   const avgConfidence = useMemo(
     () => plans.reduce((sum, plan) => sum + plan.confidence, 0) / Math.max(plans.length, 1),
     [plans]
@@ -48,6 +51,43 @@ export default function TradePlansPage() {
     };
   }, []);
 
+  const handleReview = async (plan: TradePlan, decision: "approve" | "reject") => {
+    setActingPlanId(plan.id);
+    setActionError(null);
+    try {
+      const updated = await reviewTradePlan(
+        plan.id,
+        decision,
+        decision === "reject" ? "Rejected from Trade Plans review." : "Approved from Trade Plans review."
+      );
+      setPlans((current) => {
+        if (decision === "reject" || updated === null || !isVisibleTradePlan(updated)) {
+          return current.filter((item) => item.id !== plan.id);
+        }
+        return current.map((item) => (item.id === plan.id ? updated : item));
+      });
+    } catch (error) {
+      setActionErrorTitle("交易计划复核失败");
+      setActionError(error instanceof Error ? error.message : "交易计划复核失败");
+    } finally {
+      setActingPlanId(null);
+    }
+  };
+
+  const handleAdopt = async (plan: TradePlan) => {
+    setActingPlanId(plan.id);
+    setActionError(null);
+    try {
+      await adoptTradePlan(plan);
+      setPlans((current) => current.filter((item) => item.id !== plan.id));
+    } catch (error) {
+      setActionErrorTitle("交易计划采纳失败");
+      setActionError(error instanceof Error ? error.message : "交易计划采纳失败");
+    } finally {
+      setActingPlanId(null);
+    }
+  };
+
   return (
     <div className="px-8 py-6 max-w-5xl space-y-5 animate-fade-in">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -68,17 +108,33 @@ export default function TradePlansPage() {
       </div>
 
       <div className="space-y-5">
+        {actionError !== null && (
+          <Card variant="data" className="border-data-down/40 px-4 py-3 text-sm text-data-down">
+            {text(actionErrorTitle)} · {actionError}
+          </Card>
+        )}
         {plans.length === 0 && source !== "loading" && (
           <Card variant="data" className="py-10 text-center">
             <div className="text-sm text-text-secondary">{text(emptyTradePlanMessage(source))}</div>
           </Card>
         )}
         {plans.map((plan) => (
-          <TradePlanCard key={plan.id} plan={plan} />
+          <TradePlanCard
+            key={plan.id}
+            plan={plan}
+            actionPending={actingPlanId === plan.id}
+            onApproveReview={(item) => handleReview(item, "approve")}
+            onRejectReview={(item) => handleReview(item, "reject")}
+            onAdoptPlan={handleAdopt}
+          />
         ))}
       </div>
     </div>
   );
+}
+
+function isVisibleTradePlan(plan: TradePlan): boolean {
+  return plan.status === "pending" || plan.status === "pending_review";
 }
 
 function emptyTradePlanMessage(source: DataSourceState): string {

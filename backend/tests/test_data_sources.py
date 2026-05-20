@@ -19,6 +19,8 @@ from app.services.data_sources.accuweather import (
 from app.services.data_sources.eia import EiaSeries, collect_eia_indicators, row_from_eia_payload
 from app.services.data_sources.fred import FredSeries, collect_fred_indicators, row_from_fred_payload
 from app.services.data_sources.free_ingest import (
+    FreeDataIngestResult,
+    build_market_context_payloads,
     market_context_payloads,
     run_free_data_ingest,
     safe_error_message,
@@ -1030,6 +1032,78 @@ def test_market_context_payloads_group_rows_by_symbol() -> None:
     assert contexts[0]["symbol1"] == "SC"
     assert contexts[0]["category"] == "energy"
     assert len(contexts[0]["market_data"]) == 2
+
+
+def test_market_context_payloads_drops_stale_realtime_contexts() -> None:
+    rows = _rows_from_frame(
+        pd.DataFrame(
+            [
+                {"date": "2026-05-01", "open": 1, "high": 2, "low": 1, "close": 2, "volume": 10},
+                {"date": "2026-05-02", "open": 2, "high": 3, "low": 2, "close": 3, "volume": 11},
+            ]
+        ),
+        query_symbol="SC0",
+        limit=10,
+    )
+
+    result = build_market_context_payloads(
+        rows,
+        as_of=pd.Timestamp("2026-05-06T00:00:00Z").to_pydatetime(),
+        max_age_hours=72,
+    )
+
+    assert result.contexts == []
+    assert result.stale_contexts == 1
+    assert result.stale_context_details[0]["symbol"] == "SC"
+    assert result.stale_context_details[0]["source"] == "akshare_sina"
+    ingest_result = FreeDataIngestResult(stale_market_contexts=result.stale_contexts)
+    assert ingest_result.status == "degraded"
+    assert ingest_result.to_dict()["degraded"] is True
+
+
+def test_market_context_payloads_uses_daily_bar_validity_window() -> None:
+    rows = _rows_from_frame(
+        pd.DataFrame(
+            [
+                {"date": "2026-05-02", "open": 2, "high": 3, "low": 2, "close": 3, "volume": 11},
+            ]
+        ),
+        query_symbol="SC0",
+        limit=10,
+    )
+
+    result = build_market_context_payloads(
+        rows,
+        as_of=pd.Timestamp("2026-05-03T01:00:00+08:00").to_pydatetime(),
+        max_age_hours=24,
+    )
+
+    assert len(result.contexts) == 1
+    assert result.contexts[0]["timestamp"] == "2026-05-02T00:00:00+08:00"
+    assert result.contexts[0]["freshness_timestamp"] == "2026-05-02T16:00:00+00:00"
+    assert result.stale_contexts == 0
+
+
+def test_market_context_payloads_keeps_recent_realtime_contexts() -> None:
+    rows = _rows_from_frame(
+        pd.DataFrame(
+            [
+                {"date": "2026-05-01", "open": 1, "high": 2, "low": 1, "close": 2, "volume": 10},
+                {"date": "2026-05-02", "open": 2, "high": 3, "low": 2, "close": 3, "volume": 11},
+            ]
+        ),
+        query_symbol="SC0",
+        limit=10,
+    )
+
+    result = build_market_context_payloads(
+        rows,
+        as_of=pd.Timestamp("2026-05-04T00:00:00Z").to_pydatetime(),
+        max_age_hours=72,
+    )
+
+    assert len(result.contexts) == 1
+    assert result.stale_contexts == 0
 
 
 async def test_free_data_ingest_reports_enabled_keyed_sources_without_keys() -> None:

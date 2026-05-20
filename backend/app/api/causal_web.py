@@ -59,6 +59,8 @@ STAGE_X: dict[Stage, int] = {
     "impact": 1210,
 }
 MAX_CAUSAL_EDGES = 24
+CAUSAL_WEB_CACHE_TTL_SECONDS = 12
+CAUSAL_WEB_CACHE_MAX_ENTRIES = 96
 TYPE_STAGE: dict[NodeType, Stage] = {
     "event": "source",
     "metric": "validation",
@@ -122,6 +124,10 @@ class CausalWebGraph(BaseModel):
     source_counts: dict[str, int]
 
 
+CausalWebCacheKey = tuple[int, str | None, str | None, str | None]
+_CAUSAL_WEB_CACHE: dict[CausalWebCacheKey, tuple[datetime, CausalWebGraph]] = {}
+
+
 @dataclass(frozen=True)
 class GraphNodeSeed:
     id: str
@@ -182,18 +188,53 @@ async def get_causal_web(
     symbol: str | None = Query(default=None, min_length=1, max_length=20),
     region: str | None = Query(default=None, min_length=1, max_length=80),
     event_id: UUID | None = Query(default=None, alias="event"),
+    refresh: bool = Query(default=False),
     session: AsyncSession = Depends(get_db),
 ) -> CausalWebGraph:
     symbol_filter = _normalize_symbol(symbol) if symbol else None
     pinned_event_item = await session.get(EventIntelligenceItem, event_id) if event_id else None
     if pinned_event_item is not None and pinned_event_item.status == "rejected":
         pinned_event_item = None
+    cache_key = _causal_web_cache_key(
+        limit=limit,
+        symbol=symbol_filter,
+        region=region,
+        event_id=pinned_event_item.id if pinned_event_item is not None else None,
+    )
+    if not refresh:
+        cached = _causal_web_cache_get(cache_key)
+        if cached is not None:
+            return cached
+
+    graph = await build_causal_web_graph(
+        session,
+        limit=limit,
+        symbol_filter=symbol_filter,
+        region=region,
+        pinned_event_item=pinned_event_item,
+    )
+    _causal_web_cache_set(cache_key, graph)
+    return graph
+
+
+async def build_causal_web_graph(
+    session: AsyncSession,
+    *,
+    limit: int,
+    symbol_filter: str | None,
+    region: str | None,
+    pinned_event_item: EventIntelligenceItem | None,
+) -> CausalWebGraph:
     news_limit = max(3, limit // 3)
+    scoped_symbols = _causal_scope_symbols(symbol_filter, pinned_event_item)
+    scoped_category = _category_from_symbols(scoped_symbols) if scoped_symbols else None
+    if scoped_category == "unknown":
+        scoped_category = None
     news = _unique_recent_news(
         list(
             (
                 await session.scalars(
-                    select(NewsEvent).order_by(NewsEvent.published_at.desc()).limit(news_limit * 4)
+                    _recent_news_statement(limit=news_limit * 4, symbols=scoped_symbols)
                 )
             ).all()
         ),
@@ -202,17 +243,14 @@ async def get_causal_web(
     signals = list(
         (
             await session.scalars(
-                select(SignalTrack).order_by(SignalTrack.created_at.desc()).limit(limit)
+                _recent_signals_statement(limit=limit, category=scoped_category)
             )
         ).all()
     )
     recent_alerts = list(
         (
             await session.scalars(
-                select(Alert)
-                .where(Alert.status != "suppressed")
-                .order_by(Alert.triggered_at.desc())
-                .limit(max(4, limit // 2))
+                _recent_alerts_statement(limit=max(4, limit // 2), symbols=scoped_symbols)
             )
         ).all()
     )
@@ -226,14 +264,14 @@ async def get_causal_web(
     metrics = list(
         (
             await session.scalars(
-                select(IndustryData).order_by(IndustryData.ingested_at.desc()).limit(max(4, limit // 2))
+                _recent_industry_metrics_statement(limit=max(4, limit // 2), symbols=scoped_symbols)
             )
         ).all()
     )
     market_metrics = list(
         (
             await session.scalars(
-                _latest_market_metrics_statement(limit=max(6, limit))
+                _latest_market_metrics_statement(limit=max(6, limit), symbols=scoped_symbols)
             )
         ).all()
     )
@@ -340,6 +378,56 @@ async def get_causal_web(
             "event_intelligence": len(event_intelligence_items),
         },
     )
+
+
+def _causal_web_cache_key(
+    *,
+    limit: int,
+    symbol: str | None,
+    region: str | None,
+    event_id: UUID | None,
+) -> CausalWebCacheKey:
+    return (
+        limit,
+        _normalize_symbol(symbol) if symbol else None,
+        region,
+        str(event_id) if event_id else None,
+    )
+
+
+def _causal_web_cache_get(
+    key: CausalWebCacheKey,
+    *,
+    now: datetime | None = None,
+) -> CausalWebGraph | None:
+    current = now or datetime.now(timezone.utc)
+    cached = _CAUSAL_WEB_CACHE.get(key)
+    if cached is None:
+        return None
+    cached_at, graph = cached
+    if (current - cached_at).total_seconds() > CAUSAL_WEB_CACHE_TTL_SECONDS:
+        _CAUSAL_WEB_CACHE.pop(key, None)
+        return None
+    return graph.model_copy(deep=True)
+
+
+def _causal_web_cache_set(
+    key: CausalWebCacheKey,
+    graph: CausalWebGraph,
+    *,
+    now: datetime | None = None,
+) -> None:
+    if len(_CAUSAL_WEB_CACHE) >= CAUSAL_WEB_CACHE_MAX_ENTRIES and key not in _CAUSAL_WEB_CACHE:
+        oldest_key = min(_CAUSAL_WEB_CACHE, key=lambda item: _CAUSAL_WEB_CACHE[item][0])
+        _CAUSAL_WEB_CACHE.pop(oldest_key, None)
+    _CAUSAL_WEB_CACHE[key] = (
+        now or datetime.now(timezone.utc),
+        graph.model_copy(deep=True),
+    )
+
+
+def _clear_causal_web_cache() -> None:
+    _CAUSAL_WEB_CACHE.clear()
 
 
 def _seed_from_event_intelligence_item(
@@ -1017,7 +1105,53 @@ def _normalize_news_title(value: str) -> str:
     return " ".join(normalized.split())
 
 
-def _latest_market_metrics_statement(*, limit: int):
+def _causal_scope_symbols(
+    symbol: str | None,
+    pinned_event_item: EventIntelligenceItem | None,
+) -> list[str]:
+    symbols: list[str] = []
+    if symbol:
+        symbols.append(_normalize_symbol(symbol))
+    if pinned_event_item is not None:
+        symbols.extend(_normalize_symbol(value) for value in (pinned_event_item.symbols or []))
+    return list(dict.fromkeys(value for value in symbols if value))
+
+
+def _recent_news_statement(*, limit: int, symbols: list[str]):
+    statement = select(NewsEvent).order_by(NewsEvent.published_at.desc()).limit(limit)
+    if symbols:
+        statement = statement.where(or_(*(NewsEvent.affected_symbols.contains([symbol]) for symbol in symbols)))
+    return statement
+
+
+def _recent_signals_statement(*, limit: int, category: str | None):
+    statement = select(SignalTrack).order_by(SignalTrack.created_at.desc()).limit(limit)
+    if category:
+        statement = statement.where(SignalTrack.category == category)
+    return statement
+
+
+def _recent_alerts_statement(*, limit: int, symbols: list[str]):
+    statement = (
+        select(Alert)
+        .where(Alert.status != "suppressed")
+        .order_by(Alert.triggered_at.desc())
+        .limit(limit)
+    )
+    if symbols:
+        statement = statement.where(or_(*(Alert.related_assets.contains([symbol]) for symbol in symbols)))
+    return statement
+
+
+def _recent_industry_metrics_statement(*, limit: int, symbols: list[str]):
+    statement = select(IndustryData).order_by(IndustryData.ingested_at.desc()).limit(limit)
+    if symbols:
+        statement = statement.where(IndustryData.symbol.in_(symbols))
+    return statement
+
+
+def _latest_market_metrics_statement(*, limit: int, symbols: list[str] | None = None):
+    symbols = list(dict.fromkeys(symbols or []))
     ranked = (
         select(
             MarketData.id.label("id"),
@@ -1033,13 +1167,15 @@ def _latest_market_metrics_statement(*, limit: int):
             .label("rn"),
         )
         .select_from(MarketData)
-        .subquery()
     )
+    if symbols:
+        ranked = ranked.where(MarketData.symbol.in_(symbols))
+    ranked_subquery = ranked.subquery()
 
     return (
         select(MarketData)
-        .join(ranked, MarketData.id == ranked.c.id)
-        .where(ranked.c.rn == 1)
+        .join(ranked_subquery, MarketData.id == ranked_subquery.c.id)
+        .where(ranked_subquery.c.rn == 1)
         .order_by(MarketData.ingested_at.desc(), MarketData.timestamp.desc())
         .limit(limit)
     )

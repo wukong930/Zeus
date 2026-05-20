@@ -131,6 +131,7 @@ class RubberSupplyShockEvaluator:
                 f"{display_title} 经产区供应链对 RU/NR {direction_zh}："
                 f"{display_summary}"
             ),
+            direction=event.direction if event.direction in {"bullish", "bearish", "mixed"} else None,
         )
 
     def evaluate_outcome(

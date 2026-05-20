@@ -1,3 +1,4 @@
+from datetime import date, datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, Depends
@@ -7,7 +8,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.models.alert_agent import AlertAgentConfig
-from app.schemas.common import StrictInputModel
+from app.schemas.common import LLMUsageSummaryRead, StrictInputModel
+from app.scheduler.manager import get_scheduler
+from app.services.data_sources.registry import data_source_statuses
 from app.services.llm.registry import get_active_llm_config, get_env_llm_config
 from app.services.llm.types import DEFAULT_MODELS, LLMProviderConfig, LLMProviderName
 from app.services.alert_agent.dedup import (
@@ -20,6 +23,8 @@ from app.services.adversarial.runtime import (
     load_adversarial_runtime_config,
     save_adversarial_runtime_config,
 )
+from app.services.llm.budget_guard import month_bounds
+from app.services.llm.cost_tracker import monthly_usage_summary
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
@@ -85,6 +90,26 @@ class LLMProviderSettingsRead(BaseModel):
     reason: str | None = None
 
 
+class SettingsSnapshotRead(BaseModel):
+    generated_at: datetime
+    data_sources: list[dict[str, Any]]
+    scheduler: dict[str, Any]
+    llm_usage: LLMUsageSummaryRead
+    llm_providers: list[LLMProviderSettingsRead]
+    alert_dedup: AlertDedupSettingsRead
+    notifications: NotificationSettingsRead
+    adversarial_runtime: AdversarialRuntimeSettingsRead
+
+
+@router.get("/snapshot", response_model=SettingsSnapshotRead)
+async def get_settings_snapshot(
+    module: str = "alert_agent",
+    month: date | None = None,
+    session: AsyncSession = Depends(get_db),
+) -> SettingsSnapshotRead:
+    return await build_settings_snapshot(session, module=module, month=month)
+
+
 @router.get("/alert-dedup", response_model=AlertDedupSettingsRead)
 async def get_alert_dedup_settings() -> AlertDedupSettingsRead:
     return AlertDedupSettingsRead(
@@ -135,6 +160,37 @@ async def get_llm_provider_settings(
     session: AsyncSession = Depends(get_db),
 ) -> list[LLMProviderSettingsRead]:
     return await load_llm_provider_settings(session)
+
+
+async def build_settings_snapshot(
+    session: AsyncSession,
+    *,
+    module: str,
+    month: date | None,
+) -> SettingsSnapshotRead:
+    period_start, period_end = month_bounds(month or date.today())
+    llm_usage = await monthly_usage_summary(
+        session,
+        module=module,
+        period_start=period_start,
+        period_end=period_end,
+    )
+    scheduler = get_scheduler()
+    return SettingsSnapshotRead(
+        generated_at=datetime.now(timezone.utc),
+        data_sources=[status.to_dict() for status in data_source_statuses()],
+        scheduler={
+            "jobs": scheduler.list_jobs(),
+            "health": scheduler.health_summary(),
+        },
+        llm_usage=LLMUsageSummaryRead(**llm_usage.__dict__),
+        llm_providers=await load_llm_provider_settings(session),
+        alert_dedup=await get_alert_dedup_settings(),
+        notifications=await load_notification_settings(session),
+        adversarial_runtime=_adversarial_runtime_read(
+            await load_adversarial_runtime_config(session)
+        ),
+    )
 
 
 async def load_llm_provider_settings(session: AsyncSession) -> list[LLMProviderSettingsRead]:

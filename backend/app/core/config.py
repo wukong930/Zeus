@@ -40,6 +40,7 @@ class Settings(BaseSettings):
         "RB0,HC0,I0,J0,JM0,RU0,NR0,BR0,SC0,TA0,MA0,PP0,CU0,AL0,ZN0,NI0,M0,Y0,P0,AU0,AG0"
     )
     data_source_akshare_history_limit: int = 80
+    data_source_market_context_max_age_hours: int = Field(default=24, ge=1, le=720)
     data_source_gdelt_enabled: bool = False
     data_source_gdelt_query: str = "commodities futures OR supply chain OR inventory"
     data_source_open_meteo_enabled: bool = False

@@ -231,12 +231,29 @@ def test_translation_backfill_job_is_registered() -> None:
     assert DEFAULT_JOB_HANDLERS["translation-backfill"].__name__ == "translation_backfill_job"
 
 
+def test_cleanup_job_is_registered() -> None:
+    definition = next(item for item in DEFAULT_JOB_DEFINITIONS if item.id == "cleanup")
+
+    assert definition.enabled is True
+    assert DEFAULT_JOB_HANDLERS["cleanup"].__name__ == "cleanup_job"
+
+
 def test_default_jobs_are_registered_or_explicitly_unconfigured() -> None:
     for definition in DEFAULT_JOB_DEFINITIONS:
         assert definition.id in DEFAULT_JOB_HANDLERS or definition.enabled is False
 
 
-def test_scheduler_reports_missing_handlers_as_unconfigured() -> None:
+def test_default_job_handlers_match_known_non_placeholder_jobs() -> None:
+    definition_ids = {definition.id for definition in DEFAULT_JOB_DEFINITIONS}
+
+    assert set(DEFAULT_JOB_HANDLERS).issubset(definition_ids)
+    assert all(
+        handler.__name__ not in {"placeholder_job", "noop_job", "stub_job"}
+        for handler in DEFAULT_JOB_HANDLERS.values()
+    )
+
+
+def test_scheduler_reports_disabled_missing_handlers_as_planned() -> None:
     manager = SchedulerManager(
         definitions=(JobDefinition("planned", "Planned", "* * * * *", enabled=False),),
         handlers={},
@@ -245,11 +262,50 @@ def test_scheduler_reports_missing_handlers_as_unconfigured() -> None:
     jobs = manager.list_jobs()
     health = manager.health_summary()
 
-    assert jobs[0]["status"] == "unconfigured"
+    assert jobs[0]["status"] == "planned"
     assert health["enabled_jobs"] == 0
     assert health["warning_jobs"] == []
-    assert health["unconfigured_jobs"] == ["planned"]
+    assert health["unconfigured_jobs"] == []
+    assert health["planned_unconfigured_jobs"] == ["planned"]
+    assert jobs[0]["handler_registered"] is False
+    assert health["handler_coverage"] == {
+        "total": 1,
+        "registered": 0,
+        "missing": 1,
+        "unconfigured": 0,
+        "planned": 1,
+    }
     assert manager.start_job("planned") is False
+    assert manager.list_jobs()[0]["status"] == "unconfigured"
+
+
+def test_scheduler_start_all_skips_planned_unconfigured_jobs() -> None:
+    manager = SchedulerManager(
+        definitions=(
+            JobDefinition("ready", "Ready", "* * * * *", enabled=False),
+            JobDefinition("planned", "Planned", "* * * * *", enabled=False),
+        ),
+        handlers={"ready": _ok_handler},
+    )
+
+    manager.start_all()
+    jobs = {job["id"]: job for job in manager.list_jobs()}
+    health = manager.health_summary()
+
+    assert jobs["ready"]["enabled"] is True
+    assert jobs["ready"]["status"] == "ok"
+    assert jobs["planned"]["enabled"] is False
+    assert jobs["planned"]["status"] == "planned"
+    assert health["enabled_jobs"] == 1
+    assert health["unconfigured_jobs"] == []
+    assert health["planned_unconfigured_jobs"] == ["planned"]
+    assert health["handler_coverage"] == {
+        "total": 2,
+        "registered": 1,
+        "missing": 1,
+        "unconfigured": 0,
+        "planned": 1,
+    }
 
 
 def scheduler_api_client(monkeypatch, scheduler: ApiScheduler) -> TestClient:

@@ -34,6 +34,7 @@ class PriceGapEvaluator:
 
         combined = gap_triggered and volume_triggered
         direction = "up" if latest.close > previous.close else "down"
+        signal_direction = "bullish" if direction == "up" else "bearish"
         trigger_chain = [
             build_trigger_step(
                 1,
@@ -79,6 +80,7 @@ class PriceGapEvaluator:
                 f"{context.symbol1} moved {gap_pct:.2f}% with volume spike "
                 f"{volume_spike_pct:.1f}%; price-gap proxy triggered."
             ),
+            direction=signal_direction,
         )
 
     def evaluate_outcome(

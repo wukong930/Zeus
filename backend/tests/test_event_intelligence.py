@@ -2,7 +2,17 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
+from sqlalchemy.dialects import postgresql
 
+from app.api.event_intelligence import (
+    _event_intelligence_snapshot_response,
+    _event_intelligence_source_lookup_response,
+    _event_intelligence_source_lookup_statement,
+    _event_impact_links_for_items_statement,
+    _event_impact_links_statement,
+    _event_intelligence_audit_logs_statement,
+    _event_intelligence_items_statement,
+)
 from app.models.change_review_queue import ChangeReviewQueue
 from app.main import create_app
 from app.models.event_intelligence import EventImpactLink, EventIntelligenceAuditLog, EventIntelligenceItem
@@ -195,6 +205,54 @@ def test_market_signal_ingress_maps_high_confidence_signal_to_event_scope() -> N
     assert all(link.direction == "watch" for link in links)
 
 
+def test_market_signal_ingress_uses_persisted_direction_for_impact_links() -> None:
+    now = datetime(2026, 5, 14, tzinfo=UTC)
+    row = SignalTrack(
+        id=uuid4(),
+        signal_type="momentum",
+        category="ferrous",
+        confidence=0.86,
+        direction="bearish",
+        regime="downtrend",
+        regime_at_emission="downtrend",
+        adversarial_passed=True,
+        outcome="pending",
+        created_at=now,
+    )
+
+    candidate = market_signal_event_candidate(row, now=now)
+
+    assert candidate is not None
+    event, links = candidate
+    assert event.source_payload["direction"] == "bearish"
+    assert event.source_payload["direction_source"] == "signal_track.direction"
+    assert "方向：偏空。" in event.evidence
+    assert {link.symbol for link in links} == {"RB", "HC", "I", "J", "JM"}
+    assert all(link.direction == "bearish" for link in links)
+    assert all("偏空候选方向" in link.rationale for link in links)
+
+
+def test_market_signal_ingress_uses_cost_signal_direction_rule() -> None:
+    now = datetime(2026, 5, 14, tzinfo=UTC)
+    row = SignalTrack(
+        id=uuid4(),
+        signal_type="restart_expectation",
+        category="chemical",
+        confidence=0.84,
+        outcome="pending",
+        created_at=now,
+    )
+
+    candidate = market_signal_event_candidate(row, now=now)
+
+    assert candidate is not None
+    event, links = candidate
+    assert event.source_payload["direction"] == "bullish"
+    assert event.source_payload["direction_source"] == "signal_type_rule"
+    assert {link.symbol for link in links} == {"TA", "MA", "PP"}
+    assert all(link.direction == "bullish" for link in links)
+
+
 def test_market_signal_ingress_uses_translated_signal_labels() -> None:
     now = datetime(2026, 5, 14, tzinfo=UTC)
     row = SignalTrack(
@@ -303,12 +361,335 @@ async def test_event_intelligence_review_queue_records_high_impact_uncertainty()
     assert audits[0].payload["production_effect"] == "none"
 
 
+async def test_event_intelligence_low_attention_review_becomes_evidence_only() -> None:
+    event_id = uuid4()
+    event_item = EventIntelligenceItem(
+        id=event_id,
+        source_type="news_event",
+        source_id=str(uuid4()),
+        title="Single source rubber background note",
+        summary="Low-impact background note should enrich evidence without asking a human.",
+        event_type="breaking",
+        event_timestamp=datetime(2026, 5, 10, tzinfo=UTC),
+        entities=[],
+        symbols=["RU"],
+        regions=["southeast_asia_rubber"],
+        mechanisms=["supply"],
+        evidence=["Single source headline"],
+        counterevidence=["No secondary confirmation"],
+        confidence=0.42,
+        impact_score=30,
+        status="human_review",
+        requires_manual_confirmation=True,
+        source_reliability=0.35,
+        freshness_score=0.8,
+        source_payload={"source_count": 1, "verification_status": "single_source"},
+    )
+    link = EventImpactLink(
+        id=uuid4(),
+        event_item_id=event_id,
+        symbol="RU",
+        region_id="southeast_asia_rubber",
+        mechanism="supply",
+        direction="watch",
+        confidence=0.4,
+        impact_score=30,
+        horizon="short",
+        rationale="Weak single-source background material.",
+        evidence=["Single source headline"],
+        counterevidence=["No secondary confirmation"],
+        status="human_review",
+    )
+    session = FakeReviewSession()
+
+    review = await enqueue_event_intelligence_review(
+        session,  # type: ignore[arg-type]
+        event_item,
+        [link],
+        actor="rules",
+    )
+
+    assert review is None
+    assert not any(isinstance(row, ChangeReviewQueue) for row in session.rows)
+    audits = [row for row in session.rows if isinstance(row, EventIntelligenceAuditLog)]
+    assert audits[0].action == "review.triaged_evidence_only"
+    assert audits[0].payload["review_triage"]["tier"] == "evidence_only"
+    assert audits[0].payload["production_effect"] == "none"
+
+
+async def test_event_intelligence_high_impact_single_source_defers_without_trade_context() -> None:
+    event_id = uuid4()
+    event_item = EventIntelligenceItem(
+        id=event_id,
+        source_type="news_event",
+        source_id=str(uuid4()),
+        title="Single source crude shipping rumor",
+        summary="High impact but low-trust source should not page a human by itself.",
+        event_type="geopolitical",
+        event_timestamp=datetime(2026, 5, 10, tzinfo=UTC),
+        entities=["Iran"],
+        symbols=["SC"],
+        regions=["middle_east_crude"],
+        mechanisms=["geopolitical"],
+        evidence=["Single source headline"],
+        counterevidence=["No secondary confirmation"],
+        confidence=0.58,
+        impact_score=82,
+        status="human_review",
+        requires_manual_confirmation=True,
+        source_reliability=0.42,
+        freshness_score=1,
+        source_payload={"source_count": 1, "verification_status": "single_source"},
+    )
+    link = EventImpactLink(
+        id=uuid4(),
+        event_item_id=event_id,
+        symbol="SC",
+        region_id="middle_east_crude",
+        mechanism="geopolitical",
+        direction="watch",
+        confidence=0.58,
+        impact_score=82,
+        horizon="immediate",
+        rationale="Needs confirmation before decision-grade use.",
+        evidence=["Single source headline"],
+        counterevidence=["No secondary confirmation"],
+        status="human_review",
+    )
+    session = FakeReviewSession()
+
+    review = await enqueue_event_intelligence_review(
+        session,  # type: ignore[arg-type]
+        event_item,
+        [link],
+        actor="rules",
+    )
+
+    assert review is not None
+    assert review.status == "shadow_review"
+    assert review.proposed_change["review_triage"]["requires_human_attention"] is False
+    audits = [row for row in session.rows if isinstance(row, EventIntelligenceAuditLog)]
+    assert audits[0].action == "review.deferred_to_shadow"
+
+
+async def test_event_intelligence_market_anomaly_defers_to_trade_plan_flow() -> None:
+    event_id = uuid4()
+    event_item = EventIntelligenceItem(
+        id=event_id,
+        source_type="market",
+        source_id="signal:capacity",
+        title="行情异常：产能收缩",
+        summary="High-confidence market anomaly should be handled by alert/trade plan flow.",
+        event_type="market",
+        event_timestamp=datetime(2026, 5, 10, tzinfo=UTC),
+        entities=[],
+        symbols=["I"],
+        regions=["china"],
+        mechanisms=["supply"],
+        evidence=["Signal scored"],
+        counterevidence=[],
+        confidence=0.95,
+        impact_score=95,
+        status="human_review",
+        requires_manual_confirmation=True,
+        source_reliability=0.9,
+        freshness_score=1,
+        source_payload={"source_count": 1, "verification_status": "single_source"},
+    )
+    link = EventImpactLink(
+        id=uuid4(),
+        event_item_id=event_id,
+        symbol="I",
+        region_id="china",
+        mechanism="supply",
+        direction="bearish",
+        confidence=0.95,
+        impact_score=95,
+        horizon="short",
+        rationale="Market signal candidate.",
+        evidence=["Signal scored"],
+        counterevidence=[],
+        status="human_review",
+    )
+    session = FakeReviewSession()
+
+    review = await enqueue_event_intelligence_review(
+        session,  # type: ignore[arg-type]
+        event_item,
+        [link],
+        actor="rules",
+    )
+
+    assert review is not None
+    assert review.status == "shadow_review"
+    assert review.proposed_change["review_triage"]["tier"] == "shadow_review"
+    assert review.proposed_change["review_triage"]["attention_score"] < 70
+
+
 def test_event_intelligence_api_rejects_invalid_filters() -> None:
     client = TestClient(create_app())
 
     response = client.get("/api/event-intelligence?status=published")
 
     assert response.status_code == 422
+
+
+def test_event_intelligence_scoped_statements_push_filters_to_database() -> None:
+    event_id = uuid4()
+    news_id = uuid4()
+    items_sql = _compile_postgres(
+        _event_intelligence_items_statement(
+            symbol="sc",
+            region_id="middle_east_crude",
+            mechanism="energy_cost",
+            status_filter="shadow_review",
+            limit=20,
+        )
+    )
+    links_sql = _compile_postgres(
+        _event_impact_links_statement(
+            symbol="sc",
+            region_id="middle_east_crude",
+            mechanism="energy_cost",
+            direction="bullish",
+            status_filter="shadow_review",
+            limit=20,
+        )
+    )
+    quality_links_sql = _compile_postgres(_event_impact_links_for_items_statement(item_ids=[event_id]))
+    source_lookup_sql = _compile_postgres(
+        _event_intelligence_source_lookup_statement(
+            source_type="news_event",
+            source_ids=[str(news_id)],
+        )
+    )
+    audit_sql = _compile_postgres(
+        _event_intelligence_audit_logs_statement(
+            event_item_id=event_id,
+            action="decision.applied",
+            limit=20,
+        )
+    )
+
+    assert "event_intelligence_items.symbols" in items_sql
+    assert "event_intelligence_items.regions" in items_sql
+    assert "event_intelligence_items.mechanisms" in items_sql
+    assert "event_intelligence_items.status" in items_sql
+    assert "event_impact_links.symbol =" in links_sql
+    assert "event_impact_links.region_id =" in links_sql
+    assert "event_impact_links.mechanism =" in links_sql
+    assert "event_impact_links.direction =" in links_sql
+    assert "event_impact_links.status =" in links_sql
+    assert "event_impact_links.event_item_id IN" in quality_links_sql
+    assert "event_intelligence_items.source_type =" in source_lookup_sql
+    assert "event_intelligence_items.source_id IN" in source_lookup_sql
+    assert "event_intelligence_audit_logs.event_item_id =" in audit_sql
+    assert "event_intelligence_audit_logs.action =" in audit_sql
+
+
+def test_event_intelligence_snapshot_response_keeps_items_links_and_quality_together() -> None:
+    now = datetime(2026, 5, 10, tzinfo=UTC)
+    event_id = uuid4()
+    event_item = EventIntelligenceItem(
+        id=event_id,
+        source_type="news_event",
+        source_id=str(uuid4()),
+        title="Rubber rainfall anomaly",
+        summary="Rainfall may disrupt rubber tapping.",
+        event_type="weather",
+        event_timestamp=now,
+        entities=["Thailand"],
+        symbols=["RU"],
+        regions=["southeast_asia_rubber"],
+        mechanisms=["weather"],
+        evidence=["Rainfall percentile above normal"],
+        counterevidence=["Forecast may ease"],
+        confidence=0.84,
+        impact_score=82,
+        status="confirmed",
+        requires_manual_confirmation=False,
+        source_reliability=0.82,
+        freshness_score=0.94,
+        source_payload={},
+        created_at=now,
+        updated_at=now,
+    )
+    impact_link = EventImpactLink(
+        id=uuid4(),
+        event_item_id=event_id,
+        symbol="RU",
+        region_id="southeast_asia_rubber",
+        mechanism="weather",
+        direction="bullish",
+        confidence=0.8,
+        impact_score=80,
+        horizon="short",
+        rationale="Heavy rainfall can reduce tapping days.",
+        evidence=["Rainfall percentile above normal"],
+        counterevidence=["Forecast may ease"],
+        status="confirmed",
+        created_at=now,
+        updated_at=now,
+    )
+
+    snapshot = _event_intelligence_snapshot_response([event_item], [impact_link])
+
+    assert snapshot.items[0].id == event_id
+    assert snapshot.impact_links[0].event_item_id == event_id
+    assert snapshot.quality.total == 1
+    assert snapshot.quality.reports[0].link_reports[0].id == impact_link.id
+
+
+def test_event_intelligence_source_lookup_response_keeps_links_scoped_to_items() -> None:
+    now = datetime(2026, 5, 10, tzinfo=UTC)
+    news_id = uuid4()
+    event_id = uuid4()
+    event_item = EventIntelligenceItem(
+        id=event_id,
+        source_type="news_event",
+        source_id=str(news_id),
+        title="Rubber rainfall anomaly",
+        summary="Rainfall may disrupt rubber tapping.",
+        event_type="weather",
+        event_timestamp=now,
+        entities=["Thailand"],
+        symbols=["RU"],
+        regions=["southeast_asia_rubber"],
+        mechanisms=["weather"],
+        evidence=["Rainfall percentile above normal"],
+        counterevidence=["Forecast may ease"],
+        confidence=0.84,
+        impact_score=82,
+        status="confirmed",
+        requires_manual_confirmation=False,
+        source_reliability=0.82,
+        freshness_score=0.94,
+        source_payload={},
+        created_at=now,
+        updated_at=now,
+    )
+    impact_link = EventImpactLink(
+        id=uuid4(),
+        event_item_id=event_id,
+        symbol="RU",
+        region_id="southeast_asia_rubber",
+        mechanism="weather",
+        direction="bullish",
+        confidence=0.8,
+        impact_score=80,
+        horizon="short",
+        rationale="Heavy rainfall can reduce tapping days.",
+        evidence=["Rainfall percentile above normal"],
+        counterevidence=["Forecast may ease"],
+        status="confirmed",
+        created_at=now,
+        updated_at=now,
+    )
+
+    lookup = _event_intelligence_source_lookup_response([event_item], [impact_link])
+
+    assert lookup.items[0].source_id == str(news_id)
+    assert lookup.impact_links[0].event_item_id == event_id
 
 
 def test_event_intelligence_decision_api_rejects_invalid_decision() -> None:
@@ -808,3 +1189,7 @@ class FakeScalars:
 
     def all(self):
         return self._rows
+
+
+def _compile_postgres(statement) -> str:
+    return str(statement.compile(dialect=postgresql.dialect()))

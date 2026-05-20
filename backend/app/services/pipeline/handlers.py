@@ -1,6 +1,6 @@
 import logging
 from collections.abc import Awaitable, Callable
-from dataclasses import asdict, is_dataclass
+from dataclasses import asdict, dataclass, is_dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import UUID, uuid4
@@ -50,13 +50,49 @@ EventPublisher = Callable[..., Awaitable[ZeusEvent]]
 DEFAULT_ACCOUNT_NET_VALUE = 1_000_000.0
 DEFAULT_MARGIN_REQUIRED = 100_000.0
 NEWS_EVENT_SIGNAL_TYPES = {"news_event", "rubber_supply_shock"}
-TRADE_PLAN_ACTIONS = {"open_spread"}
+TRADE_PLAN_DIRECTIONAL_ACTION = "open_directional"
+TRADE_PLAN_ACTIONS = {"open_spread", TRADE_PLAN_DIRECTIONAL_ACTION}
+TRADE_PLAN_DIRECTIONAL_SIGNAL_TYPES = {
+    "capacity_contraction",
+    "event_driven",
+    "inventory_shock",
+    "marginal_capacity_squeeze",
+    "median_pressure",
+    "momentum",
+    "news_event",
+    "price_gap",
+    "restart_expectation",
+    "rubber_supply_shock",
+}
+TRADE_PLAN_CONTEXT_SIGNAL_TYPES = {
+    "inventory_shock",
+    "regime_shift",
+}
+TRADE_PLAN_CONTEXT_SKIP_REASONS = {
+    "missing_direction",
+    "score_below_gate",
+    "unsupported_action",
+}
 TRADE_PLAN_MIN_COMBINED_SCORE = 80.0
 TRADE_PLAN_MIN_CONFIDENCE = 0.70
+TRADE_PLAN_MIN_DIRECTIONAL_SCORE = 62.0
+TRADE_PLAN_MIN_DIRECTIONAL_CONFIDENCE = 0.82
 TRADE_PLAN_DEFAULT_HOLDING_DAYS = 20
 TRADE_PLAN_EXPIRES_AFTER = timedelta(days=1)
+TRADE_PLAN_OPEN_STATUSES = {"pending", "pending_review"}
+TRADE_PLAN_MAX_RISK_ITEMS = 20
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class TradePlanCandidateEvaluation:
+    recommendation: Recommendation | None
+    skip_reason: str | None = None
+
+    @property
+    def passed(self) -> bool:
+        return self.recommendation is not None
 
 
 def jsonable(value: Any) -> Any:
@@ -78,6 +114,10 @@ def _parse_datetime(value: str | datetime | None) -> datetime:
         return value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
     parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
     return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=timezone.utc)
+
+
+def context_triggered_at(context: dict[str, Any]) -> datetime:
+    return _parse_datetime(context.get("freshness_timestamp") or context.get("timestamp"))
 
 
 def trigger_context_from_payload(payload: dict[str, Any]) -> TriggerContext:
@@ -244,6 +284,8 @@ async def handle_news_event(
         context_payload = jsonable(context)
         if raw_context.get("regime") is not None:
             context_payload["regime"] = raw_context["regime"]
+        if raw_context.get("freshness_timestamp") is not None:
+            context_payload["freshness_timestamp"] = raw_context["freshness_timestamp"]
         for result in results:
             published.append(
                 await publisher(
@@ -281,6 +323,8 @@ async def handle_market_update(
             context_payload["regime"] = raw_context["regime"]
         if raw_context.get("regime_at_emission") is not None:
             context_payload["regime_at_emission"] = raw_context["regime_at_emission"]
+        if raw_context.get("freshness_timestamp") is not None:
+            context_payload["freshness_timestamp"] = raw_context["freshness_timestamp"]
         for result in results:
             published.append(
                 await publisher(
@@ -407,9 +451,9 @@ async def handle_signal_scored(
         return None
 
     alert_id = uuid4()
-    triggered_at = _parse_datetime(event.payload.get("context", {}).get("timestamp"))
     score = event.payload.get("score", {})
     context = event.payload.get("context", {})
+    triggered_at = context_triggered_at(context) if isinstance(context, dict) else datetime.now(timezone.utc)
     agent_decision = await route_alert(
         session,
         signal=signal,
@@ -521,34 +565,98 @@ async def handle_signal_scored(
         emitted_at=triggered_at,
         score=score,
     )
-    recommendation = build_trade_plan_recommendation(
+    trade_plan_event_payload = {
+        **event.payload,
+        "alert_route": {
+            "route": agent_decision.route,
+            "confidence_tier": agent_decision.confidence_tier,
+            "classification": agent_decision.classification,
+            "human_action_required": agent_decision.human_action_required,
+            "llm_involved": agent_decision.llm_involved,
+            "reasons": agent_decision.reasons,
+        },
+    }
+    evaluation = evaluate_trade_plan_candidate(
         alert=alert,
         signal=signal,
         context=context,
         score=score,
-        event_payload=event.payload,
+        event_payload=trade_plan_event_payload,
         triggered_at=triggered_at,
     )
+    recommendation = evaluation.recommendation
     if recommendation is not None:
-        session.add(recommendation)
-        await session.flush()
-        alert.related_recommendation_id = recommendation.id
-        await publisher(
-            "recommendation.created",
-            {
-                "recommendation_id": str(recommendation.id),
-                "alert_id": str(alert.id),
-                "recommended_action": recommendation.recommended_action,
-                "priority_score": recommendation.priority_score,
-                "portfolio_fit_score": recommendation.portfolio_fit_score,
-                "margin_efficiency_score": recommendation.margin_efficiency_score,
-                "source_signal_type": alert.type,
-                "source_alert_severity": alert.severity,
-            },
-            source="trade-plan-generator",
-            correlation_id=event.correlation_id,
-            session=session,
+        existing_plan = await open_trade_plan_for_candidate(
+            session,
+            recommendation,
+            as_of=datetime.now(timezone.utc),
         )
+        if existing_plan is not None:
+            merge_trade_plan_evidence(existing_plan, recommendation, alert=alert)
+            await session.flush()
+            alert.related_recommendation_id = existing_plan.id
+            await publisher(
+                "recommendation.linked",
+                {
+                    "recommendation_id": str(existing_plan.id),
+                    "alert_id": str(alert.id),
+                    "recommended_action": existing_plan.recommended_action,
+                    "source_signal_type": alert.type,
+                    "source_alert_severity": alert.severity,
+                },
+                source="trade-plan-generator",
+                correlation_id=event.correlation_id,
+                session=session,
+            )
+        else:
+            session.add(recommendation)
+            await session.flush()
+            alert.related_recommendation_id = recommendation.id
+            await publisher(
+                "recommendation.created",
+                {
+                    "recommendation_id": str(recommendation.id),
+                    "alert_id": str(alert.id),
+                    "recommended_action": recommendation.recommended_action,
+                    "priority_score": recommendation.priority_score,
+                    "portfolio_fit_score": recommendation.portfolio_fit_score,
+                    "margin_efficiency_score": recommendation.margin_efficiency_score,
+                    "source_signal_type": alert.type,
+                    "source_alert_severity": alert.severity,
+                },
+                source="trade-plan-generator",
+                correlation_id=event.correlation_id,
+                session=session,
+            )
+    elif evaluation.skip_reason in TRADE_PLAN_CONTEXT_SKIP_REASONS:
+        context_plan = await open_trade_plan_for_context_signal(
+            session,
+            signal,
+            as_of=datetime.now(timezone.utc),
+        )
+        if context_plan is not None:
+            attach_trade_plan_context_evidence(
+                context_plan,
+                alert=alert,
+                signal=signal,
+                skip_reason=evaluation.skip_reason,
+            )
+            await session.flush()
+            alert.related_recommendation_id = context_plan.id
+            await publisher(
+                "recommendation.context_linked",
+                {
+                    "recommendation_id": str(context_plan.id),
+                    "alert_id": str(alert.id),
+                    "recommended_action": context_plan.recommended_action,
+                    "source_signal_type": alert.type,
+                    "source_alert_severity": alert.severity,
+                    "skip_reason": evaluation.skip_reason,
+                },
+                source="trade-plan-generator",
+                correlation_id=event.correlation_id,
+                session=session,
+            )
 
     return await publisher(
         "alert.created",
@@ -731,6 +839,15 @@ def recommendation_legs_from_signal(signal: dict[str, Any]) -> list[Recommendati
             RecommendationLeg(asset=spread_info.leg2, direction="short"),
         ]
 
+    directional_leg = directional_trade_leg(signal)
+    if directional_leg is not None:
+        return [
+            RecommendationLeg(
+                asset=str(directional_leg["asset"]),
+                direction=str(directional_leg["direction"]),
+            )
+        ]
+
     return [
         RecommendationLeg(asset=str(asset), direction="watch")
         for asset in signal.get("related_assets", [])
@@ -740,6 +857,8 @@ def recommendation_legs_from_signal(signal: dict[str, Any]) -> list[Recommendati
 def recommended_action(signal: dict[str, Any]) -> str:
     if signal.get("spread_info") is not None:
         return "open_spread"
+    if directional_trade_leg(signal) is not None:
+        return TRADE_PLAN_DIRECTIONAL_ACTION
     return "watchlist_only"
 
 
@@ -752,62 +871,133 @@ def build_trade_plan_recommendation(
     event_payload: dict[str, Any],
     triggered_at: datetime,
 ) -> Recommendation | None:
-    action = str(event_payload.get("recommended_action") or recommended_action(signal))
+    return evaluate_trade_plan_candidate(
+        alert=alert,
+        signal=signal,
+        context=context,
+        score=score,
+        event_payload=event_payload,
+        triggered_at=triggered_at,
+    ).recommendation
+
+
+def evaluate_trade_plan_candidate(
+    *,
+    alert: Alert,
+    signal: dict[str, Any],
+    context: dict[str, Any],
+    score: dict[str, Any] | Any | None,
+    event_payload: dict[str, Any],
+    triggered_at: datetime,
+) -> TradePlanCandidateEvaluation:
+    raw_action = str(event_payload.get("recommended_action") or "")
+    current_action = recommended_action(signal)
+    action = current_action if raw_action in {"", "watchlist_only"} else raw_action
     if action not in TRADE_PLAN_ACTIONS:
-        return None
+        if str(signal.get("signal_type") or "unknown") in TRADE_PLAN_DIRECTIONAL_SIGNAL_TYPES:
+            return TradePlanCandidateEvaluation(None, "missing_direction")
+        return TradePlanCandidateEvaluation(None, "unsupported_action")
     if alert.dedup_suppressed:
-        return None
-    if not alert.adversarial_passed:
-        return None
+        return TradePlanCandidateEvaluation(None, "alert_dedup_suppressed")
+    if not adversarial_allows_trade_plan(alert, event_payload):
+        return TradePlanCandidateEvaluation(None, "adversarial_failed")
     expires_at = triggered_at + TRADE_PLAN_EXPIRES_AFTER
     if expires_at <= datetime.now(timezone.utc):
-        return None
+        return TradePlanCandidateEvaluation(None, "stale_signal")
 
     score_payload = score if isinstance(score, dict) else {}
     combined_score = float(score_payload.get("combined") or 0)
-    confidence = float(signal.get("confidence") or alert.confidence or 0)
-    if combined_score < TRADE_PLAN_MIN_COMBINED_SCORE or confidence < TRADE_PLAN_MIN_CONFIDENCE:
-        return None
+    confidence = trade_plan_effective_confidence(
+        signal=signal,
+        alert=alert,
+        event_payload=event_payload,
+    )
+    if not trade_plan_score_passed(action, combined_score=combined_score, confidence=confidence):
+        return TradePlanCandidateEvaluation(None, "score_below_gate")
 
-    legs = executable_trade_legs(event_payload.get("legs"), signal)
-    if len(legs) < 2:
-        return None
+    legs = executable_trade_legs(event_payload.get("legs"), signal, action=action)
+    if len(legs) < min_trade_plan_legs(action):
+        return TradePlanCandidateEvaluation(None, "missing_trade_legs")
 
     direction = str(legs[0].get("direction") or "long")
-    entry_price = trade_plan_entry_price(signal, context)
+    entry_price = trade_plan_entry_price(signal, context, legs=legs)
+    if entry_price is None:
+        return TradePlanCandidateEvaluation(None, "missing_entry_price")
     stop_loss, take_profit = trade_plan_bounds(entry_price, direction)
-    risk_items = trade_plan_risk_items(signal, event_payload)
+    risk_items = trade_plan_risk_items(alert, signal, event_payload)
     adversarial_result = adversarial_payload(event_payload)
     if adversarial_result.get("warmup_enabled") is True:
         risk_items.append(
             "Adversarial engine warmup: historical combo is audit-only; confirm before adopting."
         )
 
-    return Recommendation(
-        id=uuid4(),
-        alert_id=alert.id,
-        status=trade_plan_status(alert),
-        recommended_action=action,
-        legs=legs,
-        priority_score=float(score_payload.get("priority") or combined_score),
-        portfolio_fit_score=float(score_payload.get("portfolio_fit") or 0),
-        margin_efficiency_score=float(score_payload.get("margin_efficiency") or 0),
-        margin_required=float(event_payload.get("margin_required") or DEFAULT_MARGIN_REQUIRED),
-        reasoning=trade_plan_reasoning(alert, combined_score, confidence),
-        one_liner=alert.one_liner or alert.summary,
-        risk_items=risk_items,
-        expires_at=expires_at,
-        max_holding_days=TRADE_PLAN_DEFAULT_HOLDING_DAYS,
-        position_size_pct=trade_plan_position_size_pct(combined_score, confidence),
-        risk_reward_ratio=2.0,
-        backtest_summary=trade_plan_backtest_summary(signal, event_payload),
-        entry_price=entry_price,
-        stop_loss=stop_loss,
-        take_profit=take_profit,
+    return TradePlanCandidateEvaluation(
+        Recommendation(
+            id=uuid4(),
+            alert_id=alert.id,
+            status=trade_plan_status(alert),
+            recommended_action=action,
+            legs=legs,
+            priority_score=float(score_payload.get("priority") or combined_score),
+            portfolio_fit_score=float(score_payload.get("portfolio_fit") or 0),
+            margin_efficiency_score=float(score_payload.get("margin_efficiency") or 0),
+            margin_required=float(event_payload.get("margin_required") or DEFAULT_MARGIN_REQUIRED),
+            reasoning=trade_plan_reasoning(alert, combined_score, confidence),
+            one_liner=alert.one_liner or alert.summary,
+            risk_items=risk_items,
+            expires_at=expires_at,
+            max_holding_days=TRADE_PLAN_DEFAULT_HOLDING_DAYS,
+            position_size_pct=trade_plan_position_size_pct(combined_score, confidence),
+            risk_reward_ratio=2.0,
+            backtest_summary=trade_plan_backtest_summary(
+                alert=alert,
+                signal=signal,
+                event_payload=event_payload,
+                action=action,
+            ),
+            entry_price=entry_price,
+            stop_loss=stop_loss,
+            take_profit=take_profit,
+        ),
+        None,
     )
 
 
-def executable_trade_legs(raw_legs: Any, signal: dict[str, Any]) -> list[dict[str, Any]]:
+def adversarial_allows_trade_plan(alert: Alert, event_payload: dict[str, Any]) -> bool:
+    if alert.adversarial_passed:
+        return True
+    adversarial_result = adversarial_payload(event_payload)
+    return (
+        adversarial_result.get("warmup_enabled") is True
+        and adversarial_result.get("suppressed") is not True
+    )
+
+
+def trade_plan_effective_confidence(
+    *,
+    signal: dict[str, Any],
+    alert: Alert,
+    event_payload: dict[str, Any],
+) -> float:
+    raw_confidence = max(0.0, min(1.0, float(signal.get("confidence") or alert.confidence or 0)))
+    adversarial_result = adversarial_payload(event_payload)
+    multiplier = positive_float(adversarial_result.get("confidence_multiplier"))
+    if (
+        adversarial_result.get("warmup_enabled") is True
+        and adversarial_result.get("suppressed") is not True
+        and multiplier is not None
+        and multiplier < 1.0
+    ):
+        return max(0.0, min(1.0, raw_confidence / multiplier))
+    return raw_confidence
+
+
+def executable_trade_legs(
+    raw_legs: Any,
+    signal: dict[str, Any],
+    *,
+    action: str,
+) -> list[dict[str, Any]]:
     candidates = raw_legs if isinstance(raw_legs, list) else jsonable(recommendation_legs_from_signal(signal))
     legs: list[dict[str, Any]] = []
     for raw_leg in candidates:
@@ -825,19 +1015,337 @@ def executable_trade_legs(raw_legs: Any, signal: dict[str, Any]) -> list[dict[st
                 "lots": float(raw_leg.get("lots") or raw_leg.get("size") or 1),
             }
         )
+    if not legs and action == TRADE_PLAN_DIRECTIONAL_ACTION:
+        leg = directional_trade_leg(signal)
+        if leg is not None:
+            legs.append(leg)
     return legs
 
 
-def trade_plan_entry_price(signal: dict[str, Any], context: dict[str, Any]) -> float:
+def directional_trade_leg(signal: dict[str, Any]) -> dict[str, Any] | None:
+    signal_type = str(signal.get("signal_type") or "unknown")
+    if signal_type not in TRADE_PLAN_DIRECTIONAL_SIGNAL_TYPES:
+        return None
+    direction = signal_direction(signal)
+    if direction == "neutral":
+        return None
+    asset = primary_symbol(signal).strip().upper()
+    if not asset or asset == "UNKNOWN":
+        return None
+    return {
+        "asset": asset,
+        "direction": "long" if direction == "bullish" else "short",
+        "lots": 1.0,
+    }
+
+
+def trade_plan_score_passed(action: str, *, combined_score: float, confidence: float) -> bool:
+    if action == TRADE_PLAN_DIRECTIONAL_ACTION:
+        return (
+            combined_score >= TRADE_PLAN_MIN_DIRECTIONAL_SCORE
+            and confidence >= TRADE_PLAN_MIN_DIRECTIONAL_CONFIDENCE
+        )
+    return combined_score >= TRADE_PLAN_MIN_COMBINED_SCORE and confidence >= TRADE_PLAN_MIN_CONFIDENCE
+
+
+async def open_trade_plan_for_candidate(
+    session: AsyncSession | None,
+    candidate: Recommendation,
+    *,
+    as_of: datetime | None = None,
+) -> Recommendation | None:
+    if session is None or trade_plan_match_key(candidate) is None:
+        return None
+    effective_as_of = as_of or datetime.now(timezone.utc)
+    result = await session.scalars(
+        select(Recommendation)
+        .where(
+            Recommendation.status.in_(sorted(TRADE_PLAN_OPEN_STATUSES)),
+            Recommendation.expires_at > effective_as_of,
+        )
+        .order_by(Recommendation.created_at.desc())
+        .limit(100)
+    )
+    rows = result.all() if hasattr(result, "all") else []
+    for row in rows:
+        if trade_plan_matches(row, candidate):
+            return row
+    return None
+
+
+async def open_trade_plan_for_context_signal(
+    session: AsyncSession | None,
+    signal: dict[str, Any],
+    *,
+    as_of: datetime | None = None,
+) -> Recommendation | None:
+    if session is None or not trade_plan_context_signal(signal):
+        return None
+    symbol = primary_symbol(signal).strip().upper()
+    if not symbol or symbol == "UNKNOWN":
+        return None
+
+    preferred_direction = trade_plan_direction_from_signal(signal)
+    effective_as_of = as_of or datetime.now(timezone.utc)
+    result = await session.scalars(
+        select(Recommendation)
+        .where(
+            Recommendation.status.in_(sorted(TRADE_PLAN_OPEN_STATUSES)),
+            Recommendation.expires_at > effective_as_of,
+        )
+        .order_by(Recommendation.created_at.desc())
+        .limit(100)
+    )
+    rows = result.all() if hasattr(result, "all") else []
+    matches: list[tuple[Recommendation, str]] = []
+    for row in rows:
+        for leg in row.legs or []:
+            if not isinstance(leg, dict):
+                continue
+            leg_symbol = str(leg.get("asset") or leg.get("symbol") or "").strip().upper()
+            leg_direction = str(leg.get("direction") or "").strip().lower()
+            if leg_symbol != symbol or leg_direction not in {"long", "short"}:
+                continue
+            if preferred_direction is not None and leg_direction != preferred_direction:
+                continue
+            matches.append((row, leg_direction))
+            break
+
+    if not matches:
+        return None
+    if preferred_direction is None and len({direction for _, direction in matches}) > 1:
+        return None
+    return matches[0][0]
+
+
+def trade_plan_context_signal(signal: dict[str, Any]) -> bool:
+    return str(signal.get("signal_type") or "unknown") in TRADE_PLAN_CONTEXT_SIGNAL_TYPES
+
+
+def trade_plan_direction_from_signal(signal: dict[str, Any]) -> str | None:
+    direction = signal_direction(signal)
+    if direction == "bullish":
+        return "long"
+    if direction == "bearish":
+        return "short"
+    return None
+
+
+def trade_plan_matches(left: Recommendation, right: Recommendation) -> bool:
+    left_key = trade_plan_match_key(left)
+    return left_key is not None and left_key == trade_plan_match_key(right)
+
+
+def trade_plan_match_key(recommendation: Recommendation) -> tuple[str, tuple[tuple[str, str], ...]] | None:
+    legs = [
+        (str(leg.get("asset") or "").strip().upper(), str(leg.get("direction") or "").strip().lower())
+        for leg in recommendation.legs
+        if isinstance(leg, dict)
+    ]
+    normalized = tuple((asset, direction) for asset, direction in legs if asset and direction)
+    if not normalized:
+        return None
+    return recommendation.recommended_action, normalized
+
+
+def merge_trade_plan_evidence(
+    target: Recommendation,
+    incoming: Recommendation,
+    *,
+    alert: Alert,
+) -> None:
+    target.priority_score = max(float(target.priority_score), float(incoming.priority_score))
+    target.portfolio_fit_score = max(float(target.portfolio_fit_score), float(incoming.portfolio_fit_score))
+    target.margin_efficiency_score = max(
+        float(target.margin_efficiency_score),
+        float(incoming.margin_efficiency_score),
+    )
+    target.margin_required = max(float(target.margin_required), float(incoming.margin_required))
+    if incoming.expires_at > target.expires_at:
+        target.expires_at = incoming.expires_at
+    target.risk_items = compact_trade_plan_risk_items(
+        target.risk_items or [],
+        incoming.risk_items or [],
+    )
+    target.backtest_summary = merged_trade_plan_backtest_summary(
+        target.backtest_summary,
+        incoming.backtest_summary,
+        alert=alert,
+    )
+    target.updated_at = datetime.now(timezone.utc)
+
+
+def attach_trade_plan_context_evidence(
+    target: Recommendation,
+    *,
+    alert: Alert,
+    signal: dict[str, Any],
+    skip_reason: str | None,
+) -> None:
+    target.risk_items = compact_trade_plan_risk_items(
+        target.risk_items or [],
+        signal.get("risk_items", []),
+    )
+    target.backtest_summary = context_enriched_trade_plan_summary(
+        target.backtest_summary,
+        alert=alert,
+        signal=signal,
+        skip_reason=skip_reason,
+    )
+    target.updated_at = datetime.now(timezone.utc)
+
+
+def context_enriched_trade_plan_summary(
+    target_summary: dict[str, Any] | None,
+    *,
+    alert: Alert,
+    signal: dict[str, Any],
+    skip_reason: str | None,
+) -> dict[str, Any]:
+    summary = dict(target_summary or {})
+    linked_context = list(summary.get("linked_context_alerts") or [])
+    alert_payload = {
+        "alert_id": str(alert.id),
+        "signal_type": alert.type,
+        "category": alert.category,
+        "status": alert.status,
+        "confidence_tier": alert.confidence_tier,
+        "skip_reason": skip_reason,
+        "title": alert.title,
+    }
+    if not any(item.get("alert_id") == alert_payload["alert_id"] for item in linked_context if isinstance(item, dict)):
+        linked_context.append(alert_payload)
+
+    context_types = {
+        str(item.get("signal_type"))
+        for item in linked_context
+        if isinstance(item, dict) and item.get("signal_type")
+    }
+    if signal.get("signal_type"):
+        context_types.add(str(signal["signal_type"]))
+
+    summary["linked_context_alerts"] = linked_context
+    summary["context_signal_types"] = sorted(context_types)
+    summary["context_evidence_count"] = len(linked_context)
+    summary["context_enriched"] = True
+    return summary
+
+
+def compact_trade_plan_risk_items(*groups: Any) -> list[str]:
+    items: list[str] = []
+    seen: set[str] = set()
+    for group in groups:
+        if not isinstance(group, list):
+            continue
+        for raw_item in group:
+            item = str(raw_item).strip()
+            if not item or item in seen:
+                continue
+            items.append(item)
+            seen.add(item)
+            if len(items) >= TRADE_PLAN_MAX_RISK_ITEMS:
+                return items
+    return items
+
+
+def merged_trade_plan_backtest_summary(
+    target_summary: dict[str, Any] | None,
+    incoming_summary: dict[str, Any] | None,
+    *,
+    alert: Alert,
+) -> dict[str, Any]:
+    summary = dict(target_summary or {})
+    if not summary and isinstance(incoming_summary, dict):
+        summary.update(incoming_summary)
+    linked_alerts = list(summary.get("linked_supporting_alerts") or [])
+    alert_payload = {
+        "alert_id": str(alert.id),
+        "signal_type": alert.type,
+        "category": alert.category,
+        "status": alert.status,
+        "confidence_tier": alert.confidence_tier,
+    }
+    if not any(item.get("alert_id") == alert_payload["alert_id"] for item in linked_alerts if isinstance(item, dict)):
+        linked_alerts.append(alert_payload)
+    evidence_types = {
+        str(item.get("signal_type"))
+        for item in linked_alerts
+        if isinstance(item, dict) and item.get("signal_type")
+    }
+    if incoming_summary and incoming_summary.get("signal_type"):
+        evidence_types.add(str(incoming_summary["signal_type"]))
+    if summary.get("signal_type"):
+        evidence_types.add(str(summary["signal_type"]))
+    summary["linked_supporting_alerts"] = linked_alerts
+    summary["evidence_signal_types"] = sorted(evidence_types)
+    summary["evidence_count"] = 1 + len(linked_alerts)
+    summary["merged_evidence"] = True
+    return summary
+
+
+def min_trade_plan_legs(action: str) -> int:
+    return 1 if action == TRADE_PLAN_DIRECTIONAL_ACTION else 2
+
+
+def trade_plan_entry_price(
+    signal: dict[str, Any],
+    context: dict[str, Any],
+    *,
+    legs: list[dict[str, Any]],
+) -> float | None:
+    for leg in legs:
+        entry = positive_float(
+            leg.get("entry_price"),
+            leg.get("entryPrice"),
+            leg.get("current_price"),
+            leg.get("currentPrice"),
+            leg.get("price"),
+        )
+        if entry is not None:
+            return entry
+
     latest_price = _latest_context_price(context)
     if latest_price is not None and latest_price > 0:
         return latest_price
+    cost_price = _latest_context_cost_price(context, symbol=primary_symbol(signal))
+    if cost_price is not None:
+        return cost_price
     spread_info = signal.get("spread_info")
     if isinstance(spread_info, dict):
         current_spread = float(spread_info.get("current_spread") or 0)
         if current_spread != 0:
             return max(abs(current_spread), 1.0)
-    return 1.0
+    return None
+
+
+def _latest_context_cost_price(context: dict[str, Any], *, symbol: str) -> float | None:
+    snapshots = context.get("cost_snapshots")
+    if not isinstance(snapshots, list):
+        return None
+    normalized_symbol = symbol.strip().upper()
+    for row in reversed(snapshots):
+        if not isinstance(row, dict):
+            continue
+        row_symbol = str(row.get("symbol") or "").strip().upper()
+        if normalized_symbol and row_symbol and row_symbol != normalized_symbol:
+            continue
+        price = positive_float(row.get("current_price"), row.get("price"), row.get("close"))
+        if price is not None:
+            return price
+    return None
+
+
+def positive_float(*values: Any) -> float | None:
+    for value in values:
+        if value is None:
+            continue
+        try:
+            parsed = float(value)
+        except (TypeError, ValueError):
+            continue
+        if parsed > 0:
+            return parsed
+    return None
 
 
 def trade_plan_status(alert: Alert) -> str:
@@ -859,7 +1367,11 @@ def trade_plan_position_size_pct(combined_score: float, confidence: float) -> fl
     return round(min(0.05, raw), 4)
 
 
-def trade_plan_risk_items(signal: dict[str, Any], event_payload: dict[str, Any]) -> list[str]:
+def trade_plan_risk_items(
+    alert: Alert,
+    signal: dict[str, Any],
+    event_payload: dict[str, Any],
+) -> list[str]:
     items = [
         str(item)
         for item in [
@@ -871,7 +1383,32 @@ def trade_plan_risk_items(signal: dict[str, Any], event_payload: dict[str, Any])
     adversarial_result = adversarial_payload(event_payload)
     if adversarial_result.get("runtime_mode"):
         items.append(f"Adversarial runtime: {adversarial_result['runtime_mode']}.")
+    restored_confidence = restored_warmup_confidence(signal, alert, event_payload)
+    if restored_confidence is not None:
+        items.append(
+            "Warmup confidence restored for trade-plan gating: "
+            f"{restored_confidence[0]:.0%} -> {restored_confidence[1]:.0%}."
+        )
+    review_reasons = trade_plan_review_reasons(alert, event_payload)
+    if review_reasons:
+        items.append("复核原因：" + "；".join(review_reasons))
     return sorted(set(items))
+
+
+def restored_warmup_confidence(
+    signal: dict[str, Any],
+    alert: Alert,
+    event_payload: dict[str, Any],
+) -> tuple[float, float] | None:
+    raw_confidence = max(0.0, min(1.0, float(signal.get("confidence") or alert.confidence or 0)))
+    effective_confidence = trade_plan_effective_confidence(
+        signal=signal,
+        alert=alert,
+        event_payload=event_payload,
+    )
+    if effective_confidence > raw_confidence:
+        return raw_confidence, effective_confidence
+    return None
 
 
 def trade_plan_reasoning(alert: Alert, combined_score: float, confidence: float) -> str:
@@ -882,20 +1419,86 @@ def trade_plan_reasoning(alert: Alert, combined_score: float, confidence: float)
 
 
 def trade_plan_backtest_summary(
+    *,
+    alert: Alert,
     signal: dict[str, Any],
     event_payload: dict[str, Any],
+    action: str,
 ) -> dict[str, Any]:
     adversarial_result = adversarial_payload(event_payload)
     spread_info = signal.get("spread_info") if isinstance(signal.get("spread_info"), dict) else {}
+    alert_route = alert_route_payload(event_payload)
+    review_reasons = trade_plan_review_reasons(alert, event_payload)
     return {
         "source": "signal_scored_trade_plan_gate",
+        "recommended_action": action,
         "signal_type": signal.get("signal_type"),
+        "effective_confidence": trade_plan_effective_confidence(
+            signal=signal,
+            alert=alert,
+            event_payload=event_payload,
+        ),
         "sample_size": int(adversarial_result.get("historical_combo_sample_size") or 0),
         "adversarial_runtime_mode": adversarial_result.get("runtime_mode"),
         "historical_combo_mode": adversarial_result.get("historical_combo_mode"),
         "spread_z_score": spread_info.get("z_score"),
         "spread_half_life": spread_info.get("half_life"),
+        "review_required": bool(alert.human_action_required or alert.status != "active"),
+        "review_reasons": review_reasons,
+        "alert_status": alert.status,
+        "confidence_tier": alert.confidence_tier,
+        "llm_involved": alert.llm_involved,
+        "alert_route": alert_route.get("route"),
+        "alert_route_reasons": alert_route.get("reasons", []),
     }
+
+
+def alert_route_payload(event_payload: dict[str, Any]) -> dict[str, Any]:
+    route = event_payload.get("alert_route")
+    return route if isinstance(route, dict) else {}
+
+
+def trade_plan_review_reasons(alert: Alert, event_payload: dict[str, Any]) -> list[str]:
+    reasons: list[str] = []
+    route = alert_route_payload(event_payload)
+    raw_reasons = route.get("reasons")
+    if isinstance(raw_reasons, list):
+        for reason in raw_reasons:
+            label = trade_plan_review_reason_label(str(reason))
+            if label is not None:
+                reasons.append(label)
+
+    if alert.status != "active":
+        reasons.append(f"预警状态为 {alert.status}，不能直接采纳")
+    if alert.human_action_required:
+        reasons.append("Alert Agent 标记需要人工复核")
+    if alert.confidence_tier == "confirm":
+        reasons.append("置信度处于确认档")
+    elif alert.confidence_tier == "notify" and alert.human_action_required:
+        reasons.append("通知档信号被治理规则升级为复核")
+    if alert.llm_involved:
+        reasons.append("LLM 仲裁参与，需人工确认结论")
+
+    return sorted(set(reasons))
+
+
+def trade_plan_review_reason_label(reason: str) -> str | None:
+    mapping = {
+        "direction_conflict": "存在方向冲突",
+        "fuzzy_confidence": "置信度处于模糊区间",
+        "no_calibration_history": "缺少该信号/品类/行情状态的历史校准样本",
+        "cross_sector_chain": "跨板块影响链较长",
+        "feedback_caution": "历史反馈提示谨慎",
+    }
+    if reason.startswith("confidence:confirm"):
+        return "置信度处于确认档"
+    if reason.startswith("confidence:notify"):
+        return "置信度处于通知档"
+    if reason.startswith("confidence:auto"):
+        return "自动档信号仍被治理规则复核"
+    if reason.startswith("classification:"):
+        return None
+    return mapping.get(reason)
 
 
 def adversarial_payload(event_payload: dict[str, Any]) -> dict[str, Any]:
