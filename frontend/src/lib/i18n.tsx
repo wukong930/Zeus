@@ -941,6 +941,7 @@ const EN: Record<string, string> = {
   "平均保证金": "Avg Margin",
   "证据包摘要": "Evidence Packet",
   "支持要点": "Support",
+  "上下文证据": "Context Evidence",
   "反证 / 待确认": "Counter / Checks",
   "计划类型": "Plan Type",
   "信号类型": "Signal Type",
@@ -948,6 +949,7 @@ const EN: Record<string, string> = {
   "置信档": "Confidence Tier",
   "对抗运行态": "Adversarial Runtime",
   "历史样本": "Historical Samples",
+  "支持信号": "Support Signals",
   "板块层方向判断 + 各品种活跃度 + conviction 因子":
     "Sector direction, symbol activity, and conviction factors",
   "板块数": "Sectors",

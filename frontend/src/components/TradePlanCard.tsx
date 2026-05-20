@@ -213,18 +213,31 @@ export function TradePlanCard({
 
 function EvidencePacket({ plan }: { plan: TradePlan }) {
   const { text } = useI18n();
-  const { supports, counterEvidence, decisionGates } = plan.evidenceSummary;
+  const {
+    supports,
+    counterEvidence,
+    decisionGates,
+    supportingTypes,
+    contextTypes,
+    contextEvidence,
+  } = plan.evidenceSummary;
   return (
     <div className="space-y-3 rounded-sm border border-border-subtle bg-bg-base/70 p-3 text-xs shadow-inner-panel">
-      <div className="flex items-center gap-2 text-text-secondary">
-        <ListChecks className="h-3.5 w-3.5 text-brand-cyan" />
-        <span>{text("证据包摘要")}</span>
+      <div className="flex flex-wrap items-center gap-2 text-text-secondary">
+        <div className="flex items-center gap-2">
+          <ListChecks className="h-3.5 w-3.5 text-brand-cyan" />
+          <span>{text("证据包摘要")}</span>
+        </div>
+        <EvidenceTypeBadges types={[...supportingTypes, ...contextTypes]} />
       </div>
       <EvidenceList
         icon={<ShieldCheck className="h-3.5 w-3.5 text-brand-emerald" />}
         label={text("支持要点")}
         items={supports}
       />
+      {contextEvidence.length > 0 && (
+        <ContextEvidenceList items={contextEvidence} />
+      )}
       {counterEvidence.length > 0 && (
         <EvidenceList
           icon={<CircleAlert className="h-3.5 w-3.5 text-brand-orange" />}
@@ -241,6 +254,54 @@ function EvidencePacket({ plan }: { plan: TradePlan }) {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+function EvidenceTypeBadges({ types }: { types: string[] }) {
+  const { text } = useI18n();
+  const visibleTypes = Array.from(new Set(types)).slice(0, 4);
+  if (visibleTypes.length === 0) return null;
+  return (
+    <div className="flex min-w-0 flex-wrap gap-1">
+      {visibleTypes.map((type) => (
+        <span
+          key={type}
+          className="rounded-sm border border-brand-cyan/20 bg-brand-cyan/10 px-1.5 py-0.5 text-[10px] text-brand-cyan"
+        >
+          {text(type)}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function ContextEvidenceList({
+  items,
+}: {
+  items: TradePlan["evidenceSummary"]["contextEvidence"];
+}) {
+  const { text } = useI18n();
+  const visibleItems = items.slice(0, 3);
+  if (visibleItems.length === 0) return null;
+  return (
+    <div className="grid gap-1.5 rounded-sm border border-brand-cyan/15 bg-brand-cyan/5 p-2">
+      <div className="flex items-center gap-2 text-text-muted">
+        <ListChecks className="h-3.5 w-3.5 text-brand-cyan" />
+        <span>{text("上下文证据")}</span>
+      </div>
+      <div className="grid gap-1.5">
+        {visibleItems.map((item) => (
+          <div key={`${item.signalType}-${item.title}`} className="flex min-w-0 items-center gap-2">
+            <span className="shrink-0 rounded-sm border border-border-subtle bg-bg-base/80 px-1.5 py-0.5 text-[10px] text-text-muted">
+              {text(item.signalType)}
+            </span>
+            <span className="truncate text-text-secondary" title={item.title}>
+              {text(item.title)}
+            </span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

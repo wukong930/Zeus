@@ -59,6 +59,16 @@ export interface TradePlanEvidenceSummary {
   supports: string[];
   counterEvidence: string[];
   decisionGates: string[];
+  supportingTypes: string[];
+  contextTypes: string[];
+  contextEvidence: TradePlanContextEvidence[];
+}
+
+export interface TradePlanContextEvidence {
+  signalType: string;
+  title: string;
+  skipReason?: string;
+  confidenceTier?: string;
 }
 
 export interface Position {

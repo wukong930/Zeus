@@ -2554,6 +2554,14 @@ function mapTradePlan(
 
 function evidenceSummaryFromRecommendation(recommendation: BackendRecommendation) {
   const summary = recommendation.backtest_summary ?? {};
+  const supportingTypes = stringArrayFromSummaryValue(summary.evidence_signal_types);
+  const contextEvidence = contextEvidenceFromBacktestSummary(summary);
+  const contextTypes = Array.from(
+    new Set([
+      ...stringArrayFromSummaryValue(summary.context_signal_types),
+      ...contextEvidence.map((item) => item.signalType),
+    ])
+  );
   const supportItems = recommendation.risk_items
     .filter((item) => !isReviewOrCounterEvidence(item))
     .slice(0, 3);
@@ -2568,13 +2576,60 @@ function evidenceSummaryFromRecommendation(recommendation: BackendRecommendation
     labeledSummaryValue("置信档", summary.confidence_tier),
     labeledSummaryValue("对抗运行态", summary.adversarial_runtime_mode),
     labeledSummaryValue("历史样本", sampleSizeFromBacktestSummary(summary)),
+    labeledSummaryValue("支持信号", supportingTypes.length),
+    labeledSummaryValue("上下文证据", Number(summary.context_evidence_count ?? contextEvidence.length)),
   ].filter((item): item is string => Boolean(item));
 
   return {
     supports: supportItems.length > 0 ? supportItems : [recommendation.reasoning],
     counterEvidence: Array.from(new Set(counterItems)),
     decisionGates: Array.from(new Set(gates)),
+    supportingTypes,
+    contextTypes,
+    contextEvidence,
   };
+}
+
+function contextEvidenceFromBacktestSummary(
+  summary: Record<string, unknown>
+): { signalType: string; title: string; skipReason?: string; confidenceTier?: string }[] {
+  const raw = summary.linked_context_alerts;
+  if (!Array.isArray(raw)) return [];
+  const items: { signalType: string; title: string; skipReason?: string; confidenceTier?: string }[] = [];
+  const seen = new Set<string>();
+  for (const item of raw) {
+    if (!isRecord(item)) continue;
+    const signalType = stringValue(item.signal_type) ?? "context";
+    const title = stringValue(item.title) ?? signalType;
+    const skipReason = stringValue(item.skip_reason);
+    const confidenceTier = stringValue(item.confidence_tier);
+    const key = `${signalType}:${title}:${skipReason ?? ""}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    items.push({ signalType, title, skipReason, confidenceTier });
+  }
+  return items.slice(0, 6);
+}
+
+function stringArrayFromSummaryValue(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return Array.from(
+    new Set(
+      value
+        .map((item) => String(item).trim())
+        .filter((item) => item.length > 0)
+    )
+  );
+}
+
+function stringValue(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const normalized = value.trim();
+  return normalized.length > 0 ? normalized : undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function isReviewOrCounterEvidence(item: string): boolean {
