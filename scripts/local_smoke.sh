@@ -256,6 +256,14 @@ if [[ "$REGRESSION_CHECKS" -eq 1 ]]; then
     alert_dedup.daily_alert_limit \
     notifications.source \
     adversarial_runtime.mode
+  check_json_keys \
+    "event intelligence snapshot" \
+    "${BACKEND_URL}/api/event-intelligence/snapshot?limit=20" \
+    items \
+    impact_links \
+    quality.generated_at \
+    quality.total \
+    quality.reports
   check_json_array \
     "alerts list" \
     "${BACKEND_URL}/api/alerts?limit=5"

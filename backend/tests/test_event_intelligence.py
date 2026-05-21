@@ -1,10 +1,11 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
 from sqlalchemy.dialects import postgresql
 
 from app.api.event_intelligence import (
+    _clear_event_intelligence_snapshot_cache,
     _event_intelligence_snapshot_response,
     _event_intelligence_source_lookup_response,
     _event_intelligence_source_lookup_statement,
@@ -13,12 +14,14 @@ from app.api.event_intelligence import (
     _event_intelligence_audit_logs_statement,
     _event_intelligence_items_statement,
 )
+from app.core.database import get_db
 from app.models.change_review_queue import ChangeReviewQueue
 from app.main import create_app
 from app.models.event_intelligence import EventImpactLink, EventIntelligenceAuditLog, EventIntelligenceItem
 from app.models.industry_data import IndustryData
 from app.models.news_events import NewsEvent
 from app.models.signal import SignalTrack
+from app.schemas.event_intelligence import EventIntelligenceQualitySummary, EventIntelligenceSnapshot
 from app.models.vector_chunks import VectorChunk
 from app.services.event_intelligence import (
     apply_event_intelligence_decision,
@@ -532,6 +535,68 @@ def test_event_intelligence_api_rejects_invalid_filters() -> None:
     response = client.get("/api/event-intelligence?status=published")
 
     assert response.status_code == 422
+
+
+def test_event_intelligence_snapshot_endpoint_uses_short_ttl_cache(monkeypatch) -> None:
+    _clear_event_intelligence_snapshot_cache()
+    calls = {"count": 0}
+
+    async def fake_db():
+        yield object()
+
+    async def fake_load_snapshot(
+        session,
+        *,
+        symbol,
+        region_id,
+        mechanism,
+        status_filter,
+        limit,
+    ) -> EventIntelligenceSnapshot:
+        calls["count"] += 1
+        assert session is not None
+        assert symbol == "sc"
+        assert region_id is None
+        assert mechanism is None
+        assert status_filter is None
+        assert limit == 10
+        return EventIntelligenceSnapshot(
+            items=[],
+            impact_links=[],
+            quality=EventIntelligenceQualitySummary(
+                generated_at=datetime(2026, 5, 18, tzinfo=UTC)
+                + timedelta(seconds=calls["count"]),
+                total=0,
+                average_score=0,
+                blocked=0,
+                review=0,
+                shadow_ready=0,
+                decision_grade=0,
+                reports=[],
+            ),
+        )
+
+    monkeypatch.setattr(
+        "app.api.event_intelligence._load_event_intelligence_snapshot",
+        fake_load_snapshot,
+    )
+    app = create_app()
+    app.dependency_overrides[get_db] = fake_db
+    client = TestClient(app)
+
+    try:
+        first = client.get("/api/event-intelligence/snapshot?symbol=sc&limit=10")
+        second = client.get("/api/event-intelligence/snapshot?symbol=sc&limit=10")
+        refreshed = client.get("/api/event-intelligence/snapshot?symbol=sc&limit=10&refresh=true")
+
+        assert first.status_code == 200
+        assert second.status_code == 200
+        assert refreshed.status_code == 200
+        assert calls["count"] == 2
+        assert first.json()["quality"]["generated_at"] == second.json()["quality"]["generated_at"]
+        assert refreshed.json()["quality"]["generated_at"] != first.json()["quality"]["generated_at"]
+    finally:
+        _clear_event_intelligence_snapshot_cache()
 
 
 def test_event_intelligence_scoped_statements_push_filters_to_database() -> None:

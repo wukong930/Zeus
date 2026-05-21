@@ -1123,6 +1123,7 @@ Causa 的 `event_driven` 评估器实际上是纯技术面（gap + volume），*
   - [x] Phase 10.60.22：交易计划按同 action、同品种、同方向复用未过期候选，把多 evaluator 共振合并成一个主计划；历史重复计划会被标为 `ignored` 并回链到主计划。
   - [x] Phase 10.60.23：非方向上下文信号不再硬生成交易计划；`regime_shift`、缺方向 `inventory_shock` 等只会在同品种已有唯一开放计划时作为上下文证据挂载，写入 `linked_context_alerts` / `context_signal_types`，避免弱方向证据污染最终交易建议。
   - [x] Phase 10.60.24：`score_below_gate` 的有方向近门槛信号不生成交易计划；仅在同品种同方向已有开放计划时作为弱上下文证据挂载，补足证据链但不放松下单门槛。
+  - [x] Phase 10.60.25：Event Intelligence Snapshot 增加 12 秒短 TTL 缓存，`refresh=true` 可强制重算，事件智能创建、语义增强、影响链编辑和人工决策后自动失效；回归 smoke 纳入 snapshot 契约。
 - [ ] 后端慢查询、索引、分页和缓存继续复查。
 - [x] 调度任务真实 handler 覆盖率继续复查，避免 enabled 但实际 noop。
 - [x] 全量回归测试、浏览器验证和部署 smoke 流程固化。
