@@ -22,13 +22,33 @@ router = APIRouter(prefix="/api/positions", tags=["positions"])
 @router.get("", response_model=list[PositionRead])
 async def list_positions(
     status_filter: str | None = Query(default=None, max_length=20),
+    before: datetime | None = Query(default=None),
     limit: int = Query(default=100, ge=1, le=500),
     session: AsyncSession = Depends(get_db),
 ) -> list[Position]:
-    statement = select(Position).order_by(Position.opened_at.desc())
+    statement = _positions_statement(
+        status_filter=status_filter,
+        before=before,
+        limit=limit,
+    )
+    return list((await session.scalars(statement)).all())
+
+
+def _positions_statement(
+    *,
+    status_filter: str | None,
+    before: datetime | None,
+    limit: int,
+):
+    statement = select(Position).order_by(
+        Position.opened_at.desc(),
+        Position.id.desc(),
+    )
     if status_filter is not None:
         statement = statement.where(Position.status == status_filter)
-    return list((await session.scalars(statement.limit(limit))).all())
+    if before is not None:
+        statement = statement.where(Position.opened_at < before)
+    return statement.limit(limit)
 
 
 @router.post("", response_model=PositionRead, status_code=status.HTTP_201_CREATED)

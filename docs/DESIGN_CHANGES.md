@@ -765,3 +765,4 @@ threshold_modifier、propagation_activator、risk_recalc、数据腐烂防护
 - Event Intelligence Snapshot 复用短 TTL 缓存：同一筛选条件下 12 秒内复用 items、impact_links 和质量摘要，`refresh=true` 绕过缓存；影响链编辑、人工决策、新闻事件生成和语义增强成功后会清空缓存，避免治理页面频繁刷新重复打数据库。
 - 交易计划列表支持时间游标分页：`/api/recommendations` 新增可选 `before` 参数，查询固定按 `created_at desc, id desc` 排序，旧的 `limit/status_filter` 调用保持兼容，后续前端可安全实现“加载更多”而不引入大 offset。
 - 预警列表支持时间游标分页：`/api/alerts` 新增可选 `before` 参数，过滤条件继续全部下推到数据库，查询保持 `triggered_at desc, id desc` 稳定排序，便于后续预警页和交易计划证据链按时间增量加载。
+- 持仓列表支持时间游标分页：`/api/positions` 新增可选 `before` 参数，查询固定按 `opened_at desc, id desc` 排序，旧调用保持兼容，便于 Portfolio / Risk / 持仓监控视图增量读取历史持仓。

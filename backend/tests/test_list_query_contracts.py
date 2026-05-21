@@ -4,6 +4,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.dialects import postgresql
 
 from app.api.alerts import _alerts_statement
+from app.api.positions import _positions_statement
 from app.api.recommendations import _recommendations_statement
 from app.main import create_app
 
@@ -35,6 +36,14 @@ def test_alert_list_rejects_invalid_cursor() -> None:
     client = TestClient(create_app())
 
     response = client.get("/api/alerts?before=not-a-date")
+
+    assert response.status_code == 422
+
+
+def test_position_list_rejects_invalid_cursor() -> None:
+    client = TestClient(create_app())
+
+    response = client.get("/api/positions?before=not-a-date")
 
     assert response.status_code == 422
 
@@ -173,6 +182,21 @@ def test_recommendations_statement_uses_keyset_cursor_and_stable_order() -> None
     assert "recommendations.status =" in sql
     assert "recommendations.created_at <" in sql
     assert "ORDER BY recommendations.created_at DESC, recommendations.id DESC" in sql
+    assert "LIMIT" in sql
+
+
+def test_positions_statement_uses_keyset_cursor_and_stable_order() -> None:
+    sql = _compile_postgres(
+        _positions_statement(
+            status_filter="open",
+            before=datetime(2026, 5, 18, 12, tzinfo=timezone.utc),
+            limit=20,
+        )
+    )
+
+    assert "positions.status =" in sql
+    assert "positions.opened_at <" in sql
+    assert "ORDER BY positions.opened_at DESC, positions.id DESC" in sql
     assert "LIMIT" in sql
 
 

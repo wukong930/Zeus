@@ -1126,6 +1126,7 @@ Causa 的 `event_driven` 评估器实际上是纯技术面（gap + volume），*
   - [x] Phase 10.60.25：Event Intelligence Snapshot 增加 12 秒短 TTL 缓存，`refresh=true` 可强制重算，事件智能创建、语义增强、影响链编辑和人工决策后自动失效；回归 smoke 纳入 snapshot 契约。
   - [x] Phase 10.60.26：交易计划列表新增 `before` 时间游标分页，并固定为 `created_at desc, id desc` 稳定排序，避免未来加载更多时依赖大 offset 或不稳定排序。
   - [x] Phase 10.60.27：预警列表新增 `before` 时间游标分页，并复用 `triggered_at desc, id desc` 稳定排序与现有时间索引，支持 Alerts / Trade Plans 证据视图后续增量加载。
+  - [x] Phase 10.60.28：持仓列表新增 `before` 时间游标分页，并固定为 `opened_at desc, id desc` 稳定排序，支持 Portfolio / Risk / 持仓监控视图后续增量加载。
 - [ ] 后端慢查询、索引、分页和缓存继续复查。
 - [x] 调度任务真实 handler 覆盖率继续复查，避免 enabled 但实际 noop。
 - [x] 全量回归测试、浏览器验证和部署 smoke 流程固化。
