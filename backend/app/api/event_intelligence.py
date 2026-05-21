@@ -3,7 +3,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -55,6 +55,7 @@ async def list_event_intelligence(
     region_id: str | None = Query(default=None, min_length=1, max_length=80),
     mechanism: str | None = Query(default=None, pattern=EVENT_IMPACT_MECHANISM_PATTERN),
     status_filter: str | None = Query(default=None, alias="status", pattern=EVENT_INTELLIGENCE_STATUS_PATTERN),
+    before: datetime | None = Query(default=None),
     limit: int = Query(default=100, ge=1, le=500),
     session: AsyncSession = Depends(get_db),
 ) -> list[EventIntelligenceItem]:
@@ -64,6 +65,7 @@ async def list_event_intelligence(
         mechanism=mechanism,
         status_filter=status_filter,
         limit=limit,
+        before=before,
     )
     return list((await session.scalars(statement)).all())
 
@@ -75,6 +77,8 @@ async def list_event_impact_links(
     mechanism: str | None = Query(default=None, pattern=EVENT_IMPACT_MECHANISM_PATTERN),
     direction: str | None = Query(default=None, pattern=EVENT_IMPACT_DIRECTION_PATTERN),
     status_filter: str | None = Query(default=None, alias="status", pattern=EVENT_INTELLIGENCE_STATUS_PATTERN),
+    before_impact_score: float | None = Query(default=None, ge=0, le=100),
+    before_confidence: float | None = Query(default=None, ge=0, le=1),
     limit: int = Query(default=100, ge=1, le=500),
     session: AsyncSession = Depends(get_db),
 ) -> list[EventImpactLink]:
@@ -85,6 +89,8 @@ async def list_event_impact_links(
         direction=direction,
         status_filter=status_filter,
         limit=limit,
+        before_impact_score=before_impact_score,
+        before_confidence=before_confidence,
     )
     return list((await session.scalars(statement)).all())
 
@@ -346,10 +352,12 @@ def _event_intelligence_items_statement(
     mechanism: str | None,
     status_filter: str | None,
     limit: int,
+    before: datetime | None = None,
 ):
     statement = select(EventIntelligenceItem).order_by(
         EventIntelligenceItem.event_timestamp.desc(),
         EventIntelligenceItem.impact_score.desc(),
+        EventIntelligenceItem.id.desc(),
     )
     if symbol is not None:
         statement = statement.where(EventIntelligenceItem.symbols.contains([symbol.upper()]))
@@ -359,6 +367,8 @@ def _event_intelligence_items_statement(
         statement = statement.where(EventIntelligenceItem.mechanisms.contains([mechanism]))
     if status_filter is not None:
         statement = statement.where(EventIntelligenceItem.status == status_filter)
+    if before is not None:
+        statement = statement.where(EventIntelligenceItem.event_timestamp < before)
     return statement.limit(limit)
 
 
@@ -388,10 +398,13 @@ def _event_impact_links_statement(
     direction: str | None,
     status_filter: str | None,
     limit: int,
+    before_impact_score: float | None = None,
+    before_confidence: float | None = None,
 ):
     statement = select(EventImpactLink).order_by(
         EventImpactLink.impact_score.desc(),
         EventImpactLink.confidence.desc(),
+        EventImpactLink.id.desc(),
     )
     if symbol is not None:
         statement = statement.where(EventImpactLink.symbol == symbol.upper())
@@ -403,6 +416,19 @@ def _event_impact_links_statement(
         statement = statement.where(EventImpactLink.direction == direction)
     if status_filter is not None:
         statement = statement.where(EventImpactLink.status == status_filter)
+    if before_impact_score is not None:
+        if before_confidence is not None:
+            statement = statement.where(
+                or_(
+                    EventImpactLink.impact_score < before_impact_score,
+                    and_(
+                        EventImpactLink.impact_score == before_impact_score,
+                        EventImpactLink.confidence < before_confidence,
+                    ),
+                )
+            )
+        else:
+            statement = statement.where(EventImpactLink.impact_score < before_impact_score)
     return statement.limit(limit)
 
 

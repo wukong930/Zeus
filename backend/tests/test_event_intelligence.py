@@ -536,6 +536,12 @@ def test_event_intelligence_api_rejects_invalid_filters() -> None:
 
     assert response.status_code == 422
 
+    response = client.get("/api/event-intelligence?before=not-a-date")
+    assert response.status_code == 422
+
+    response = client.get("/api/event-intelligence/impact-links?before_impact_score=101")
+    assert response.status_code == 422
+
 
 def test_event_intelligence_snapshot_endpoint_uses_short_ttl_cache(monkeypatch) -> None:
     _clear_event_intelligence_snapshot_cache()
@@ -608,6 +614,7 @@ def test_event_intelligence_scoped_statements_push_filters_to_database() -> None
             region_id="middle_east_crude",
             mechanism="energy_cost",
             status_filter="shadow_review",
+            before=datetime(2026, 5, 18, 12, tzinfo=UTC),
             limit=20,
         )
     )
@@ -618,6 +625,8 @@ def test_event_intelligence_scoped_statements_push_filters_to_database() -> None
             mechanism="energy_cost",
             direction="bullish",
             status_filter="shadow_review",
+            before_impact_score=75,
+            before_confidence=0.8,
             limit=20,
         )
     )
@@ -640,11 +649,22 @@ def test_event_intelligence_scoped_statements_push_filters_to_database() -> None
     assert "event_intelligence_items.regions" in items_sql
     assert "event_intelligence_items.mechanisms" in items_sql
     assert "event_intelligence_items.status" in items_sql
+    assert "event_intelligence_items.event_timestamp <" in items_sql
+    assert (
+        "ORDER BY event_intelligence_items.event_timestamp DESC, "
+        "event_intelligence_items.impact_score DESC, event_intelligence_items.id DESC"
+    ) in items_sql
     assert "event_impact_links.symbol =" in links_sql
     assert "event_impact_links.region_id =" in links_sql
     assert "event_impact_links.mechanism =" in links_sql
     assert "event_impact_links.direction =" in links_sql
     assert "event_impact_links.status =" in links_sql
+    assert "event_impact_links.impact_score <" in links_sql
+    assert "event_impact_links.confidence <" in links_sql
+    assert (
+        "ORDER BY event_impact_links.impact_score DESC, "
+        "event_impact_links.confidence DESC, event_impact_links.id DESC"
+    ) in links_sql
     assert "event_impact_links.event_item_id IN" in quality_links_sql
     assert "event_intelligence_items.source_type =" in source_lookup_sql
     assert "event_intelligence_items.source_id IN" in source_lookup_sql
