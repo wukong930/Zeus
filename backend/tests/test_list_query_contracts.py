@@ -31,6 +31,14 @@ def test_recommendation_list_rejects_invalid_cursor() -> None:
     assert response.status_code == 422
 
 
+def test_alert_list_rejects_invalid_cursor() -> None:
+    client = TestClient(create_app())
+
+    response = client.get("/api/alerts?before=not-a-date")
+
+    assert response.status_code == 422
+
+
 def test_alert_category_query_is_bounded() -> None:
     client = TestClient(create_app())
 
@@ -129,6 +137,28 @@ def test_alerts_statement_can_include_expired_for_audit_views() -> None:
 
     assert "alerts.expires_at IS NULL" not in sql
     assert "alerts.expires_at >" not in sql
+
+
+def test_alerts_statement_uses_keyset_cursor_and_stable_order() -> None:
+    sql = _compile_postgres(
+        _alerts_statement(
+            status_filter="active",
+            category=None,
+            severity=None,
+            symbol=None,
+            human_action_required=None,
+            adversarial_passed=None,
+            q=None,
+            before=datetime(2026, 5, 18, 12, tzinfo=timezone.utc),
+            limit=20,
+            include_expired=True,
+        )
+    )
+
+    assert "alerts.status =" in sql
+    assert "alerts.triggered_at <" in sql
+    assert "ORDER BY alerts.triggered_at DESC, alerts.id DESC" in sql
+    assert "LIMIT" in sql
 
 
 def test_recommendations_statement_uses_keyset_cursor_and_stable_order() -> None:

@@ -29,6 +29,7 @@ async def list_alerts(
     adversarial_passed: bool | None = None,
     include_expired: bool = False,
     q: str | None = Query(default=None, min_length=1, max_length=120),
+    before: datetime | None = Query(default=None),
     limit: int = Query(default=100, ge=1, le=500),
     session: AsyncSession = Depends(get_db),
 ) -> list[Alert]:
@@ -42,6 +43,7 @@ async def list_alerts(
         include_expired=include_expired,
         as_of=datetime.now(UTC),
         q=q,
+        before=before,
         limit=limit,
     )
     return list((await session.scalars(statement)).all())
@@ -94,6 +96,7 @@ def _alerts_statement(
     adversarial_passed: bool | None,
     q: str | None,
     limit: int,
+    before: datetime | None = None,
     include_expired: bool = False,
     as_of: datetime | None = None,
 ):
@@ -115,6 +118,8 @@ def _alerts_statement(
         statement = statement.where(Alert.human_action_required.is_(human_action_required))
     if adversarial_passed is not None:
         statement = statement.where(Alert.adversarial_passed.is_(adversarial_passed))
+    if before is not None:
+        statement = statement.where(Alert.triggered_at < before)
     if q is not None:
         query_text = q.strip()
         if query_text:
