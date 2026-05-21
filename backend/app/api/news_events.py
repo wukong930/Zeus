@@ -1,4 +1,5 @@
 import json
+from datetime import datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -27,6 +28,7 @@ async def list_news_events(
     min_severity: int | None = Query(default=None, ge=1, le=5),
     verification_status: str | None = Query(default=None, min_length=1, max_length=30),
     q: str | None = Query(default=None, min_length=1, max_length=120),
+    before: datetime | None = Query(default=None),
     limit: int = Query(default=100, ge=1, le=500),
     session: AsyncSession = Depends(get_db),
 ) -> list[NewsEvent]:
@@ -38,6 +40,7 @@ async def list_news_events(
         min_severity=min_severity,
         verification_status=verification_status,
         q=q,
+        before=before,
         limit=limit,
     )
     return list((await session.scalars(statement)).all())
@@ -104,6 +107,7 @@ def _news_events_statement(
     verification_status: str | None,
     q: str | None,
     limit: int,
+    before: datetime | None = None,
 ):
     statement = select(NewsEvent).order_by(NewsEvent.published_at.desc(), NewsEvent.id.desc())
     if source is not None:
@@ -118,6 +122,8 @@ def _news_events_statement(
         statement = statement.where(NewsEvent.severity >= min_severity)
     if verification_status is not None:
         statement = statement.where(NewsEvent.verification_status == verification_status)
+    if before is not None:
+        statement = statement.where(NewsEvent.published_at < before)
     if q is not None:
         query_text = q.strip()
         if query_text:

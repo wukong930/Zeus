@@ -4,6 +4,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.dialects import postgresql
 
 from app.api.alerts import _alerts_statement
+from app.api.news_events import _news_events_statement
 from app.api.positions import _positions_statement
 from app.api.recommendations import _recommendations_statement
 from app.main import create_app
@@ -44,6 +45,14 @@ def test_position_list_rejects_invalid_cursor() -> None:
     client = TestClient(create_app())
 
     response = client.get("/api/positions?before=not-a-date")
+
+    assert response.status_code == 422
+
+
+def test_news_events_list_rejects_invalid_cursor() -> None:
+    client = TestClient(create_app())
+
+    response = client.get("/api/news-events?before=not-a-date")
 
     assert response.status_code == 422
 
@@ -197,6 +206,32 @@ def test_positions_statement_uses_keyset_cursor_and_stable_order() -> None:
     assert "positions.status =" in sql
     assert "positions.opened_at <" in sql
     assert "ORDER BY positions.opened_at DESC, positions.id DESC" in sql
+    assert "LIMIT" in sql
+
+
+def test_news_events_statement_uses_keyset_cursor_and_stable_order() -> None:
+    sql = _compile_postgres(
+        _news_events_statement(
+            source="gdelt",
+            symbol="sc",
+            event_type="geopolitical",
+            direction="bullish",
+            min_severity=3,
+            verification_status="cross_verified",
+            q="原油",
+            before=datetime(2026, 5, 18, 12, tzinfo=timezone.utc),
+            limit=20,
+        )
+    )
+
+    assert "news_events.source =" in sql
+    assert "news_events.affected_symbols" in sql
+    assert "news_events.event_type =" in sql
+    assert "news_events.direction =" in sql
+    assert "news_events.severity >=" in sql
+    assert "news_events.verification_status =" in sql
+    assert "news_events.published_at <" in sql
+    assert "ORDER BY news_events.published_at DESC, news_events.id DESC" in sql
     assert "LIMIT" in sql
 
 
