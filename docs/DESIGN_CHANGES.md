@@ -763,3 +763,4 @@ threshold_modifier、propagation_activator、risk_recalc、数据腐烂防护
 - 非方向信号进入交易计划证据层而非下单层：`regime_shift`、缺方向 `inventory_shock` 这类上下文信号如果不能通过方向/分数门槛，不会创建交易建议；当同品种只有一个开放计划可承接时，会作为 `linked_context_alerts` 挂到主计划，保留运行态、波动和库存背景，但不提高计划分数。
 - 有方向但低于交易计划置信门槛的近门槛信号继续保持 `score_below_gate`，不会新建交易建议；如果同品种同方向已有开放计划，则作为弱上下文证据挂载，帮助最终计划解释“还有哪些边缘信号在同向共振”。
 - Event Intelligence Snapshot 复用短 TTL 缓存：同一筛选条件下 12 秒内复用 items、impact_links 和质量摘要，`refresh=true` 绕过缓存；影响链编辑、人工决策、新闻事件生成和语义增强成功后会清空缓存，避免治理页面频繁刷新重复打数据库。
+- 交易计划列表支持时间游标分页：`/api/recommendations` 新增可选 `before` 参数，查询固定按 `created_at desc, id desc` 排序，旧的 `limit/status_filter` 调用保持兼容，后续前端可安全实现“加载更多”而不引入大 offset。

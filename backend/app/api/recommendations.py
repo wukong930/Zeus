@@ -24,13 +24,33 @@ router = APIRouter(prefix="/api/recommendations", tags=["recommendations"])
 @router.get("", response_model=list[RecommendationRead])
 async def list_recommendations(
     status_filter: str | None = Query(default=None, max_length=20),
+    before: datetime | None = Query(default=None),
     limit: int = Query(default=100, ge=1, le=500),
     session: AsyncSession = Depends(get_db),
 ) -> list[Recommendation]:
-    statement = select(Recommendation).order_by(Recommendation.created_at.desc())
+    statement = _recommendations_statement(
+        status_filter=status_filter,
+        before=before,
+        limit=limit,
+    )
+    return list((await session.scalars(statement)).all())
+
+
+def _recommendations_statement(
+    *,
+    status_filter: str | None,
+    before: datetime | None,
+    limit: int,
+):
+    statement = select(Recommendation).order_by(
+        Recommendation.created_at.desc(),
+        Recommendation.id.desc(),
+    )
     if status_filter is not None:
         statement = statement.where(Recommendation.status == status_filter)
-    return list((await session.scalars(statement.limit(limit))).all())
+    if before is not None:
+        statement = statement.where(Recommendation.created_at < before)
+    return statement.limit(limit)
 
 
 @router.post("", response_model=RecommendationRead, status_code=status.HTTP_201_CREATED)

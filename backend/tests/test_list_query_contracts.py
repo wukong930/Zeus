@@ -1,7 +1,10 @@
+from datetime import datetime, timezone
+
 from fastapi.testclient import TestClient
 from sqlalchemy.dialects import postgresql
 
 from app.api.alerts import _alerts_statement
+from app.api.recommendations import _recommendations_statement
 from app.main import create_app
 
 
@@ -18,6 +21,14 @@ def test_status_filter_queries_are_bounded() -> None:
         response = client.get(f"{path}?status_filter={oversized}")
 
         assert response.status_code == 422
+
+
+def test_recommendation_list_rejects_invalid_cursor() -> None:
+    client = TestClient(create_app())
+
+    response = client.get("/api/recommendations?before=not-a-date")
+
+    assert response.status_code == 422
 
 
 def test_alert_category_query_is_bounded() -> None:
@@ -118,6 +129,21 @@ def test_alerts_statement_can_include_expired_for_audit_views() -> None:
 
     assert "alerts.expires_at IS NULL" not in sql
     assert "alerts.expires_at >" not in sql
+
+
+def test_recommendations_statement_uses_keyset_cursor_and_stable_order() -> None:
+    sql = _compile_postgres(
+        _recommendations_statement(
+            status_filter="pending",
+            before=datetime(2026, 5, 18, 12, tzinfo=timezone.utc),
+            limit=20,
+        )
+    )
+
+    assert "recommendations.status =" in sql
+    assert "recommendations.created_at <" in sql
+    assert "ORDER BY recommendations.created_at DESC, recommendations.id DESC" in sql
+    assert "LIMIT" in sql
 
 
 def test_contract_symbol_query_is_bounded() -> None:
