@@ -53,6 +53,7 @@ async def list_change_reviews(
     ),
     min_attention_score: float | None = Query(default=None, ge=0, le=100),
     requires_human_attention: bool | None = None,
+    before: datetime | None = Query(default=None),
     limit: int = Query(default=100, ge=1, le=500),
     session: AsyncSession = Depends(get_db),
 ) -> list[ChangeReviewQueue]:
@@ -63,6 +64,7 @@ async def list_change_reviews(
         triage_tier=triage_tier,
         min_attention_score=min_attention_score,
         requires_human_attention=requires_human_attention,
+        before=before,
         limit=limit,
     )
     return list((await session.scalars(statement)).all())
@@ -77,8 +79,12 @@ def change_reviews_statement(
     min_attention_score: float | None,
     requires_human_attention: bool | None,
     limit: int,
+    before: datetime | None = None,
 ):
-    statement = select(ChangeReviewQueue).order_by(ChangeReviewQueue.created_at.desc())
+    statement = select(ChangeReviewQueue).order_by(
+        ChangeReviewQueue.created_at.desc(),
+        ChangeReviewQueue.id.desc(),
+    )
     if status_filter is not None:
         statement = statement.where(ChangeReviewQueue.status == status_filter)
     if source is not None:
@@ -103,6 +109,8 @@ def change_reviews_statement(
             ].as_boolean()
             .is_(requires_human_attention)
         )
+    if before is not None:
+        statement = statement.where(ChangeReviewQueue.created_at < before)
     return statement.limit(limit)
 
 

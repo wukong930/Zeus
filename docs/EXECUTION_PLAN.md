@@ -1129,6 +1129,7 @@ Causa 的 `event_driven` 评估器实际上是纯技术面（gap + volume），*
   - [x] Phase 10.60.28：持仓列表新增 `before` 时间游标分页，并固定为 `opened_at desc, id desc` 稳定排序，支持 Portfolio / Risk / 持仓监控视图后续增量加载。
   - [x] Phase 10.60.29：Event Intelligence 列表新增 `before` 时间游标，impact-links 新增 `before_impact_score / before_confidence` 分数游标；默认排序语义保持不变，支持事件智能页面后续增量加载。
   - [x] Phase 10.60.30：News Events 列表新增 `before` 时间游标，并保持 `published_at desc, id desc` 稳定排序，支持新闻事件页、事件智能入口和因果 / 地图联动按时间增量读取。
+  - [x] Phase 10.60.31：Governance Reviews 列表新增 `before` 时间游标，并固定为 `created_at desc, id desc` 稳定排序；治理队列继续保留状态、来源、目标表、分流层级、attention score 和人工注意力筛选，支持人工复核 / shadow review 大队列增量读取。
 - [ ] 后端慢查询、索引、分页和缓存继续复查。
 - [x] 调度任务真实 handler 覆盖率继续复查，避免 enabled 但实际 noop。
 - [x] 全量回归测试、浏览器验证和部署 smoke 流程固化。

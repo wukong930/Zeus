@@ -179,16 +179,18 @@ def test_governance_api_rejects_invalid_filters_and_decisions() -> None:
     client = TestClient(create_app())
 
     invalid_filter = client.get("/api/governance/reviews?status=published")
+    invalid_cursor = client.get("/api/governance/reviews?before=not-a-date")
     invalid_decision = client.post(
         f"/api/governance/reviews/{uuid4()}/decision",
         json={"decision": "publish"},
     )
 
     assert invalid_filter.status_code == 422
+    assert invalid_cursor.status_code == 422
     assert invalid_decision.status_code == 422
 
 
-def test_change_reviews_statement_pushes_triage_filters_to_database() -> None:
+def test_change_reviews_statement_pushes_triage_filters_and_cursor_to_database() -> None:
     sql = str(
         change_reviews_statement(
             status_filter="shadow_review",
@@ -197,6 +199,7 @@ def test_change_reviews_statement_pushes_triage_filters_to_database() -> None:
             triage_tier="shadow_review",
             min_attention_score=45,
             requires_human_attention=False,
+            before=datetime(2026, 5, 18, 12, tzinfo=timezone.utc),
             limit=50,
         ).compile(dialect=postgresql.dialect())
     )
@@ -207,4 +210,6 @@ def test_change_reviews_statement_pushes_triage_filters_to_database() -> None:
     assert "proposed_change" in sql
     assert "CAST" in sql
     assert "BOOLEAN" in sql
+    assert "change_review_queue.created_at <" in sql
+    assert "ORDER BY change_review_queue.created_at DESC, change_review_queue.id DESC" in sql
     assert "LIMIT" in sql
