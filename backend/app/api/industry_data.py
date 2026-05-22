@@ -24,6 +24,7 @@ async def list_industry_data(
     as_of: datetime | None = None,
     start: datetime | None = None,
     end: datetime | None = None,
+    before: datetime | None = Query(default=None),
     limit: int = Query(default=500, ge=1, le=5000),
     session: AsyncSession = Depends(get_db),
 ) -> list[IndustryData]:
@@ -34,6 +35,7 @@ async def list_industry_data(
         as_of=as_of,
         start=start,
         end=end,
+        before=before,
         limit=limit,
     )
 

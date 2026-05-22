@@ -60,8 +60,32 @@ async def get_industry_data_pit(
     as_of: datetime | None = None,
     start: datetime | None = None,
     end: datetime | None = None,
+    before: datetime | None = None,
     limit: int = 500,
 ) -> list[IndustryData]:
+    statement = _industry_data_pit_statement(
+        symbol=symbol,
+        data_type=data_type,
+        as_of=as_of,
+        start=start,
+        end=end,
+        before=before,
+        limit=limit,
+    )
+
+    return list((await session.scalars(statement)).all())
+
+
+def _industry_data_pit_statement(
+    *,
+    symbol: str,
+    data_type: str | None = None,
+    as_of: datetime | None = None,
+    start: datetime | None = None,
+    end: datetime | None = None,
+    before: datetime | None = None,
+    limit: int = 500,
+) -> Select:
     statement = select(IndustryData).where(IndustryData.symbol == symbol)
     if data_type is not None:
         statement = statement.where(IndustryData.data_type == data_type)
@@ -71,12 +95,12 @@ async def get_industry_data_pit(
         statement = statement.where(IndustryData.timestamp >= start)
     if end is not None:
         statement = statement.where(IndustryData.timestamp <= end)
+    if before is not None:
+        statement = statement.where(IndustryData.timestamp < before)
 
-    pit_statement = _windowed_latest_statement(
+    return _windowed_latest_statement(
         IndustryData,
         [IndustryData.symbol, IndustryData.data_type, IndustryData.timestamp],
         statement,
         limit,
-    ).order_by(IndustryData.timestamp.desc())
-
-    return list((await session.scalars(pit_statement)).all())
+    ).order_by(IndustryData.timestamp.desc(), IndustryData.id.desc())

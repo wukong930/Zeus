@@ -4,6 +4,7 @@ import httpx
 import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy.dialects import postgresql
 
 from app.core.config import Settings
 from app.main import create_app
@@ -56,6 +57,7 @@ from app.services.data_sources.tushare_futures import (
     parse_csv_tuple,
     rows_from_tushare_payload,
 )
+from app.services.market_data.pit import _industry_data_pit_statement
 
 
 def test_parse_akshare_symbols_uses_defaults_when_blank() -> None:
@@ -1271,6 +1273,26 @@ def test_industry_data_api_rejects_unbounded_query_filters() -> None:
     oversized_type = "x" * 31
     response = client.get(f"/api/industry-data?symbol=SC&data_type={oversized_type}")
     assert response.status_code == 422
+
+    response = client.get("/api/industry-data?symbol=SC&before=not-a-date")
+    assert response.status_code == 422
+
+
+def test_industry_data_pit_statement_uses_cursor_and_stable_order() -> None:
+    compiled = str(
+        _industry_data_pit_statement(
+            symbol="RU",
+            data_type="rubber_spot_price_cny_t",
+            before=pd.Timestamp("2026-05-18T00:00:00Z").to_pydatetime(),
+            limit=20,
+        ).compile(dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True})
+    )
+
+    assert "industry_data.symbol = 'RU'" in compiled
+    assert "industry_data.data_type = 'rubber_spot_price_cny_t'" in compiled
+    assert "industry_data.timestamp < '2026-05-18" in compiled
+    assert "ORDER BY industry_data.timestamp DESC, industry_data.id DESC" in compiled
+    assert "LIMIT 20" in compiled
 
 
 def json_from_request(request: httpx.Request) -> dict[str, object]:
