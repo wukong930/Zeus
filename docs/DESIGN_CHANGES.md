@@ -769,3 +769,4 @@ threshold_modifier、propagation_activator、risk_recalc、数据腐烂防护
 - Event Intelligence 列表支持游标分页：`/api/event-intelligence` 新增 `before` 时间游标，`/api/event-intelligence/impact-links` 新增 `before_impact_score / before_confidence` 分数游标；事件列表仍按事件时间优先，影响链仍按影响分优先，避免为了分页改变阅读语义。
 - News Events 列表支持时间游标分页：`/api/news-events` 新增可选 `before` 参数，查询继续保留来源、品种、类型、方向、严重度、验证状态和文本筛选，并按 `published_at desc, id desc` 稳定排序，便于事件智能和新闻页按时间增量加载。
 - Governance Reviews 列表支持时间游标分页：`/api/governance/reviews` 新增可选 `before` 参数，查询继续下推状态、来源、目标表、分流层级、attention score 和人工注意力筛选，并按 `created_at desc, id desc` 稳定排序，便于治理工作台和影子复核队列增量加载。
+- User Feedback 列表支持时间游标分页：`/api/feedback` 新增可选 `before` 和 `recommendation_id` 参数，保留 `alert_id` 筛选，并按 `recorded_at desc, id desc` 稳定排序，便于交易计划反馈和学习报告增量读取。
