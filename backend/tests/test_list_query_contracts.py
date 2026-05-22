@@ -12,6 +12,7 @@ from app.api.news_events import _news_events_statement
 from app.api.positions import _positions_statement
 from app.api.recommendations import _recommendations_statement
 from app.api.shadow import _shadow_runs_statement, _shadow_signal_count_statement
+from app.api.strategies import _strategies_statement
 from app.main import create_app
 
 
@@ -94,6 +95,14 @@ def test_human_decisions_list_rejects_invalid_cursor() -> None:
     assert response.status_code == 422
 
     response = client.get("/api/arbitration/decisions?decision=publish")
+    assert response.status_code == 422
+
+
+def test_strategies_list_rejects_invalid_cursor() -> None:
+    client = TestClient(create_app())
+
+    response = client.get("/api/strategies?before=not-a-date")
+
     assert response.status_code == 422
 
 
@@ -371,6 +380,21 @@ def test_human_decisions_statement_uses_filters_cursor_and_stable_order() -> Non
     assert "human_decisions.decision =" in sql
     assert "human_decisions.created_at <" in sql
     assert "ORDER BY human_decisions.created_at DESC, human_decisions.id DESC" in sql
+    assert "LIMIT" in sql
+
+
+def test_strategies_statement_uses_keyset_cursor_and_stable_order() -> None:
+    sql = _compile_postgres(
+        _strategies_statement(
+            status_filter="active",
+            before=datetime(2026, 5, 18, 12, tzinfo=timezone.utc),
+            limit=20,
+        )
+    )
+
+    assert "strategies.status =" in sql
+    assert "strategies.created_at <" in sql
+    assert "ORDER BY strategies.created_at DESC, strategies.id DESC" in sql
     assert "LIMIT" in sql
 
 

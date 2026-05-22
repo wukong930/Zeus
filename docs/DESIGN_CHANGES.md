@@ -776,3 +776,4 @@ threshold_modifier、propagation_activator、risk_recalc、数据腐烂防护
 - Market Data recent batch 支持时间游标分页：`/api/market-data/recent` 新增可选 `before` 参数，查询在每个 symbol 内按 `timestamp desc, id desc` 稳定排序，并把短 TTL 缓存键扩展到游标维度，避免不同历史页复用同一缓存结果。
 - Industry Data PIT 列表支持时间游标分页：`/api/industry-data` 新增可选 `before` 参数，PIT 查询保留 symbol / data_type / as_of / start / end 语义，并按 `timestamp desc, id desc` 稳定排序，便于天气、运费、库存、现货和宏观指标增量读取。
 - Arbitration Human Decisions 列表支持时间游标分页：`/api/arbitration/decisions` 新增可选 `before`、`signal_track_id` 和 `decision` 参数，保留 `alert_id` 筛选，并按 `created_at desc, id desc` 稳定排序，便于人工决策审计和交易计划复盘增量读取。
+- Strategies 列表支持时间游标分页：`/api/strategies` 新增可选 `before` 参数，保留 `status_filter` 筛选，并按 `created_at desc, id desc` 稳定排序，便于策略实验、回测配置和策略治理记录增量读取。
