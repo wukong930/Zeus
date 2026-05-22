@@ -8,6 +8,7 @@ from app.api.learning import _learning_hypotheses_statement
 from app.api.news_events import _news_events_statement
 from app.api.positions import _positions_statement
 from app.api.recommendations import _recommendations_statement
+from app.api.shadow import _shadow_runs_statement, _shadow_signal_count_statement
 from app.main import create_app
 
 
@@ -62,6 +63,14 @@ def test_learning_hypotheses_list_rejects_invalid_cursor() -> None:
     client = TestClient(create_app())
 
     response = client.get("/api/learning/hypotheses?before=not-a-date")
+
+    assert response.status_code == 422
+
+
+def test_shadow_runs_list_rejects_invalid_cursor() -> None:
+    client = TestClient(create_app())
+
+    response = client.get("/api/shadow/runs?before=not-a-date")
 
     assert response.status_code == 422
 
@@ -278,6 +287,31 @@ def test_shadow_query_strings_are_bounded() -> None:
 
     response = client.post(f"/api/shadow/calibration/reviews?category={'x' * 31}")
     assert response.status_code == 422
+
+    response = client.get(f"/api/shadow/runs?status_filter={'x' * 21}")
+    assert response.status_code == 422
+
+
+def test_shadow_runs_statement_uses_keyset_cursor_and_stable_order() -> None:
+    sql = _compile_postgres(
+        _shadow_runs_statement(
+            status_filter="active",
+            before=datetime(2026, 5, 18, 12, tzinfo=timezone.utc),
+            limit=20,
+        )
+    )
+
+    assert "shadow_runs.status =" in sql
+    assert "shadow_runs.started_at <" in sql
+    assert "ORDER BY shadow_runs.started_at DESC, shadow_runs.id DESC" in sql
+    assert "LIMIT" in sql
+
+
+def test_shadow_signal_count_statement_uses_database_count() -> None:
+    sql = _compile_postgres(_shadow_signal_count_statement("00000000-0000-0000-0000-000000000001"))
+
+    assert "count(*)" in sql.lower()
+    assert "shadow_signals.shadow_run_id =" in sql
 
 
 def _compile_postgres(statement) -> str:

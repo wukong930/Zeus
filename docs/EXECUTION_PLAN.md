@@ -1132,6 +1132,7 @@ Causa 的 `event_driven` 评估器实际上是纯技术面（gap + volume），*
   - [x] Phase 10.60.31：Governance Reviews 列表新增 `before` 时间游标，并固定为 `created_at desc, id desc` 稳定排序；治理队列继续保留状态、来源、目标表、分流层级、attention score 和人工注意力筛选，支持人工复核 / shadow review 大队列增量读取。
   - [x] Phase 10.60.32：User Feedback 列表新增 `before` 时间游标和 `recommendation_id` 筛选，并固定为 `recorded_at desc, id desc` 稳定排序，支持交易计划反馈、学习报告和反馈复盘按时间增量读取。
   - [x] Phase 10.60.33：Learning Hypotheses 列表新增 `before` 时间游标，并固定为 `created_at desc, id desc` 稳定排序，支持反思 Agent、shadow testing 和 validated / applied 假设按时间增量读取。
+  - [x] Phase 10.60.34：Shadow Runs 列表新增 `before` 时间游标和 `status_filter` 筛选，并固定为 `started_at desc, id desc` 稳定排序；Shadow Run report 的 signal 行数改为数据库 `count(*)` 聚合，避免报告接口为计数加载全部 shadow signal 行。
 - [ ] 后端慢查询、索引、分页和缓存继续复查。
 - [x] 调度任务真实 handler 覆盖率继续复查，避免 enabled 但实际 noop。
 - [x] 全量回归测试、浏览器验证和部署 smoke 流程固化。
