@@ -1,9 +1,11 @@
 from datetime import datetime, timezone
+from uuid import uuid4
 
 from fastapi.testclient import TestClient
 from sqlalchemy.dialects import postgresql
 
 from app.api.alerts import _alerts_statement
+from app.api.arbitration import _human_decisions_statement
 from app.api.drift import _drift_metrics_statement
 from app.api.learning import _learning_hypotheses_statement
 from app.api.news_events import _news_events_statement
@@ -81,6 +83,17 @@ def test_drift_metrics_list_rejects_invalid_cursor() -> None:
 
     response = client.get("/api/drift/metrics?before=not-a-date")
 
+    assert response.status_code == 422
+
+
+def test_human_decisions_list_rejects_invalid_cursor() -> None:
+    client = TestClient(create_app())
+
+    response = client.get("/api/arbitration/decisions?before=not-a-date")
+
+    assert response.status_code == 422
+
+    response = client.get("/api/arbitration/decisions?decision=publish")
     assert response.status_code == 422
 
 
@@ -339,6 +352,25 @@ def test_drift_metrics_statement_uses_filters_cursor_and_stable_order() -> None:
     assert "drift_metrics.drift_severity =" in sql
     assert "drift_metrics.computed_at <" in sql
     assert "ORDER BY drift_metrics.computed_at DESC, drift_metrics.id DESC" in sql
+    assert "LIMIT" in sql
+
+
+def test_human_decisions_statement_uses_filters_cursor_and_stable_order() -> None:
+    sql = _compile_postgres(
+        _human_decisions_statement(
+            alert_id=uuid4(),
+            signal_track_id=uuid4(),
+            decision="approve",
+            before=datetime(2026, 5, 18, 12, tzinfo=timezone.utc),
+            limit=20,
+        )
+    )
+
+    assert "human_decisions.alert_id =" in sql
+    assert "human_decisions.signal_track_id =" in sql
+    assert "human_decisions.decision =" in sql
+    assert "human_decisions.created_at <" in sql
+    assert "ORDER BY human_decisions.created_at DESC, human_decisions.id DESC" in sql
     assert "LIMIT" in sql
 
 

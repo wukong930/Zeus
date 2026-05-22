@@ -1136,6 +1136,7 @@ Causa 的 `event_driven` 评估器实际上是纯技术面（gap + volume），*
   - [x] Phase 10.60.35：Drift Metrics 列表新增 `before` 时间游标，并支持 `metric_type`、`category`、`drift_severity` 筛选；查询固定为 `computed_at desc, id desc` 稳定排序，支持 Drift 监控页和校准复盘增量读取。
   - [x] Phase 10.60.36：Market Data recent batch 新增 `before` 时间游标，并把缓存键扩展到游标维度；每个 symbol 内按 `timestamp desc, id desc` 稳定排序，支持行情条、板块页和历史报价增量读取。
   - [x] Phase 10.60.37：Industry Data PIT 列表新增 `before` 时间游标，并把排序固定为 `timestamp desc, id desc`，支持天气、运费、库存、现货和宏观产业指标按时间增量读取。
+  - [x] Phase 10.60.38：Arbitration Human Decisions 列表新增 `before` 时间游标，并支持 `alert_id`、`signal_track_id`、`decision` 筛选；查询固定为 `created_at desc, id desc` 稳定排序，支持人工决策审计和交易计划复盘增量读取。
 - [ ] 后端慢查询、索引、分页和缓存继续复查。
 - [x] 调度任务真实 handler 覆盖率继续复查，避免 enabled 但实际 noop。
 - [x] 全量回归测试、浏览器验证和部署 smoke 流程固化。
