@@ -780,3 +780,4 @@ threshold_modifier、propagation_activator、risk_recalc、数据腐烂防护
 - Cost Models 历史快照支持日期游标分页：`/api/cost-models/{symbol}/history` 与 `/api/cost-models/histories` 新增可选 `before` 参数，并按 `snapshot_date desc, created_at desc, id desc` 稳定排序，便于成本模型历史图、成本信号上下文和策略复盘增量读取。
 - Notebook 快照支持时间游标分页：`/api/notebook` 新增可选 `before` 参数，研究报告按 `published_at desc, id desc`、学习假设按 `updated_at desc, id desc`、研究假设按 `created_at desc, id desc` 拉取后合并，保持页面排序语义并支持研究笔记增量读取。
 - Calibration Dashboard 查询改为点时一致：active calibration 与 resolved tracks 的底层查询抽为可测试 statement；resolved tracks 增加 `created_at <= as_of` 过滤，避免未来样本进入历史仪表盘，并补 `id desc` 作为稳定排序兜底。
+- Calibration active lookup 统一查询口径：生产评分读取校准权重和治理应用校准变更共用 `_active_calibration_statement`，按 `effective_from <= as_of`、`effective_to is null/effective_to > as_of` 点时过滤，并以 `effective_from desc, computed_at desc, id desc` 稳定选择最新权重。

@@ -2,13 +2,14 @@ from collections import defaultdict
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import desc, or_, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.calibration import SignalCalibration
 from app.models.signal import SignalTrack
 from app.services.calibration.decay_detector import detect_decay
 from app.services.calibration.hit_rate import summarize_outcomes
+from app.services.calibration.tracker import _active_calibration_statement
 from app.services.calibration.weight_adjuster import calculate_bayesian_weight
 from app.services.governance.review_queue import ReviewRequiredError, enqueue_review, review_required
 
@@ -161,19 +162,12 @@ async def get_active_calibration(
 ) -> SignalCalibration | None:
     return (
         await session.scalars(
-            select(SignalCalibration)
-            .where(
-                SignalCalibration.signal_type == signal_type,
-                SignalCalibration.category == category,
-                SignalCalibration.regime == regime,
-                SignalCalibration.effective_from <= as_of,
-                or_(
-                    SignalCalibration.effective_to.is_(None),
-                    SignalCalibration.effective_to > as_of,
-                ),
+            _active_calibration_statement(
+                signal_type=signal_type,
+                category=category,
+                regime=regime,
+                as_of=as_of,
             )
-            .order_by(desc(SignalCalibration.effective_from))
-            .limit(1)
         )
     ).first()
 

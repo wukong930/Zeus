@@ -1,8 +1,14 @@
 from datetime import datetime, timezone
 
+from sqlalchemy.dialects import postgresql
+
 from app.models.signal import SignalTrack
 from app.services.calibration.hit_rate import summarize_outcomes
-from app.services.calibration.tracker import signal_combination_hash, track_signal_emission
+from app.services.calibration.tracker import (
+    _active_calibration_statement,
+    signal_combination_hash,
+    track_signal_emission,
+)
 from app.services.calibration.weight_adjuster import calculate_bayesian_weight
 
 
@@ -51,6 +57,28 @@ def test_signal_combination_hash_is_order_insensitive_for_assets() -> None:
 
     assert first == second
     assert len(first) == 64
+
+
+def test_active_calibration_statement_is_point_in_time_and_stable() -> None:
+    sql = _compile_postgres(
+        _active_calibration_statement(
+            signal_type="momentum",
+            category="energy",
+            regime="range_low_vol",
+            as_of=datetime(2026, 5, 3, tzinfo=timezone.utc),
+        )
+    )
+
+    assert "signal_calibration.signal_type =" in sql
+    assert "signal_calibration.category =" in sql
+    assert "signal_calibration.regime =" in sql
+    assert "signal_calibration.effective_from <=" in sql
+    assert "signal_calibration.effective_to IS NULL" in sql
+    assert (
+        "ORDER BY signal_calibration.effective_from DESC, "
+        "signal_calibration.computed_at DESC, signal_calibration.id DESC"
+    ) in sql
+    assert "LIMIT" in sql
 
 
 async def test_track_signal_emission_records_calibration_metadata() -> None:
@@ -128,3 +156,7 @@ def test_summarize_outcomes_counts_hit_and_miss_only() -> None:
     assert summary.misses == 1
     assert summary.total == 2
     assert summary.hit_rate == 0.5
+
+
+def _compile_postgres(statement) -> str:
+    return str(statement.compile(dialect=postgresql.dialect()))

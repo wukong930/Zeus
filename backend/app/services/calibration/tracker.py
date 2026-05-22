@@ -42,42 +42,58 @@ async def get_calibration_weight(
         return DEFAULT_CALIBRATION_WEIGHT
 
     effective_at = as_of or datetime.now(timezone.utc)
-    statement = (
-        select(SignalCalibration)
-        .where(
-            SignalCalibration.signal_type == signal_type,
-            SignalCalibration.category == category,
-            SignalCalibration.regime == (regime or "unknown"),
-            SignalCalibration.effective_from <= effective_at,
-            or_(
-                SignalCalibration.effective_to.is_(None),
-                SignalCalibration.effective_to > effective_at,
-            ),
+    row = (
+        await session.scalars(
+            _active_calibration_statement(
+                signal_type=signal_type,
+                category=category,
+                regime=regime or "unknown",
+                as_of=effective_at,
+            )
         )
-        .order_by(desc(SignalCalibration.effective_from))
-        .limit(1)
-    )
-    row = (await session.scalars(statement)).first()
+    ).first()
     if row is not None:
         return row.effective_weight
 
-    fallback_statement = (
+    fallback = (
+        await session.scalars(
+            _active_calibration_statement(
+                signal_type=signal_type,
+                category=category,
+                regime="unknown",
+                as_of=effective_at,
+            )
+        )
+    ).first()
+    return fallback.effective_weight if fallback is not None else DEFAULT_CALIBRATION_WEIGHT
+
+
+def _active_calibration_statement(
+    *,
+    signal_type: str,
+    category: str,
+    regime: str,
+    as_of: datetime,
+):
+    return (
         select(SignalCalibration)
         .where(
             SignalCalibration.signal_type == signal_type,
             SignalCalibration.category == category,
-            SignalCalibration.regime == "unknown",
-            SignalCalibration.effective_from <= effective_at,
+            SignalCalibration.regime == regime,
+            SignalCalibration.effective_from <= as_of,
             or_(
                 SignalCalibration.effective_to.is_(None),
-                SignalCalibration.effective_to > effective_at,
+                SignalCalibration.effective_to > as_of,
             ),
         )
-        .order_by(desc(SignalCalibration.effective_from))
+        .order_by(
+            desc(SignalCalibration.effective_from),
+            desc(SignalCalibration.computed_at),
+            desc(SignalCalibration.id),
+        )
         .limit(1)
     )
-    fallback = (await session.scalars(fallback_statement)).first()
-    return fallback.effective_weight if fallback is not None else DEFAULT_CALIBRATION_WEIGHT
 
 
 async def track_signal_emission(
