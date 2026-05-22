@@ -1140,6 +1140,7 @@ Causa 的 `event_driven` 评估器实际上是纯技术面（gap + volume），*
   - [x] Phase 10.60.39：Strategies 列表新增 `before` 时间游标，并保持 `status_filter` 筛选；查询固定为 `created_at desc, id desc` 稳定排序，支持策略实验、回测配置和策略治理记录增量读取。
   - [x] Phase 10.60.40：Cost Models 历史快照新增 `before` 日期游标，单商品 `/api/cost-models/{symbol}/history` 与批量 `/api/cost-models/histories` 均按 `snapshot_date desc, created_at desc, id desc` 稳定排序，支持成本模型、历史图和成本信号上下文增量读取。
   - [x] Phase 10.60.41：Notebook 快照新增 `before` 时间游标，研究报告、学习假设和研究假设分别按各自展示时间稳定排序，避免研究记录增长后过量拉取并支持研究笔记页增量读取。
+  - [x] Phase 10.60.42：Calibration Dashboard 底层查询抽出契约化 statement；active calibration 按 `sample_size desc, computed_at desc, id desc` 稳定排序，resolved tracks 增加 `created_at <= as_of` 点时过滤并按 `created_at desc, id desc` 稳定排序，避免未来样本污染 as-of 仪表盘。
 - [ ] 后端慢查询、索引、分页和缓存继续复查。
 - [x] 调度任务真实 handler 覆盖率继续复查，避免 enabled 但实际 noop。
 - [x] 全量回归测试、浏览器验证和部署 smoke 流程固化。

@@ -114,16 +114,7 @@ async def summarize_calibration_dashboard(
 
     active_calibrations = (
         await session.scalars(
-            select(SignalCalibration)
-            .where(
-                SignalCalibration.effective_from <= effective_as_of,
-                or_(
-                    SignalCalibration.effective_to.is_(None),
-                    SignalCalibration.effective_to > effective_as_of,
-                ),
-            )
-            .order_by(desc(SignalCalibration.sample_size), desc(SignalCalibration.computed_at))
-            .limit(limit)
+            _active_calibrations_statement(as_of=effective_as_of, limit=limit)
         )
     ).all()
     rows = [
@@ -137,13 +128,7 @@ async def summarize_calibration_dashboard(
 
     resolved_tracks = (
         await session.scalars(
-            select(SignalTrack)
-            .where(
-                SignalTrack.created_at >= since,
-                SignalTrack.outcome.in_(RESOLVED_OUTCOMES),
-            )
-            .order_by(SignalTrack.created_at.desc())
-            .limit(5000)
+            _resolved_tracks_statement(since=since, as_of=effective_as_of, limit=5000)
         )
     ).all()
     grouped_tracks: dict[tuple[str, str, str], list[SignalTrack]] = defaultdict(list)
@@ -190,6 +175,38 @@ async def summarize_calibration_dashboard(
         avg_effective_weight=_avg([row.effective_weight for row in rows]),
         rows=rows,
         notes=notes,
+    )
+
+
+def _active_calibrations_statement(*, as_of: datetime, limit: int):
+    return (
+        select(SignalCalibration)
+        .where(
+            SignalCalibration.effective_from <= as_of,
+            or_(
+                SignalCalibration.effective_to.is_(None),
+                SignalCalibration.effective_to > as_of,
+            ),
+        )
+        .order_by(
+            desc(SignalCalibration.sample_size),
+            desc(SignalCalibration.computed_at),
+            desc(SignalCalibration.id),
+        )
+        .limit(limit)
+    )
+
+
+def _resolved_tracks_statement(*, since: datetime, as_of: datetime, limit: int):
+    return (
+        select(SignalTrack)
+        .where(
+            SignalTrack.created_at >= since,
+            SignalTrack.created_at <= as_of,
+            SignalTrack.outcome.in_(RESOLVED_OUTCOMES),
+        )
+        .order_by(SignalTrack.created_at.desc(), SignalTrack.id.desc())
+        .limit(limit)
     )
 
 
