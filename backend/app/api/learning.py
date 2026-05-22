@@ -27,13 +27,16 @@ MAX_VECTOR_CANDIDATE_NAME_LENGTH = 120
 @router.get("/hypotheses")
 async def list_learning_hypotheses(
     status_filter: str | None = Query(default=None, max_length=MAX_LEARNING_STATUS_LENGTH),
+    before: datetime | None = Query(default=None),
     limit: int = Query(default=100, ge=1, le=500),
     session: AsyncSession = Depends(get_db),
 ) -> list[dict[str, Any]]:
-    statement = select(LearningHypothesis).order_by(LearningHypothesis.created_at.desc())
-    if status_filter is not None:
-        statement = statement.where(LearningHypothesis.status == status_filter)
-    rows = (await session.scalars(statement.limit(limit))).all()
+    statement = _learning_hypotheses_statement(
+        status_filter=status_filter,
+        before=before,
+        limit=limit,
+    )
+    rows = (await session.scalars(statement)).all()
     return [learning_hypothesis_to_dict(row) for row in rows]
 
 
@@ -258,6 +261,23 @@ def learning_hypothesis_to_dict(row: LearningHypothesis) -> dict[str, Any]:
         "created_at": row.created_at.isoformat() if row.created_at else None,
         "updated_at": row.updated_at.isoformat() if row.updated_at else None,
     }
+
+
+def _learning_hypotheses_statement(
+    *,
+    status_filter: str | None,
+    before: datetime | None,
+    limit: int,
+):
+    statement = select(LearningHypothesis).order_by(
+        LearningHypothesis.created_at.desc(),
+        LearningHypothesis.id.desc(),
+    )
+    if status_filter is not None:
+        statement = statement.where(LearningHypothesis.status == status_filter)
+    if before is not None:
+        statement = statement.where(LearningHypothesis.created_at < before)
+    return statement.limit(limit)
 
 
 def shadow_run_belongs_to_hypothesis(row: ShadowRun, hypothesis_id: UUID) -> bool:
