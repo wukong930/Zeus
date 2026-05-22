@@ -1134,6 +1134,7 @@ Causa 的 `event_driven` 评估器实际上是纯技术面（gap + volume），*
   - [x] Phase 10.60.33：Learning Hypotheses 列表新增 `before` 时间游标，并固定为 `created_at desc, id desc` 稳定排序，支持反思 Agent、shadow testing 和 validated / applied 假设按时间增量读取。
   - [x] Phase 10.60.34：Shadow Runs 列表新增 `before` 时间游标和 `status_filter` 筛选，并固定为 `started_at desc, id desc` 稳定排序；Shadow Run report 的 signal 行数改为数据库 `count(*)` 聚合，避免报告接口为计数加载全部 shadow signal 行。
   - [x] Phase 10.60.35：Drift Metrics 列表新增 `before` 时间游标，并支持 `metric_type`、`category`、`drift_severity` 筛选；查询固定为 `computed_at desc, id desc` 稳定排序，支持 Drift 监控页和校准复盘增量读取。
+  - [x] Phase 10.60.36：Market Data recent batch 新增 `before` 时间游标，并把缓存键扩展到游标维度；每个 symbol 内按 `timestamp desc, id desc` 稳定排序，支持行情条、板块页和历史报价增量读取。
 - [ ] 后端慢查询、索引、分页和缓存继续复查。
 - [x] 调度任务真实 handler 覆盖率继续复查，避免 enabled 但实际 noop。
 - [x] 全量回归测试、浏览器验证和部署 smoke 流程固化。

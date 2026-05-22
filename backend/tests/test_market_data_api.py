@@ -108,6 +108,28 @@ def test_recent_market_data_statement_limits_rows_per_symbol() -> None:
     assert "symbol_row_number <= 5" in compiled
 
 
+def test_recent_market_data_statement_applies_cursor_and_stable_order() -> None:
+    before = datetime(2026, 5, 18, tzinfo=timezone.utc)
+    compiled = str(
+        _recent_market_data_statement(["RB"], 3, before=before).compile(
+            compile_kwargs={"literal_binds": True}
+        )
+    )
+
+    assert "market_data.timestamp < '2026-05-18" in compiled
+    assert ".timestamp DESC, anon_" in compiled
+    assert "ORDER BY market_data.symbol ASC, market_data.timestamp DESC, market_data.id DESC" in compiled
+
+
+def test_recent_market_data_batch_endpoint_rejects_invalid_cursor() -> None:
+    app = create_app()
+    client = TestClient(app)
+
+    response = client.get("/api/market-data/recent?symbols=RB&before=not-a-date")
+
+    assert response.status_code == 422
+
+
 def test_latest_market_data_batch_endpoint_returns_requested_rows(monkeypatch) -> None:
     captured: dict[str, object] = {}
     session = object()
@@ -142,9 +164,10 @@ def test_recent_market_data_batch_endpoint_returns_requested_rows(monkeypatch) -
     async def fake_db():
         yield session
 
-    async def fake_recent_market_data_for_symbols(db_session, symbols, *, limit):
+    async def fake_recent_market_data_for_symbols(db_session, symbols, *, before, limit):
         captured["session"] = db_session
         captured["symbols"] = symbols
+        captured["before"] = before
         captured["limit"] = limit
         return [_market_row("RB", days=2), _market_row("RB", days=1), _market_row("HC", days=2)]
 
@@ -156,10 +179,15 @@ def test_recent_market_data_batch_endpoint_returns_requested_rows(monkeypatch) -
     app.dependency_overrides[get_db] = fake_db
     client = TestClient(app)
 
-    response = client.get("/api/market-data/recent?symbols=rb,hc,rb&limit=2")
+    response = client.get("/api/market-data/recent?symbols=rb,hc,rb&limit=2&before=2026-05-18T00:00:00Z")
 
     assert response.status_code == 200
-    assert captured == {"session": session, "symbols": ["RB", "HC"], "limit": 2}
+    assert captured == {
+        "session": session,
+        "symbols": ["RB", "HC"],
+        "before": datetime(2026, 5, 18, tzinfo=timezone.utc),
+        "limit": 2,
+    }
     assert [row["symbol"] for row in response.json()] == ["RB", "RB", "HC"]
 
 
@@ -203,10 +231,11 @@ def test_recent_market_data_batch_endpoint_uses_limit_sensitive_cache(monkeypatc
     async def fake_db():
         yield session
 
-    async def fake_recent_market_data_for_symbols(db_session, symbols, *, limit):
+    async def fake_recent_market_data_for_symbols(db_session, symbols, *, before, limit):
         calls["count"] += 1
         assert db_session is session
         assert symbols == ["RB"]
+        assert before in {None, datetime(2026, 5, 18, tzinfo=timezone.utc)}
         return [_market_row("RB", days=calls["count"])]
 
     monkeypatch.setattr(
@@ -220,13 +249,18 @@ def test_recent_market_data_batch_endpoint_uses_limit_sensitive_cache(monkeypatc
     first = client.get("/api/market-data/recent?symbols=rb&limit=2")
     second = client.get("/api/market-data/recent?symbols=rb&limit=2")
     different_limit = client.get("/api/market-data/recent?symbols=rb&limit=3")
+    different_cursor = client.get(
+        "/api/market-data/recent?symbols=rb&limit=2&before=2026-05-18T00:00:00Z"
+    )
 
     assert first.status_code == 200
     assert second.status_code == 200
     assert different_limit.status_code == 200
-    assert calls["count"] == 2
+    assert different_cursor.status_code == 200
+    assert calls["count"] == 3
     assert first.json() == second.json()
     assert different_limit.json()[0]["close"] != first.json()[0]["close"]
+    assert different_cursor.json()[0]["close"] != first.json()[0]["close"]
 
 
 def test_single_latest_market_data_endpoint_uses_shared_lookup(monkeypatch) -> None:

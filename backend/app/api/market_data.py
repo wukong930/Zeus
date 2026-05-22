@@ -73,19 +73,25 @@ async def get_latest_market_data_batch(
 @router.get("/recent", response_model=list[MarketDataRead])
 async def get_recent_market_data_batch(
     symbols: str = Query(..., min_length=1, max_length=MAX_MARKET_SYMBOL_QUERY_LENGTH),
+    before: datetime | None = Query(default=None),
     limit: int = Query(default=5, ge=1, le=200),
     refresh: bool = Query(default=False),
     session: AsyncSession = Depends(get_db),
 ) -> list[MarketDataRead]:
     parsed_symbols = _parse_market_symbols(symbols)
-    cache_key = _market_data_cache_key("recent", parsed_symbols, limit=limit)
+    cache_key = _market_data_cache_key("recent", parsed_symbols, limit=limit, before=before)
     if not refresh:
         cached = _market_data_cache_get(cache_key)
         if cached is not None:
             return cached
 
     rows = _market_data_read_rows(
-        await recent_market_data_for_symbols(session, parsed_symbols, limit=limit)
+        await recent_market_data_for_symbols(
+            session,
+            parsed_symbols,
+            before=before,
+            limit=limit,
+        )
     )
     _market_data_cache_set(cache_key, rows)
     return rows
@@ -132,6 +138,7 @@ async def recent_market_data_for_symbols(
     session: AsyncSession,
     symbols: list[str],
     *,
+    before: datetime | None = None,
     limit: int,
 ) -> list[MarketData]:
     requested_symbols = list(
@@ -141,7 +148,11 @@ async def recent_market_data_for_symbols(
         return []
 
     return list(
-        (await session.scalars(_recent_market_data_statement(requested_symbols, limit))).all()
+        (
+            await session.scalars(
+                _recent_market_data_statement(requested_symbols, limit, before=before)
+            )
+        ).all()
     )
 
 
@@ -171,7 +182,7 @@ def _latest_market_data_statement(symbols: list[str]):
     )
 
 
-def _recent_market_data_statement(symbols: list[str], limit: int):
+def _recent_market_data_statement(symbols: list[str], limit: int, *, before: datetime | None = None):
     pit_ranked = (
         select(
             MarketData.id.label("id"),
@@ -189,8 +200,10 @@ def _recent_market_data_statement(symbols: list[str], limit: int):
             .label("pit_row_number"),
         )
         .where(MarketData.symbol.in_(symbols))
-        .subquery()
     )
+    if before is not None:
+        pit_ranked = pit_ranked.where(MarketData.timestamp < before)
+    pit_ranked = pit_ranked.subquery()
     symbol_ranked = (
         select(
             pit_ranked.c.id.label("id"),
@@ -199,7 +212,7 @@ def _recent_market_data_statement(symbols: list[str], limit: int):
             func.row_number()
             .over(
                 partition_by=pit_ranked.c.symbol,
-                order_by=pit_ranked.c.timestamp.desc(),
+                order_by=(pit_ranked.c.timestamp.desc(), pit_ranked.c.id.desc()),
             )
             .label("symbol_row_number"),
         )
@@ -210,7 +223,7 @@ def _recent_market_data_statement(symbols: list[str], limit: int):
         select(MarketData)
         .join(symbol_ranked, MarketData.id == symbol_ranked.c.id)
         .where(symbol_ranked.c.symbol_row_number <= limit)
-        .order_by(MarketData.symbol.asc(), MarketData.timestamp.desc())
+        .order_by(MarketData.symbol.asc(), MarketData.timestamp.desc(), MarketData.id.desc())
     )
 
 
@@ -241,11 +254,12 @@ def _market_data_cache_key(
     symbols: list[str],
     *,
     limit: int | None = None,
+    before: datetime | None = None,
 ) -> MarketDataCacheKey:
     normalized_symbols = tuple(
         dict.fromkeys(symbol.strip().upper() for symbol in symbols if symbol.strip())
     )
-    return (kind, normalized_symbols, limit)
+    return (kind, normalized_symbols, limit, before.isoformat() if before is not None else None)
 
 
 def _market_data_cache_get(

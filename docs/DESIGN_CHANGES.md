@@ -773,3 +773,4 @@ threshold_modifier、propagation_activator、risk_recalc、数据腐烂防护
 - Learning Hypotheses 列表支持时间游标分页：`/api/learning/hypotheses` 新增可选 `before` 参数，保留 `status_filter` 筛选，并按 `created_at desc, id desc` 稳定排序，便于反思假设、shadow testing 和 validated / applied 假设增量读取。
 - Shadow Runs 列表支持时间游标分页：`/api/shadow/runs` 新增可选 `before` 和 `status_filter` 参数，并按 `started_at desc, id desc` 稳定排序；Shadow Run report 的 `shadow_signal_rows` 改为数据库 `count(*)` 聚合，避免大规模 shadow 信号回放后为计数加载全部明细行。
 - Drift Metrics 列表支持时间游标分页：`/api/drift/metrics` 新增可选 `before`、`metric_type`、`category` 和 `drift_severity` 参数，并按 `computed_at desc, id desc` 稳定排序，便于 Drift 监控和校准复盘只读取目标窗口。
+- Market Data recent batch 支持时间游标分页：`/api/market-data/recent` 新增可选 `before` 参数，查询在每个 symbol 内按 `timestamp desc, id desc` 稳定排序，并把短 TTL 缓存键扩展到游标维度，避免不同历史页复用同一缓存结果。
