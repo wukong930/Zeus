@@ -2,9 +2,13 @@ from datetime import datetime, timezone
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
+from sqlalchemy.dialects import postgresql
 
 from app.api.notebook import (
     NotebookSnapshot,
+    _learning_hypotheses_statement,
+    _research_hypotheses_statement,
+    _research_reports_statement,
     entry_from_report,
     load_notebook_snapshot,
     parse_uuid_list,
@@ -71,6 +75,37 @@ async def test_notebook_snapshot_merges_runtime_research_rows() -> None:
     assert session.scalars_count == 4
 
 
+async def test_notebook_snapshot_accepts_cursor() -> None:
+    report = _report(published_at=datetime(2026, 5, 3, tzinfo=timezone.utc))
+    learning = _learning_hypothesis(created_at=datetime(2026, 5, 5, tzinfo=timezone.utc))
+    research = _research_hypothesis(created_at=datetime(2026, 5, 4, tzinfo=timezone.utc))
+    session = FakeSession([[report], [learning], [research], []])
+
+    snapshot = await load_notebook_snapshot(
+        session,  # type: ignore[arg-type]
+        limit=10,
+        before=datetime(2026, 5, 6, tzinfo=timezone.utc),
+    )
+
+    assert len(snapshot.notes) == 3
+    assert session.scalars_count == 4
+
+
+def test_notebook_statements_use_cursor_and_stable_order() -> None:
+    before = datetime(2026, 5, 6, tzinfo=timezone.utc)
+    report_sql = _compile_postgres(_research_reports_statement(before=before, limit=20))
+    learning_sql = _compile_postgres(_learning_hypotheses_statement(before=before, limit=20))
+    research_sql = _compile_postgres(_research_hypotheses_statement(before=before, limit=20))
+
+    assert "research_reports.published_at <" in report_sql
+    assert "ORDER BY research_reports.published_at DESC, research_reports.id DESC" in report_sql
+    assert "learning_hypotheses.updated_at <" in learning_sql
+    assert "ORDER BY learning_hypotheses.updated_at DESC, learning_hypotheses.id DESC" in learning_sql
+    assert "research_hypotheses.created_at <" in research_sql
+    assert "ORDER BY research_hypotheses.created_at DESC, research_hypotheses.id DESC" in research_sql
+    assert "LIMIT" in report_sql
+
+
 def test_parse_uuid_list_ignores_bad_values() -> None:
     valid = uuid4()
 
@@ -106,10 +141,14 @@ def test_string_list_trims_truncates_and_caps_items() -> None:
 
 
 def test_notebook_route_is_registered(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
     async def fake_db():
         yield object()
 
-    async def fake_snapshot(_session, *, limit: int = 100):
+    async def fake_snapshot(_session, *, limit: int = 100, before=None):
+        captured["limit"] = limit
+        captured["before"] = before
         return NotebookSnapshot(
             generated_at=datetime(2026, 5, 7, tzinfo=timezone.utc),
             source="database",
@@ -123,11 +162,24 @@ def test_notebook_route_is_registered(monkeypatch) -> None:
     app.dependency_overrides[get_db] = fake_db
     client = TestClient(app)
 
-    response = client.get("/api/notebook")
+    response = client.get("/api/notebook?limit=7&before=2026-05-06T00:00:00Z")
 
     assert response.status_code == 200
+    assert captured == {
+        "limit": 7,
+        "before": datetime(2026, 5, 6, tzinfo=timezone.utc),
+    }
     assert response.json()["source"] == "database"
     assert response.json()["notes"] == []
+
+
+def test_notebook_route_rejects_invalid_cursor() -> None:
+    app = create_app()
+    client = TestClient(app)
+
+    response = client.get("/api/notebook?before=not-a-date")
+
+    assert response.status_code == 422
 
 
 def _report(*, published_at: datetime | None = None) -> ResearchReport:
@@ -190,3 +242,7 @@ def _alert(*, related_research_id=None) -> Alert:
         manual_check_items=[],
         related_research_id=related_research_id,
     )
+
+
+def _compile_postgres(statement) -> str:
+    return str(statement.compile(dialect=postgresql.dialect()))

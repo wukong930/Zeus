@@ -62,26 +62,32 @@ class NotebookSnapshot(BaseModel):
 
 @router.get("", response_model=NotebookSnapshot)
 async def get_notebook_snapshot(
+    before: datetime | None = Query(default=None),
     limit: int = Query(default=100, ge=1, le=500),
     session: AsyncSession = Depends(get_db),
 ) -> NotebookSnapshot:
-    return await load_notebook_snapshot(session, limit=limit)
+    return await load_notebook_snapshot(session, limit=limit, before=before)
 
 
-async def load_notebook_snapshot(session: AsyncSession, *, limit: int = 100) -> NotebookSnapshot:
+async def load_notebook_snapshot(
+    session: AsyncSession,
+    *,
+    limit: int = 100,
+    before: datetime | None = None,
+) -> NotebookSnapshot:
     report_rows = (
         await session.scalars(
-            select(ResearchReport).order_by(ResearchReport.published_at.desc()).limit(limit)
+            _research_reports_statement(before=before, limit=limit)
         )
     ).all()
     learning_rows = (
         await session.scalars(
-            select(LearningHypothesis).order_by(LearningHypothesis.created_at.desc()).limit(limit)
+            _learning_hypotheses_statement(before=before, limit=limit)
         )
     ).all()
     research_rows = (
         await session.scalars(
-            select(ResearchHypothesis).order_by(ResearchHypothesis.created_at.desc()).limit(limit)
+            _research_hypotheses_statement(before=before, limit=limit)
         )
     ).all()
     report_alerts = await load_report_alerts(session, report_rows)
@@ -116,6 +122,36 @@ async def load_notebook_snapshot(session: AsyncSession, *, limit: int = 100) -> 
         ],
         reference_counts=reference_counts,
     )
+
+
+def _research_reports_statement(*, before: datetime | None, limit: int):
+    statement = select(ResearchReport)
+    if before is not None:
+        statement = statement.where(ResearchReport.published_at < before)
+    return statement.order_by(
+        ResearchReport.published_at.desc(),
+        ResearchReport.id.desc(),
+    ).limit(limit)
+
+
+def _learning_hypotheses_statement(*, before: datetime | None, limit: int):
+    statement = select(LearningHypothesis)
+    if before is not None:
+        statement = statement.where(LearningHypothesis.updated_at < before)
+    return statement.order_by(
+        LearningHypothesis.updated_at.desc(),
+        LearningHypothesis.id.desc(),
+    ).limit(limit)
+
+
+def _research_hypotheses_statement(*, before: datetime | None, limit: int):
+    statement = select(ResearchHypothesis)
+    if before is not None:
+        statement = statement.where(ResearchHypothesis.created_at < before)
+    return statement.order_by(
+        ResearchHypothesis.created_at.desc(),
+        ResearchHypothesis.id.desc(),
+    ).limit(limit)
 
 
 async def load_report_alerts(

@@ -778,3 +778,4 @@ threshold_modifier、propagation_activator、risk_recalc、数据腐烂防护
 - Arbitration Human Decisions 列表支持时间游标分页：`/api/arbitration/decisions` 新增可选 `before`、`signal_track_id` 和 `decision` 参数，保留 `alert_id` 筛选，并按 `created_at desc, id desc` 稳定排序，便于人工决策审计和交易计划复盘增量读取。
 - Strategies 列表支持时间游标分页：`/api/strategies` 新增可选 `before` 参数，保留 `status_filter` 筛选，并按 `created_at desc, id desc` 稳定排序，便于策略实验、回测配置和策略治理记录增量读取。
 - Cost Models 历史快照支持日期游标分页：`/api/cost-models/{symbol}/history` 与 `/api/cost-models/histories` 新增可选 `before` 参数，并按 `snapshot_date desc, created_at desc, id desc` 稳定排序，便于成本模型历史图、成本信号上下文和策略复盘增量读取。
+- Notebook 快照支持时间游标分页：`/api/notebook` 新增可选 `before` 参数，研究报告按 `published_at desc, id desc`、学习假设按 `updated_at desc, id desc`、研究假设按 `created_at desc, id desc` 拉取后合并，保持页面排序语义并支持研究笔记增量读取。
