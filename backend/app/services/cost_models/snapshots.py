@@ -297,6 +297,7 @@ async def cost_histories_for_symbols(
     *,
     symbols: tuple[str, ...],
     limit_per_symbol: int,
+    before: date | None = None,
 ) -> dict[str, list[CostSnapshot]]:
     if not symbols:
         return {}
@@ -305,7 +306,7 @@ async def cost_histories_for_symbols(
     if not normalized_symbols:
         return {}
 
-    ranked_ids = _cost_history_ranked_ids(normalized_symbols)
+    ranked_ids = _cost_history_ranked_ids(normalized_symbols, before=before)
     rows = list(
         (
             await session.scalars(
@@ -316,6 +317,7 @@ async def cost_histories_for_symbols(
                     CostSnapshot.symbol.asc(),
                     CostSnapshot.snapshot_date.desc(),
                     CostSnapshot.created_at.desc(),
+                    CostSnapshot.id.desc(),
                 )
             )
         ).all()
@@ -326,20 +328,26 @@ async def cost_histories_for_symbols(
     return rows_by_symbol
 
 
-def _cost_history_ranked_ids(symbols: tuple[str, ...]):
-    return (
+def _cost_history_ranked_ids(symbols: tuple[str, ...], *, before: date | None = None):
+    statement = (
         select(
             CostSnapshot.id.label("id"),
             func.row_number()
             .over(
                 partition_by=CostSnapshot.symbol,
-                order_by=(CostSnapshot.snapshot_date.desc(), CostSnapshot.created_at.desc()),
+                order_by=(
+                    CostSnapshot.snapshot_date.desc(),
+                    CostSnapshot.created_at.desc(),
+                    CostSnapshot.id.desc(),
+                ),
             )
             .label("rn"),
         )
         .where(CostSnapshot.symbol.in_(symbols))
-        .subquery()
     )
+    if before is not None:
+        statement = statement.where(CostSnapshot.snapshot_date < before)
+    return statement.subquery()
 
 
 async def latest_cost_snapshot(session: AsyncSession, symbol: str) -> CostSnapshot | None:

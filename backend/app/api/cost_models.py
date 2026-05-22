@@ -1,3 +1,5 @@
+from datetime import date
+
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -43,12 +45,14 @@ async def get_rubber_cost_quality_report(session: AsyncSession = Depends(get_db)
 @router.get("/histories", response_model=dict[str, list[CostSnapshotRead]])
 async def get_cost_model_histories(
     symbols: str = Query(..., min_length=1, max_length=MAX_COST_HISTORY_SYMBOL_QUERY_LENGTH),
+    before: date | None = Query(default=None),
     limit: int = Query(default=30, ge=1, le=1000),
     session: AsyncSession = Depends(get_db),
 ) -> dict[str, list[CostSnapshot]]:
     return await cost_histories_for_symbols(
         session,
         symbols=_parse_cost_symbols(symbols),
+        before=before,
         limit_per_symbol=limit,
     )
 
@@ -68,6 +72,7 @@ async def get_cost_model(
 @router.get("/{symbol}/history", response_model=list[CostSnapshotRead])
 async def get_cost_model_history(
     symbol: str = Path(..., min_length=1, max_length=MAX_COST_SIMULATION_SYMBOL_LENGTH),
+    before: date | None = Query(default=None),
     limit: int = Query(default=120, ge=1, le=1000),
     session: AsyncSession = Depends(get_db),
 ) -> list[CostSnapshot]:
@@ -75,16 +80,24 @@ async def get_cost_model_history(
         normalized = normalize_commodity_symbol(symbol)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=f"Unsupported cost model symbol: {symbol}") from exc
-    return list(
-        (
-            await session.scalars(
-                select(CostSnapshot)
-                .where(CostSnapshot.symbol == normalized)
-                .order_by(CostSnapshot.snapshot_date.desc())
-                .limit(limit)
-            )
-        ).all()
-    )
+    statement = _cost_model_history_statement(symbol=normalized, before=before, limit=limit)
+    return list((await session.scalars(statement)).all())
+
+
+def _cost_model_history_statement(
+    *,
+    symbol: str,
+    before: date | None,
+    limit: int,
+):
+    statement = select(CostSnapshot).where(CostSnapshot.symbol == symbol)
+    if before is not None:
+        statement = statement.where(CostSnapshot.snapshot_date < before)
+    return statement.order_by(
+        CostSnapshot.snapshot_date.desc(),
+        CostSnapshot.created_at.desc(),
+        CostSnapshot.id.desc(),
+    ).limit(limit)
 
 
 @router.post("/{symbol}/simulate", response_model=CostModelRead)

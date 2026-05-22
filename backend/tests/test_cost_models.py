@@ -3,7 +3,9 @@ from datetime import date, datetime, timezone
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
+from sqlalchemy.dialects import postgresql
 
+from app.api.cost_models import _cost_model_history_statement
 from app.core.database import get_db
 from app.main import create_app
 from app.models.cost_snapshot import CostSnapshot
@@ -29,6 +31,7 @@ from app.services.cost_models.rubber_sources import (
     rubber_seasonal_factor,
 )
 from app.services.cost_models.snapshots import (
+    _cost_history_ranked_ids,
     build_cost_signal_context,
     cost_histories_for_symbols,
     cost_signal_contexts,
@@ -263,6 +266,22 @@ async def test_cost_histories_for_symbols_uses_single_batch_query() -> None:
     assert session.scalars_count == 1
 
 
+def test_cost_history_ranked_ids_uses_date_cursor_and_stable_order() -> None:
+    sql = _compile_postgres(
+        _cost_history_ranked_ids(
+            ("RB", "HC"),
+            before=date(2026, 5, 3),
+        )
+    )
+
+    assert "cost_snapshots.symbol IN" in sql
+    assert "cost_snapshots.snapshot_date <" in sql
+    assert (
+        "ORDER BY cost_snapshots.snapshot_date DESC, "
+        "cost_snapshots.created_at DESC, cost_snapshots.id DESC"
+    ) in sql
+
+
 async def test_cost_signal_contexts_uses_single_batch_query() -> None:
     rows = [
         cost_snapshot_row("RB", date(2026, 5, 4)),
@@ -337,17 +356,18 @@ def test_build_cost_signal_context_serializes_snapshot_history() -> None:
     assert len(context["cost_snapshots"]) == 2
 
 
-def test_cost_histories_api_batches_requested_symbols(monkeypatch) -> None:
+def test_cost_histories_api_batches_requested_symbols_and_cursor(monkeypatch) -> None:
     captured: dict[str, object] = {}
     session = object()
 
     async def fake_db():
         yield session
 
-    async def fake_cost_histories_for_symbols(db_session, *, symbols, limit_per_symbol):
+    async def fake_cost_histories_for_symbols(db_session, *, symbols, limit_per_symbol, before=None):
         captured["session"] = db_session
         captured["symbols"] = symbols
         captured["limit"] = limit_per_symbol
+        captured["before"] = before
         return {
             "RB": [cost_snapshot_row("RB", date(2026, 5, 4))],
             "HC": [cost_snapshot_row("HC", date(2026, 5, 4))],
@@ -361,11 +381,52 @@ def test_cost_histories_api_batches_requested_symbols(monkeypatch) -> None:
     app.dependency_overrides[get_db] = fake_db
     client = TestClient(app)
 
-    response = client.get("/api/cost-models/histories?symbols=rb,hc,rb&limit=3")
+    response = client.get("/api/cost-models/histories?symbols=rb,hc,rb&limit=3&before=2026-05-03")
 
     assert response.status_code == 200
-    assert captured == {"session": session, "symbols": ("RB", "HC"), "limit": 3}
+    assert captured == {
+        "session": session,
+        "symbols": ("RB", "HC"),
+        "limit": 3,
+        "before": date(2026, 5, 3),
+    }
     assert set(response.json()) == {"RB", "HC"}
+
+
+def test_cost_histories_api_rejects_invalid_cursor() -> None:
+    app = create_app()
+    client = TestClient(app)
+
+    response = client.get("/api/cost-models/histories?symbols=RB&before=not-a-date")
+
+    assert response.status_code == 422
+
+
+def test_cost_model_history_api_rejects_invalid_cursor() -> None:
+    app = create_app()
+    client = TestClient(app)
+
+    response = client.get("/api/cost-models/RB/history?before=not-a-date")
+
+    assert response.status_code == 422
+
+
+def test_cost_model_history_statement_uses_date_cursor_and_stable_order() -> None:
+    sql = _compile_postgres(
+        _cost_model_history_statement(
+            symbol="RB",
+            before=date(2026, 5, 3),
+            limit=20,
+        )
+    )
+
+    assert "cost_snapshots.symbol =" in sql
+    assert "cost_snapshots.snapshot_date <" in sql
+    assert (
+        "ORDER BY cost_snapshots.snapshot_date DESC, "
+        "cost_snapshots.created_at DESC, cost_snapshots.id DESC"
+    ) in sql
+    assert "LIMIT" in sql
 
 
 def test_parse_cost_symbols_rejects_empty_after_normalization() -> None:
@@ -463,6 +524,10 @@ def trigger_result(signal_type: str) -> TriggerResult:
         title=signal_type,
         summary=signal_type,
     )
+
+
+def _compile_postgres(statement) -> str:
+    return str(statement.compile(dialect=postgresql.dialect()))
 
 
 async def test_rubber_cost_context_triggers_profit_margin_signals() -> None:
