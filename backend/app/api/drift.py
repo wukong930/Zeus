@@ -12,6 +12,9 @@ from app.models.drift_metrics import DriftMetric
 
 router = APIRouter(prefix="/api/drift", tags=["drift"])
 
+DRIFT_SEVERITY_PATTERN = "^(green|yellow|red)$"
+MAX_DRIFT_FILTER_LENGTH = 40
+
 
 class DriftMetricRead(BaseModel):
     id: UUID
@@ -48,12 +51,45 @@ class DriftSnapshotRead(BaseModel):
 
 @router.get("/metrics", response_model=DriftSnapshotRead)
 async def list_drift_metrics(
+    metric_type: str | None = Query(default=None, min_length=1, max_length=MAX_DRIFT_FILTER_LENGTH),
+    category: str | None = Query(default=None, min_length=1, max_length=MAX_DRIFT_FILTER_LENGTH),
+    drift_severity: str | None = Query(default=None, pattern=DRIFT_SEVERITY_PATTERN),
+    before: datetime | None = Query(default=None),
     limit: int = Query(default=100, ge=1, le=500),
     session: AsyncSession = Depends(get_db),
 ) -> DriftSnapshotRead:
-    statement = select(DriftMetric).order_by(DriftMetric.computed_at.desc()).limit(limit)
+    statement = _drift_metrics_statement(
+        metric_type=metric_type,
+        category=category,
+        drift_severity=drift_severity,
+        before=before,
+        limit=limit,
+    )
     rows = list((await session.scalars(statement)).all())
     return build_drift_snapshot(rows)
+
+
+def _drift_metrics_statement(
+    *,
+    metric_type: str | None,
+    category: str | None,
+    drift_severity: str | None,
+    before: datetime | None,
+    limit: int,
+):
+    statement = select(DriftMetric).order_by(
+        DriftMetric.computed_at.desc(),
+        DriftMetric.id.desc(),
+    )
+    if metric_type is not None:
+        statement = statement.where(DriftMetric.metric_type == metric_type)
+    if category is not None:
+        statement = statement.where(DriftMetric.category == category)
+    if drift_severity is not None:
+        statement = statement.where(DriftMetric.drift_severity == drift_severity)
+    if before is not None:
+        statement = statement.where(DriftMetric.computed_at < before)
+    return statement.limit(limit)
 
 
 def build_drift_snapshot(rows: list[DriftMetric]) -> DriftSnapshotRead:
