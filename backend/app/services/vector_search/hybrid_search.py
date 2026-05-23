@@ -82,7 +82,37 @@ async def hybrid_search(
         cosine_expr = "0"
         ordering_hint = ""
 
-    statement = text(
+    statement = _hybrid_search_statement(
+        filters=filters,
+        cosine_expr=cosine_expr,
+        ordering_hint=ordering_hint,
+    )
+    rows = (await session.execute(statement, params)).mappings().all()
+    return [
+        VectorSearchResult(
+            id=row["id"],
+            chunk_type=row["chunk_type"],
+            source_id=row["source_id"],
+            content_text=row["content_text"],
+            metadata=dict(row["metadata"] or {}),
+            quality_status=row["quality_status"],
+            final_score=float(row["final_score"] or 0),
+            cosine_score=float(row["cosine_score"] or 0),
+            text_score=float(row["text_score"] or 0),
+            time_decay=float(row["time_decay"] or 0),
+            created_at=row["created_at"],
+        )
+        for row in rows
+    ]
+
+
+def _hybrid_search_statement(
+    *,
+    filters: list[str],
+    cosine_expr: str,
+    ordering_hint: str,
+):
+    return text(
         f"""
         WITH scored AS (
             SELECT
@@ -104,7 +134,7 @@ async def hybrid_search(
                 ) AS time_decay
             FROM vector_chunks
             WHERE {" AND ".join(filters)}
-            ORDER BY {ordering_hint} created_at DESC
+            ORDER BY {ordering_hint} created_at DESC, id DESC
             LIMIT :limit
         )
         SELECT
@@ -116,24 +146,7 @@ async def hybrid_search(
                 ELSE 0.5
               END AS final_score
         FROM scored
-        ORDER BY final_score DESC, created_at DESC
+        ORDER BY final_score DESC, created_at DESC, id DESC
         LIMIT :limit
         """
     )
-    rows = (await session.execute(statement, params)).mappings().all()
-    return [
-        VectorSearchResult(
-            id=row["id"],
-            chunk_type=row["chunk_type"],
-            source_id=row["source_id"],
-            content_text=row["content_text"],
-            metadata=dict(row["metadata"] or {}),
-            quality_status=row["quality_status"],
-            final_score=float(row["final_score"] or 0),
-            cosine_score=float(row["cosine_score"] or 0),
-            text_score=float(row["text_score"] or 0),
-            time_decay=float(row["time_decay"] or 0),
-            created_at=row["created_at"],
-        )
-        for row in rows
-    ]

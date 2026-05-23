@@ -34,7 +34,11 @@ from app.services.vector_search.eval import (
     evaluate_single_case,
 )
 from app.services.vector_search.eval_seed import _seed_chunks_statement, seed_vector_eval_cases
-from app.services.vector_search.hybrid_search import VectorSearchResult, quality_weight
+from app.services.vector_search.hybrid_search import (
+    VectorSearchResult,
+    _hybrid_search_statement,
+    quality_weight,
+)
 
 
 def test_learning_api_bounds_query_text_fields() -> None:
@@ -359,6 +363,35 @@ def test_vector_eval_metrics_and_quality_weights_are_active() -> None:
     assert quality_weight("unverified") == 0.5
     assert quality_weight("human_reviewed") == 1.0
     assert quality_weight("validated") == 1.2
+
+
+def test_hybrid_search_statement_uses_stable_tie_breakers() -> None:
+    sql = str(
+        _hybrid_search_statement(
+            filters=["1 = 1"],
+            cosine_expr="0",
+            ordering_hint="",
+        )
+    )
+
+    assert "ORDER BY  created_at DESC, id DESC" in sql
+    assert "ORDER BY final_score DESC, created_at DESC, id DESC" in sql
+
+
+def test_hybrid_search_embedding_statement_keeps_ann_order_before_tie_breakers() -> None:
+    sql = str(
+        _hybrid_search_statement(
+            filters=["1 = 1"],
+            cosine_expr="COALESCE(1 - (embedding <=> CAST(:query_embedding AS vector)), 0)",
+            ordering_hint="embedding <=> CAST(:query_embedding AS vector),",
+        )
+    )
+
+    assert (
+        "ORDER BY embedding <=> CAST(:query_embedding AS vector), created_at DESC, id DESC"
+        in sql
+    )
+    assert "ORDER BY final_score DESC, created_at DESC, id DESC" in sql
 
 
 async def test_vector_eval_seed_creates_fifty_query_pairs() -> None:
