@@ -44,34 +44,14 @@ async def backfill_translations(
     news_rows = list(
         (
             await session.scalars(
-                select(NewsEvent)
-                .where(
-                    or_(
-                        NewsEvent.title_zh.is_(None),
-                        NewsEvent.summary_zh.is_(None),
-                        NewsEvent.translation_status.in_(("pending", "failed")),
-                        NewsEvent.translation_glossary_version != GLOSSARY_VERSION,
-                    )
-                )
-                .order_by(NewsEvent.published_at.desc())
-                .limit(active_limit)
+                _news_translation_backfill_statement(active_limit)
             )
         ).all()
     )
     alert_rows = list(
         (
             await session.scalars(
-                select(Alert)
-                .where(
-                    or_(
-                        Alert.title_zh.is_(None),
-                        Alert.summary_zh.is_(None),
-                        Alert.translation_status.in_(("pending", "failed")),
-                        Alert.translation_glossary_version != GLOSSARY_VERSION,
-                    )
-                )
-                .order_by(Alert.triggered_at.desc())
-                .limit(active_limit)
+                _alert_translation_backfill_statement(active_limit)
             )
         ).all()
     )
@@ -119,3 +99,31 @@ def _apply_translation(row: NewsEvent | Alert, fields: dict[str, Any]) -> None:
     row.translation_prompt_version = fields.get("translation_prompt_version")
     row.translation_glossary_version = fields.get("translation_glossary_version")
     row.translated_at = fields.get("translated_at")
+
+
+def _translation_backfill_filter(model: type[NewsEvent] | type[Alert]):
+    return or_(
+        model.title_zh.is_(None),
+        model.summary_zh.is_(None),
+        model.translation_status.in_(("pending", "failed")),
+        model.translation_glossary_version.is_(None),
+        model.translation_glossary_version != GLOSSARY_VERSION,
+    )
+
+
+def _news_translation_backfill_statement(limit: int):
+    return (
+        select(NewsEvent)
+        .where(_translation_backfill_filter(NewsEvent))
+        .order_by(NewsEvent.published_at.desc(), NewsEvent.id.desc())
+        .limit(limit)
+    )
+
+
+def _alert_translation_backfill_statement(limit: int):
+    return (
+        select(Alert)
+        .where(_translation_backfill_filter(Alert))
+        .order_by(Alert.triggered_at.desc(), Alert.id.desc())
+        .limit(limit)
+    )

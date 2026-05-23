@@ -798,3 +798,4 @@ threshold_modifier、propagation_activator、risk_recalc、数据腐烂防护
 - Review Load Cleanup 查询稳定化：过期预警、过期交易计划、事件智能待分流复核队列和影响链读取抽为可测试 statement，分别追加 `id` / `confidence` 兜底排序；补充 `alerts(status, expires_at, id)`、`recommendations(status, expires_at, id)` 和 `change_review_queue(source, target_table, status, created_at, id)` 索引，保证后台清理和分流顺序可复现。
 - PIT 数据查询稳定化：Market Data / Industry Data PIT 的窗口函数在 `vintage_at desc` 后追加 `id desc`，Market Data PIT 输出按 `timestamp desc, contract_month asc, id desc` 稳定排序；补充 `market_data(symbol, contract_month, timestamp, vintage_at, id)` 与 `industry_data(symbol, data_type, timestamp, vintage_at, id)` 索引，保证回测、场景和风险复盘读取同一 vintage 数据时可复现。
 - Risk Market Data 查询稳定化：风险市场数据读取复用 PIT 语义，并在 PIT 窗口、symbol 限额窗口和最终输出排序中追加 `id desc` 兜底，保证风险矩阵和持仓风险在同时间同 vintage 行情下可复现。
+- Translation Backfill 查询稳定化：新闻和预警翻译回填查询抽为可测试 statement，按业务时间后追加 `id desc` 兜底，并把 `translation_glossary_version is null` 纳入回填条件，保证旧数据 glossary 升级不会漏扫。
