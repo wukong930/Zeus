@@ -41,7 +41,7 @@ def _risk_market_data_statement(*, requested_symbols: tuple[str, ...], limit: in
                     MarketData.contract_month,
                     MarketData.timestamp,
                 ),
-                order_by=MarketData.vintage_at.desc(),
+                order_by=(MarketData.vintage_at.desc(), MarketData.id.desc()),
             )
             .label("pit_rn"),
         )
@@ -59,6 +59,7 @@ def _risk_market_data_statement(*, requested_symbols: tuple[str, ...], limit: in
                     MarketData.timestamp.desc(),
                     MarketData.contract_month.asc(),
                     MarketData.vintage_at.desc(),
+                    MarketData.id.desc(),
                 ),
             )
             .label("symbol_rn"),
@@ -71,7 +72,12 @@ def _risk_market_data_statement(*, requested_symbols: tuple[str, ...], limit: in
         select(MarketData)
         .join(symbol_ranked, MarketData.id == symbol_ranked.c.id)
         .where(symbol_ranked.c.symbol_rn <= limit)
-        .order_by(MarketData.symbol.asc(), MarketData.timestamp.desc(), MarketData.contract_month.asc())
+        .order_by(
+            MarketData.symbol.asc(),
+            MarketData.timestamp.desc(),
+            MarketData.contract_month.asc(),
+            MarketData.id.desc(),
+        )
     )
 
 

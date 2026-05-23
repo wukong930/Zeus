@@ -99,13 +99,22 @@ async def test_load_risk_market_data_batches_symbols_and_preserves_empty_keys() 
 def test_risk_market_data_statement_limits_rows_per_symbol() -> None:
     compiled = str(
         _risk_market_data_statement(requested_symbols=("RB2506", "HC2506"), limit=60).compile(
-            compile_kwargs={"literal_binds": True}
+            dialect=postgresql.dialect(),
+            compile_kwargs={"literal_binds": True},
         )
     )
 
     assert "row_number() OVER" in compiled
     assert "PARTITION BY market_data.symbol, market_data.contract_month, market_data.timestamp" in compiled
-    assert "PARTITION BY market_data.symbol ORDER BY market_data.timestamp DESC" in compiled
+    assert "ORDER BY market_data.vintage_at DESC, market_data.id DESC" in compiled
+    assert (
+        "PARTITION BY market_data.symbol ORDER BY market_data.timestamp DESC, "
+        "market_data.contract_month ASC, market_data.vintage_at DESC, market_data.id DESC"
+    ) in compiled
+    assert (
+        "ORDER BY market_data.symbol ASC, market_data.timestamp DESC, "
+        "market_data.contract_month ASC, market_data.id DESC"
+    ) in compiled
     assert "symbol_rn <= 60" in compiled
 
 
