@@ -99,12 +99,10 @@ async def generate_calibration_reviews(
     since = effective_as_of - timedelta(days=lookback_days)
     rows = (
         await session.scalars(
-            select(SignalTrack)
-            .where(
-                SignalTrack.created_at >= since,
-                SignalTrack.outcome.in_(RESOLVED_OUTCOMES),
+            _review_source_tracks_statement(
+                since=since,
+                as_of=effective_as_of,
             )
-            .order_by(SignalTrack.created_at.asc())
         )
     ).all()
 
@@ -150,6 +148,18 @@ async def generate_calibration_reviews(
         queued += 1
 
     return CalibrationReviewResult(groups=len(groups), queued=queued, skipped=skipped)
+
+
+def _review_source_tracks_statement(*, since: datetime, as_of: datetime):
+    return (
+        select(SignalTrack)
+        .where(
+            SignalTrack.created_at >= since,
+            SignalTrack.created_at <= as_of,
+            SignalTrack.outcome.in_(RESOLVED_OUTCOMES),
+        )
+        .order_by(SignalTrack.created_at.asc(), SignalTrack.id.asc())
+    )
 
 
 async def get_active_calibration(

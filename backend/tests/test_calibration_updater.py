@@ -1,9 +1,15 @@
 from datetime import datetime, timedelta, timezone
 
+from sqlalchemy.dialects import postgresql
+
 from app.models.change_review_queue import ChangeReviewQueue
 from app.models.signal import SignalTrack
 from app.services.calibration.decay_detector import detect_decay
-from app.services.calibration.updater import build_calibration_proposal, generate_calibration_reviews
+from app.services.calibration.updater import (
+    _review_source_tracks_statement,
+    build_calibration_proposal,
+    generate_calibration_reviews,
+)
 
 
 class FakeScalars:
@@ -98,6 +104,21 @@ def test_build_calibration_proposal_uses_bayesian_weight_and_decay() -> None:
     assert proposal.target_key == "momentum:energy:range_low_vol"
 
 
+def test_review_source_tracks_statement_is_point_in_time_and_stable() -> None:
+    now = datetime(2026, 5, 3, tzinfo=timezone.utc)
+    sql = _compile_postgres(
+        _review_source_tracks_statement(
+            since=now - timedelta(days=90),
+            as_of=now,
+        )
+    )
+
+    assert "signal_track.created_at >=" in sql
+    assert "signal_track.created_at <=" in sql
+    assert "signal_track.outcome IN" in sql
+    assert "ORDER BY signal_track.created_at ASC, signal_track.id ASC" in sql
+
+
 async def test_generate_calibration_reviews_queues_grouped_proposals() -> None:
     now = datetime(2026, 5, 3, tzinfo=timezone.utc)
     rows = [
@@ -119,3 +140,7 @@ async def test_generate_calibration_reviews_queues_grouped_proposals() -> None:
     assert result.queued == 1
     assert isinstance(session.added[0], ChangeReviewQueue)
     assert session.added[0].target_key == "momentum:energy:range_low_vol"
+
+
+def _compile_postgres(statement) -> str:
+    return str(statement.compile(dialect=postgresql.dialect()))
