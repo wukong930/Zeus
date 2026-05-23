@@ -966,7 +966,7 @@ def _world_map_alerts_statement(*, limit: int, filters: WorldMapFilterScope | No
     statement = (
         select(Alert)
         .where(Alert.status != "suppressed")
-        .order_by(Alert.triggered_at.desc())
+        .order_by(Alert.triggered_at.desc(), Alert.id.desc())
         .limit(limit)
     )
     if filters is not None and filters.symbol is not None:
@@ -983,7 +983,7 @@ def _world_map_alerts_statement(*, limit: int, filters: WorldMapFilterScope | No
 
 
 def _world_map_news_statement(*, limit: int, filters: WorldMapFilterScope | None):
-    statement = select(NewsEvent).order_by(NewsEvent.published_at.desc()).limit(limit)
+    statement = select(NewsEvent).order_by(NewsEvent.published_at.desc(), NewsEvent.id.desc()).limit(limit)
     if filters is not None and filters.symbol is not None:
         statement = statement.where(NewsEvent.affected_symbols.contains([filters.symbol]))
     return statement
@@ -993,7 +993,7 @@ def _world_map_signals_statement(*, limit: int, alert_ids: list[UUID]):
     return (
         select(SignalTrack)
         .where(SignalTrack.alert_id.in_(alert_ids))
-        .order_by(SignalTrack.created_at.desc())
+        .order_by(SignalTrack.created_at.desc(), SignalTrack.id.desc())
         .limit(limit)
     )
 
@@ -1002,7 +1002,7 @@ def _world_map_positions_statement(*, limit: int):
     return (
         select(Position)
         .where(Position.status.in_(["open", "position_aware"]))
-        .order_by(Position.opened_at.desc())
+        .order_by(Position.opened_at.desc(), Position.id.desc())
         .limit(limit)
     )
 
@@ -1011,7 +1011,11 @@ def _world_map_event_items_statement(*, limit: int, filters: WorldMapFilterScope
     statement = (
         select(EventIntelligenceItem)
         .where(EventIntelligenceItem.status != "rejected")
-        .order_by(EventIntelligenceItem.event_timestamp.desc(), EventIntelligenceItem.created_at.desc())
+        .order_by(
+            EventIntelligenceItem.event_timestamp.desc(),
+            EventIntelligenceItem.created_at.desc(),
+            EventIntelligenceItem.id.desc(),
+        )
         .limit(min(max(limit * 4, 100), 1000))
     )
     if filters is not None and filters.symbol is not None:
@@ -1031,7 +1035,11 @@ def _world_map_event_links_statement(
             EventImpactLink.event_item_id.in_(event_item_ids),
             EventImpactLink.status != "rejected",
         )
-        .order_by(EventImpactLink.impact_score.desc(), EventImpactLink.confidence.desc())
+        .order_by(
+            EventImpactLink.impact_score.desc(),
+            EventImpactLink.confidence.desc(),
+            EventImpactLink.id.desc(),
+        )
         .limit(min(max(limit * 2, 100), 1000))
     )
     if filters is not None:

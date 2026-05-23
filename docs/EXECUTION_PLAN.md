@@ -1148,6 +1148,7 @@ Causa 的 `event_driven` 评估器实际上是纯技术面（gap + volume），*
   - [x] Phase 10.60.47：Shadow Comparison 的 shadow / production 信号读取抽为可测试 statement，并统一按 `created_at asc, id asc` 稳定排序，避免同时间样本导致 shadow-only / production-only 示例顺序漂移。
   - [x] Phase 10.60.48：Vector Eval / Seed 查询抽为可测试 statement，并按 `created_at asc, id asc` 稳定排序；补充 `vector_eval_set(status, created_at, id)` 和 `vector_chunks(quality_status, created_at, id)` 复合索引，避免评估集与 seed 样本在数据量扩大后顺序漂移或扫描退化。
   - [x] Phase 10.60.49：Hybrid Search SQL 生成抽为可测试 helper，内层候选截断和最终排序都增加 `id desc` 兜底，避免同分同时间向量检索结果顺序漂移影响新闻去重和 embedding shadow gate。
+  - [x] Phase 10.60.50：Causal Web / World Map 运行态查询统一补充 `id desc` 兜底排序，覆盖 news、signals、alerts、industry metrics、market latest、event intelligence items / links、positions，避免同时间数据刷新导致大画布节点、区域和证据链顺序漂移。
 - [ ] 后端慢查询、索引、分页和缓存继续复查。
 - [x] 调度任务真实 handler 覆盖率继续复查，避免 enabled 但实际 noop。
 - [x] 全量回归测试、浏览器验证和部署 smoke 流程固化。

@@ -1118,14 +1118,14 @@ def _causal_scope_symbols(
 
 
 def _recent_news_statement(*, limit: int, symbols: list[str]):
-    statement = select(NewsEvent).order_by(NewsEvent.published_at.desc()).limit(limit)
+    statement = select(NewsEvent).order_by(NewsEvent.published_at.desc(), NewsEvent.id.desc()).limit(limit)
     if symbols:
         statement = statement.where(or_(*(NewsEvent.affected_symbols.contains([symbol]) for symbol in symbols)))
     return statement
 
 
 def _recent_signals_statement(*, limit: int, category: str | None):
-    statement = select(SignalTrack).order_by(SignalTrack.created_at.desc()).limit(limit)
+    statement = select(SignalTrack).order_by(SignalTrack.created_at.desc(), SignalTrack.id.desc()).limit(limit)
     if category:
         statement = statement.where(SignalTrack.category == category)
     return statement
@@ -1135,7 +1135,7 @@ def _recent_alerts_statement(*, limit: int, symbols: list[str]):
     statement = (
         select(Alert)
         .where(Alert.status != "suppressed")
-        .order_by(Alert.triggered_at.desc())
+        .order_by(Alert.triggered_at.desc(), Alert.id.desc())
         .limit(limit)
     )
     if symbols:
@@ -1144,7 +1144,11 @@ def _recent_alerts_statement(*, limit: int, symbols: list[str]):
 
 
 def _recent_industry_metrics_statement(*, limit: int, symbols: list[str]):
-    statement = select(IndustryData).order_by(IndustryData.ingested_at.desc()).limit(limit)
+    statement = (
+        select(IndustryData)
+        .order_by(IndustryData.ingested_at.desc(), IndustryData.id.desc())
+        .limit(limit)
+    )
     if symbols:
         statement = statement.where(IndustryData.symbol.in_(symbols))
     return statement
@@ -1162,6 +1166,7 @@ def _latest_market_metrics_statement(*, limit: int, symbols: list[str] | None = 
                     MarketData.ingested_at.desc(),
                     MarketData.timestamp.desc(),
                     MarketData.vintage_at.desc(),
+                    MarketData.id.desc(),
                 ),
             )
             .label("rn"),
@@ -1176,7 +1181,7 @@ def _latest_market_metrics_statement(*, limit: int, symbols: list[str] | None = 
         select(MarketData)
         .join(ranked_subquery, MarketData.id == ranked_subquery.c.id)
         .where(ranked_subquery.c.rn == 1)
-        .order_by(MarketData.ingested_at.desc(), MarketData.timestamp.desc())
+        .order_by(MarketData.ingested_at.desc(), MarketData.timestamp.desc(), MarketData.id.desc())
         .limit(limit)
     )
 
@@ -1190,7 +1195,11 @@ def _event_intelligence_statement(
     statement = (
         select(EventIntelligenceItem)
         .where(EventIntelligenceItem.status != "rejected")
-        .order_by(EventIntelligenceItem.event_timestamp.desc(), EventIntelligenceItem.created_at.desc())
+        .order_by(
+            EventIntelligenceItem.event_timestamp.desc(),
+            EventIntelligenceItem.created_at.desc(),
+            EventIntelligenceItem.id.desc(),
+        )
         .limit(limit)
     )
     if symbol:
@@ -1213,7 +1222,11 @@ def _event_intelligence_link_statement(
             EventImpactLink.event_item_id.in_(event_item_ids),
             EventImpactLink.status != "rejected",
         )
-        .order_by(EventImpactLink.impact_score.desc(), EventImpactLink.confidence.desc())
+        .order_by(
+            EventImpactLink.impact_score.desc(),
+            EventImpactLink.confidence.desc(),
+            EventImpactLink.id.desc(),
+        )
         .limit(limit)
     )
     if symbol:

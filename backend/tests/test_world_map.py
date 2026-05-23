@@ -18,6 +18,7 @@ from app.api.world_map import (
     _world_map_event_items_statement,
     _world_map_event_links_statement,
     _world_map_news_statement,
+    _world_map_positions_statement,
     _world_map_should_load_source,
     _world_map_signals_statement,
 )
@@ -53,6 +54,7 @@ def test_world_map_scoped_statements_push_filters_to_database() -> None:
     alert_sql = _compile_postgres(_world_map_alerts_statement(limit=20, filters=filters))
     news_sql = _compile_postgres(_world_map_news_statement(limit=20, filters=filters))
     signal_sql = _compile_postgres(_world_map_signals_statement(limit=20, alert_ids=[uuid4()]))
+    position_sql = _compile_postgres(_world_map_positions_statement(limit=20))
     event_item_sql = _compile_postgres(_world_map_event_items_statement(limit=20, filters=filters))
     event_link_sql = _compile_postgres(
         _world_map_event_links_statement(event_item_ids=[uuid4()], limit=20, filters=filters)
@@ -61,9 +63,34 @@ def test_world_map_scoped_statements_push_filters_to_database() -> None:
     assert "alerts.related_assets" in alert_sql
     assert "news_events.affected_symbols" in news_sql
     assert "signal_track.alert_id IN" in signal_sql
+    assert "positions.status IN" in position_sql
     assert "event_intelligence_items.symbols" in event_item_sql
     assert "event_impact_links.symbol =" in event_link_sql
     assert "event_impact_links.mechanism =" in event_link_sql
+
+
+def test_world_map_runtime_statements_use_stable_tie_breakers() -> None:
+    alert_sql = _compile_postgres(_world_map_alerts_statement(limit=20, filters=None))
+    news_sql = _compile_postgres(_world_map_news_statement(limit=20, filters=None))
+    signal_sql = _compile_postgres(_world_map_signals_statement(limit=20, alert_ids=[uuid4()]))
+    position_sql = _compile_postgres(_world_map_positions_statement(limit=20))
+    event_item_sql = _compile_postgres(_world_map_event_items_statement(limit=20, filters=None))
+    event_link_sql = _compile_postgres(
+        _world_map_event_links_statement(event_item_ids=[uuid4()], limit=20, filters=None)
+    )
+
+    assert "ORDER BY alerts.triggered_at DESC, alerts.id DESC" in alert_sql
+    assert "ORDER BY news_events.published_at DESC, news_events.id DESC" in news_sql
+    assert "ORDER BY signal_track.created_at DESC, signal_track.id DESC" in signal_sql
+    assert "ORDER BY positions.opened_at DESC, positions.id DESC" in position_sql
+    assert (
+        "ORDER BY event_intelligence_items.event_timestamp DESC, "
+        "event_intelligence_items.created_at DESC, event_intelligence_items.id DESC"
+    ) in event_item_sql
+    assert (
+        "ORDER BY event_impact_links.impact_score DESC, "
+        "event_impact_links.confidence DESC, event_impact_links.id DESC"
+    ) in event_link_sql
 
 
 def test_world_map_source_filter_skips_unneeded_runtime_sources() -> None:

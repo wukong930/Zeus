@@ -17,6 +17,8 @@ from app.api.causal_web import (
     _causal_scope_symbols,
     _clear_causal_web_cache,
     _counter_seeds_from_alert,
+    _event_intelligence_link_statement,
+    _event_intelligence_statement,
     _latest_market_metrics_statement,
     _layout_nodes,
     _merge_pinned_event_intelligence,
@@ -694,12 +696,58 @@ def test_causal_web_scoped_statements_push_symbol_filters_to_database() -> None:
     alert_sql = _compile_postgres(_recent_alerts_statement(limit=8, symbols=["SC"]))
     industry_sql = _compile_postgres(_recent_industry_metrics_statement(limit=8, symbols=["SC"]))
     market_sql = _compile_postgres(_latest_market_metrics_statement(limit=8, symbols=["SC"]))
+    event_item_sql = _compile_postgres(
+        _event_intelligence_statement(limit=8, symbol="SC", region="middle_east_oil")
+    )
+    event_link_sql = _compile_postgres(
+        _event_intelligence_link_statement(
+            event_item_ids=[uuid4()],
+            limit=8,
+            symbol="SC",
+            region="middle_east_oil",
+        )
+    )
 
     assert "news_events.affected_symbols" in news_sql
     assert "signal_track.category" in signal_sql
     assert "alerts.related_assets" in alert_sql
     assert "industry_data.symbol IN" in industry_sql
     assert "market_data.symbol IN" in market_sql
+    assert "event_intelligence_items.symbols" in event_item_sql
+    assert "event_impact_links.symbol =" in event_link_sql
+
+
+def test_causal_web_runtime_statements_use_stable_tie_breakers() -> None:
+    news_sql = _compile_postgres(_recent_news_statement(limit=8, symbols=[]))
+    signal_sql = _compile_postgres(_recent_signals_statement(limit=8, category=None))
+    alert_sql = _compile_postgres(_recent_alerts_statement(limit=8, symbols=[]))
+    industry_sql = _compile_postgres(_recent_industry_metrics_statement(limit=8, symbols=[]))
+    market_sql = _compile_postgres(_latest_market_metrics_statement(limit=8, symbols=[]))
+    event_item_sql = _compile_postgres(
+        _event_intelligence_statement(limit=8, symbol=None, region=None)
+    )
+    event_link_sql = _compile_postgres(
+        _event_intelligence_link_statement(
+            event_item_ids=[uuid4()],
+            limit=8,
+            symbol=None,
+            region=None,
+        )
+    )
+
+    assert "ORDER BY news_events.published_at DESC, news_events.id DESC" in news_sql
+    assert "ORDER BY signal_track.created_at DESC, signal_track.id DESC" in signal_sql
+    assert "ORDER BY alerts.triggered_at DESC, alerts.id DESC" in alert_sql
+    assert "ORDER BY industry_data.ingested_at DESC, industry_data.id DESC" in industry_sql
+    assert "market_data.id DESC" in market_sql
+    assert (
+        "ORDER BY event_intelligence_items.event_timestamp DESC, "
+        "event_intelligence_items.created_at DESC, event_intelligence_items.id DESC"
+    ) in event_item_sql
+    assert (
+        "ORDER BY event_impact_links.impact_score DESC, "
+        "event_impact_links.confidence DESC, event_impact_links.id DESC"
+    ) in event_link_sql
 
 
 def test_causal_scope_symbols_merges_query_and_pinned_event_symbols() -> None:
