@@ -1,6 +1,8 @@
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
+from sqlalchemy.dialects import postgresql
+
 from app.core.events import ZeusEvent
 from app.models.alert import Alert
 from app.models.recommendation import Recommendation
@@ -13,6 +15,7 @@ from app.services.pipeline.handlers import (
     handle_news_event,
     handle_signal_detected,
     handle_signal_scored,
+    _open_trade_plans_statement,
     merge_trade_plan_evidence,
     open_trade_plan_for_context_signal,
     recommended_action,
@@ -69,6 +72,17 @@ class FakeOpenPlanSession:
 
     async def scalars(self, _):
         return FakeRows(self.rows)
+
+
+def test_open_trade_plans_statement_uses_stable_tie_breakers() -> None:
+    sql = _compile_postgres(
+        _open_trade_plans_statement(as_of=datetime(2026, 5, 18, tzinfo=timezone.utc))
+    )
+
+    assert "recommendations.status IN" in sql
+    assert "recommendations.expires_at >" in sql
+    assert "ORDER BY recommendations.created_at DESC, recommendations.id DESC" in sql
+    assert "LIMIT" in sql
 
 
 def _market_update_event() -> ZeusEvent:
@@ -1178,3 +1192,7 @@ async def test_signal_scored_handler_does_not_create_trade_plan_for_watchlist_si
     assert next((row for row in session.rows if isinstance(row, Recommendation)), None) is None
     assert all(call["event"].channel != "recommendation.created" for call in publisher.calls)
     assert created.payload["recommendation_id"] is None
+
+
+def _compile_postgres(statement) -> str:
+    return str(statement.compile(dialect=postgresql.dialect()))

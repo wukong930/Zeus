@@ -10,11 +10,13 @@ from app.services.trade_plans.activation import (
     ALERT_RESULT_CHANNELS,
     TradePlanActivationResult,
     actionable_scored_events_statement,
+    alert_result_event_statement,
     alert_id_from_event,
     existing_recommendation_for_alert,
     live_trade_plan_scored_events,
     merge_open_trade_plan_duplicates,
     parse_payload_datetime,
+    recommendation_for_alert_statement,
     scored_event_effective_at,
 )
 
@@ -129,8 +131,27 @@ def test_actionable_scored_events_statement_limits_scan_to_trade_plan_window() -
     assert "event_log.channel = " in compiled
     assert "event_log.status = " in compiled
     assert "event_log.created_at >= " in compiled
-    assert "ORDER BY event_log.created_at DESC" in compiled
+    assert "ORDER BY event_log.created_at DESC, event_log.id DESC" in compiled
     assert "LIMIT " in compiled
+
+
+def test_trade_plan_lookup_statements_use_stable_tie_breakers() -> None:
+    alert_sql = _compile_postgres(
+        alert_result_event_statement(
+            correlation_id="corr-1",
+            signal_type="spread_anomaly",
+            symbol="RB",
+        )
+    )
+    recommendation_sql = _compile_postgres(recommendation_for_alert_statement(alert_id=uuid4()))
+
+    assert "event_log.correlation_id =" in alert_sql
+    assert "ORDER BY event_log.created_at DESC, event_log.id DESC" in alert_sql
+    assert "recommendations.alert_id =" in recommendation_sql
+    assert (
+        "ORDER BY recommendations.created_at DESC, recommendations.id DESC"
+        in recommendation_sql
+    )
 
 
 def test_live_trade_plan_scored_events_filters_by_effective_signal_time() -> None:
@@ -316,3 +337,7 @@ async def test_merge_open_trade_plan_duplicates_links_alerts_and_ignores_duplica
     assert duplicate_alert.related_recommendation_id == primary.id
     assert linked_alert.related_recommendation_id == primary.id
     assert session.flush_count == 1
+
+
+def _compile_postgres(statement) -> str:
+    return str(statement.compile(dialect=postgresql.dialect()))

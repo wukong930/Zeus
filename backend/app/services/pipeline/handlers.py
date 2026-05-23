@@ -1058,15 +1058,7 @@ async def open_trade_plan_for_candidate(
     if session is None or trade_plan_match_key(candidate) is None:
         return None
     effective_as_of = as_of or datetime.now(timezone.utc)
-    result = await session.scalars(
-        select(Recommendation)
-        .where(
-            Recommendation.status.in_(sorted(TRADE_PLAN_OPEN_STATUSES)),
-            Recommendation.expires_at > effective_as_of,
-        )
-        .order_by(Recommendation.created_at.desc())
-        .limit(100)
-    )
+    result = await session.scalars(_open_trade_plans_statement(as_of=effective_as_of))
     rows = result.all() if hasattr(result, "all") else []
     for row in rows:
         if trade_plan_matches(row, candidate):
@@ -1089,15 +1081,7 @@ async def open_trade_plan_for_context_signal(
 
     preferred_direction = trade_plan_direction_from_signal(signal)
     effective_as_of = as_of or datetime.now(timezone.utc)
-    result = await session.scalars(
-        select(Recommendation)
-        .where(
-            Recommendation.status.in_(sorted(TRADE_PLAN_OPEN_STATUSES)),
-            Recommendation.expires_at > effective_as_of,
-        )
-        .order_by(Recommendation.created_at.desc())
-        .limit(100)
-    )
+    result = await session.scalars(_open_trade_plans_statement(as_of=effective_as_of))
     rows = result.all() if hasattr(result, "all") else []
     matches: list[tuple[Recommendation, str]] = []
     for row in rows:
@@ -1118,6 +1102,18 @@ async def open_trade_plan_for_context_signal(
     if preferred_direction is None and len({direction for _, direction in matches}) > 1:
         return None
     return matches[0][0]
+
+
+def _open_trade_plans_statement(*, as_of: datetime):
+    return (
+        select(Recommendation)
+        .where(
+            Recommendation.status.in_(sorted(TRADE_PLAN_OPEN_STATUSES)),
+            Recommendation.expires_at > as_of,
+        )
+        .order_by(Recommendation.created_at.desc(), Recommendation.id.desc())
+        .limit(100)
+    )
 
 
 def trade_plan_context_signal(signal: dict[str, Any], *, skip_reason: str | None = None) -> bool:

@@ -228,7 +228,7 @@ def actionable_scored_events_statement(*, limit: int, as_of: datetime | None = N
             EventLog.status == "handled",
             EventLog.created_at >= window_start,
         )
-        .order_by(EventLog.created_at.desc())
+        .order_by(EventLog.created_at.desc(), EventLog.id.desc())
         .limit(limit)
     )
 
@@ -276,20 +276,30 @@ async def alert_for_scored_event(session: AsyncSession, scored_event: EventLog) 
     signal_type = str(signal.get("signal_type") or "")
     symbol = primary_symbol(signal)
     created_event = await session.scalar(
-        select(EventLog)
-        .where(
-            EventLog.channel.in_(ALERT_RESULT_CHANNELS),
-            EventLog.correlation_id == scored_event.correlation_id,
-            EventLog.payload["signal_type"].as_string() == signal_type,
-            EventLog.payload["related_assets"][0].as_string() == symbol,
+        alert_result_event_statement(
+            correlation_id=scored_event.correlation_id,
+            signal_type=signal_type,
+            symbol=symbol,
         )
-        .order_by(EventLog.created_at.desc())
-        .limit(1)
     )
     alert_id = alert_id_from_event(created_event)
     if alert_id is None:
         return None
     return await session.get(Alert, alert_id)
+
+
+def alert_result_event_statement(*, correlation_id: str, signal_type: str, symbol: str):
+    return (
+        select(EventLog)
+        .where(
+            EventLog.channel.in_(ALERT_RESULT_CHANNELS),
+            EventLog.correlation_id == correlation_id,
+            EventLog.payload["signal_type"].as_string() == signal_type,
+            EventLog.payload["related_assets"][0].as_string() == symbol,
+        )
+        .order_by(EventLog.created_at.desc(), EventLog.id.desc())
+        .limit(1)
+    )
 
 
 def alert_id_from_event(event: EventLog | None) -> UUID | None:
@@ -306,10 +316,14 @@ def alert_id_from_event(event: EventLog | None) -> UUID | None:
 
 
 async def recommendation_for_alert(session: AsyncSession, alert_id: UUID) -> Recommendation | None:
-    return await session.scalar(
+    return await session.scalar(recommendation_for_alert_statement(alert_id=alert_id))
+
+
+def recommendation_for_alert_statement(*, alert_id: UUID):
+    return (
         select(Recommendation)
         .where(Recommendation.alert_id == alert_id)
-        .order_by(Recommendation.created_at.desc())
+        .order_by(Recommendation.created_at.desc(), Recommendation.id.desc())
         .limit(1)
     )
 

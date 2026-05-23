@@ -14,8 +14,16 @@ class Recommendation(Base):
         Index("ix_recommendations_status", "status"),
         Index("ix_recommendations_status_created_at", "status", "created_at"),
         Index("ix_recommendations_status_expires_at", "status", "expires_at"),
+        Index(
+            "ix_recommendations_status_expires_created_id",
+            "status",
+            "expires_at",
+            "created_at",
+            "id",
+        ),
         Index("ix_recommendations_strategy_id", "strategy_id"),
         Index("ix_recommendations_alert_id", "alert_id"),
+        Index("ix_recommendations_alert_created_id", "alert_id", "created_at", "id"),
         Index("ix_recommendations_created_at", "created_at"),
         Index("ix_recommendations_actual_exit_reason", "actual_exit_reason"),
     )
