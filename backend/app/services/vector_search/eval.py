@@ -80,9 +80,7 @@ async def evaluate_vector_search(
 ) -> VectorEvalReport:
     cases = (
         await session.scalars(
-            select(VectorEvalCase)
-            .where(VectorEvalCase.status == "active")
-            .order_by(VectorEvalCase.created_at.asc())
+            _active_eval_cases_statement()
         )
     ).all()
     results: list[VectorEvalCaseResult] = []
@@ -94,6 +92,14 @@ async def evaluate_vector_search(
         )
         results.append(evaluate_single_case(case, retrieved, limit=limit))
     return summarize_vector_eval(results)
+
+
+def _active_eval_cases_statement():
+    return (
+        select(VectorEvalCase)
+        .where(VectorEvalCase.status == "active")
+        .order_by(VectorEvalCase.created_at.asc(), VectorEvalCase.id.asc())
+    )
 
 
 async def compare_vector_search_candidate(

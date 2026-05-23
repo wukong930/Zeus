@@ -1146,6 +1146,7 @@ Causa 的 `event_driven` 评估器实际上是纯技术面（gap + volume），*
   - [x] Phase 10.60.45：Threshold Calibration 源样本查询抽为可测试 statement，继续保留 `created_at <= as_of` 点时上界，并按 `created_at asc, id asc` 稳定排序，避免同一时间 resolved signal 顺序不确定影响可靠性曲线和阈值建议。
   - [x] Phase 10.60.46：Shadow Tracker pending signal 扫描抽为可测试 statement，增加 `created_at <= as_of` 点时上界，并按 `created_at asc, id asc` 稳定排序，避免历史 outcome 评估扫描未来 pending 信号或同时间信号顺序不确定。
   - [x] Phase 10.60.47：Shadow Comparison 的 shadow / production 信号读取抽为可测试 statement，并统一按 `created_at asc, id asc` 稳定排序，避免同时间样本导致 shadow-only / production-only 示例顺序漂移。
+  - [x] Phase 10.60.48：Vector Eval / Seed 查询抽为可测试 statement，并按 `created_at asc, id asc` 稳定排序；补充 `vector_eval_set(status, created_at, id)` 和 `vector_chunks(quality_status, created_at, id)` 复合索引，避免评估集与 seed 样本在数据量扩大后顺序漂移或扫描退化。
 - [ ] 后端慢查询、索引、分页和缓存继续复查。
 - [x] 调度任务真实 handler 覆盖率继续复查，避免 enabled 但实际 noop。
 - [x] 全量回归测试、浏览器验证和部署 smoke 流程固化。

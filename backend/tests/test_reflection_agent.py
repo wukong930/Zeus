@@ -5,6 +5,7 @@ from uuid import uuid4
 import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
+from sqlalchemy.dialects import postgresql
 
 from app.api.learning import validate_learning_hypothesis, vector_shadow_candidate_config
 from app.core.database import get_db
@@ -27,8 +28,12 @@ from app.services.learning.reflection_agent import (
     run_reflection_agent,
 )
 from app.services.llm.types import LLMCompletionResult
-from app.services.vector_search.eval import compare_vector_search_candidate, evaluate_single_case
-from app.services.vector_search.eval_seed import seed_vector_eval_cases
+from app.services.vector_search.eval import (
+    _active_eval_cases_statement,
+    compare_vector_search_candidate,
+    evaluate_single_case,
+)
+from app.services.vector_search.eval_seed import _seed_chunks_statement, seed_vector_eval_cases
 from app.services.vector_search.hybrid_search import VectorSearchResult, quality_weight
 
 
@@ -407,6 +412,21 @@ async def test_vector_eval_seed_checks_only_candidate_query_texts() -> None:
     assert "vector_eval_set.query_text" in str(session.scalar_statements[1])
 
 
+def test_vector_eval_case_statement_uses_stable_index_order() -> None:
+    sql = _compile_postgres(_active_eval_cases_statement())
+
+    assert "vector_eval_set.status =" in sql
+    assert "ORDER BY vector_eval_set.created_at ASC, vector_eval_set.id ASC" in sql
+
+
+def test_vector_eval_seed_statement_uses_stable_index_order() -> None:
+    sql = _compile_postgres(_seed_chunks_statement(target_cases=25))
+
+    assert "vector_chunks.quality_status IN" in sql
+    assert "ORDER BY vector_chunks.created_at ASC, vector_chunks.id ASC" in sql
+    assert "LIMIT" in sql
+
+
 async def test_vector_shadow_comparison_reports_candidate_delta() -> None:
     relevant = uuid4()
     case = VectorEvalCase(
@@ -495,3 +515,7 @@ def _result(chunk_id, quality_status: str) -> VectorSearchResult:
         time_decay=1.0,
         created_at=datetime(2026, 5, 4, tzinfo=timezone.utc),
     )
+
+
+def _compile_postgres(statement) -> str:
+    return str(statement.compile(dialect=postgresql.dialect()))
