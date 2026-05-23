@@ -1,6 +1,8 @@
 from datetime import datetime, timezone
 from uuid import uuid4
 
+from sqlalchemy.dialects import postgresql
+
 from app.core.events import ZeusEvent
 from app.models.change_review_queue import ChangeReviewQueue
 from app.models.shadow_runs import ShadowRun
@@ -9,6 +11,7 @@ from app.models.signal import SignalTrack
 from app.services.shadow import runner as shadow_runner
 from app.services.alert_agent.config import ConfidenceThresholds
 from app.services.calibration.threshold_calibrator import (
+    _threshold_source_tracks_statement,
     build_threshold_calibration_report,
     enqueue_threshold_review,
 )
@@ -289,6 +292,25 @@ def test_threshold_calibrator_builds_reliability_curve_and_suggestions() -> None
     assert report.isotonic_curve[-1].calibrated_probability == 1.0
 
 
+def test_threshold_source_tracks_statement_is_point_in_time_and_stable() -> None:
+    now = datetime(2026, 5, 4, tzinfo=timezone.utc)
+    sql = _compile_postgres(
+        _threshold_source_tracks_statement(
+            since=datetime(2026, 1, 1, tzinfo=timezone.utc),
+            as_of=now,
+            signal_type="momentum",
+            category="ferrous",
+        )
+    )
+
+    assert "signal_track.created_at >=" in sql
+    assert "signal_track.created_at <=" in sql
+    assert "signal_track.outcome IN" in sql
+    assert "signal_track.signal_type =" in sql
+    assert "signal_track.category =" in sql
+    assert "ORDER BY signal_track.created_at ASC, signal_track.id ASC" in sql
+
+
 async def test_threshold_review_is_queued_without_config_write() -> None:
     session = FakeSession()
     report = build_threshold_calibration_report(
@@ -344,3 +366,7 @@ def test_shadow_comparator_reports_shadow_only_delta() -> None:
     assert report.shadow_only == 1
     assert report.production_only == 0
     assert report.sample_cases[0].kind == "shadow_only"
+
+
+def _compile_postgres(statement) -> str:
+    return str(statement.compile(dialect=postgresql.dialect()))

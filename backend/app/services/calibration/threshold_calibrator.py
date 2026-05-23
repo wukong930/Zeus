@@ -74,16 +74,18 @@ async def generate_threshold_calibration_report(
 ) -> ThresholdCalibrationReport:
     effective_at = as_of or datetime.now(timezone.utc)
     since = effective_at - timedelta(days=lookback_days)
-    statement = select(SignalTrack).where(
-        SignalTrack.created_at >= since,
-        SignalTrack.created_at <= effective_at,
-        SignalTrack.outcome.in_(RESOLVED_OUTCOMES),
+    rows = list(
+        (
+            await session.scalars(
+                _threshold_source_tracks_statement(
+                    since=since,
+                    as_of=effective_at,
+                    signal_type=signal_type,
+                    category=category,
+                )
+            )
+        ).all()
     )
-    if signal_type is not None:
-        statement = statement.where(SignalTrack.signal_type == signal_type)
-    if category is not None:
-        statement = statement.where(SignalTrack.category == category)
-    rows = list((await session.scalars(statement.order_by(SignalTrack.created_at.asc()))).all())
     current = await load_confidence_thresholds(session)
     return build_threshold_calibration_report(
         rows,
@@ -95,6 +97,25 @@ async def generate_threshold_calibration_report(
         target_auto_hit_rate=target_auto_hit_rate,
         target_notify_hit_rate=target_notify_hit_rate,
     )
+
+
+def _threshold_source_tracks_statement(
+    *,
+    since: datetime,
+    as_of: datetime,
+    signal_type: str | None,
+    category: str | None,
+):
+    statement = select(SignalTrack).where(
+        SignalTrack.created_at >= since,
+        SignalTrack.created_at <= as_of,
+        SignalTrack.outcome.in_(RESOLVED_OUTCOMES),
+    )
+    if signal_type is not None:
+        statement = statement.where(SignalTrack.signal_type == signal_type)
+    if category is not None:
+        statement = statement.where(SignalTrack.category == category)
+    return statement.order_by(SignalTrack.created_at.asc(), SignalTrack.id.asc())
 
 
 def build_threshold_calibration_report(
