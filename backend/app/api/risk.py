@@ -203,15 +203,24 @@ async def _open_positions(session: AsyncSession) -> list[RiskPosition]:
 
 
 async def _open_position_rows(session: AsyncSession, *, limit: int | None = None) -> list[Position]:
-    statement = select(Position).where(Position.status == "open").order_by(Position.opened_at.desc())
-    if limit is not None:
-        statement = statement.limit(limit)
+    statement = _open_position_rows_statement(limit=limit)
     rows = list(
         (
             await session.scalars(statement)
         ).all()
     )
     return rows
+
+
+def _open_position_rows_statement(*, limit: int | None = None):
+    statement = (
+        select(Position)
+        .where(Position.status == "open")
+        .order_by(Position.opened_at.desc(), Position.id.desc())
+    )
+    if limit is not None:
+        statement = statement.limit(limit)
+    return statement
 
 
 def _position_to_risk_position(position: Position) -> RiskPosition:

@@ -43,9 +43,7 @@ class PositionRiskSnapshot:
 
 async def recalculate_position_risk(session: AsyncSession) -> PositionRiskSnapshot:
     rows = (
-        await session.scalars(
-            select(Position).where(Position.status == "open").order_by(Position.opened_at.desc())
-        )
+        await session.scalars(_position_risk_rows_statement())
     ).all()
     margin_by_symbol: dict[str, float] = {}
     total_margin = 0.0
@@ -85,6 +83,14 @@ async def recalculate_position_risk(session: AsyncSession) -> PositionRiskSnapsh
         correlation_symbols=list(correlation.symbols),
         degraded_new_recommendations=bool(warnings),
         warnings=warnings,
+    )
+
+
+def _position_risk_rows_statement():
+    return (
+        select(Position)
+        .where(Position.status == "open")
+        .order_by(Position.opened_at.desc(), Position.id.desc())
     )
 
 

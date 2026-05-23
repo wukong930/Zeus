@@ -2,11 +2,13 @@ from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
+from sqlalchemy.dialects import postgresql
 
 from app.core.database import get_db
 from app.main import create_app
 from app.models.market_data import MarketData
 from app.models.position import Position
+from app.api.risk import _open_position_rows_statement
 from app.services.risk.correlation import build_correlation_matrix
 from app.services.risk.market_data import _risk_market_data_statement, load_risk_market_data
 from app.services.risk.stress import (
@@ -491,6 +493,14 @@ def test_portfolio_snapshot_api_reuses_positions_and_market_data(monkeypatch) ->
     assert payload["data"]["latest_market_rows"][0]["symbol"] == "RB2506"
 
 
+def test_risk_open_position_rows_statement_uses_stable_tie_breakers() -> None:
+    sql = _compile_postgres(_open_position_rows_statement(limit=500))
+
+    assert "positions.status =" in sql
+    assert "ORDER BY positions.opened_at DESC, positions.id DESC" in sql
+    assert "LIMIT" in sql
+
+
 def _risk_api_client(
     monkeypatch,
     *,
@@ -550,6 +560,10 @@ def _position_row() -> Position:
         data_mode="position_aware",
         propagation_nodes=[],
     )
+
+
+def _compile_postgres(statement) -> str:
+    return str(statement.compile(dialect=postgresql.dialect()))
 
 
 def _market_row(symbol: str, *, close: float, days: int) -> MarketData:

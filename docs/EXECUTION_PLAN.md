@@ -1152,6 +1152,7 @@ Causa 的 `event_driven` 评估器实际上是纯技术面（gap + volume），*
   - [x] Phase 10.60.51：Runtime Heartbeat drift 读取按 `computed_at desc, id desc` 稳定排序，并补充 `drift_metrics(computed_at, id)` 复合索引，避免同时间 drift 指标导致运行态心跳状态和通知摘要顺序漂移。
   - [x] Phase 10.60.52：Event Intelligence 的 source lookup、snapshot/detail 影响链、治理读取和 audit logs 统一补充 `id desc` 兜底排序，并补充事件项/影响链/审计日志稳定排序复合索引，避免事件智能页面和治理队列在同分同时间数据下展示漂移。
   - [x] Phase 10.60.53：Trade Plan activation / context linking 查询统一补充 `id desc` 兜底排序，覆盖 actionable scored events、alert result event、alert recommendation 和 open trade plan 扫描，并补充 event_log / recommendations 复合索引，避免同时间交易计划候选和上下文联动顺序漂移。
+  - [x] Phase 10.60.54：Position risk / freshness / threshold cache 查询统一补充稳定排序，open position 读取按 `opened_at desc, id desc`，position-aware 阈值缓存按 `monitoring_priority asc, id asc`；补充 `positions(status, opened_at, id)` 与 `positions(status, data_mode, monitoring_priority, id)` 复合索引，避免同时间持仓导致风险快照、数据腐烂和阈值缓存顺序漂移。
 - [ ] 后端慢查询、索引、分页和缓存继续复查。
 - [x] 调度任务真实 handler 覆盖率继续复查，避免 enabled 但实际 noop。
 - [x] 全量回归测试、浏览器验证和部署 smoke 流程固化。

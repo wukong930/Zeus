@@ -43,15 +43,21 @@ def symbols_from_position(position: Position) -> set[str]:
 async def refresh_position_threshold_cache(session: AsyncSession) -> dict[str, PositionThresholdState]:
     rows = (
         await session.scalars(
-            select(Position)
-            .where(Position.status == "open", Position.data_mode == "position_aware")
-            .order_by(Position.monitoring_priority.asc())
+            _position_threshold_cache_statement()
         )
     ).all()
     _POSITION_THRESHOLD_CACHE.clear()
     for row in rows:
         update_position_threshold_cache(row)
     return dict(_POSITION_THRESHOLD_CACHE)
+
+
+def _position_threshold_cache_statement():
+    return (
+        select(Position)
+        .where(Position.status == "open", Position.data_mode == "position_aware")
+        .order_by(Position.monitoring_priority.asc(), Position.id.asc())
+    )
 
 
 def update_position_threshold_cache(position: Position) -> dict[str, PositionThresholdState]:

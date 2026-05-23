@@ -4,6 +4,7 @@ from uuid import uuid4
 import pytest
 from fastapi import HTTPException
 from pydantic import ValidationError
+from sqlalchemy.dialects import postgresql
 
 from app.api.positions import require_open_position
 from app.models.position import Position
@@ -19,9 +20,11 @@ from app.services.learning.recommendation_attribution import (
     update_recommendation_from_position,
 )
 from app.services.pipeline.handlers import position_conflict_warnings
-from app.services.positions.data_freshness import check_position_freshness
+from app.services.positions.data_freshness import _position_freshness_statement, check_position_freshness
 from app.services.positions.propagation_activator import infer_category_from_symbol
+from app.services.positions.risk_recalc import _position_risk_rows_statement
 from app.services.positions.threshold_modifier import (
+    _position_threshold_cache_statement,
     get_position_aware_thresholds,
     get_position_threshold_multiplier,
     refresh_position_threshold_cache,
@@ -172,6 +175,17 @@ async def test_position_freshness_marks_stale_and_degrades_old_positions() -> No
     assert get_position_threshold_multiplier(("RU",)) == 1.0
 
 
+def test_position_service_statements_use_stable_tie_breakers() -> None:
+    freshness_sql = _compile_postgres(_position_freshness_statement())
+    risk_sql = _compile_postgres(_position_risk_rows_statement())
+    threshold_sql = _compile_postgres(_position_threshold_cache_statement())
+
+    assert "ORDER BY positions.opened_at DESC, positions.id DESC" in freshness_sql
+    assert "ORDER BY positions.opened_at DESC, positions.id DESC" in risk_sql
+    assert "positions.data_mode =" in threshold_sql
+    assert "ORDER BY positions.monitoring_priority ASC, positions.id ASC" in threshold_sql
+
+
 def test_phase6_symbol_category_fallback_covers_rubber() -> None:
     assert infer_category_from_symbol("RU") == "rubber"
 
@@ -275,3 +289,7 @@ async def test_closed_positions_cannot_be_resized_or_closed_again() -> None:
         await require_open_position(session, closed_position.id)  # type: ignore[arg-type]
 
     assert exc_info.value.status_code == 409
+
+
+def _compile_postgres(statement) -> str:
+    return str(statement.compile(dialect=postgresql.dialect()))

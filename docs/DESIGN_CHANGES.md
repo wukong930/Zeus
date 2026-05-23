@@ -791,3 +791,4 @@ threshold_modifier、propagation_activator、risk_recalc、数据腐烂防护
 - Runtime Heartbeat drift 查询稳定化：运行态心跳的 drift 指标读取统一按 `computed_at desc, id desc` 排序，并补充 `drift_metrics(computed_at, id)` 复合索引，保证状态摘要和通知判断在同时间指标下可复现。
 - Event Intelligence 查询稳定化：source lookup、snapshot/detail 影响链、治理读取和 audit logs 统一追加 `id desc` 排序兜底，并补充事件项、影响链和审计日志的稳定排序复合索引，减少治理队列和事件智能页同分同时间数据的展示漂移。
 - Trade Plan 查询稳定化：交易计划激活和上下文联动查询统一追加 `id desc` 排序兜底，并补充 event_log 与 recommendations 的复合索引，减少同时间 signal.scored、alert result 和 open plan 扫描导致的交易计划候选顺序漂移。
+- Position 查询稳定化：风险快照、持仓数据新鲜度和持仓感知阈值缓存统一使用稳定排序，open position 按 `opened_at desc, id desc`，阈值缓存按 `monitoring_priority asc, id asc`，并补充对应复合索引。
