@@ -1,4 +1,6 @@
-from datetime import date
+from datetime import date, datetime, timezone
+
+from sqlalchemy.dialects import postgresql
 
 from app.services.adversarial.engine import decide_adversarial_outcome
 from app.services.adversarial.historical_combo import (
@@ -9,6 +11,8 @@ from app.services.adversarial.historical_combo import (
 )
 from app.services.adversarial.null_hypothesis import (
     NullDistributionSummary,
+    _latest_null_distribution_cache_statement,
+    _null_distribution_source_signals_statement,
     evaluate_null_hypothesis,
 )
 from app.services.adversarial.structural_counter import (
@@ -57,6 +61,38 @@ def test_null_hypothesis_passes_large_cached_deviation() -> None:
 
     assert result.passed is True
     assert result.score == 0.01
+
+
+def test_null_distribution_cache_statement_uses_stable_latest_ordering() -> None:
+    compiled = _compile_postgres(
+        _latest_null_distribution_cache_statement(
+            signal_type="spread_anomaly",
+            category="ferrous",
+            as_of_date=date(2026, 5, 3),
+        )
+    )
+
+    assert "null_distribution_cache.signal_type = 'spread_anomaly'" in compiled
+    assert "null_distribution_cache.category = 'ferrous'" in compiled
+    assert "null_distribution_cache.computed_for <= '2026-05-03'" in compiled
+    assert (
+        "ORDER BY null_distribution_cache.computed_for DESC, "
+        "null_distribution_cache.id DESC"
+    ) in compiled
+    assert "LIMIT 1" in compiled
+
+
+def test_null_distribution_source_statement_is_point_in_time_and_stable() -> None:
+    compiled = _compile_postgres(
+        _null_distribution_source_signals_statement(
+            since=datetime(2026, 5, 1, tzinfo=timezone.utc),
+            as_of=datetime(2026, 5, 3, tzinfo=timezone.utc),
+        )
+    )
+
+    assert "signal_track.created_at >= '2026-05-01 00:00:00+00:00'" in compiled
+    assert "signal_track.created_at <= '2026-05-03 00:00:00+00:00'" in compiled
+    assert "ORDER BY signal_track.created_at ASC, signal_track.id ASC" in compiled
 
 
 def test_historical_combo_fuzzy_match_fails_in_enforcing_mode() -> None:
@@ -207,3 +243,12 @@ def test_all_enforcing_failures_suppress_signal() -> None:
 
     assert decision.suppressed is True
     assert decision.confidence_multiplier == 0.0
+
+
+def _compile_postgres(statement) -> str:
+    return str(
+        statement.compile(
+            dialect=postgresql.dialect(),
+            compile_kwargs={"literal_binds": True},
+        )
+    )

@@ -18,6 +18,13 @@ class NullDistributionCache(Base):
             name="uq_null_distribution_signal_category_date",
         ),
         Index("ix_null_distribution_lookup", "signal_type", "category", "computed_for"),
+        Index(
+            "ix_null_distribution_lookup_stable",
+            "signal_type",
+            "category",
+            "computed_for",
+            "id",
+        ),
         Index("ix_null_distribution_computed_at", "computed_at"),
     )
 

@@ -5,7 +5,7 @@ from math import erfc, sqrt
 from statistics import mean, pstdev
 from typing import Any
 
-from sqlalchemy import desc, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.null_distribution_cache import NullDistributionCache
@@ -94,14 +94,11 @@ async def latest_null_distribution_cache(
     effective_as_of = as_of or datetime.now(timezone.utc)
     return (
         await session.scalars(
-            select(NullDistributionCache)
-            .where(
-                NullDistributionCache.signal_type == signal_type,
-                NullDistributionCache.category == category,
-                NullDistributionCache.computed_for <= effective_as_of.date(),
+            _latest_null_distribution_cache_statement(
+                signal_type=signal_type,
+                category=category,
+                as_of_date=effective_as_of.date(),
             )
-            .order_by(desc(NullDistributionCache.computed_for))
-            .limit(1)
         )
     ).first()
 
@@ -116,9 +113,7 @@ async def precompute_all_null_distributions(
     since = effective_as_of - timedelta(days=lookback_days)
     rows = (
         await session.scalars(
-            select(SignalTrack)
-            .where(SignalTrack.created_at >= since)
-            .order_by(SignalTrack.created_at.asc())
+            _null_distribution_source_signals_statement(since=since, as_of=effective_as_of)
         )
     ).all()
 
@@ -204,6 +199,42 @@ def signal_track_statistic(row: SignalTrack) -> float:
     if row.z_score is not None:
         return abs(row.z_score)
     return abs(row.confidence) * 3
+
+
+def _latest_null_distribution_cache_statement(
+    *,
+    signal_type: str,
+    category: str,
+    as_of_date: date,
+):
+    return (
+        select(NullDistributionCache)
+        .where(
+            NullDistributionCache.signal_type == signal_type,
+            NullDistributionCache.category == category,
+            NullDistributionCache.computed_for <= as_of_date,
+        )
+        .order_by(
+            NullDistributionCache.computed_for.desc(),
+            NullDistributionCache.id.desc(),
+        )
+        .limit(1)
+    )
+
+
+def _null_distribution_source_signals_statement(
+    *,
+    since: datetime,
+    as_of: datetime,
+):
+    return (
+        select(SignalTrack)
+        .where(
+            SignalTrack.created_at >= since,
+            SignalTrack.created_at <= as_of,
+        )
+        .order_by(SignalTrack.created_at.asc(), SignalTrack.id.asc())
+    )
 
 
 def percentile(values: list[float], percentile_value: float) -> float:
