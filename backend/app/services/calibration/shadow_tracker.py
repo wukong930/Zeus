@@ -80,10 +80,10 @@ async def evaluate_pending_signals(
 
     rows = (
         await session.scalars(
-            select(SignalTrack)
-            .where(SignalTrack.outcome == "pending")
-            .order_by(SignalTrack.created_at.asc())
-            .limit(limit)
+            _pending_signal_tracks_statement(
+                as_of=effective_as_of,
+                limit=limit,
+            )
         )
     ).all()
 
@@ -128,6 +128,18 @@ async def evaluate_pending_signals(
 
     await session.flush()
     return OutcomeScanResult(scanned=scanned, resolved=resolved, pending=pending, skipped=skipped)
+
+
+def _pending_signal_tracks_statement(*, as_of: datetime, limit: int):
+    return (
+        select(SignalTrack)
+        .where(
+            SignalTrack.outcome == "pending",
+            SignalTrack.created_at <= as_of,
+        )
+        .order_by(SignalTrack.created_at.asc(), SignalTrack.id.asc())
+        .limit(limit)
+    )
 
 
 def alert_to_signal_payload(alert: Alert, signal_track: SignalTrack) -> dict[str, Any]:

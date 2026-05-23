@@ -1,9 +1,12 @@
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
+from sqlalchemy.dialects import postgresql
+
 from app.models.alert import Alert
 from app.models.signal import SignalTrack
 from app.services.calibration.shadow_tracker import (
+    _pending_signal_tracks_statement,
     alert_to_signal_payload,
     apply_outcome,
     evaluate_pending_signals,
@@ -108,6 +111,20 @@ def test_apply_outcome_updates_signal_track() -> None:
     assert track.resolved_at == resolved_at
 
 
+def test_pending_signal_tracks_statement_is_point_in_time_and_stable() -> None:
+    sql = _compile_postgres(
+        _pending_signal_tracks_statement(
+            as_of=datetime(2026, 6, 1, tzinfo=timezone.utc),
+            limit=100,
+        )
+    )
+
+    assert "signal_track.outcome =" in sql
+    assert "signal_track.created_at <=" in sql
+    assert "ORDER BY signal_track.created_at ASC, signal_track.id ASC" in sql
+    assert "LIMIT" in sql
+
+
 async def test_evaluate_pending_signals_marks_due_signal_hit(monkeypatch) -> None:
     alert_id = uuid4()
     created_at = datetime(2026, 5, 1, tzinfo=timezone.utc)
@@ -183,3 +200,7 @@ async def test_load_forward_market_data_uses_pit_as_of(monkeypatch) -> None:
     assert captured["end"] == end_at
     assert captured["as_of"] == as_of
     assert [row.close for row in rows] == [100, 120]
+
+
+def _compile_postgres(statement) -> str:
+    return str(statement.compile(dialect=postgresql.dialect()))

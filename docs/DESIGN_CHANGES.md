@@ -783,3 +783,4 @@ threshold_modifier、propagation_activator、risk_recalc、数据腐烂防护
 - Calibration active lookup 统一查询口径：生产评分读取校准权重和治理应用校准变更共用 `_active_calibration_statement`，按 `effective_from <= as_of`、`effective_to is null/effective_to > as_of` 点时过滤，并以 `effective_from desc, computed_at desc, id desc` 稳定选择最新权重。
 - Calibration review 源样本保持点时一致：生成校准复核队列时，resolved signal 查询增加 `created_at <= as_of` 上界，并按 `created_at asc, id asc` 稳定排序，避免历史 as-of 复核引入未来样本。
 - Threshold Calibration 源样本查询稳定化：阈值校准报告复用可测试 `_threshold_source_tracks_statement`，保留 `created_at <= as_of` 点时上界，并按 `created_at asc, id asc` 稳定排序，保证可靠性曲线和阈值建议可复现。
+- Shadow Tracker pending signal 扫描保持点时一致：待评估 signal 查询增加 `created_at <= as_of` 上界，并按 `created_at asc, id asc` 稳定排序，避免历史 outcome 评估读取未来 pending 信号。

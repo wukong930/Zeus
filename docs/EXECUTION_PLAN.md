@@ -1144,6 +1144,7 @@ Causa 的 `event_driven` 评估器实际上是纯技术面（gap + volume），*
   - [x] Phase 10.60.43：Calibration active lookup 统一为可测试 statement；生产评分和治理应用复用同一 `effective_from <= as_of/effective_to` 点时过滤，并按 `effective_from desc, computed_at desc, id desc` 稳定排序，避免同一生效时间下校准权重选择不确定。
   - [x] Phase 10.60.44：Calibration review 生成源样本查询补齐点时上界 `created_at <= as_of`，并按 `created_at asc, id asc` 稳定排序，避免历史回放/复核队列生成时把未来 signal outcome 纳入校准提案。
   - [x] Phase 10.60.45：Threshold Calibration 源样本查询抽为可测试 statement，继续保留 `created_at <= as_of` 点时上界，并按 `created_at asc, id asc` 稳定排序，避免同一时间 resolved signal 顺序不确定影响可靠性曲线和阈值建议。
+  - [x] Phase 10.60.46：Shadow Tracker pending signal 扫描抽为可测试 statement，增加 `created_at <= as_of` 点时上界，并按 `created_at asc, id asc` 稳定排序，避免历史 outcome 评估扫描未来 pending 信号或同时间信号顺序不确定。
 - [ ] 后端慢查询、索引、分页和缓存继续复查。
 - [x] 调度任务真实 handler 覆盖率继续复查，避免 enabled 但实际 noop。
 - [x] 全量回归测试、浏览器验证和部署 smoke 流程固化。
