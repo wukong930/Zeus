@@ -57,7 +57,7 @@ from app.services.data_sources.tushare_futures import (
     parse_csv_tuple,
     rows_from_tushare_payload,
 )
-from app.services.market_data.pit import _industry_data_pit_statement
+from app.services.market_data.pit import _industry_data_pit_statement, _market_data_pit_statement
 
 
 def test_parse_akshare_symbols_uses_defaults_when_blank() -> None:
@@ -1291,8 +1291,32 @@ def test_industry_data_pit_statement_uses_cursor_and_stable_order() -> None:
     assert "industry_data.symbol = 'RU'" in compiled
     assert "industry_data.data_type = 'rubber_spot_price_cny_t'" in compiled
     assert "industry_data.timestamp < '2026-05-18" in compiled
+    assert "ORDER BY industry_data.vintage_at DESC, industry_data.id DESC" in compiled
     assert "ORDER BY industry_data.timestamp DESC, industry_data.id DESC" in compiled
     assert "LIMIT 20" in compiled
+
+
+def test_market_data_pit_statement_uses_stable_window_and_output_order() -> None:
+    compiled = str(
+        _market_data_pit_statement(
+            symbol="RB",
+            as_of=pd.Timestamp("2026-05-18T09:30:00Z").to_pydatetime(),
+            start=pd.Timestamp("2026-05-01T00:00:00Z").to_pydatetime(),
+            end=pd.Timestamp("2026-05-18T00:00:00Z").to_pydatetime(),
+            limit=30,
+        ).compile(dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True})
+    )
+
+    assert "market_data.symbol = 'RB'" in compiled
+    assert "market_data.vintage_at <= '2026-05-18" in compiled
+    assert "market_data.timestamp >= '2026-05-01" in compiled
+    assert "market_data.timestamp <= '2026-05-18" in compiled
+    assert "ORDER BY market_data.vintage_at DESC, market_data.id DESC" in compiled
+    assert (
+        "ORDER BY market_data.timestamp DESC, market_data.contract_month ASC, "
+        "market_data.id DESC"
+    ) in compiled
+    assert "LIMIT 30" in compiled
 
 
 def json_from_request(request: httpx.Request) -> dict[str, object]:

@@ -17,7 +17,7 @@ def _windowed_latest_statement(
         func.row_number()
         .over(
             partition_by=partition_columns,
-            order_by=model.vintage_at.desc(),
+            order_by=(model.vintage_at.desc(), model.id.desc()),
         )
         .label("rn")
     ).subquery()
@@ -34,6 +34,25 @@ async def get_market_data_pit(
     end: datetime | None = None,
     limit: int = 500,
 ) -> list[MarketData]:
+    statement = _market_data_pit_statement(
+        symbol=symbol,
+        as_of=as_of,
+        start=start,
+        end=end,
+        limit=limit,
+    )
+
+    return list((await session.scalars(statement)).all())
+
+
+def _market_data_pit_statement(
+    *,
+    symbol: str,
+    as_of: datetime | None = None,
+    start: datetime | None = None,
+    end: datetime | None = None,
+    limit: int = 500,
+) -> Select:
     statement = select(MarketData).where(MarketData.symbol == symbol)
     if as_of is not None:
         statement = statement.where(MarketData.vintage_at <= as_of)
@@ -42,14 +61,12 @@ async def get_market_data_pit(
     if end is not None:
         statement = statement.where(MarketData.timestamp <= end)
 
-    pit_statement = _windowed_latest_statement(
+    return _windowed_latest_statement(
         MarketData,
         [MarketData.symbol, MarketData.contract_month, MarketData.timestamp],
         statement,
         limit,
-    ).order_by(MarketData.timestamp.desc())
-
-    return list((await session.scalars(pit_statement)).all())
+    ).order_by(MarketData.timestamp.desc(), MarketData.contract_month.asc(), MarketData.id.desc())
 
 
 async def get_industry_data_pit(

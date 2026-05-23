@@ -1157,6 +1157,7 @@ Causa 的 `event_driven` 评估器实际上是纯技术面（gap + volume），*
   - [x] Phase 10.60.56：Learning / Reflection 运行态查询统一补齐稳定排序，反思输入快照、推荐归因报告和 drift signal 窗口均按时间列 + `id` 读取；补充 recommendation / feedback 复合索引，避免同时间样本改变学习假设、归因切片和 drift 复盘顺序。
   - [x] Phase 10.60.57：Notebook 报告关联预警和 Strategies 回测质量样本查询抽为可测试 statement，并统一追加 `id desc` 稳定排序；补充 alerts 触发时间与研究报告关联索引，避免研究笔记引用和回测质量摘要在同时间样本下顺序漂移。
   - [x] Phase 10.60.58：Review Load Cleanup 调度查询抽为可测试 statement，过期预警 / 交易计划按 `expires_at asc, id asc`，事件智能待分流队列按 `created_at asc, id asc`，影响链按 `impact_score desc, confidence desc, id desc` 稳定排序；补充 cleanup 热路径复合索引，避免同批清理和分流结果顺序漂移。
+  - [x] Phase 10.60.59：Market / Industry PIT 查询稳定化，窗口函数选择最新 vintage 时追加 `id desc`，Market Data PIT 外层按 `timestamp desc, contract_month asc, id desc` 输出；补充 market / industry PIT 稳定排序复合索引，避免同一时间同一 vintage 行情影响回测、场景和风险复盘。
 - [ ] 后端慢查询、索引、分页和缓存继续复查。
 - [x] 调度任务真实 handler 覆盖率继续复查，避免 enabled 但实际 noop。
 - [x] 全量回归测试、浏览器验证和部署 smoke 流程固化。
