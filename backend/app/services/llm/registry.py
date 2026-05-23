@@ -92,12 +92,7 @@ async def get_active_llm_config(
 
     try:
         row = (
-            await session.scalars(
-                select(LLMConfigModel)
-                .where(LLMConfigModel.enabled.is_(True))
-                .order_by(LLMConfigModel.updated_at.desc())
-                .limit(1)
-            )
+            await session.scalars(_active_llm_config_statement())
         ).first()
     except Exception:
         await rollback_if_possible(session)
@@ -123,6 +118,15 @@ async def get_active_llm_config(
         enabled=row.enabled,
         base_url=base_url,
         timeout_seconds=settings.llm_timeout_seconds,
+    )
+
+
+def _active_llm_config_statement():
+    return (
+        select(LLMConfigModel)
+        .where(LLMConfigModel.enabled.is_(True))
+        .order_by(LLMConfigModel.updated_at.desc(), LLMConfigModel.id.desc())
+        .limit(1)
     )
 
 
