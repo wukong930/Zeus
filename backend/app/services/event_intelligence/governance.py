@@ -443,7 +443,11 @@ async def _event_links(session: AsyncSession, event_item_id: UUID) -> list[Event
     rows = await session.scalars(
         select(EventImpactLink)
         .where(EventImpactLink.event_item_id == event_item_id)
-        .order_by(EventImpactLink.impact_score.desc(), EventImpactLink.confidence.desc())
+        .order_by(
+            EventImpactLink.impact_score.desc(),
+            EventImpactLink.confidence.desc(),
+            EventImpactLink.id.desc(),
+        )
     )
     return list(rows.all())
 

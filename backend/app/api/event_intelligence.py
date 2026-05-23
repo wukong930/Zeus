@@ -386,6 +386,7 @@ def _event_intelligence_source_lookup_statement(
         .order_by(
             EventIntelligenceItem.event_timestamp.desc(),
             EventIntelligenceItem.impact_score.desc(),
+            EventIntelligenceItem.id.desc(),
         )
     )
 
@@ -436,7 +437,11 @@ def _event_impact_links_for_items_statement(*, item_ids: list[UUID]):
     return (
         select(EventImpactLink)
         .where(EventImpactLink.event_item_id.in_(item_ids))
-        .order_by(EventImpactLink.impact_score.desc(), EventImpactLink.confidence.desc())
+        .order_by(
+            EventImpactLink.impact_score.desc(),
+            EventImpactLink.confidence.desc(),
+            EventImpactLink.id.desc(),
+        )
     )
 
 
@@ -447,7 +452,8 @@ def _event_intelligence_audit_logs_statement(
     limit: int,
 ):
     statement = select(EventIntelligenceAuditLog).order_by(
-        EventIntelligenceAuditLog.created_at.desc()
+        EventIntelligenceAuditLog.created_at.desc(),
+        EventIntelligenceAuditLog.id.desc(),
     )
     if event_item_id is not None:
         statement = statement.where(EventIntelligenceAuditLog.event_item_id == event_item_id)
@@ -553,7 +559,11 @@ async def get_event_intelligence(
             await session.scalars(
                 select(EventImpactLink)
                 .where(EventImpactLink.event_item_id == event_item.id)
-                .order_by(EventImpactLink.impact_score.desc(), EventImpactLink.confidence.desc())
+                .order_by(
+                    EventImpactLink.impact_score.desc(),
+                    EventImpactLink.confidence.desc(),
+                    EventImpactLink.id.desc(),
+                )
             )
         ).all()
     )

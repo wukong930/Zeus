@@ -232,7 +232,11 @@ async def resolve_news_event_impacts(
                 await session.scalars(
                     select(EventImpactLink)
                     .where(EventImpactLink.event_item_id == existing.id)
-                    .order_by(EventImpactLink.impact_score.desc(), EventImpactLink.confidence.desc())
+                    .order_by(
+                        EventImpactLink.impact_score.desc(),
+                        EventImpactLink.confidence.desc(),
+                        EventImpactLink.id.desc(),
+                    )
                 )
             ).all()
         )
@@ -290,7 +294,11 @@ async def create_event_intelligence_from_draft(
                 await session.scalars(
                     select(EventImpactLink)
                     .where(EventImpactLink.event_item_id == existing.id)
-                    .order_by(EventImpactLink.impact_score.desc(), EventImpactLink.confidence.desc())
+                    .order_by(
+                        EventImpactLink.impact_score.desc(),
+                        EventImpactLink.confidence.desc(),
+                        EventImpactLink.id.desc(),
+                    )
                 )
             ).all()
         )

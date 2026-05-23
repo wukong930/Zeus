@@ -789,3 +789,4 @@ threshold_modifier、propagation_activator、risk_recalc、数据腐烂防护
 - Hybrid Search 排序稳定化：raw SQL 生成抽为可测试 helper，内层 scored 候选和最终结果都在既有分数/时间排序后追加 `id desc`，避免同分同时间检索结果漂移。
 - Causal Web / World Map 查询稳定化：两个大画布运行态 API 的新闻、信号、预警、产业数据、最新行情、事件智能项/影响链和持仓查询都增加 `id desc` 兜底排序，减少同时间写入数据导致的节点、区域和证据链闪动。
 - Runtime Heartbeat drift 查询稳定化：运行态心跳的 drift 指标读取统一按 `computed_at desc, id desc` 排序，并补充 `drift_metrics(computed_at, id)` 复合索引，保证状态摘要和通知判断在同时间指标下可复现。
+- Event Intelligence 查询稳定化：source lookup、snapshot/detail 影响链、治理读取和 audit logs 统一追加 `id desc` 排序兜底，并补充事件项、影响链和审计日志的稳定排序复合索引，减少治理队列和事件智能页同分同时间数据的展示漂移。

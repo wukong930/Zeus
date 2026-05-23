@@ -1150,6 +1150,7 @@ Causa 的 `event_driven` 评估器实际上是纯技术面（gap + volume），*
   - [x] Phase 10.60.49：Hybrid Search SQL 生成抽为可测试 helper，内层候选截断和最终排序都增加 `id desc` 兜底，避免同分同时间向量检索结果顺序漂移影响新闻去重和 embedding shadow gate。
   - [x] Phase 10.60.50：Causal Web / World Map 运行态查询统一补充 `id desc` 兜底排序，覆盖 news、signals、alerts、industry metrics、market latest、event intelligence items / links、positions，避免同时间数据刷新导致大画布节点、区域和证据链顺序漂移。
   - [x] Phase 10.60.51：Runtime Heartbeat drift 读取按 `computed_at desc, id desc` 稳定排序，并补充 `drift_metrics(computed_at, id)` 复合索引，避免同时间 drift 指标导致运行态心跳状态和通知摘要顺序漂移。
+  - [x] Phase 10.60.52：Event Intelligence 的 source lookup、snapshot/detail 影响链、治理读取和 audit logs 统一补充 `id desc` 兜底排序，并补充事件项/影响链/审计日志稳定排序复合索引，避免事件智能页面和治理队列在同分同时间数据下展示漂移。
 - [ ] 后端慢查询、索引、分页和缓存继续复查。
 - [x] 调度任务真实 handler 覆盖率继续复查，避免 enabled 但实际 noop。
 - [x] 全量回归测试、浏览器验证和部署 smoke 流程固化。

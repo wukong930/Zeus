@@ -666,10 +666,22 @@ def test_event_intelligence_scoped_statements_push_filters_to_database() -> None
         "event_impact_links.confidence DESC, event_impact_links.id DESC"
     ) in links_sql
     assert "event_impact_links.event_item_id IN" in quality_links_sql
+    assert (
+        "ORDER BY event_impact_links.impact_score DESC, "
+        "event_impact_links.confidence DESC, event_impact_links.id DESC"
+    ) in quality_links_sql
     assert "event_intelligence_items.source_type =" in source_lookup_sql
     assert "event_intelligence_items.source_id IN" in source_lookup_sql
+    assert (
+        "ORDER BY event_intelligence_items.event_timestamp DESC, "
+        "event_intelligence_items.impact_score DESC, event_intelligence_items.id DESC"
+    ) in source_lookup_sql
     assert "event_intelligence_audit_logs.event_item_id =" in audit_sql
     assert "event_intelligence_audit_logs.action =" in audit_sql
+    assert (
+        "ORDER BY event_intelligence_audit_logs.created_at DESC, "
+        "event_intelligence_audit_logs.id DESC"
+    ) in audit_sql
 
 
 def test_event_intelligence_snapshot_response_keeps_items_links_and_quality_together() -> None:
