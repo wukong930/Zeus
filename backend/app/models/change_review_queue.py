@@ -15,6 +15,14 @@ class ChangeReviewQueue(Base):
         Index("ix_change_review_queue_status", "status"),
         Index("ix_change_review_queue_status_created_at", "status", "created_at"),
         Index("ix_change_review_queue_source_created_at", "source", "created_at"),
+        Index(
+            "ix_change_review_queue_triage_scan",
+            "source",
+            "target_table",
+            "status",
+            "created_at",
+            "id",
+        ),
         Index("ix_change_review_queue_target", "target_table", "target_key"),
         Index("ix_change_review_queue_created_at", "created_at"),
     )

@@ -1,9 +1,15 @@
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
+from sqlalchemy.dialects import postgresql
+
 from app.models.alert import Alert
 from app.models.recommendation import Recommendation
 from app.services.governance.cleanup import (
+    _event_review_links_statement,
+    _expired_alerts_statement,
+    _expired_recommendations_statement,
+    _pending_event_reviews_statement,
     expire_alert_review_load,
     expire_recommendation_review_load,
 )
@@ -111,3 +117,40 @@ def test_expire_recommendation_review_load_keeps_completed_plan() -> None:
 
     assert changed is False
     assert recommendation.status == "completed"
+
+
+def test_review_load_cleanup_statements_use_stable_ordering() -> None:
+    as_of = datetime(2026, 5, 18, tzinfo=UTC)
+    event_item_id = uuid4()
+
+    alert_sql = _compile_postgres(_expired_alerts_statement(as_of=as_of, limit=100))
+    recommendation_sql = _compile_postgres(
+        _expired_recommendations_statement(as_of=as_of, limit=100)
+    )
+    review_sql = _compile_postgres(_pending_event_reviews_statement(limit=100))
+    link_sql = _compile_postgres(_event_review_links_statement(event_item_id=event_item_id))
+
+    assert "alerts.expires_at IS NOT NULL" in alert_sql
+    assert "alerts.status IN" in alert_sql
+    assert "ORDER BY alerts.expires_at ASC, alerts.id ASC" in alert_sql
+    assert "recommendations.status IN" in recommendation_sql
+    assert (
+        "ORDER BY recommendations.expires_at ASC, recommendations.id ASC"
+        in recommendation_sql
+    )
+    assert "change_review_queue.source =" in review_sql
+    assert "change_review_queue.target_table =" in review_sql
+    assert "change_review_queue.status =" in review_sql
+    assert (
+        "ORDER BY change_review_queue.created_at ASC, change_review_queue.id ASC"
+        in review_sql
+    )
+    assert "event_impact_links.event_item_id =" in link_sql
+    assert (
+        "ORDER BY event_impact_links.impact_score DESC, "
+        "event_impact_links.confidence DESC, event_impact_links.id DESC"
+    ) in link_sql
+
+
+def _compile_postgres(statement) -> str:
+    return str(statement.compile(dialect=postgresql.dialect()))

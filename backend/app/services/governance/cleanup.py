@@ -45,16 +45,7 @@ async def run_review_load_cleanup(
     effective_as_of = as_of or datetime.now(UTC)
     rows = list(
         (
-            await session.scalars(
-                select(Alert)
-                .where(
-                    Alert.expires_at.is_not(None),
-                    Alert.expires_at <= effective_as_of,
-                    Alert.status.in_(("active", "pending")),
-                )
-                .order_by(Alert.expires_at.asc())
-                .limit(limit)
-            )
+            await session.scalars(_expired_alerts_statement(as_of=effective_as_of, limit=limit))
         ).all()
     )
     expired = 0
@@ -64,13 +55,7 @@ async def run_review_load_cleanup(
     recommendation_rows = list(
         (
             await session.scalars(
-                select(Recommendation)
-                .where(
-                    Recommendation.expires_at <= effective_as_of,
-                    Recommendation.status.in_(("pending", "pending_review")),
-                )
-                .order_by(Recommendation.expires_at.asc())
-                .limit(limit)
+                _expired_recommendations_statement(as_of=effective_as_of, limit=limit)
             )
         ).all()
     )
@@ -88,6 +73,31 @@ async def run_review_load_cleanup(
         event_reviews_scanned=event_review_result.event_reviews_scanned,
         event_reviews_shadowed=event_review_result.event_reviews_shadowed,
         event_reviews_evidence_only=event_review_result.event_reviews_evidence_only,
+    )
+
+
+def _expired_alerts_statement(*, as_of: datetime, limit: int):
+    return (
+        select(Alert)
+        .where(
+            Alert.expires_at.is_not(None),
+            Alert.expires_at <= as_of,
+            Alert.status.in_(("active", "pending")),
+        )
+        .order_by(Alert.expires_at.asc(), Alert.id.asc())
+        .limit(limit)
+    )
+
+
+def _expired_recommendations_statement(*, as_of: datetime, limit: int):
+    return (
+        select(Recommendation)
+        .where(
+            Recommendation.expires_at <= as_of,
+            Recommendation.status.in_(("pending", "pending_review")),
+        )
+        .order_by(Recommendation.expires_at.asc(), Recommendation.id.asc())
+        .limit(limit)
     )
 
 
@@ -141,16 +151,7 @@ async def triage_existing_event_reviews(
 ) -> EventReviewTriageCleanupResult:
     rows = list(
         (
-            await session.scalars(
-                select(ChangeReviewQueue)
-                .where(
-                    ChangeReviewQueue.source == "event_intelligence",
-                    ChangeReviewQueue.target_table == "event_intelligence_items",
-                    ChangeReviewQueue.status == "pending",
-                )
-                .order_by(ChangeReviewQueue.created_at.asc())
-                .limit(limit)
-            )
+            await session.scalars(_pending_event_reviews_statement(limit=limit))
         ).all()
     )
     shadowed = 0
@@ -165,6 +166,19 @@ async def triage_existing_event_reviews(
         event_reviews_scanned=len(rows),
         event_reviews_shadowed=shadowed,
         event_reviews_evidence_only=evidence_only,
+    )
+
+
+def _pending_event_reviews_statement(*, limit: int):
+    return (
+        select(ChangeReviewQueue)
+        .where(
+            ChangeReviewQueue.source == "event_intelligence",
+            ChangeReviewQueue.target_table == "event_intelligence_items",
+            ChangeReviewQueue.status == "pending",
+        )
+        .order_by(ChangeReviewQueue.created_at.asc(), ChangeReviewQueue.id.asc())
+        .limit(limit)
     )
 
 
@@ -183,11 +197,7 @@ async def triage_existing_event_review(
         return None
     links = list(
         (
-            await session.scalars(
-                select(EventImpactLink)
-                .where(EventImpactLink.event_item_id == event_item.id)
-                .order_by(EventImpactLink.impact_score.desc())
-            )
+            await session.scalars(_event_review_links_statement(event_item_id=event_item.id))
         ).all()
     )
     reasons = event_intelligence_review_reasons(event_item, links)
@@ -230,3 +240,15 @@ async def triage_existing_event_review(
         )
     )
     return triage.queue_status or "evidence_only"
+
+
+def _event_review_links_statement(*, event_item_id: UUID):
+    return (
+        select(EventImpactLink)
+        .where(EventImpactLink.event_item_id == event_item_id)
+        .order_by(
+            EventImpactLink.impact_score.desc(),
+            EventImpactLink.confidence.desc(),
+            EventImpactLink.id.desc(),
+        )
+    )
