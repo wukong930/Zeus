@@ -165,18 +165,26 @@ async def latest_market_price_for_scenario(
     if not root_symbol:
         return None
     row = (
-        await session.scalars(
-            select(MarketData)
-            .where(
-                or_(
-                    MarketData.symbol == root_symbol,
-                    MarketData.symbol.like(f"{root_symbol}%"),
-                )
-            )
-            .order_by(MarketData.timestamp.desc(), MarketData.vintage_at.desc())
-            .limit(1)
-        )
+        await session.scalars(_scenario_market_price_statement(root_symbol))
     ).first()
     if row is None or row.close <= 0:
         return None
     return float(row.close)
+
+
+def _scenario_market_price_statement(root_symbol: str):
+    return (
+        select(MarketData)
+        .where(
+            or_(
+                MarketData.symbol == root_symbol,
+                MarketData.symbol.like(f"{root_symbol}%"),
+            )
+        )
+        .order_by(
+            MarketData.timestamp.desc(),
+            MarketData.vintage_at.desc(),
+            MarketData.id.desc(),
+        )
+        .limit(1)
+    )

@@ -3,8 +3,9 @@ from __future__ import annotations
 import json
 
 from fastapi.testclient import TestClient
+from sqlalchemy.dialects import postgresql
 
-from app.api.scenarios import ScenarioSimulationPayload
+from app.api.scenarios import ScenarioSimulationPayload, _scenario_market_price_statement
 from app.core.database import get_db
 from app.core.events import ZeusEvent
 from app.main import create_app
@@ -352,6 +353,18 @@ def test_scenario_simulation_api_uses_runtime_market_price(monkeypatch) -> None:
     assert payload["degraded"] is False
 
 
+def test_scenario_market_price_statement_uses_stable_latest_ordering() -> None:
+    compiled = _compile_postgres(_scenario_market_price_statement("RB"))
+
+    assert "market_data.symbol = 'RB'" in compiled
+    assert "market_data.symbol LIKE 'RB%%'" in compiled
+    assert (
+        "ORDER BY market_data.timestamp DESC, "
+        "market_data.vintage_at DESC, market_data.id DESC"
+    ) in compiled
+    assert "LIMIT 1" in compiled
+
+
 async def test_scenario_requested_handler_publishes_completed_event() -> None:
     event = ZeusEvent(
         channel="scenario.requested",
@@ -376,3 +389,12 @@ async def test_scenario_requested_handler_publishes_completed_event() -> None:
     assert publisher.calls[0]["event"].payload["report"]["target_symbol"] == "RU"
     assert publisher.calls[0]["event"].payload["report"]["base_price_source"] == "provided"
     assert publisher.calls[0]["kwargs"]["source"] == "scenario-simulator"
+
+
+def _compile_postgres(statement) -> str:
+    return str(
+        statement.compile(
+            dialect=postgresql.dialect(),
+            compile_kwargs={"literal_binds": True},
+        )
+    )
