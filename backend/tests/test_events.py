@@ -1,11 +1,15 @@
 from uuid import UUID
 
 import pytest
+from sqlalchemy.dialects import postgresql
+from sqlalchemy.orm import aliased
 
 from app.api.alerts import format_sse_event
 from app.core.events import (
     TERMINAL_EVENT_STATUSES,
     ZeusEvent,
+    _pending_event_logs_statement,
+    _replay_unhandled_events_statement,
     dispatch_event,
     publish,
     publish_pending_events,
@@ -127,6 +131,37 @@ async def test_publish_pending_events_emits_and_marks_published() -> None:
     assert session.rows[0].status == "published"
 
 
+def test_pending_event_logs_statement_uses_stable_order_and_skip_locked() -> None:
+    compiled = _compile_postgres(_pending_event_logs_statement(limit=25))
+
+    assert "event_log.status = 'pending'" in compiled
+    assert "ORDER BY event_log.created_at ASC, event_log.id ASC" in compiled
+    assert "LIMIT 25" in compiled
+    assert "FOR UPDATE SKIP LOCKED" in compiled
+
+
+def test_replay_unhandled_events_statement_uses_stable_order() -> None:
+    published = aliased(EventLog)
+    handled = aliased(EventLog)
+    dead_letter = aliased(EventLog)
+    compiled = _compile_postgres(
+        _replay_unhandled_events_statement(
+            channels=("signal.scored", "alert.created"),
+            limit=50,
+            published=published,
+            handled=handled,
+            dead_letter=dead_letter,
+        )
+    )
+
+    assert "event_log_1.status = 'published'" in compiled
+    assert "event_log_1.channel IN ('signal.scored', 'alert.created')" in compiled
+    assert "event_log_2.status = 'handled'" in compiled
+    assert "event_log_3.status = 'dead_letter'" in compiled
+    assert "ORDER BY event_log_1.created_at ASC, event_log_1.id ASC" in compiled
+    assert "LIMIT 50" in compiled
+
+
 async def test_dispatch_event_records_handled_status() -> None:
     session = FakeSession()
     event = ZeusEvent(channel="signal.detected", payload={"signal_type": "momentum"})
@@ -179,3 +214,12 @@ async def test_dispatch_event_records_dead_letter_on_handler_error() -> None:
 
     assert session.rows[0].status == "dead_letter"
     assert session.rows[0].error == "boom"
+
+
+def _compile_postgres(statement) -> str:
+    return str(
+        statement.compile(
+            dialect=postgresql.dialect(),
+            compile_kwargs={"literal_binds": True},
+        )
+    )

@@ -803,3 +803,4 @@ threshold_modifier、propagation_activator、risk_recalc、数据腐烂防护
 - Scenario 最新行情读取稳定化：场景推演 base price 查询抽为可测试 statement，按 `timestamp desc, vintage_at desc, id desc` 稳定选择最新行情，并补充 `market_data(symbol, timestamp, vintage_at, id)` 索引，避免同时间行情导致 Monte Carlo / What-if 起始价漂移。
 - LLM Active Config 查询稳定化：数据库启用 provider 选择抽为可测试 statement，按 `updated_at desc, id desc` 稳定选择最新配置，并补充 `llm_config(enabled, updated_at, id)` 索引，避免多个 provider 同时更新时选模结果漂移。
 - Null Hypothesis 查询稳定化：零假设缓存和源信号扫描抽为可测试 statement，缓存读取按 `computed_for desc, id desc` 稳定选择，源信号扫描增加 `created_at <= as_of` 点时上界并按 `created_at asc, id asc` 输出，保证历史对抗分布不会混入未来样本。
+- Event Relay / Replay 查询稳定化：事件 outbox pending 发布与 published 事件重放查询抽为可测试 statement，按 `created_at asc, id asc` 稳定输出，并补充 `event_log(status, created_at, id)` 索引，保证同时间事件 relay / replay 可复现。

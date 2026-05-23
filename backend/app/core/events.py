@@ -171,11 +171,7 @@ async def publish_pending_events(
 ) -> int:
     rows = (
         await session.scalars(
-            select(EventLog)
-            .where(EventLog.status == "pending")
-            .order_by(EventLog.created_at.asc())
-            .limit(limit)
-            .with_for_update(skip_locked=True)
+            _pending_event_logs_statement(limit=limit)
         )
     ).all()
     published = 0
@@ -210,30 +206,59 @@ async def replay_unhandled_events(
     dead_letter = aliased(EventLog)
     rows = (
         await session.scalars(
-            select(published)
-            .where(
-                published.status == "published",
-                published.channel.in_(channels),
-                ~exists(
-                    select(handled.id).where(
-                        handled.event_id == published.event_id,
-                        handled.status == "handled",
-                    )
-                ),
-                ~exists(
-                    select(dead_letter.id).where(
-                        dead_letter.event_id == published.event_id,
-                        dead_letter.status == "dead_letter",
-                    )
-                ),
+            _replay_unhandled_events_statement(
+                channels=channels,
+                limit=limit,
+                published=published,
+                handled=handled,
+                dead_letter=dead_letter,
             )
-            .order_by(published.created_at.asc())
-            .limit(limit)
         )
     ).all()
     for row in rows:
         await emit_event(event_from_log(row), redis_client=redis_client)
     return len(rows)
+
+
+def _pending_event_logs_statement(*, limit: int):
+    return (
+        select(EventLog)
+        .where(EventLog.status == "pending")
+        .order_by(EventLog.created_at.asc(), EventLog.id.asc())
+        .limit(limit)
+        .with_for_update(skip_locked=True)
+    )
+
+
+def _replay_unhandled_events_statement(
+    *,
+    channels: tuple[str, ...],
+    limit: int,
+    published,
+    handled,
+    dead_letter,
+):
+    return (
+        select(published)
+        .where(
+            published.status == "published",
+            published.channel.in_(channels),
+            ~exists(
+                select(handled.id).where(
+                    handled.event_id == published.event_id,
+                    handled.status == "handled",
+                )
+            ),
+            ~exists(
+                select(dead_letter.id).where(
+                    dead_letter.event_id == published.event_id,
+                    dead_letter.status == "dead_letter",
+                )
+            ),
+        )
+        .order_by(published.created_at.asc(), published.id.asc())
+        .limit(limit)
+    )
 
 
 async def relay_pending_events(
