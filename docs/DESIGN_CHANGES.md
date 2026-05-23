@@ -794,3 +794,4 @@ threshold_modifier、propagation_activator、risk_recalc、数据腐烂防护
 - Position 查询稳定化：风险快照、持仓数据新鲜度和持仓感知阈值缓存统一使用稳定排序，open position 按 `opened_at desc, id desc`，阈值缓存按 `monitoring_priority asc, id asc`，并补充对应复合索引。
 - Event Intelligence ingress 查询稳定化：同步入口的新闻、天气产业数据和行情信号扫描抽为可测试 statement，统一追加 `id desc` 兜底排序，并补充 `news_events(published_at, id)`、`industry_data(data_type, timestamp, ingested_at, id)`、`signal_track(created_at, id)` 复合索引，减少同时间数据导致的候选顺序漂移和同步排序开销。
 - Learning / Reflection 查询稳定化：反思 Agent 的信号、交易计划、用户反馈和 drift 输入快照，推荐归因报告，以及 drift signal 窗口读取都统一使用时间列 + `id` 排序；补充 `recommendations(created_at, id)` 与 `user_feedback(recorded_at, id)` 复合索引，保证学习假设和交易计划归因在同时间样本下可复现。
+- Notebook / Strategies 查询稳定化：研究笔记报告关联预警和回测质量运行态样本读取抽为可测试 statement，按 `triggered_at/created_at desc, id desc` 稳定排序；补充 `alerts(triggered_at, id)` 和 `alerts(related_research_id)` 索引，保证研究引用和回测质量摘要在同时间样本下可复现。

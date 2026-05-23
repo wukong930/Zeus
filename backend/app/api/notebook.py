@@ -5,7 +5,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import or_, select
+from sqlalchemy import false, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -167,14 +167,15 @@ async def load_report_alerts(
     if not report_ids and not related_alert_ids:
         return {}
 
-    statement = select(Alert).order_by(Alert.triggered_at.desc()).limit(500)
-    conditions = []
-    if related_alert_ids:
-        conditions.append(Alert.id.in_(related_alert_ids))
-    if report_ids:
-        conditions.append(Alert.related_research_id.in_(report_ids))
-    statement = statement.where(or_(*conditions))
-    alerts = (await session.scalars(statement)).all()
+    alerts = (
+        await session.scalars(
+            _report_alerts_statement(
+                report_ids=report_ids,
+                related_alert_ids=related_alert_ids,
+                limit=500,
+            )
+        )
+    ).all()
 
     grouped: dict[UUID, list[Alert]] = {report_id: [] for report_id in report_ids}
     report_by_alert_id = {
@@ -187,6 +188,25 @@ async def load_report_alerts(
         if attached_report_id is not None:
             grouped.setdefault(attached_report_id, []).append(alert)
     return grouped
+
+
+def _report_alerts_statement(
+    *,
+    report_ids: set[UUID],
+    related_alert_ids: set[UUID],
+    limit: int,
+):
+    statement = select(Alert)
+    conditions = []
+    if related_alert_ids:
+        conditions.append(Alert.id.in_(related_alert_ids))
+    if report_ids:
+        conditions.append(Alert.related_research_id.in_(report_ids))
+    if conditions:
+        statement = statement.where(or_(*conditions))
+    else:
+        statement = statement.where(false())
+    return statement.order_by(Alert.triggered_at.desc(), Alert.id.desc()).limit(limit)
 
 
 def entry_from_report(

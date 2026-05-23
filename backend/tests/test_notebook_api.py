@@ -7,6 +7,7 @@ from sqlalchemy.dialects import postgresql
 from app.api.notebook import (
     NotebookSnapshot,
     _learning_hypotheses_statement,
+    _report_alerts_statement,
     _research_hypotheses_statement,
     _research_reports_statement,
     entry_from_report,
@@ -93,9 +94,18 @@ async def test_notebook_snapshot_accepts_cursor() -> None:
 
 def test_notebook_statements_use_cursor_and_stable_order() -> None:
     before = datetime(2026, 5, 6, tzinfo=timezone.utc)
+    report_id = uuid4()
+    alert_id = uuid4()
     report_sql = _compile_postgres(_research_reports_statement(before=before, limit=20))
     learning_sql = _compile_postgres(_learning_hypotheses_statement(before=before, limit=20))
     research_sql = _compile_postgres(_research_hypotheses_statement(before=before, limit=20))
+    report_alert_sql = _compile_postgres(
+        _report_alerts_statement(
+            report_ids={report_id},
+            related_alert_ids={alert_id},
+            limit=500,
+        )
+    )
 
     assert "research_reports.published_at <" in report_sql
     assert "ORDER BY research_reports.published_at DESC, research_reports.id DESC" in report_sql
@@ -103,6 +113,9 @@ def test_notebook_statements_use_cursor_and_stable_order() -> None:
     assert "ORDER BY learning_hypotheses.updated_at DESC, learning_hypotheses.id DESC" in learning_sql
     assert "research_hypotheses.created_at <" in research_sql
     assert "ORDER BY research_hypotheses.created_at DESC, research_hypotheses.id DESC" in research_sql
+    assert "alerts.id IN" in report_alert_sql
+    assert "alerts.related_research_id IN" in report_alert_sql
+    assert "ORDER BY alerts.triggered_at DESC, alerts.id DESC" in report_alert_sql
     assert "LIMIT" in report_sql
 
 

@@ -1155,6 +1155,7 @@ Causa 的 `event_driven` 评估器实际上是纯技术面（gap + volume），*
   - [x] Phase 10.60.54：Position risk / freshness / threshold cache 查询统一补充稳定排序，open position 读取按 `opened_at desc, id desc`，position-aware 阈值缓存按 `monitoring_priority asc, id asc`；补充 `positions(status, opened_at, id)` 与 `positions(status, data_mode, monitoring_priority, id)` 复合索引，避免同时间持仓导致风险快照、数据腐烂和阈值缓存顺序漂移。
   - [x] Phase 10.60.55：Event Intelligence ingress 的新闻、天气产业数据和行情信号扫描抽为可测试 statement，并统一增加 `id desc` 兜底排序；补充新闻发布时间、天气数据类型/时间、信号创建时间复合索引，避免同步候选在同时间数据下顺序漂移或热路径退化。
   - [x] Phase 10.60.56：Learning / Reflection 运行态查询统一补齐稳定排序，反思输入快照、推荐归因报告和 drift signal 窗口均按时间列 + `id` 读取；补充 recommendation / feedback 复合索引，避免同时间样本改变学习假设、归因切片和 drift 复盘顺序。
+  - [x] Phase 10.60.57：Notebook 报告关联预警和 Strategies 回测质量样本查询抽为可测试 statement，并统一追加 `id desc` 稳定排序；补充 alerts 触发时间与研究报告关联索引，避免研究笔记引用和回测质量摘要在同时间样本下顺序漂移。
 - [ ] 后端慢查询、索引、分页和缓存继续复查。
 - [x] 调度任务真实 handler 覆盖率继续复查，避免 enabled 但实际 noop。
 - [x] 全量回归测试、浏览器验证和部署 smoke 流程固化。

@@ -4,8 +4,9 @@ from datetime import date, datetime, timezone
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
+from sqlalchemy.dialects import postgresql
 
-from app.api.strategies import recommendation_outcome
+from app.api.strategies import _runtime_recommendation_outcomes_statement, recommendation_outcome
 from app.core.database import get_db
 from app.main import create_app
 from app.models.change_review_queue import ChangeReviewQueue
@@ -325,6 +326,16 @@ def test_recommendation_outcome_uses_directional_realized_return() -> None:
     assert recommendation_outcome(short)["return_pct"] == 0.08
 
 
+def test_runtime_recommendation_outcomes_statement_uses_stable_ordering() -> None:
+    sql = _compile_postgres(_runtime_recommendation_outcomes_statement(limit=500))
+
+    assert "recommendations.status =" in sql
+    assert "recommendations.pnl_realized IS NOT NULL" in sql
+    assert "recommendations.actual_exit IS NOT NULL" in sql
+    assert "ORDER BY recommendations.created_at DESC, recommendations.id DESC" in sql
+    assert "LIMIT" in sql
+
+
 def test_backtest_quality_api_marks_missing_outcomes_as_degraded(monkeypatch) -> None:
     async def fake_db():
         yield object()
@@ -409,3 +420,7 @@ def _completed_recommendation(
         actual_exit=actual_exit,
         backtest_summary={"regime": "range"},
     )
+
+
+def _compile_postgres(statement) -> str:
+    return str(statement.compile(dialect=postgresql.dialect()))

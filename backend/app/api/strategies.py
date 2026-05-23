@@ -125,21 +125,25 @@ async def load_runtime_recommendation_outcomes(
     limit: int = 500,
 ) -> list[dict[str, Any]]:
     rows = (
-        await session.scalars(
-            select(Recommendation)
-            .where(
-                or_(
-                    Recommendation.status == "completed",
-                    Recommendation.pnl_realized.is_not(None),
-                    Recommendation.actual_exit.is_not(None),
-                )
-            )
-            .order_by(Recommendation.created_at.desc())
-            .limit(limit)
-        )
+        await session.scalars(_runtime_recommendation_outcomes_statement(limit=limit))
     ).all()
     outcomes = [recommendation_outcome(row) for row in rows]
     return [item for item in outcomes if item is not None]
+
+
+def _runtime_recommendation_outcomes_statement(*, limit: int):
+    return (
+        select(Recommendation)
+        .where(
+            or_(
+                Recommendation.status == "completed",
+                Recommendation.pnl_realized.is_not(None),
+                Recommendation.actual_exit.is_not(None),
+            )
+        )
+        .order_by(Recommendation.created_at.desc(), Recommendation.id.desc())
+        .limit(limit)
+    )
 
 
 def recommendation_outcome(row: Recommendation) -> dict[str, Any] | None:

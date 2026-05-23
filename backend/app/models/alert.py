@@ -17,11 +17,13 @@ class Alert(Base):
         Index("ix_alerts_category_triggered_at", "category", "triggered_at"),
         Index("ix_alerts_severity", "severity"),
         Index("ix_alerts_triggered_at", "triggered_at"),
+        Index("ix_alerts_triggered_id", "triggered_at", "id"),
         Index("ix_alerts_adversarial_passed", "adversarial_passed"),
         Index("ix_alerts_confidence_tier", "confidence_tier"),
         Index("ix_alerts_human_action_required", "human_action_required"),
         Index("ix_alerts_dedup_suppressed", "dedup_suppressed"),
         Index("ix_alerts_translation_status", "translation_status"),
+        Index("ix_alerts_related_research_id", "related_research_id"),
         Index("ix_alerts_related_assets", "related_assets", postgresql_using="gin"),
     )
 
