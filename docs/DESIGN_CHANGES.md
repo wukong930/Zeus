@@ -793,3 +793,4 @@ threshold_modifier、propagation_activator、risk_recalc、数据腐烂防护
 - Trade Plan 查询稳定化：交易计划激活和上下文联动查询统一追加 `id desc` 排序兜底，并补充 event_log 与 recommendations 的复合索引，减少同时间 signal.scored、alert result 和 open plan 扫描导致的交易计划候选顺序漂移。
 - Position 查询稳定化：风险快照、持仓数据新鲜度和持仓感知阈值缓存统一使用稳定排序，open position 按 `opened_at desc, id desc`，阈值缓存按 `monitoring_priority asc, id asc`，并补充对应复合索引。
 - Event Intelligence ingress 查询稳定化：同步入口的新闻、天气产业数据和行情信号扫描抽为可测试 statement，统一追加 `id desc` 兜底排序，并补充 `news_events(published_at, id)`、`industry_data(data_type, timestamp, ingested_at, id)`、`signal_track(created_at, id)` 复合索引，减少同时间数据导致的候选顺序漂移和同步排序开销。
+- Learning / Reflection 查询稳定化：反思 Agent 的信号、交易计划、用户反馈和 drift 输入快照，推荐归因报告，以及 drift signal 窗口读取都统一使用时间列 + `id` 排序；补充 `recommendations(created_at, id)` 与 `user_feedback(recorded_at, id)` 复合索引，保证学习假设和交易计划归因在同时间样本下可复现。

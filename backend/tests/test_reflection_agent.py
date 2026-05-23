@@ -23,10 +23,16 @@ from app.services.calibration.updater import CalibrationProposal, apply_signal_c
 from app.services.governance.review_queue import ReviewRequiredError
 from app.services.learning.reflection_agent import (
     LearningHypothesisCandidate,
+    _reflection_drift_rows_statement,
+    _reflection_feedback_rows_statement,
+    _reflection_recommendation_rows_statement,
+    _reflection_signal_rows_statement,
     parse_reflection_candidates,
     persist_learning_hypotheses,
     run_reflection_agent,
 )
+from app.services.learning.attribution_report import _attribution_recommendations_statement
+from app.services.learning.drift_monitor import _signal_track_window_statement
 from app.services.llm.types import LLMCompletionResult
 from app.services.vector_search.eval import (
     _active_eval_cases_statement,
@@ -276,6 +282,38 @@ async def test_run_reflection_agent_sends_sanitized_relative_payload() -> None:
 
     assert result.proposed == 1
     assert any(isinstance(row, ChangeReviewQueue) for row in session.rows)
+
+
+def test_learning_runtime_statements_use_stable_tie_breakers() -> None:
+    period_end = datetime(2026, 5, 4, tzinfo=timezone.utc)
+    period_start = period_end - timedelta(days=30)
+
+    signal_sql = _compile_postgres(_reflection_signal_rows_statement(period_start, period_end, 50))
+    recommendation_sql = _compile_postgres(
+        _reflection_recommendation_rows_statement(period_start, period_end, 50)
+    )
+    feedback_sql = _compile_postgres(
+        _reflection_feedback_rows_statement(period_start, period_end, 50)
+    )
+    drift_sql = _compile_postgres(_reflection_drift_rows_statement(period_start, period_end, 50))
+    attribution_sql = _compile_postgres(
+        _attribution_recommendations_statement(period_start, period_end)
+    )
+    drift_window_sql = _compile_postgres(
+        _signal_track_window_statement(
+            category="rubber",
+            start=period_start,
+            end=period_end,
+        )
+    )
+
+    assert "ORDER BY signal_track.created_at DESC, signal_track.id DESC" in signal_sql
+    assert "ORDER BY recommendations.created_at DESC, recommendations.id DESC" in recommendation_sql
+    assert "ORDER BY user_feedback.recorded_at DESC, user_feedback.id DESC" in feedback_sql
+    assert "ORDER BY drift_metrics.computed_at DESC, drift_metrics.id DESC" in drift_sql
+    assert "ORDER BY recommendations.created_at DESC, recommendations.id DESC" in attribution_sql
+    assert "signal_track.outcome IN" in drift_window_sql
+    assert "ORDER BY signal_track.created_at ASC, signal_track.id ASC" in drift_window_sql
 
 
 async def test_proposed_hypothesis_cannot_modify_calibration_without_review() -> None:

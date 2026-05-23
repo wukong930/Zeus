@@ -59,15 +59,7 @@ async def generate_attribution_report(
     start_dt = datetime.combine(period_start, datetime.min.time(), tzinfo=timezone.utc)
     end_dt = datetime.combine(period_end, datetime.min.time(), tzinfo=timezone.utc)
     rows = (
-        await session.execute(
-            select(Recommendation, Alert)
-            .outerjoin(Alert, Recommendation.alert_id == Alert.id)
-            .where(
-                Recommendation.created_at >= start_dt,
-                Recommendation.created_at < end_dt,
-            )
-            .order_by(Recommendation.created_at.desc())
-        )
+        await session.execute(_attribution_recommendations_statement(start_dt, end_dt))
     ).all()
     records = [(recommendation, alert) for recommendation, alert in rows]
     closed = [
@@ -99,6 +91,18 @@ async def generate_attribution_report(
             ),
         },
         risk_assessment=risk_assessment(closed),
+    )
+
+
+def _attribution_recommendations_statement(start_dt: datetime, end_dt: datetime):
+    return (
+        select(Recommendation, Alert)
+        .outerjoin(Alert, Recommendation.alert_id == Alert.id)
+        .where(
+            Recommendation.created_at >= start_dt,
+            Recommendation.created_at < end_dt,
+        )
+        .order_by(Recommendation.created_at.desc(), Recommendation.id.desc())
     )
 
 

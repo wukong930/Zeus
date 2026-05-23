@@ -625,17 +625,21 @@ async def _load_signal_track_window(
 ) -> list[SignalTrack]:
     return list(
         (
-            await session.scalars(
-                select(SignalTrack)
-                .where(
-                    SignalTrack.category == category,
-                    SignalTrack.created_at >= start,
-                    SignalTrack.created_at < end,
-                    SignalTrack.outcome.in_(RESOLVED_OUTCOMES),
-                )
-                .order_by(SignalTrack.created_at.asc())
-            )
+            await session.scalars(_signal_track_window_statement(category=category, start=start, end=end))
         ).all()
+    )
+
+
+def _signal_track_window_statement(*, category: str, start: datetime, end: datetime):
+    return (
+        select(SignalTrack)
+        .where(
+            SignalTrack.category == category,
+            SignalTrack.created_at >= start,
+            SignalTrack.created_at < end,
+            SignalTrack.outcome.in_(RESOLVED_OUTCOMES),
+        )
+        .order_by(SignalTrack.created_at.asc(), SignalTrack.id.asc())
     )
 
 

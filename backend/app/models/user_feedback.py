@@ -15,6 +15,7 @@ class UserFeedback(Base):
         Index("ix_user_feedback_recommendation_id", "recommendation_id"),
         Index("ix_user_feedback_signal_type", "signal_type"),
         Index("ix_user_feedback_recorded_at", "recorded_at"),
+        Index("ix_user_feedback_recorded_id", "recorded_at", "id"),
     )
 
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
