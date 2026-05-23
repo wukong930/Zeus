@@ -14,6 +14,7 @@ class NewsEvent(Base):
         Index("ix_news_events_source", "source"),
         Index("ix_news_events_source_published_at", "source", "published_at"),
         Index("ix_news_events_published_at", "published_at"),
+        Index("ix_news_events_published_id", "published_at", "id"),
         Index("ix_news_events_event_type", "event_type"),
         Index("ix_news_events_event_type_published_at", "event_type", "published_at"),
         Index("ix_news_events_direction", "direction"),

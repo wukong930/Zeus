@@ -19,6 +19,7 @@ class SignalTrack(Base):
         Index("ix_signal_track_combination_hash", "signal_combination_hash"),
         Index("ix_signal_track_regime_at_emission", "regime_at_emission"),
         Index("ix_signal_track_created_at", "created_at"),
+        Index("ix_signal_track_created_id", "created_at", "id"),
         Index("ix_signal_track_outcome_created_at", "outcome", "created_at"),
         Index("ix_signal_track_direction", "direction"),
     )

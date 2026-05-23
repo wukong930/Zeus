@@ -400,13 +400,7 @@ async def _sync_news_events(
     limit: int,
     errors: list[dict[str, str]],
 ) -> tuple[int, int]:
-    rows = list(
-        (
-            await session.scalars(
-                select(NewsEvent).order_by(NewsEvent.published_at.desc()).limit(limit)
-            )
-        ).all()
-    )
+    rows = list((await session.scalars(_recent_news_events_statement(limit=limit))).all())
     created = 0
     for row in rows:
         try:
@@ -415,6 +409,10 @@ async def _sync_news_events(
         except Exception as exc:
             errors.append({"source": f"news_event:{row.id}", "error": str(exc)})
     return len(rows), created
+
+
+def _recent_news_events_statement(*, limit: int):
+    return select(NewsEvent).order_by(NewsEvent.published_at.desc(), NewsEvent.id.desc()).limit(limit)
 
 
 async def _create_candidates(
@@ -544,28 +542,32 @@ async def _refresh_existing_ingress_candidate(
 
 
 async def _load_weather_rows(session: AsyncSession, *, limit: int) -> list[IndustryData]:
-    return list(
-        (
-            await session.scalars(
-                select(IndustryData)
-                .where(IndustryData.data_type.in_(WEATHER_DATA_TYPES))
-                .order_by(IndustryData.timestamp.desc(), IndustryData.ingested_at.desc())
-                .limit(limit)
-            )
-        ).all()
+    return list((await session.scalars(_weather_rows_statement(limit=limit))).all())
+
+
+def _weather_rows_statement(*, limit: int):
+    return (
+        select(IndustryData)
+        .where(IndustryData.data_type.in_(WEATHER_DATA_TYPES))
+        .order_by(
+            IndustryData.timestamp.desc(),
+            IndustryData.ingested_at.desc(),
+            IndustryData.id.desc(),
+        )
+        .limit(limit)
     )
 
 
 async def _load_market_signal_rows(session: AsyncSession, *, limit: int) -> list[SignalTrack]:
-    return list(
-        (
-            await session.scalars(
-                select(SignalTrack)
-                .where(SignalTrack.confidence >= 0.65)
-                .order_by(SignalTrack.created_at.desc())
-                .limit(limit)
-            )
-        ).all()
+    return list((await session.scalars(_market_signal_rows_statement(limit=limit))).all())
+
+
+def _market_signal_rows_statement(*, limit: int, min_confidence: float = 0.65):
+    return (
+        select(SignalTrack)
+        .where(SignalTrack.confidence >= min_confidence)
+        .order_by(SignalTrack.created_at.desc(), SignalTrack.id.desc())
+        .limit(limit)
     )
 
 

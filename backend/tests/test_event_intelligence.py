@@ -35,6 +35,9 @@ from app.services.event_intelligence import (
 )
 from app.services.event_intelligence.eval_cases import EVENT_INTELLIGENCE_EVAL_CASES
 from app.services.event_intelligence.ingress import (
+    _market_signal_rows_statement,
+    _recent_news_events_statement,
+    _weather_rows_statement,
     market_signal_event_candidate,
     weather_event_candidates_from_industry_rows,
 )
@@ -300,6 +303,21 @@ def test_market_signal_ingress_skips_low_confidence_or_unmapped_category() -> No
 
     assert market_signal_event_candidate(low_confidence, now=now) is None
     assert market_signal_event_candidate(unmapped, now=now) is None
+
+
+def test_event_intelligence_ingress_statements_use_stable_ordering() -> None:
+    news_sql = _compile_postgres(_recent_news_events_statement(limit=50))
+    weather_sql = _compile_postgres(_weather_rows_statement(limit=500))
+    signal_sql = _compile_postgres(_market_signal_rows_statement(limit=100))
+
+    assert "ORDER BY news_events.published_at DESC, news_events.id DESC" in news_sql
+    assert "industry_data.data_type IN" in weather_sql
+    assert (
+        "ORDER BY industry_data.timestamp DESC, industry_data.ingested_at DESC, "
+        "industry_data.id DESC"
+    ) in weather_sql
+    assert "signal_track.confidence >=" in signal_sql
+    assert "ORDER BY signal_track.created_at DESC, signal_track.id DESC" in signal_sql
 
 
 async def test_event_intelligence_review_queue_records_high_impact_uncertainty() -> None:
