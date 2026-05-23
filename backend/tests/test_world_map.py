@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from fastapi.testclient import TestClient
 from sqlalchemy.dialects import postgresql
@@ -21,6 +21,8 @@ from app.api.world_map import (
     _world_map_positions_statement,
     _world_map_should_load_source,
     _world_map_signals_statement,
+    _world_map_weather_statement,
+    _weather_row_key,
 )
 from app.core.database import get_db
 from app.main import create_app
@@ -74,6 +76,7 @@ def test_world_map_runtime_statements_use_stable_tie_breakers() -> None:
     news_sql = _compile_postgres(_world_map_news_statement(limit=20, filters=None))
     signal_sql = _compile_postgres(_world_map_signals_statement(limit=20, alert_ids=[uuid4()]))
     position_sql = _compile_postgres(_world_map_positions_statement(limit=20))
+    weather_sql = _compile_postgres(_world_map_weather_statement(limit=20))
     event_item_sql = _compile_postgres(_world_map_event_items_statement(limit=20, filters=None))
     event_link_sql = _compile_postgres(
         _world_map_event_links_statement(event_item_ids=[uuid4()], limit=20, filters=None)
@@ -83,6 +86,10 @@ def test_world_map_runtime_statements_use_stable_tie_breakers() -> None:
     assert "ORDER BY news_events.published_at DESC, news_events.id DESC" in news_sql
     assert "ORDER BY signal_track.created_at DESC, signal_track.id DESC" in signal_sql
     assert "ORDER BY positions.opened_at DESC, positions.id DESC" in position_sql
+    assert (
+        "ORDER BY industry_data.timestamp DESC, "
+        "industry_data.ingested_at DESC, industry_data.id DESC"
+    ) in weather_sql
     assert (
         "ORDER BY event_intelligence_items.event_timestamp DESC, "
         "event_intelligence_items.created_at DESC, event_intelligence_items.id DESC"
@@ -102,6 +109,34 @@ def test_world_map_source_filter_skips_unneeded_runtime_sources() -> None:
     assert _world_map_should_load_source(signal_filters, "signal") is True
     assert _world_map_should_load_source(signal_filters, "alert") is False
     assert _world_map_should_load_source(None, "position") is True
+
+
+def test_world_map_weather_row_key_uses_id_tie_breaker() -> None:
+    observed_at = datetime(2026, 5, 3, tzinfo=timezone.utc)
+    older_id = UUID("00000000-0000-0000-0000-000000000001")
+    newer_id = UUID("ffffffff-ffff-ffff-ffff-ffffffffffff")
+    older_row = IndustryData(
+        id=older_id,
+        symbol="RU",
+        data_type="weather_precipitation_anomaly_pct",
+        value=12,
+        unit="pct",
+        source="open_meteo:thailand_south",
+        timestamp=observed_at,
+        ingested_at=observed_at,
+    )
+    newer_row = IndustryData(
+        id=newer_id,
+        symbol="RU",
+        data_type="weather_precipitation_anomaly_pct",
+        value=18,
+        unit="pct",
+        source="open_meteo:thailand_south",
+        timestamp=observed_at,
+        ingested_at=observed_at,
+    )
+
+    assert _weather_row_key(newer_row) > _weather_row_key(older_row)
 
 
 def test_world_map_snapshot_endpoint_uses_short_ttl_cache(monkeypatch) -> None:

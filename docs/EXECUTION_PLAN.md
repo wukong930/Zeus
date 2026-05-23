@@ -1160,6 +1160,7 @@ Causa 的 `event_driven` 评估器实际上是纯技术面（gap + volume），*
   - [x] Phase 10.60.59：Market / Industry PIT 查询稳定化，窗口函数选择最新 vintage 时追加 `id desc`，Market Data PIT 外层按 `timestamp desc, contract_month asc, id desc` 输出；补充 market / industry PIT 稳定排序复合索引，避免同一时间同一 vintage 行情影响回测、场景和风险复盘。
   - [x] Phase 10.60.60：Risk Market Data 查询稳定化，风险市场数据 PIT 窗口和 symbol 限额窗口统一追加 `id desc`，最终输出按 `symbol asc, timestamp desc, contract_month asc, id desc`，避免风险矩阵 / 持仓风险在同时间行情下漂移。
   - [x] Phase 10.60.61：Translation Backfill 查询稳定化，新闻和预警翻译回填按发布时间 / 触发时间后追加 `id desc`，并显式识别 glossary 版本为空的历史行，避免批量回填顺序漂移和旧中文字段漏升级。
+  - [x] Phase 10.60.62：World Risk Map 天气层查询稳定化，天气 / 产业行读取按 `timestamp desc, ingested_at desc, id desc` 输出，区域最新天气行选择也纳入 `id` 兜底，避免同一采集时间的热区和天气异常读数漂移。
 - [ ] 后端慢查询、索引、分页和缓存继续复查。
 - [x] 调度任务真实 handler 覆盖率继续复查，避免 enabled 但实际 noop。
 - [x] 全量回归测试、浏览器验证和部署 smoke 流程固化。

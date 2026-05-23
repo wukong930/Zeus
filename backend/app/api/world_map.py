@@ -895,10 +895,7 @@ async def _load_world_map_regions(
     weather_rows = list(
         (
             await session.scalars(
-                select(IndustryData)
-                .where(IndustryData.data_type.in_(WORLD_MAP_WEATHER_DATA_TYPES))
-                .order_by(IndustryData.timestamp.desc(), IndustryData.ingested_at.desc())
-                .limit(min(max(limit * 8, 200), 4000))
+                _world_map_weather_statement(limit=limit)
             )
         ).all()
     )
@@ -1004,6 +1001,19 @@ def _world_map_positions_statement(*, limit: int):
         .where(Position.status.in_(["open", "position_aware"]))
         .order_by(Position.opened_at.desc(), Position.id.desc())
         .limit(limit)
+    )
+
+
+def _world_map_weather_statement(*, limit: int):
+    return (
+        select(IndustryData)
+        .where(IndustryData.data_type.in_(WORLD_MAP_WEATHER_DATA_TYPES))
+        .order_by(
+            IndustryData.timestamp.desc(),
+            IndustryData.ingested_at.desc(),
+            IndustryData.id.desc(),
+        )
+        .limit(min(max(limit * 8, 200), 4000))
     )
 
 
@@ -1867,8 +1877,8 @@ def _weather_row_region(source: str) -> str | None:
     return WEATHER_REGION_BY_LOCATION_KEY.get(location_key)
 
 
-def _weather_row_key(row: IndustryData) -> tuple[datetime, datetime]:
-    return row.timestamp, row.ingested_at or row.timestamp
+def _weather_row_key(row: IndustryData) -> tuple[datetime, datetime, str]:
+    return row.timestamp, row.ingested_at or row.timestamp, str(row.id or "")
 
 
 def _rows_for_type(
