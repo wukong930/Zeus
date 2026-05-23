@@ -140,7 +140,11 @@ async def _drift_runtime_snapshot(session: AsyncSession) -> RuntimeDriftSnapshot
 
 
 def _recent_drift_statement(*, limit: int):
-    return select(DriftMetric).order_by(DriftMetric.computed_at.desc()).limit(limit)
+    return (
+        select(DriftMetric)
+        .order_by(DriftMetric.computed_at.desc(), DriftMetric.id.desc())
+        .limit(limit)
+    )
 
 
 def _drift_snapshot_to_runtime(snapshot: DriftSnapshotRead) -> RuntimeDriftSnapshot:

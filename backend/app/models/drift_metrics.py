@@ -15,6 +15,7 @@ class DriftMetric(Base):
         Index("ix_drift_metrics_category", "category"),
         Index("ix_drift_metrics_severity", "drift_severity"),
         Index("ix_drift_metrics_computed_at", "computed_at"),
+        Index("ix_drift_metrics_computed_at_id", "computed_at", "id"),
     )
 
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)

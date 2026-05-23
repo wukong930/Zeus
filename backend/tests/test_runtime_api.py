@@ -13,6 +13,7 @@ from app.api.runtime import (
     _active_signal_summary_statement,
     _calibration_samples_statement,
     _clear_runtime_heartbeat_cache,
+    _recent_drift_statement,
 )
 from app.core.database import get_db
 from app.main import create_app
@@ -159,6 +160,7 @@ def test_runtime_heartbeat_queries_are_index_friendly() -> None:
     now = datetime(2026, 5, 18, 8, 0, tzinfo=timezone.utc)
 
     active_sql = _compile_postgres(_active_signal_summary_statement(now=now))
+    drift_sql = _compile_postgres(_recent_drift_statement(limit=50))
     calibration_sql = _compile_postgres(
         _calibration_samples_statement(now=now, lookback_days=180)
     )
@@ -167,6 +169,8 @@ def test_runtime_heartbeat_queries_are_index_friendly() -> None:
     assert "max(signal_track.created_at)" in active_sql
     assert "signal_track.created_at >=" in active_sql
     assert "ORDER BY" not in active_sql
+    assert "ORDER BY drift_metrics.computed_at DESC, drift_metrics.id DESC" in drift_sql
+    assert "LIMIT" in drift_sql
     assert "count(signal_track.id)" in calibration_sql
     assert "signal_track.outcome IN" in calibration_sql
     assert "signal_track.created_at >=" in calibration_sql
