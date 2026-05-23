@@ -64,21 +64,17 @@ async def compare_shadow_run(
     shadow_rows = list(
         (
             await session.scalars(
-                select(ShadowSignal)
-                .where(ShadowSignal.shadow_run_id == run_id)
-                .order_by(ShadowSignal.created_at.asc())
+                _shadow_signals_statement(run_id=run_id)
             )
         ).all()
     )
     production_rows = list(
         (
             await session.scalars(
-                select(SignalTrack)
-                .where(
-                    SignalTrack.created_at >= run.started_at,
-                    SignalTrack.created_at <= effective_end,
+                _production_signals_statement(
+                    started_at=run.started_at,
+                    ended_at=effective_end,
                 )
-                .order_by(SignalTrack.created_at.asc())
             )
         ).all()
     )
@@ -87,6 +83,25 @@ async def compare_shadow_run(
         shadow_rows=shadow_rows,
         production_rows=production_rows,
         sample_limit=sample_limit,
+    )
+
+
+def _shadow_signals_statement(*, run_id: UUID):
+    return (
+        select(ShadowSignal)
+        .where(ShadowSignal.shadow_run_id == run_id)
+        .order_by(ShadowSignal.created_at.asc(), ShadowSignal.id.asc())
+    )
+
+
+def _production_signals_statement(*, started_at: datetime, ended_at: datetime):
+    return (
+        select(SignalTrack)
+        .where(
+            SignalTrack.created_at >= started_at,
+            SignalTrack.created_at <= ended_at,
+        )
+        .order_by(SignalTrack.created_at.asc(), SignalTrack.id.asc())
     )
 
 

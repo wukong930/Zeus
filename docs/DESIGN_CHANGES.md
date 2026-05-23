@@ -784,3 +784,4 @@ threshold_modifier、propagation_activator、risk_recalc、数据腐烂防护
 - Calibration review 源样本保持点时一致：生成校准复核队列时，resolved signal 查询增加 `created_at <= as_of` 上界，并按 `created_at asc, id asc` 稳定排序，避免历史 as-of 复核引入未来样本。
 - Threshold Calibration 源样本查询稳定化：阈值校准报告复用可测试 `_threshold_source_tracks_statement`，保留 `created_at <= as_of` 点时上界，并按 `created_at asc, id asc` 稳定排序，保证可靠性曲线和阈值建议可复现。
 - Shadow Tracker pending signal 扫描保持点时一致：待评估 signal 查询增加 `created_at <= as_of` 上界，并按 `created_at asc, id asc` 稳定排序，避免历史 outcome 评估读取未来 pending 信号。
+- Shadow Comparison 样本顺序稳定化：shadow run 对比读取 shadow signals 和生产 signal tracks 时统一按 `created_at asc, id asc` 排序，保证 shadow-only / production-only 示例在同时间样本下可复现。

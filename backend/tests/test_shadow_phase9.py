@@ -16,7 +16,11 @@ from app.services.calibration.threshold_calibrator import (
     enqueue_threshold_review,
 )
 from app.services.shadow.applications import initial_shadow_application_specs
-from app.services.shadow.comparator import build_shadow_comparison_report
+from app.services.shadow.comparator import (
+    _production_signals_statement,
+    _shadow_signals_statement,
+    build_shadow_comparison_report,
+)
 from app.services.shadow.runner import (
     record_shadow_signal,
     run_shadow_for_event,
@@ -366,6 +370,23 @@ def test_shadow_comparator_reports_shadow_only_delta() -> None:
     assert report.shadow_only == 1
     assert report.production_only == 0
     assert report.sample_cases[0].kind == "shadow_only"
+
+
+def test_shadow_comparator_statements_use_stable_order() -> None:
+    run_id = uuid4()
+    started_at = datetime(2026, 5, 1, tzinfo=timezone.utc)
+    ended_at = datetime(2026, 5, 4, tzinfo=timezone.utc)
+
+    shadow_sql = _compile_postgres(_shadow_signals_statement(run_id=run_id))
+    production_sql = _compile_postgres(
+        _production_signals_statement(started_at=started_at, ended_at=ended_at)
+    )
+
+    assert "shadow_signals.shadow_run_id =" in shadow_sql
+    assert "ORDER BY shadow_signals.created_at ASC, shadow_signals.id ASC" in shadow_sql
+    assert "signal_track.created_at >=" in production_sql
+    assert "signal_track.created_at <=" in production_sql
+    assert "ORDER BY signal_track.created_at ASC, signal_track.id ASC" in production_sql
 
 
 def _compile_postgres(statement) -> str:
