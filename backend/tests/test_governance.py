@@ -11,7 +11,10 @@ from app.main import create_app
 from app.models.change_review_queue import ChangeReviewQueue
 from app.models.calibration import SignalCalibration
 from app.services.calibration.updater import CalibrationProposal, apply_signal_calibration_change
-from app.services.governance.review_queue import ReviewRequiredError
+from app.services.governance.review_queue import (
+    ReviewRequiredError,
+    _active_review_lookup_statement,
+)
 
 
 class FakeScalars:
@@ -213,3 +216,24 @@ def test_change_reviews_statement_pushes_triage_filters_and_cursor_to_database()
     assert "change_review_queue.created_at <" in sql
     assert "ORDER BY change_review_queue.created_at DESC, change_review_queue.id DESC" in sql
     assert "LIMIT" in sql
+
+
+def test_active_review_lookup_statement_uses_stable_oldest_order() -> None:
+    sql = str(
+        _active_review_lookup_statement(
+            source="calibration",
+            target_table="signal_calibration",
+            target_key="momentum:energy:range_low_vol",
+            statuses=("pending", "shadow_review", "pending"),
+        ).compile(
+            dialect=postgresql.dialect(),
+            compile_kwargs={"literal_binds": True},
+        )
+    )
+
+    assert "change_review_queue.source = 'calibration'" in sql
+    assert "change_review_queue.target_table = 'signal_calibration'" in sql
+    assert "change_review_queue.target_key = 'momentum:energy:range_low_vol'" in sql
+    assert "change_review_queue.status IN ('pending', 'shadow_review')" in sql
+    assert "ORDER BY change_review_queue.created_at ASC, change_review_queue.id ASC" in sql
+    assert "LIMIT 1" in sql

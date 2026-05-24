@@ -816,3 +816,4 @@ threshold_modifier、propagation_activator、risk_recalc、数据腐烂防护
 - 持仓驱动 Watchlist upsert 查询稳定化：symbol pair/category 查找抽为可测试 statement，按 `updated_at desc, id desc` 稳定取一，并补充 symbol pair/category lookup 复合索引，保证异常重复 watchlist row 下持仓监控阈值刷新可复现。
 - Causal Web 关联 Alert 查询稳定化：信号关联的 alert id 批量查询抽为可测试 statement，并按 `triggered_at desc, id desc` 稳定输出，避免数据库 `IN` 返回顺序影响图谱补充预警节点顺序。
 - Alert Agent Config 查询稳定化：通知设置、阈值设置和 adversarial runtime 配置共用可测试 statement，按 `updated_at desc, id desc` 稳定取一，并补充 key/updated/id 复合索引，保证异常重复配置行下运行态设置读取可复现。
+- Review Queue active lookup 稳定化：复核入队去重查询抽为可测试 statement，按 `created_at asc, id asc` 稳定复用最早待处理项，并补充 source/table/key/status/created/id 复合索引，保证异常重复复核项下治理队列行为可复现。

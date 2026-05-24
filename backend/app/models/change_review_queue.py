@@ -23,6 +23,15 @@ class ChangeReviewQueue(Base):
             "created_at",
             "id",
         ),
+        Index(
+            "ix_change_review_queue_active_lookup",
+            "source",
+            "target_table",
+            "target_key",
+            "status",
+            "created_at",
+            "id",
+        ),
         Index("ix_change_review_queue_target", "target_table", "target_key"),
         Index("ix_change_review_queue_created_at", "created_at"),
     )

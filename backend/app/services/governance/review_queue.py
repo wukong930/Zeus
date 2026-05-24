@@ -42,14 +42,12 @@ async def enqueue_review(
     lookup_statuses = active_statuses or ("pending", queue_status)
     existing = (
         await session.scalars(
-            select(ChangeReviewQueue)
-            .where(
-                ChangeReviewQueue.source == source,
-                ChangeReviewQueue.target_table == target_table,
-                ChangeReviewQueue.target_key == target_key,
-                ChangeReviewQueue.status.in_(tuple(dict.fromkeys(lookup_statuses))),
+            _active_review_lookup_statement(
+                source=source,
+                target_table=target_table,
+                target_key=target_key,
+                statuses=lookup_statuses,
             )
-            .limit(1)
         )
     ).first()
     if existing is not None:
@@ -66,6 +64,26 @@ async def enqueue_review(
     session.add(row)
     await session.flush()
     return row
+
+
+def _active_review_lookup_statement(
+    *,
+    source: str,
+    target_table: str,
+    target_key: str,
+    statuses: tuple[str, ...],
+):
+    return (
+        select(ChangeReviewQueue)
+        .where(
+            ChangeReviewQueue.source == source,
+            ChangeReviewQueue.target_table == target_table,
+            ChangeReviewQueue.target_key == target_key,
+            ChangeReviewQueue.status.in_(tuple(dict.fromkeys(statuses))),
+        )
+        .order_by(ChangeReviewQueue.created_at.asc(), ChangeReviewQueue.id.asc())
+        .limit(1)
+    )
 
 
 def review_required(target_table: str) -> Callable[[F], F]:
