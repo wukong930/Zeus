@@ -39,7 +39,12 @@ def build_watchlist_query(
     include_disabled: bool = False,
     limit: int | None = None,
 ) -> Select[tuple[Watchlist]]:
-    statement = select(Watchlist).order_by(Watchlist.priority.asc(), Watchlist.symbol1.asc())
+    statement = select(Watchlist).order_by(
+        Watchlist.priority.asc(),
+        Watchlist.symbol1.asc(),
+        Watchlist.symbol2.asc(),
+        Watchlist.id.asc(),
+    )
     if not include_disabled:
         statement = statement.where(Watchlist.enabled.is_(True))
     if category is not None:

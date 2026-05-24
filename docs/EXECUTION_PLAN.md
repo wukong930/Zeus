@@ -1167,6 +1167,7 @@ Causa 的 `event_driven` 评估器实际上是纯技术面（gap + volume），*
   - [x] Phase 10.60.66：Event Relay / Replay 查询稳定化，pending outbox 发布与 published 事件重放查询抽为可测试 statement，并按 `created_at asc, id asc` 输出；补充 `event_log(status, created_at, id)` 索引，避免同时间事件 relay / replay 顺序漂移。
   - [x] Phase 10.60.67：Shadow Active Run 查询稳定化，active shadow run 扫描抽为可测试 statement，保留 `started_at <= as_of / ended_at > as_of` 点时窗口，并按 `started_at asc, id asc` 输出；补充 `shadow_runs(status, started_at, ended_at, id)` 索引，避免同时间 shadow 实验处理顺序漂移。
   - [x] Phase 10.60.68：Position Propagation 图谱邻居查询稳定化，关系边查询抽为可测试 statement，并按 `strength desc, id asc` 输出；补充 relationship edge source / target 强度复合索引，避免同强度关系边导致持仓传播节点顺序漂移。
+  - [x] Phase 10.60.69：Watchlist 扫描顺序稳定化，监控列表查询按 `priority asc, symbol1 asc, symbol2 asc, id asc` 输出，并补充 enabled/category/order 复合索引，避免同优先级同主符号组合的实时扫描顺序漂移。
 - [ ] 后端慢查询、索引、分页和缓存继续复查。
 - [x] 调度任务真实 handler 覆盖率继续复查，避免 enabled 但实际 noop。
 - [x] 全量回归测试、浏览器验证和部署 smoke 流程固化。

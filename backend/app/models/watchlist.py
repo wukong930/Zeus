@@ -12,6 +12,15 @@ class Watchlist(Base):
     __tablename__ = "watchlist"
     __table_args__ = (
         Index("ix_watchlist_enabled_category", "enabled", "category"),
+        Index(
+            "ix_watchlist_enabled_category_order",
+            "enabled",
+            "category",
+            "priority",
+            "symbol1",
+            "symbol2",
+            "id",
+        ),
         Index("ix_watchlist_symbol1", "symbol1"),
         Index("ix_watchlist_symbol_pair", "symbol1", "symbol2"),
     )

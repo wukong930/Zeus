@@ -2,9 +2,12 @@ import importlib.util
 from collections import Counter
 from pathlib import Path
 
+from sqlalchemy.dialects import postgresql
+
 from app.models.watchlist import Watchlist
 from app.services.signals.watchlist import (
     WatchlistEntry,
+    build_watchlist_query,
     normalize_symbol,
     to_watchlist_entry,
 )
@@ -45,6 +48,20 @@ def test_to_watchlist_entry_maps_orm_row() -> None:
     )
 
 
+def test_watchlist_query_uses_stable_pair_ordering() -> None:
+    sql = _compile_postgres(
+        build_watchlist_query(category="ferrous", include_disabled=False, limit=50)
+    )
+
+    assert "watchlist.enabled IS true" in sql
+    assert "watchlist.category = 'ferrous'" in sql
+    assert (
+        "ORDER BY watchlist.priority ASC, watchlist.symbol1 ASC, "
+        "watchlist.symbol2 ASC, watchlist.id ASC"
+    ) in sql
+    assert "LIMIT 50" in sql
+
+
 def test_phase2_migration_seeds_current_causa_watchlist() -> None:
     migration_path = (
         Path(__file__).parents[1]
@@ -70,3 +87,12 @@ def test_phase2_migration_seeds_current_causa_watchlist() -> None:
         "nonferrous": 19,
         "overseas": 13,
     }
+
+
+def _compile_postgres(statement) -> str:
+    return str(
+        statement.compile(
+            dialect=postgresql.dialect(),
+            compile_kwargs={"literal_binds": True},
+        )
+    )
