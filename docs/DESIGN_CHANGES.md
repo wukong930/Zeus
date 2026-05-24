@@ -805,3 +805,4 @@ threshold_modifier、propagation_activator、risk_recalc、数据腐烂防护
 - Null Hypothesis 查询稳定化：零假设缓存和源信号扫描抽为可测试 statement，缓存读取按 `computed_for desc, id desc` 稳定选择，源信号扫描增加 `created_at <= as_of` 点时上界并按 `created_at asc, id asc` 输出，保证历史对抗分布不会混入未来样本。
 - Event Relay / Replay 查询稳定化：事件 outbox pending 发布与 published 事件重放查询抽为可测试 statement，按 `created_at asc, id asc` 稳定输出，并补充 `event_log(status, created_at, id)` 索引，保证同时间事件 relay / replay 可复现。
 - Shadow Active Run 查询稳定化：active shadow run 扫描抽为可测试 statement，保留点时窗口过滤，并按 `started_at asc, id asc` 稳定输出；补充 `shadow_runs(status, started_at, ended_at, id)` 索引，保证同时间 shadow 实验处理顺序可复现。
+- Position Propagation 图谱邻居查询稳定化：持仓传播的关系边查询抽为可测试 statement，按 `strength desc, id asc` 稳定输出，并补充 source / target 方向的 strength 复合索引，保证同强度边不会改变传播节点顺序。

@@ -29,7 +29,9 @@ class RelationshipEdge(Base):
     __tablename__ = "relationship_edges"
     __table_args__ = (
         Index("ix_relationship_edges_source", "source"),
+        Index("ix_relationship_edges_source_strength_id", "source", "strength", "id"),
         Index("ix_relationship_edges_target", "target"),
+        Index("ix_relationship_edges_target_strength_id", "target", "strength", "id"),
     )
 
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
