@@ -1165,6 +1165,7 @@ Causa 的 `event_driven` 评估器实际上是纯技术面（gap + volume），*
   - [x] Phase 10.60.64：LLM Active Config 查询稳定化，启用配置选择按 `updated_at desc, id desc` 兜底，并补充 `llm_config(enabled, updated_at, id)` 复合索引，避免多 provider 同时更新时任务选模漂移。
   - [x] Phase 10.60.65：Null Hypothesis 查询稳定化，缓存读取按 `computed_for desc, id desc` 稳定选择，源信号扫描增加 `created_at <= as_of` 点时上界并按 `created_at asc, id asc` 输出；补充 null distribution 稳定查询索引，避免历史对抗分布混入未来样本或同时间顺序漂移。
   - [x] Phase 10.60.66：Event Relay / Replay 查询稳定化，pending outbox 发布与 published 事件重放查询抽为可测试 statement，并按 `created_at asc, id asc` 输出；补充 `event_log(status, created_at, id)` 索引，避免同时间事件 relay / replay 顺序漂移。
+  - [x] Phase 10.60.67：Shadow Active Run 查询稳定化，active shadow run 扫描抽为可测试 statement，保留 `started_at <= as_of / ended_at > as_of` 点时窗口，并按 `started_at asc, id asc` 输出；补充 `shadow_runs(status, started_at, ended_at, id)` 索引，避免同时间 shadow 实验处理顺序漂移。
 - [ ] 后端慢查询、索引、分页和缓存继续复查。
 - [x] 调度任务真实 handler 覆盖率继续复查，避免 enabled 但实际 noop。
 - [x] 全量回归测试、浏览器验证和部署 smoke 流程固化。

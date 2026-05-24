@@ -22,6 +22,7 @@ from app.services.shadow.comparator import (
     build_shadow_comparison_report,
 )
 from app.services.shadow.runner import (
+    _active_shadow_runs_statement,
     record_shadow_signal,
     run_shadow_for_event,
     shadow_context_payload,
@@ -387,6 +388,18 @@ def test_shadow_comparator_statements_use_stable_order() -> None:
     assert "signal_track.created_at >=" in production_sql
     assert "signal_track.created_at <=" in production_sql
     assert "ORDER BY signal_track.created_at ASC, signal_track.id ASC" in production_sql
+
+
+def test_active_shadow_runs_statement_uses_point_in_time_window_and_stable_order() -> None:
+    compiled = _compile_postgres(
+        _active_shadow_runs_statement(as_of=datetime(2026, 5, 4, tzinfo=timezone.utc))
+    )
+
+    assert "shadow_runs.status = " in compiled
+    assert "shadow_runs.started_at <=" in compiled
+    assert "shadow_runs.ended_at IS NULL" in compiled
+    assert "shadow_runs.ended_at >" in compiled
+    assert "ORDER BY shadow_runs.started_at ASC, shadow_runs.id ASC" in compiled
 
 
 def _compile_postgres(statement) -> str:

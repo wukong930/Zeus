@@ -14,6 +14,7 @@ class ShadowRun(Base):
         Index("ix_shadow_runs_status", "status"),
         Index("ix_shadow_runs_algorithm_version", "algorithm_version"),
         Index("ix_shadow_runs_window", "started_at", "ended_at"),
+        Index("ix_shadow_runs_active_window_id", "status", "started_at", "ended_at", "id"),
     )
 
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)

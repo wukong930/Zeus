@@ -98,15 +98,21 @@ async def active_shadow_runs(
     return list(
         (
             await session.scalars(
-                select(ShadowRun)
-                .where(
-                    ShadowRun.status == "active",
-                    ShadowRun.started_at <= effective_at,
-                    or_(ShadowRun.ended_at.is_(None), ShadowRun.ended_at > effective_at),
-                )
-                .order_by(ShadowRun.started_at.asc())
+                _active_shadow_runs_statement(as_of=effective_at)
             )
         ).all()
+    )
+
+
+def _active_shadow_runs_statement(*, as_of: datetime):
+    return (
+        select(ShadowRun)
+        .where(
+            ShadowRun.status == "active",
+            ShadowRun.started_at <= as_of,
+            or_(ShadowRun.ended_at.is_(None), ShadowRun.ended_at > as_of),
+        )
+        .order_by(ShadowRun.started_at.asc(), ShadowRun.id.asc())
     )
 
 
