@@ -245,12 +245,10 @@ async def upsert_regime_state(
 ) -> RegimeState:
     row = (
         await session.scalars(
-            select(RegimeState)
-            .where(
-                RegimeState.category == detection.category,
-                RegimeState.as_of_date == detection.as_of_date,
+            _regime_state_by_category_date_statement(
+                category=detection.category,
+                as_of_date=detection.as_of_date,
             )
-            .limit(1)
         )
     ).first()
     if row is None:
@@ -275,6 +273,18 @@ async def upsert_regime_state(
 
     await session.flush()
     return row
+
+
+def _regime_state_by_category_date_statement(*, category: str, as_of_date: date):
+    return (
+        select(RegimeState)
+        .where(
+            RegimeState.category == category,
+            RegimeState.as_of_date == as_of_date,
+        )
+        .order_by(RegimeState.computed_at.desc(), RegimeState.id.desc())
+        .limit(1)
+    )
 
 
 async def _load_symbols_by_category(

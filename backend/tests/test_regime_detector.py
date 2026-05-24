@@ -1,8 +1,11 @@
 from datetime import date, datetime, timedelta, timezone
 
+from sqlalchemy.dialects import postgresql
+
 from app.models.market_data import MarketData
 from app.services.calibration.regime_batch import (
     SymbolRegimeDetection,
+    _regime_state_by_category_date_statement,
     aggregate_category_regime,
     market_row_to_bar,
 )
@@ -81,6 +84,20 @@ def test_aggregate_category_regime_uses_weighted_symbol_vote() -> None:
     assert aggregate.adx == 26
     assert aggregate.sample_size == 100
     assert aggregate.symbol_count == 2
+
+
+def test_regime_state_upsert_statement_uses_stable_latest_order() -> None:
+    sql = _compile_postgres(
+        _regime_state_by_category_date_statement(
+            category="ferrous",
+            as_of_date=date(2026, 5, 3),
+        )
+    )
+
+    assert "regime_state.category = 'ferrous'" in sql
+    assert "regime_state.as_of_date = '2026-05-03'" in sql
+    assert "ORDER BY regime_state.computed_at DESC, regime_state.id DESC" in sql
+    assert "LIMIT 1" in sql
 
 
 def test_market_row_to_bar_preserves_ohlcv_fields() -> None:
@@ -222,3 +239,12 @@ def _synthetic_market_bars(count: int) -> list[MarketBar]:
         )
         previous_close = close
     return bars
+
+
+def _compile_postgres(statement) -> str:
+    return str(
+        statement.compile(
+            dialect=postgresql.dialect(),
+            compile_kwargs={"literal_binds": True},
+        )
+    )

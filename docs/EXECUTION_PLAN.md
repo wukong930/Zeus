@@ -1172,6 +1172,7 @@ Causa 的 `event_driven` 评估器实际上是纯技术面（gap + volume），*
   - [x] Phase 10.60.71：主力合约元数据查询稳定化，当前主力与目标合约查询抽为可测试 statement，并按最新 `main_from/updated_at/id` 或 `updated_at/id` 稳定取一；补充 current lookup 复合索引，避免异常重复 active row 导致主力切换处理漂移。
   - [x] Phase 10.60.72：主力合约快照 tie-break 稳定化，同一合约月同一行情时间出现重复修订行时，按 `timestamp/vintage_at/ingested_at/id` 稳定选择最新快照，避免输入顺序影响合约元数据刷新。
   - [x] Phase 10.60.73：主力合约日度 leader tie-break 稳定化，日内候选合约流动性分数打平时按 `liquidity_score/open_interest/volume/contract_month` 稳定选择，避免输入顺序改变主力切换判断。
+  - [x] Phase 10.60.74：Regime State upsert 查询稳定化，category/date 点时写入查询抽为可测试 statement，并按 `computed_at desc, id desc` 稳定取一，避免异常重复 regime row 导致校准状态刷新漂移。
 - [ ] 后端慢查询、索引、分页和缓存继续复查。
 - [x] 调度任务真实 handler 覆盖率继续复查，避免 enabled 但实际 noop。
 - [x] 全量回归测试、浏览器验证和部署 smoke 流程固化。
