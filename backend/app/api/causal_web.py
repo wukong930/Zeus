@@ -256,7 +256,7 @@ async def build_causal_web_graph(
     )
     linked_alert_ids = [row.alert_id for row in signals if row.alert_id is not None]
     linked_alerts = (
-        list((await session.scalars(select(Alert).where(Alert.id.in_(linked_alert_ids)))).all())
+        list((await session.scalars(_linked_alerts_statement(alert_ids=linked_alert_ids))).all())
         if linked_alert_ids
         else []
     )
@@ -1141,6 +1141,15 @@ def _recent_alerts_statement(*, limit: int, symbols: list[str]):
     if symbols:
         statement = statement.where(or_(*(Alert.related_assets.contains([symbol]) for symbol in symbols)))
     return statement
+
+
+def _linked_alerts_statement(*, alert_ids: list[UUID]):
+    unique_alert_ids = list(dict.fromkeys(alert_ids))
+    return (
+        select(Alert)
+        .where(Alert.id.in_(unique_alert_ids))
+        .order_by(Alert.triggered_at.desc(), Alert.id.desc())
+    )
 
 
 def _recent_industry_metrics_statement(*, limit: int, symbols: list[str]):

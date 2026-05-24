@@ -21,6 +21,7 @@ from app.api.causal_web import (
     _event_intelligence_statement,
     _latest_market_metrics_statement,
     _layout_nodes,
+    _linked_alerts_statement,
     _merge_pinned_event_intelligence,
     _recent_alerts_statement,
     _recent_industry_metrics_statement,
@@ -721,6 +722,9 @@ def test_causal_web_runtime_statements_use_stable_tie_breakers() -> None:
     news_sql = _compile_postgres(_recent_news_statement(limit=8, symbols=[]))
     signal_sql = _compile_postgres(_recent_signals_statement(limit=8, category=None))
     alert_sql = _compile_postgres(_recent_alerts_statement(limit=8, symbols=[]))
+    linked_alert_sql = _compile_postgres(
+        _linked_alerts_statement(alert_ids=[uuid4(), uuid4()])
+    )
     industry_sql = _compile_postgres(_recent_industry_metrics_statement(limit=8, symbols=[]))
     market_sql = _compile_postgres(_latest_market_metrics_statement(limit=8, symbols=[]))
     event_item_sql = _compile_postgres(
@@ -738,6 +742,7 @@ def test_causal_web_runtime_statements_use_stable_tie_breakers() -> None:
     assert "ORDER BY news_events.published_at DESC, news_events.id DESC" in news_sql
     assert "ORDER BY signal_track.created_at DESC, signal_track.id DESC" in signal_sql
     assert "ORDER BY alerts.triggered_at DESC, alerts.id DESC" in alert_sql
+    assert "ORDER BY alerts.triggered_at DESC, alerts.id DESC" in linked_alert_sql
     assert "ORDER BY industry_data.ingested_at DESC, industry_data.id DESC" in industry_sql
     assert "market_data.id DESC" in market_sql
     assert (

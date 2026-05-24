@@ -814,3 +814,4 @@ threshold_modifier、propagation_activator、risk_recalc、数据腐烂防护
 - Regime State upsert 查询稳定化：category/date 写入查询抽为可测试 statement，按 `computed_at desc, id desc` 稳定取一，保证异常重复 regime row 下校准状态刷新可复现。
 - Regime Switching Drift 窗口查询稳定化：漂移监控的 regime 窗口按 category/date 分区只取最新 `computed_at/id` 的 regime row，再按日期输出，避免异常重复 regime row 被计入切换次数。
 - 持仓驱动 Watchlist upsert 查询稳定化：symbol pair/category 查找抽为可测试 statement，按 `updated_at desc, id desc` 稳定取一，并补充 symbol pair/category lookup 复合索引，保证异常重复 watchlist row 下持仓监控阈值刷新可复现。
+- Causal Web 关联 Alert 查询稳定化：信号关联的 alert id 批量查询抽为可测试 statement，并按 `triggered_at desc, id desc` 稳定输出，避免数据库 `IN` 返回顺序影响图谱补充预警节点顺序。

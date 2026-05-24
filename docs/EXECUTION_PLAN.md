@@ -1175,6 +1175,7 @@ Causa 的 `event_driven` 评估器实际上是纯技术面（gap + volume），*
   - [x] Phase 10.60.74：Regime State upsert 查询稳定化，category/date 点时写入查询抽为可测试 statement，并按 `computed_at desc, id desc` 稳定取一，避免异常重复 regime row 导致校准状态刷新漂移。
   - [x] Phase 10.60.75：Regime Switching Drift 窗口查询稳定化，按 category/date 分区只取最新 `computed_at/id` 的 regime row，再按日期输出，避免异常重复 regime row 放大切换次数。
   - [x] Phase 10.60.76：持仓驱动 Watchlist upsert 查询稳定化，symbol pair/category 查找抽为可测试 statement，并按 `updated_at desc, id desc` 稳定取一；补充 symbol pair/category lookup 复合索引，避免异常重复 watchlist row 导致持仓监控阈值刷新漂移。
+  - [x] Phase 10.60.77：Causal Web 关联 Alert 查询稳定化，信号关联的 alert id 批量查询抽为可测试 statement，并按 `triggered_at desc, id desc` 输出，避免数据库 `IN` 返回顺序影响图谱补充预警节点顺序。
 - [ ] 后端慢查询、索引、分页和缓存继续复查。
 - [x] 调度任务真实 handler 覆盖率继续复查，避免 enabled 但实际 noop。
 - [x] 全量回归测试、浏览器验证和部署 smoke 流程固化。
