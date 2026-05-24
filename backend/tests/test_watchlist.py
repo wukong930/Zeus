@@ -7,6 +7,7 @@ from sqlalchemy.dialects import postgresql
 from app.models.watchlist import Watchlist
 from app.services.signals.watchlist import (
     WatchlistEntry,
+    _position_watchlist_entry_statement,
     build_watchlist_query,
     normalize_symbol,
     to_watchlist_entry,
@@ -60,6 +61,22 @@ def test_watchlist_query_uses_stable_pair_ordering() -> None:
         "watchlist.symbol2 ASC, watchlist.id ASC"
     ) in sql
     assert "LIMIT 50" in sql
+
+
+def test_position_watchlist_entry_statement_uses_stable_latest_lookup() -> None:
+    sql = _compile_postgres(
+        _position_watchlist_entry_statement(
+            symbol1="RB",
+            symbol2=None,
+            category="ferrous",
+        )
+    )
+
+    assert "watchlist.symbol1 = 'RB'" in sql
+    assert "watchlist.symbol2 IS NULL" in sql
+    assert "watchlist.category = 'ferrous'" in sql
+    assert "ORDER BY watchlist.updated_at DESC, watchlist.id DESC" in sql
+    assert "LIMIT 1" in sql
 
 
 def test_phase2_migration_seeds_current_causa_watchlist() -> None:

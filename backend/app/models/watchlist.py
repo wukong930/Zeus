@@ -23,6 +23,14 @@ class Watchlist(Base):
         ),
         Index("ix_watchlist_symbol1", "symbol1"),
         Index("ix_watchlist_symbol_pair", "symbol1", "symbol2"),
+        Index(
+            "ix_watchlist_symbol_pair_category_lookup",
+            "symbol1",
+            "symbol2",
+            "category",
+            "updated_at",
+            "id",
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)

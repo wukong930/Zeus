@@ -813,3 +813,4 @@ threshold_modifier、propagation_activator、risk_recalc、数据腐烂防护
 - 主力合约日度 leader tie-break 稳定化：日内候选合约流动性分数打平时，按 `liquidity_score/open_interest/volume/contract_month` 稳定选择 leader，避免输入顺序影响主力切换判断。
 - Regime State upsert 查询稳定化：category/date 写入查询抽为可测试 statement，按 `computed_at desc, id desc` 稳定取一，保证异常重复 regime row 下校准状态刷新可复现。
 - Regime Switching Drift 窗口查询稳定化：漂移监控的 regime 窗口按 category/date 分区只取最新 `computed_at/id` 的 regime row，再按日期输出，避免异常重复 regime row 被计入切换次数。
+- 持仓驱动 Watchlist upsert 查询稳定化：symbol pair/category 查找抽为可测试 statement，按 `updated_at desc, id desc` 稳定取一，并补充 symbol pair/category lookup 复合索引，保证异常重复 watchlist row 下持仓监控阈值刷新可复现。

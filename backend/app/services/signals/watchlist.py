@@ -92,14 +92,15 @@ async def upsert_position_watchlist_entry(
     if normalized_symbol1 is None:
         raise ValueError("symbol1 is required")
 
-    statement = select(Watchlist).where(
-        Watchlist.symbol1 == normalized_symbol1,
-        Watchlist.symbol2.is_(None)
-        if normalized_symbol2 is None
-        else Watchlist.symbol2 == normalized_symbol2,
-        Watchlist.category == category,
-    )
-    row = (await session.scalars(statement.limit(1))).first()
+    row = (
+        await session.scalars(
+            _position_watchlist_entry_statement(
+                symbol1=normalized_symbol1,
+                symbol2=normalized_symbol2,
+                category=category,
+            )
+        )
+    ).first()
     if row is None:
         row = Watchlist(
             symbol1=normalized_symbol1,
@@ -118,3 +119,21 @@ async def upsert_position_watchlist_entry(
 
     await session.flush()
     return row
+
+
+def _position_watchlist_entry_statement(
+    *,
+    symbol1: str,
+    symbol2: str | None,
+    category: str,
+) -> Select[tuple[Watchlist]]:
+    return (
+        select(Watchlist)
+        .where(
+            Watchlist.symbol1 == symbol1,
+            Watchlist.symbol2.is_(None) if symbol2 is None else Watchlist.symbol2 == symbol2,
+            Watchlist.category == category,
+        )
+        .order_by(Watchlist.updated_at.desc(), Watchlist.id.desc())
+        .limit(1)
+    )
