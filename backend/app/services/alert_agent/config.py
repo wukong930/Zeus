@@ -19,9 +19,7 @@ async def load_confidence_thresholds(session: AsyncSession | None) -> Confidence
     try:
         row = (
             await session.scalars(
-                select(AlertAgentConfig)
-                .where(AlertAgentConfig.key == "confidence_thresholds")
-                .limit(1)
+                alert_agent_config_row_statement(key="confidence_thresholds")
             )
         ).first()
     except Exception:
@@ -36,6 +34,15 @@ async def load_confidence_thresholds(session: AsyncSession | None) -> Confidence
     if auto < notify:
         return ConfidenceThresholds()
     return ConfidenceThresholds(auto=auto, notify=notify)
+
+
+def alert_agent_config_row_statement(*, key: str):
+    return (
+        select(AlertAgentConfig)
+        .where(AlertAgentConfig.key == key)
+        .order_by(AlertAgentConfig.updated_at.desc(), AlertAgentConfig.id.desc())
+        .limit(1)
+    )
 
 
 def _threshold_value(value: object, fallback: float) -> float:

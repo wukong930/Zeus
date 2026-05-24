@@ -1,10 +1,10 @@
 from dataclasses import dataclass
 from typing import Any
 
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.alert_agent import AlertAgentConfig
+from app.services.alert_agent.config import alert_agent_config_row_statement
 
 ADVERSARIAL_RUNTIME_KEY = "adversarial_runtime"
 DEFAULT_WARMUP_ENABLED = True
@@ -67,9 +67,7 @@ def default_adversarial_runtime_config() -> AdversarialRuntimeConfig:
 async def _adversarial_runtime_row(session: AsyncSession) -> AlertAgentConfig | None:
     return (
         await session.scalars(
-            select(AlertAgentConfig)
-            .where(AlertAgentConfig.key == ADVERSARIAL_RUNTIME_KEY)
-            .limit(1)
+            alert_agent_config_row_statement(key=ADVERSARIAL_RUNTIME_KEY)
         )
     ).first()
 

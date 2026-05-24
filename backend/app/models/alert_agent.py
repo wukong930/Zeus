@@ -45,6 +45,7 @@ class AlertAgentConfig(Base):
     __table_args__ = (
         UniqueConstraint("key", name="uq_alert_agent_config_key"),
         Index("ix_alert_agent_config_key", "key"),
+        Index("ix_alert_agent_config_key_updated", "key", "updated_at", "id"),
     )
 
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)

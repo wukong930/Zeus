@@ -3,7 +3,6 @@ from typing import Any
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, StrictBool
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -18,6 +17,7 @@ from app.services.alert_agent.dedup import (
     DEFAULT_DAILY_ALERT_LIMIT,
     DEFAULT_REPEAT_WINDOW_HOURS,
 )
+from app.services.alert_agent.config import alert_agent_config_row_statement
 from app.services.adversarial.runtime import (
     AdversarialRuntimeConfig,
     load_adversarial_runtime_config,
@@ -250,9 +250,7 @@ async def save_notification_settings(
 async def _notification_config_row(session: AsyncSession) -> AlertAgentConfig | None:
     return (
         await session.scalars(
-            select(AlertAgentConfig)
-            .where(AlertAgentConfig.key == NOTIFICATION_SETTINGS_KEY)
-            .limit(1)
+            alert_agent_config_row_statement(key=NOTIFICATION_SETTINGS_KEY)
         )
     ).first()
 

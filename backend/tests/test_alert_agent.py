@@ -10,7 +10,11 @@ from app.models.alert_agent import AlertAgentConfig, AlertDedupCache
 from app.models.signal import SignalTrack
 from app.schemas.common import HumanDecisionCreate
 from app.services.alert_agent.classifier import classify_alert
-from app.services.alert_agent.config import ConfidenceThresholds, load_confidence_thresholds
+from app.services.alert_agent.config import (
+    ConfidenceThresholds,
+    alert_agent_config_row_statement,
+    load_confidence_thresholds,
+)
 from app.services.alert_agent.dedup import (
     check_alert_dedup,
     combination_dedup_lookup_statement,
@@ -172,6 +176,17 @@ async def test_confidence_threshold_config_rejects_inverted_values() -> None:
     )
 
     assert thresholds == ConfidenceThresholds()
+
+
+def test_alert_agent_config_row_statement_uses_stable_latest_lookup() -> None:
+    statement = alert_agent_config_row_statement(key="confidence_thresholds")
+    compiled = str(statement.compile(compile_kwargs={"literal_binds": True}))
+
+    assert "alert_agent_config.key = 'confidence_thresholds'" in compiled
+    assert (
+        "ORDER BY alert_agent_config.updated_at DESC, alert_agent_config.id DESC"
+    ) in compiled
+    assert "LIMIT 1" in compiled
 
 
 async def test_lacks_history_rolls_back_after_lookup_failure() -> None:
