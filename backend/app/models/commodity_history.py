@@ -12,7 +12,15 @@ class CommodityHistory(Base):
     __tablename__ = "commodity_history"
     __table_args__ = (
         Index("ix_commodity_history_symbol", "symbol"),
+        Index("ix_commodity_history_symbol_id", "symbol", "id"),
         Index("ix_commodity_history_active", "active_from", "active_to"),
+        Index(
+            "ix_commodity_history_active_symbol_id",
+            "active_from",
+            "active_to",
+            "symbol",
+            "id",
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)

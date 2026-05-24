@@ -31,7 +31,10 @@ from app.services.backtest.path_metrics import calculate_path_metrics
 from app.services.backtest.regime_profile import RegimeObservation, build_regime_profile
 from app.services.backtest.slippage import calculate_slippage
 from app.services.backtest.strategy_registry import build_strategy_run, stable_strategy_hash
-from app.services.backtest.universe import validate_backtest_universe_from_symbols
+from app.services.backtest.universe import (
+    _pit_commodity_universe_statement,
+    validate_backtest_universe_from_symbols,
+)
 from app.services.backtest.walk_forward import (
     generate_walk_forward_windows,
     walk_forward_defaults,
@@ -254,6 +257,15 @@ def test_pit_universe_validation_rejects_missing_symbol() -> None:
     assert validation.missing_symbols == ("ZZ",)
 
 
+def test_pit_commodity_universe_statement_uses_stable_ordering() -> None:
+    sql = _compile_postgres(_pit_commodity_universe_statement(as_of=date(2026, 5, 4)))
+
+    assert "commodity_history.active_from <= '2026-05-04'" in sql
+    assert "commodity_history.active_to IS NULL" in sql
+    assert "commodity_history.active_to >= '2026-05-04'" in sql
+    assert "ORDER BY commodity_history.symbol ASC, commodity_history.id ASC" in sql
+
+
 async def test_record_live_divergence_queues_review_for_red_metric() -> None:
     session = FakeSession()
     result = sharpe_divergence(
@@ -423,4 +435,9 @@ def _completed_recommendation(
 
 
 def _compile_postgres(statement) -> str:
-    return str(statement.compile(dialect=postgresql.dialect()))
+    return str(
+        statement.compile(
+            dialect=postgresql.dialect(),
+            compile_kwargs={"literal_binds": True},
+        )
+    )
