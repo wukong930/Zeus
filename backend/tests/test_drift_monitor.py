@@ -1,9 +1,12 @@
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from uuid import uuid4
+
+from sqlalchemy.dialects import postgresql
 
 from app.api.drift import build_drift_notification, build_drift_snapshot
 from app.models.drift_metrics import DriftMetric
 from app.services.learning.drift_monitor import (
+    _regime_state_window_statement,
     calculate_psi,
     correlation_matrix_from_returns,
     correlation_structure_drift,
@@ -104,6 +107,24 @@ def test_regime_switching_drift_counts_monthly_switches() -> None:
     assert regime_switching_drift([*regimes, "trend_down_low_vol"]).drift_severity == "red"
 
 
+def test_regime_state_window_statement_uses_latest_row_per_date() -> None:
+    sql = _compile_postgres(
+        _regime_state_window_statement(
+            category="ferrous",
+            since=date(2026, 5, 1),
+            through=date(2026, 5, 31),
+        )
+    )
+
+    assert "PARTITION BY regime_state.category, regime_state.as_of_date" in sql
+    assert "ORDER BY regime_state.computed_at DESC, regime_state.id DESC" in sql
+    assert "regime_state.category = 'ferrous'" in sql
+    assert "regime_state.as_of_date >= '2026-05-01'" in sql
+    assert "regime_state.as_of_date <= '2026-05-31'" in sql
+    assert "anon_1.rn = 1" in sql
+    assert "ORDER BY regime_state.as_of_date ASC, regime_state.id ASC" in sql
+
+
 def test_correlation_matrix_from_returns_aligns_common_dates() -> None:
     returns = {
         "RB2601": {"d1": 0.01, "d2": 0.02, "d3": 0.03},
@@ -195,3 +216,12 @@ def test_drift_notification_keeps_green_and_no_data_observe_only() -> None:
     assert green.next_actions == ["保持监控，不自动修改生产阈值"]
     assert no_data.level == "no_data"
     assert no_data.should_notify is False
+
+
+def _compile_postgres(statement) -> str:
+    return str(
+        statement.compile(
+            dialect=postgresql.dialect(),
+            compile_kwargs={"literal_binds": True},
+        )
+    )

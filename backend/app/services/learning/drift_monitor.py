@@ -1,8 +1,8 @@
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from math import log, sqrt
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.drift_metrics import DriftMetric
@@ -327,13 +327,11 @@ async def record_regime_switching_drift(
     since = (effective_as_of - timedelta(days=window_days)).date()
     rows = (
         await session.scalars(
-            select(RegimeState)
-            .where(
-                RegimeState.category == category,
-                RegimeState.as_of_date >= since,
-                RegimeState.as_of_date <= effective_as_of.date(),
+            _regime_state_window_statement(
+                category=category,
+                since=since,
+                through=effective_as_of.date(),
             )
-            .order_by(RegimeState.as_of_date.asc())
         )
     ).all()
     if len(rows) < 2:
@@ -354,6 +352,32 @@ async def record_regime_switching_drift(
                 for row in rows
             ],
         },
+    )
+
+
+def _regime_state_window_statement(*, category: str, since: date, through: date):
+    ranked = (
+        select(
+            RegimeState.id.label("id"),
+            func.row_number()
+            .over(
+                partition_by=(RegimeState.category, RegimeState.as_of_date),
+                order_by=(RegimeState.computed_at.desc(), RegimeState.id.desc()),
+            )
+            .label("rn"),
+        )
+        .where(
+            RegimeState.category == category,
+            RegimeState.as_of_date >= since,
+            RegimeState.as_of_date <= through,
+        )
+        .subquery()
+    )
+    return (
+        select(RegimeState)
+        .join(ranked, RegimeState.id == ranked.c.id)
+        .where(ranked.c.rn == 1)
+        .order_by(RegimeState.as_of_date.asc(), RegimeState.id.asc())
     )
 
 
