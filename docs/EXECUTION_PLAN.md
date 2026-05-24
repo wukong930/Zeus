@@ -1170,6 +1170,7 @@ Causa 的 `event_driven` 评估器实际上是纯技术面（gap + volume），*
   - [x] Phase 10.60.69：Watchlist 扫描顺序稳定化，监控列表查询按 `priority asc, symbol1 asc, symbol2 asc, id asc` 输出，并补充 enabled/category/order 复合索引，避免同优先级同主符号组合的实时扫描顺序漂移。
   - [x] Phase 10.60.70：Backtest PIT Universe 查询稳定化，活跃商品 universe 查询抽为可测试 statement，并按 `symbol asc, id asc` 输出；补充 commodity history 活跃窗口 / symbol 复合索引，避免重复历史区间导致回测 universe 顺序漂移。
   - [x] Phase 10.60.71：主力合约元数据查询稳定化，当前主力与目标合约查询抽为可测试 statement，并按最新 `main_from/updated_at/id` 或 `updated_at/id` 稳定取一；补充 current lookup 复合索引，避免异常重复 active row 导致主力切换处理漂移。
+  - [x] Phase 10.60.72：主力合约快照 tie-break 稳定化，同一合约月同一行情时间出现重复修订行时，按 `timestamp/vintage_at/ingested_at/id` 稳定选择最新快照，避免输入顺序影响合约元数据刷新。
 - [ ] 后端慢查询、索引、分页和缓存继续复查。
 - [x] 调度任务真实 handler 覆盖率继续复查，避免 enabled 但实际 noop。
 - [x] 全量回归测试、浏览器验证和部署 smoke 流程固化。

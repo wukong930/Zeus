@@ -1,4 +1,5 @@
 from datetime import date, datetime, timezone
+from uuid import UUID
 
 from sqlalchemy.dialects import postgresql
 
@@ -86,6 +87,23 @@ def test_latest_contract_snapshots_keeps_latest_row_per_month() -> None:
 
     assert snapshots["2601"] is newer
     assert snapshots["2605"] is other
+
+
+def test_latest_contract_snapshots_breaks_same_timestamp_ties_by_revision() -> None:
+    timestamp = datetime(2026, 5, 2, tzinfo=timezone.utc)
+    vintage = datetime(2026, 5, 2, 9, tzinfo=timezone.utc)
+    older_revision = _market_row("2601", timestamp, 100)
+    older_revision.vintage_at = vintage
+    older_revision.ingested_at = vintage
+    older_revision.id = UUID("00000000-0000-0000-0000-000000000001")
+    newer_revision = _market_row("2601", timestamp, 200)
+    newer_revision.vintage_at = vintage
+    newer_revision.ingested_at = vintage
+    newer_revision.id = UUID("00000000-0000-0000-0000-000000000002")
+
+    snapshots = latest_contract_snapshots([newer_revision, older_revision])
+
+    assert snapshots["2601"] is newer_revision
 
 
 def test_current_main_contract_statement_uses_stable_latest_order() -> None:

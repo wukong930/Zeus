@@ -49,9 +49,19 @@ def contract_candidate_from_market_data(row: MarketData) -> ContractCandidate:
 
 def latest_contract_snapshots(rows: list[MarketData]) -> dict[str, MarketData]:
     snapshots: dict[str, MarketData] = {}
-    for row in sorted(rows, key=lambda item: item.timestamp):
+    for row in sorted(rows, key=_market_data_snapshot_sort_key):
         snapshots[row.contract_month] = row
     return snapshots
+
+
+def _market_data_snapshot_sort_key(row: MarketData) -> tuple:
+    min_datetime = datetime.min.replace(tzinfo=timezone.utc)
+    return (
+        row.timestamp,
+        row.vintage_at or min_datetime,
+        row.ingested_at or min_datetime,
+        str(row.id or ""),
+    )
 
 
 async def detect_and_apply_main_contracts(
