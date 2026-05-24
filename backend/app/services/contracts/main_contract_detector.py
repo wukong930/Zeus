@@ -22,9 +22,18 @@ def daily_leaders(candidates: list[ContractCandidate]) -> dict[date, ContractCan
         grouped[candidate.trading_date].append(candidate)
 
     return {
-        trading_date: max(day_candidates, key=lambda item: item.liquidity_score)
+        trading_date: max(day_candidates, key=_contract_candidate_leader_key)
         for trading_date, day_candidates in grouped.items()
     }
+
+
+def _contract_candidate_leader_key(candidate: ContractCandidate) -> tuple:
+    return (
+        candidate.liquidity_score,
+        candidate.open_interest,
+        candidate.volume,
+        candidate.contract_month,
+    )
 
 
 def detect_main_contract_switch(

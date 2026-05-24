@@ -810,3 +810,4 @@ threshold_modifier、propagation_activator、risk_recalc、数据腐烂防护
 - Backtest PIT Universe 查询稳定化：活跃商品 universe 查询抽为可测试 statement，按 `symbol asc, id asc` 稳定输出，并补充 commodity history 活跃窗口和 symbol 复合索引，保证重复历史区间不会改变回测 universe 顺序。
 - 主力合约元数据查询稳定化：当前主力与目标合约查询抽为可测试 statement，当前主力按 `main_from desc nulls last, updated_at desc, id desc` 稳定取一，目标合约按 `updated_at desc, id desc` 稳定取一，并补充 current lookup 复合索引，保证异常重复 active row 下主力切换处理可复现。
 - 主力合约快照 tie-break 稳定化：合约月快照选择从只按行情时间排序升级为按 `timestamp/vintage_at/ingested_at/id` 排序，保证同一合约月同一时间出现重复修订行时稳定选择最新快照。
+- 主力合约日度 leader tie-break 稳定化：日内候选合约流动性分数打平时，按 `liquidity_score/open_interest/volume/contract_month` 稳定选择 leader，避免输入顺序影响主力切换判断。

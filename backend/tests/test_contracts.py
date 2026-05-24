@@ -13,6 +13,7 @@ from app.services.contracts.main_contract_batch import (
 from app.services.contracts.continuous import PricePoint, build_back_adjusted_main_series
 from app.services.contracts.main_contract_detector import (
     ContractCandidate,
+    daily_leaders,
     detect_main_contract_switch,
 )
 
@@ -36,6 +37,18 @@ def test_detect_main_contract_switch_requires_three_confirming_days() -> None:
 
     assert switch is not None
     assert switch.contract_month == "2410"
+
+
+def test_daily_leaders_breaks_liquidity_ties_deterministically() -> None:
+    trading_date = date(2026, 5, 1)
+    lower_open_interest = ContractCandidate("RB", "2405", trading_date, 120, 80)
+    higher_open_interest = ContractCandidate("RB", "2410", trading_date, 80, 120)
+
+    leaders = daily_leaders([higher_open_interest, lower_open_interest])
+    reversed_leaders = daily_leaders([lower_open_interest, higher_open_interest])
+
+    assert leaders[trading_date] == higher_open_interest
+    assert reversed_leaders[trading_date] == higher_open_interest
 
 
 def test_build_back_adjusted_main_series_removes_roll_gap() -> None:
