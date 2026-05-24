@@ -148,13 +148,7 @@ async def get_current_main_contract(
 ) -> ContractMetadata | None:
     return (
         await session.scalars(
-            select(ContractMetadata)
-            .where(
-                ContractMetadata.symbol == symbol,
-                ContractMetadata.is_main.is_(True),
-                ContractMetadata.main_until.is_(None),
-            )
-            .limit(1)
+            _current_main_contract_statement(symbol=symbol)
         )
     ).first()
 
@@ -165,12 +159,10 @@ async def upsert_contract_metadata(
 ) -> ContractMetadata:
     row = (
         await session.scalars(
-            select(ContractMetadata)
-            .where(
-                ContractMetadata.symbol == market_row.symbol,
-                ContractMetadata.contract_month == market_row.contract_month,
+            _contract_metadata_by_symbol_month_statement(
+                symbol=market_row.symbol,
+                contract_month=market_row.contract_month,
             )
-            .limit(1)
         )
     ).first()
     if row is None:
@@ -214,12 +206,10 @@ async def apply_main_contract_switch(
 
     target = (
         await session.scalars(
-            select(ContractMetadata)
-            .where(
-                ContractMetadata.symbol == symbol,
-                ContractMetadata.contract_month == contract_month,
+            _contract_metadata_by_symbol_month_statement(
+                symbol=symbol,
+                contract_month=contract_month,
             )
-            .limit(1)
         )
     ).first()
     if target is None:
@@ -233,6 +223,35 @@ async def apply_main_contract_switch(
     target.open_interest = open_interest
     await session.flush()
     return target
+
+
+def _current_main_contract_statement(*, symbol: str):
+    return (
+        select(ContractMetadata)
+        .where(
+            ContractMetadata.symbol == symbol,
+            ContractMetadata.is_main.is_(True),
+            ContractMetadata.main_until.is_(None),
+        )
+        .order_by(
+            ContractMetadata.main_from.desc().nullslast(),
+            ContractMetadata.updated_at.desc(),
+            ContractMetadata.id.desc(),
+        )
+        .limit(1)
+    )
+
+
+def _contract_metadata_by_symbol_month_statement(*, symbol: str, contract_month: str):
+    return (
+        select(ContractMetadata)
+        .where(
+            ContractMetadata.symbol == symbol,
+            ContractMetadata.contract_month == contract_month,
+        )
+        .order_by(ContractMetadata.updated_at.desc(), ContractMetadata.id.desc())
+        .limit(1)
+    )
 
 
 async def _recent_symbols(

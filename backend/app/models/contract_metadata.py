@@ -14,6 +14,15 @@ class ContractMetadata(Base):
         UniqueConstraint("symbol", "contract_month", name="uq_contract_symbol_month"),
         Index("ix_contract_metadata_symbol", "symbol"),
         Index("ix_contract_metadata_is_main", "symbol", "is_main"),
+        Index(
+            "ix_contract_metadata_current_lookup",
+            "symbol",
+            "is_main",
+            "main_until",
+            "main_from",
+            "updated_at",
+            "id",
+        ),
         Index("ix_contract_metadata_expiry", "expiry_date"),
     )
 

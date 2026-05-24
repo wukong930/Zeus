@@ -1,7 +1,11 @@
 from datetime import date, datetime, timezone
 
+from sqlalchemy.dialects import postgresql
+
 from app.models.market_data import MarketData
 from app.services.contracts.main_contract_batch import (
+    _contract_metadata_by_symbol_month_statement,
+    _current_main_contract_statement,
     contract_candidate_from_market_data,
     latest_contract_snapshots,
 )
@@ -82,3 +86,36 @@ def test_latest_contract_snapshots_keeps_latest_row_per_month() -> None:
 
     assert snapshots["2601"] is newer
     assert snapshots["2605"] is other
+
+
+def test_current_main_contract_statement_uses_stable_latest_order() -> None:
+    sql = _compile_postgres(_current_main_contract_statement(symbol="RB"))
+
+    assert "contract_metadata.symbol = 'RB'" in sql
+    assert "contract_metadata.is_main IS true" in sql
+    assert "contract_metadata.main_until IS NULL" in sql
+    assert (
+        "ORDER BY contract_metadata.main_from DESC NULLS LAST, "
+        "contract_metadata.updated_at DESC, contract_metadata.id DESC"
+    ) in sql
+    assert "LIMIT 1" in sql
+
+
+def test_contract_metadata_by_symbol_month_statement_uses_stable_order() -> None:
+    sql = _compile_postgres(
+        _contract_metadata_by_symbol_month_statement(symbol="RB", contract_month="2601")
+    )
+
+    assert "contract_metadata.symbol = 'RB'" in sql
+    assert "contract_metadata.contract_month = '2601'" in sql
+    assert "ORDER BY contract_metadata.updated_at DESC, contract_metadata.id DESC" in sql
+    assert "LIMIT 1" in sql
+
+
+def _compile_postgres(statement) -> str:
+    return str(
+        statement.compile(
+            dialect=postgresql.dialect(),
+            compile_kwargs={"literal_binds": True},
+        )
+    )

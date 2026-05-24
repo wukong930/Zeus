@@ -808,3 +808,4 @@ threshold_modifier、propagation_activator、risk_recalc、数据腐烂防护
 - Position Propagation 图谱邻居查询稳定化：持仓传播的关系边查询抽为可测试 statement，按 `strength desc, id asc` 稳定输出，并补充 source / target 方向的 strength 复合索引，保证同强度边不会改变传播节点顺序。
 - Watchlist 扫描顺序稳定化：实时监控列表查询按 `priority asc, symbol1 asc, symbol2 asc, id asc` 稳定输出，并补充 `watchlist(enabled, category, priority, symbol1, symbol2, id)` 索引，保证同优先级组合扫描可复现。
 - Backtest PIT Universe 查询稳定化：活跃商品 universe 查询抽为可测试 statement，按 `symbol asc, id asc` 稳定输出，并补充 commodity history 活跃窗口和 symbol 复合索引，保证重复历史区间不会改变回测 universe 顺序。
+- 主力合约元数据查询稳定化：当前主力与目标合约查询抽为可测试 statement，当前主力按 `main_from desc nulls last, updated_at desc, id desc` 稳定取一，目标合约按 `updated_at desc, id desc` 稳定取一，并补充 current lookup 复合索引，保证异常重复 active row 下主力切换处理可复现。
