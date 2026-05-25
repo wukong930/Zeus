@@ -820,3 +820,4 @@ threshold_modifier、propagation_activator、risk_recalc、数据腐烂防护
 - LLM Budget active lookup 稳定化：预算检查和成本累加共用可测试 statement，按 `updated_at desc, id desc` 稳定选择最新 active budget，并补充 module/period/status/updated/id 复合索引，保证异常重复预算行下成本控制行为可复现。
 - Alert Dedup 组合哈希查询稳定化：同 symbol/direction/evaluator 查找和跨 evaluator 组合哈希查找抽为可测试 statement，组合哈希按 `last_emitted_at desc, updated_at desc, id desc` 取最新记录，并补充 hash/symbol/direction/emitted/updated/id 复合索引，保证重复预警抑制不会因旧缓存行漂移。
 - Event Intelligence 复核 lookup 统一化：事件智能 open review 查询复用治理队列 active lookup statement，按 `created_at asc, id asc` 稳定复用最早待处理项，保证事件智能页面、人工决策入口和治理队列使用同一重复复核项口径。
+- Position Propagation 商品节点 lookup 稳定化：持仓传播按 symbol 查找商品图谱节点时抽为可测试 statement，并按 `id asc` 兜底排序，保证异常重复节点下持仓联动监控入口可复现。

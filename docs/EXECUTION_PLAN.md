@@ -1181,6 +1181,7 @@ Causa 的 `event_driven` 评估器实际上是纯技术面（gap + volume），*
   - [x] Phase 10.60.80：LLM Budget active lookup 稳定化，预算检查和成本累加共用可测试 statement，并按 `updated_at desc, id desc` 稳定选择最新 active budget；补充 module/period/status/updated/id 复合索引，避免异常重复预算行导致成本控制漂移。
   - [x] Phase 10.60.81：Alert Dedup 组合哈希查询稳定化，同 symbol/direction/evaluator 查找和跨 evaluator 组合哈希查找抽为可测试 statement；组合哈希按 `last_emitted_at desc, updated_at desc, id desc` 取最新记录，并补充 hash/symbol/direction/emitted/updated/id 复合索引，避免旧去重行导致近期重复预警漏抑制。
   - [x] Phase 10.60.82：Event Intelligence 复核 lookup 统一化，事件智能 open review 查询复用治理队列 active lookup statement，并按 `created_at asc, id asc` 稳定复用最早待处理项，避免事件智能页面和治理队列对重复复核项使用不同口径。
+  - [x] Phase 10.60.83：Position Propagation 商品节点 lookup 稳定化，持仓传播按 symbol 查找商品图谱节点时抽为可测试 statement，并按 `id asc` 兜底排序，避免异常重复节点导致持仓联动监控入口漂移。
 - [ ] 后端慢查询、索引、分页和缓存继续复查。
 - [x] 调度任务真实 handler 覆盖率继续复查，避免 enabled 但实际 noop。
 - [x] 全量回归测试、浏览器验证和部署 smoke 流程固化。

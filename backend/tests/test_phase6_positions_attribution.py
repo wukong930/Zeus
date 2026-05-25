@@ -22,6 +22,7 @@ from app.services.learning.recommendation_attribution import (
 from app.services.pipeline.handlers import position_conflict_warnings
 from app.services.positions.data_freshness import _position_freshness_statement, check_position_freshness
 from app.services.positions.propagation_activator import (
+    _commodity_node_lookup_statement,
     _graph_neighbors_statement,
     infer_category_from_symbol,
 )
@@ -182,12 +183,15 @@ def test_position_service_statements_use_stable_tie_breakers() -> None:
     freshness_sql = _compile_postgres(_position_freshness_statement())
     risk_sql = _compile_postgres(_position_risk_rows_statement())
     threshold_sql = _compile_postgres(_position_threshold_cache_statement())
+    node_sql = _compile_postgres(_commodity_node_lookup_statement(symbol="RU"))
     graph_sql = _compile_postgres(_graph_neighbors_statement(source_id=uuid4(), limit=8))
 
     assert "ORDER BY positions.opened_at DESC, positions.id DESC" in freshness_sql
     assert "ORDER BY positions.opened_at DESC, positions.id DESC" in risk_sql
     assert "positions.data_mode =" in threshold_sql
     assert "ORDER BY positions.monitoring_priority ASC, positions.id ASC" in threshold_sql
+    assert "commodity_nodes.symbol =" in node_sql
+    assert "ORDER BY commodity_nodes.id ASC" in node_sql
     assert "relationship_edges.source =" in graph_sql
     assert "relationship_edges.target =" in graph_sql
     assert "ORDER BY relationship_edges.strength DESC, relationship_edges.id ASC" in graph_sql

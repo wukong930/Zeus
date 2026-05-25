@@ -124,9 +124,7 @@ async def deactivate_position_propagation(session: AsyncSession, position: Posit
 
 async def graph_neighbors(session: AsyncSession, symbol: str) -> list[PropagationNode]:
     source = (
-        await session.scalars(
-            select(CommodityNode).where(CommodityNode.symbol == symbol).limit(1)
-        )
+        await session.scalars(_commodity_node_lookup_statement(symbol=symbol))
     ).first()
     if source is None:
         return []
@@ -146,6 +144,15 @@ async def graph_neighbors(session: AsyncSession, symbol: str) -> list[Propagatio
         )
         for edge, node in rows
     ]
+
+
+def _commodity_node_lookup_statement(*, symbol: str):
+    return (
+        select(CommodityNode)
+        .where(CommodityNode.symbol == symbol)
+        .order_by(CommodityNode.id.asc())
+        .limit(1)
+    )
 
 
 def _graph_neighbors_statement(*, source_id: UUID, limit: int):
