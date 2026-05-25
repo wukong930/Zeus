@@ -8,6 +8,19 @@ from app.core.database import rollback_if_possible
 from app.models.llm_cache import LLMBudget
 
 
+def active_llm_budget_statement(*, module: str, period_start: date):
+    return (
+        select(LLMBudget)
+        .where(
+            LLMBudget.module == module,
+            LLMBudget.period_start == period_start,
+            LLMBudget.status == "active",
+        )
+        .order_by(LLMBudget.updated_at.desc(), LLMBudget.id.desc())
+        .limit(1)
+    )
+
+
 @dataclass(frozen=True)
 class BudgetDecision:
     allowed: bool
@@ -29,17 +42,7 @@ async def check_llm_budget(
     effective_at = as_of or datetime.now(timezone.utc)
     start, _ = month_bounds(effective_at.date())
     try:
-        row = (
-            await session.scalars(
-                select(LLMBudget)
-                .where(
-                    LLMBudget.module == module,
-                    LLMBudget.period_start == start,
-                    LLMBudget.status == "active",
-                )
-                .limit(1)
-            )
-        ).first()
+        row = (await session.scalars(active_llm_budget_statement(module=module, period_start=start))).first()
     except Exception:
         await rollback_if_possible(session)
         return BudgetDecision(True, False, module, 0.0, None, "budget_lookup_failed")
@@ -77,17 +80,7 @@ async def add_budget_spend(
     effective_at = as_of or datetime.now(timezone.utc)
     start, _ = month_bounds(effective_at.date())
     try:
-        row = (
-            await session.scalars(
-                select(LLMBudget)
-                .where(
-                    LLMBudget.module == module,
-                    LLMBudget.period_start == start,
-                    LLMBudget.status == "active",
-                )
-                .limit(1)
-            )
-        ).first()
+        row = (await session.scalars(active_llm_budget_statement(module=module, period_start=start))).first()
     except Exception:
         await rollback_if_possible(session)
         return

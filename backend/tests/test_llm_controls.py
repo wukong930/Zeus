@@ -1,11 +1,12 @@
 from datetime import date, datetime, timedelta, timezone
 
 from fastapi.testclient import TestClient
+from sqlalchemy.dialects import postgresql
 
 from app.core.database import get_db
 from app.main import create_app
 from app.models.llm_cache import LLMCache, LLMBudget
-from app.services.llm.budget_guard import add_budget_spend, month_bounds
+from app.services.llm.budget_guard import active_llm_budget_statement, add_budget_spend, month_bounds
 from app.services.llm.cache import get_cached_completion, llm_cache_key, store_cached_completion
 from app.services.llm.cost_tracker import LLMUsageSummary, estimate_cost_usd, record_llm_usage
 from app.services.llm.types import LLMCompletionResult, LLMUsage
@@ -253,6 +254,18 @@ def test_month_bounds_returns_next_month_exclusive_end() -> None:
     assert month_bounds(date(2026, 12, 3)) == (date(2026, 12, 1), date(2027, 1, 1))
 
 
+def test_active_llm_budget_statement_uses_stable_latest_lookup() -> None:
+    sql = _compile_postgres(
+        active_llm_budget_statement(module="event_intelligence", period_start=date(2026, 5, 1))
+    )
+
+    assert "llm_budgets.module = 'event_intelligence'" in sql
+    assert "llm_budgets.period_start = '2026-05-01'" in sql
+    assert "llm_budgets.status = 'active'" in sql
+    assert "ORDER BY llm_budgets.updated_at DESC, llm_budgets.id DESC" in sql
+    assert "LIMIT 1" in sql
+
+
 def test_cost_estimate_is_zero_for_unknown_usage() -> None:
     assert estimate_cost_usd("gpt-test", 0, 0) == 0.0
     assert estimate_cost_usd("gpt-test", 1000, 1000) > 0
@@ -314,3 +327,7 @@ def test_llm_usage_api_returns_requested_month_summary(monkeypatch) -> None:
         "input_tokens": 1200,
         "output_tokens": 450,
     }
+
+
+def _compile_postgres(statement) -> str:
+    return str(statement.compile(dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}))

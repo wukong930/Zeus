@@ -1178,6 +1178,7 @@ Causa 的 `event_driven` 评估器实际上是纯技术面（gap + volume），*
   - [x] Phase 10.60.77：Causal Web 关联 Alert 查询稳定化，信号关联的 alert id 批量查询抽为可测试 statement，并按 `triggered_at desc, id desc` 输出，避免数据库 `IN` 返回顺序影响图谱补充预警节点顺序。
   - [x] Phase 10.60.78：Alert Agent Config 查询稳定化，通知设置、阈值设置和 adversarial runtime 配置共用可测试 statement，并按 `updated_at desc, id desc` 稳定取一；补充 key/updated/id 复合索引，避免异常重复配置行导致运行态设置漂移。
   - [x] Phase 10.60.79：Review Queue active lookup 稳定化，复核入队去重查询抽为可测试 statement，并按 `created_at asc, id asc` 稳定复用最早待处理项；补充 source/table/key/status/created/id 复合索引，避免异常重复复核项导致治理队列漂移。
+  - [x] Phase 10.60.80：LLM Budget active lookup 稳定化，预算检查和成本累加共用可测试 statement，并按 `updated_at desc, id desc` 稳定选择最新 active budget；补充 module/period/status/updated/id 复合索引，避免异常重复预算行导致成本控制漂移。
 - [ ] 后端慢查询、索引、分页和缓存继续复查。
 - [x] 调度任务真实 handler 覆盖率继续复查，避免 enabled 但实际 noop。
 - [x] 全量回归测试、浏览器验证和部署 smoke 流程固化。
