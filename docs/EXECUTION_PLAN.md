@@ -1182,6 +1182,7 @@ Causa 的 `event_driven` 评估器实际上是纯技术面（gap + volume），*
   - [x] Phase 10.60.81：Alert Dedup 组合哈希查询稳定化，同 symbol/direction/evaluator 查找和跨 evaluator 组合哈希查找抽为可测试 statement；组合哈希按 `last_emitted_at desc, updated_at desc, id desc` 取最新记录，并补充 hash/symbol/direction/emitted/updated/id 复合索引，避免旧去重行导致近期重复预警漏抑制。
   - [x] Phase 10.60.82：Event Intelligence 复核 lookup 统一化，事件智能 open review 查询复用治理队列 active lookup statement，并按 `created_at asc, id asc` 稳定复用最早待处理项，避免事件智能页面和治理队列对重复复核项使用不同口径。
   - [x] Phase 10.60.83：Position Propagation 商品节点 lookup 稳定化，持仓传播按 symbol 查找商品图谱节点时抽为可测试 statement，并按 `id asc` 兜底排序，避免异常重复节点导致持仓联动监控入口漂移。
+  - [x] Phase 10.60.84：Alert Router 校准历史点时化，`lacks_history` 按当前路由时间过滤 `effective_from/computed_at <= as_of`，并按 `effective_from desc, computed_at desc, id desc` 稳定选择历史校准；补充 signal_type/category/regime/effective/computed/id 复合索引，避免未来校准记录提前影响人工/LLM 路由。
 - [ ] 后端慢查询、索引、分页和缓存继续复查。
 - [x] 调度任务真实 handler 覆盖率继续复查，避免 enabled 但实际 noop。
 - [x] 全量回归测试、浏览器验证和部署 smoke 流程固化。

@@ -12,6 +12,15 @@ class SignalCalibration(Base):
     __tablename__ = "signal_calibration"
     __table_args__ = (
         Index("ix_signal_calibration_lookup", "signal_type", "category", "regime"),
+        Index(
+            "ix_signal_calibration_history_lookup",
+            "signal_type",
+            "category",
+            "regime",
+            "effective_from",
+            "computed_at",
+            "id",
+        ),
         Index("ix_signal_calibration_effective", "effective_from", "effective_to"),
     )
 

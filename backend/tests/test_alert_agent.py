@@ -22,7 +22,7 @@ from app.services.alert_agent.dedup import (
     signal_direction,
 )
 from app.services.alert_agent.human_decision import apply_decision_to_alert
-from app.services.alert_agent.router import lacks_history, route_alert
+from app.services.alert_agent.router import calibration_history_statement, lacks_history, route_alert
 
 
 class FailingSession:
@@ -186,6 +186,27 @@ def test_alert_agent_config_row_statement_uses_stable_latest_lookup() -> None:
     assert "alert_agent_config.key = 'confidence_thresholds'" in compiled
     assert (
         "ORDER BY alert_agent_config.updated_at DESC, alert_agent_config.id DESC"
+    ) in compiled
+    assert "LIMIT 1" in compiled
+
+
+def test_calibration_history_statement_uses_as_of_and_stable_latest_lookup() -> None:
+    statement = calibration_history_statement(
+        signal_type="momentum",
+        category="ferrous",
+        regime="volatile",
+        as_of=datetime(2026, 5, 19, 12, tzinfo=timezone.utc),
+    )
+    compiled = str(statement.compile(compile_kwargs={"literal_binds": True}))
+
+    assert "signal_calibration.signal_type = 'momentum'" in compiled
+    assert "signal_calibration.category = 'ferrous'" in compiled
+    assert "signal_calibration.regime = 'volatile'" in compiled
+    assert "signal_calibration.effective_from <=" in compiled
+    assert "signal_calibration.computed_at <=" in compiled
+    assert (
+        "ORDER BY signal_calibration.effective_from DESC, "
+        "signal_calibration.computed_at DESC, signal_calibration.id DESC"
     ) in compiled
     assert "LIMIT 1" in compiled
 

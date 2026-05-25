@@ -52,7 +52,7 @@ async def route_alert(
     if fuzzy_confidence:
         reasons.append("fuzzy_confidence")
 
-    no_history = await lacks_history(session, signal=signal, context=context)
+    no_history = await lacks_history(session, signal=signal, context=context, as_of=effective_at)
     if no_history:
         reasons.append("no_calibration_history")
 
@@ -156,27 +156,51 @@ async def lacks_history(
     *,
     signal: dict[str, Any],
     context: dict[str, Any],
+    as_of: datetime | None = None,
 ) -> bool:
     if session is None:
         return False
+    effective_at = as_of or datetime.now(timezone.utc)
     try:
         row = (
             await session.scalars(
-                select(SignalCalibration)
-                .where(
-                    SignalCalibration.signal_type == str(signal.get("signal_type") or "unknown"),
-                    SignalCalibration.category
-                    == str(context.get("category") or signal.get("category") or "unknown"),
-                    SignalCalibration.regime
-                    == str(context.get("regime") or context.get("regime_at_emission") or "unknown"),
+                calibration_history_statement(
+                    signal_type=str(signal.get("signal_type") or "unknown"),
+                    category=str(context.get("category") or signal.get("category") or "unknown"),
+                    regime=str(context.get("regime") or context.get("regime_at_emission") or "unknown"),
+                    as_of=effective_at,
                 )
-                .limit(1)
             )
         ).first()
     except Exception:
         await rollback_if_possible(session)
         return False
     return row is None
+
+
+def calibration_history_statement(
+    *,
+    signal_type: str,
+    category: str,
+    regime: str,
+    as_of: datetime,
+):
+    return (
+        select(SignalCalibration)
+        .where(
+            SignalCalibration.signal_type == signal_type,
+            SignalCalibration.category == category,
+            SignalCalibration.regime == regime,
+            SignalCalibration.effective_from <= as_of,
+            SignalCalibration.computed_at <= as_of,
+        )
+        .order_by(
+            SignalCalibration.effective_from.desc(),
+            SignalCalibration.computed_at.desc(),
+            SignalCalibration.id.desc(),
+        )
+        .limit(1)
+    )
 
 
 def crosses_three_sectors(signal: dict[str, Any]) -> bool:

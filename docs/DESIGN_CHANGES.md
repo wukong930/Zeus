@@ -821,3 +821,4 @@ threshold_modifier、propagation_activator、risk_recalc、数据腐烂防护
 - Alert Dedup 组合哈希查询稳定化：同 symbol/direction/evaluator 查找和跨 evaluator 组合哈希查找抽为可测试 statement，组合哈希按 `last_emitted_at desc, updated_at desc, id desc` 取最新记录，并补充 hash/symbol/direction/emitted/updated/id 复合索引，保证重复预警抑制不会因旧缓存行漂移。
 - Event Intelligence 复核 lookup 统一化：事件智能 open review 查询复用治理队列 active lookup statement，按 `created_at asc, id asc` 稳定复用最早待处理项，保证事件智能页面、人工决策入口和治理队列使用同一重复复核项口径。
 - Position Propagation 商品节点 lookup 稳定化：持仓传播按 symbol 查找商品图谱节点时抽为可测试 statement，并按 `id asc` 兜底排序，保证异常重复节点下持仓联动监控入口可复现。
+- Alert Router 校准历史点时化：`lacks_history` 按当前路由时间过滤 `effective_from/computed_at <= as_of`，并按 `effective_from desc, computed_at desc, id desc` 稳定选择历史校准；补充 signal_type/category/regime/effective/computed/id 复合索引，保证未来校准记录不会提前影响人工/LLM 路由。
