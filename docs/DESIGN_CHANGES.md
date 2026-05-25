@@ -818,3 +818,4 @@ threshold_modifier、propagation_activator、risk_recalc、数据腐烂防护
 - Alert Agent Config 查询稳定化：通知设置、阈值设置和 adversarial runtime 配置共用可测试 statement，按 `updated_at desc, id desc` 稳定取一，并补充 key/updated/id 复合索引，保证异常重复配置行下运行态设置读取可复现。
 - Review Queue active lookup 稳定化：复核入队去重查询抽为可测试 statement，按 `created_at asc, id asc` 稳定复用最早待处理项，并补充 source/table/key/status/created/id 复合索引，保证异常重复复核项下治理队列行为可复现。
 - LLM Budget active lookup 稳定化：预算检查和成本累加共用可测试 statement，按 `updated_at desc, id desc` 稳定选择最新 active budget，并补充 module/period/status/updated/id 复合索引，保证异常重复预算行下成本控制行为可复现。
+- Alert Dedup 组合哈希查询稳定化：同 symbol/direction/evaluator 查找和跨 evaluator 组合哈希查找抽为可测试 statement，组合哈希按 `last_emitted_at desc, updated_at desc, id desc` 取最新记录，并补充 hash/symbol/direction/emitted/updated/id 复合索引，保证重复预警抑制不会因旧缓存行漂移。

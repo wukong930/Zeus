@@ -51,13 +51,11 @@ async def check_alert_dedup(
     try:
         same_key = (
             await session.scalars(
-                select(AlertDedupCache)
-                .where(
-                    AlertDedupCache.symbol == symbol,
-                    AlertDedupCache.direction == direction,
-                    AlertDedupCache.evaluator == evaluator,
+                alert_dedup_lookup_statement(
+                    symbol=symbol,
+                    direction=direction,
+                    evaluator=evaluator,
                 )
-                .limit(1)
             )
         ).first()
     except Exception:
@@ -141,6 +139,24 @@ def combination_dedup_lookup_statement(
             AlertDedupCache.direction == direction,
             AlertDedupCache.evaluator != evaluator,
         )
+        .order_by(
+            AlertDedupCache.last_emitted_at.desc(),
+            AlertDedupCache.updated_at.desc(),
+            AlertDedupCache.id.desc(),
+        )
+        .limit(1)
+    )
+
+
+def alert_dedup_lookup_statement(*, symbol: str, direction: str, evaluator: str):
+    return (
+        select(AlertDedupCache)
+        .where(
+            AlertDedupCache.symbol == symbol,
+            AlertDedupCache.direction == direction,
+            AlertDedupCache.evaluator == evaluator,
+        )
+        .order_by(AlertDedupCache.updated_at.desc(), AlertDedupCache.id.desc())
         .limit(1)
     )
 
@@ -178,13 +194,11 @@ async def record_alert_emitted(
     try:
         row = (
             await session.scalars(
-                select(AlertDedupCache)
-                .where(
-                    AlertDedupCache.symbol == symbol,
-                    AlertDedupCache.direction == direction,
-                    AlertDedupCache.evaluator == evaluator,
+                alert_dedup_lookup_statement(
+                    symbol=symbol,
+                    direction=direction,
+                    evaluator=evaluator,
                 )
-                .limit(1)
             )
         ).first()
     except Exception:

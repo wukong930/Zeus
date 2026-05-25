@@ -16,6 +16,7 @@ from app.services.alert_agent.config import (
     load_confidence_thresholds,
 )
 from app.services.alert_agent.dedup import (
+    alert_dedup_lookup_statement,
     check_alert_dedup,
     combination_dedup_lookup_statement,
     signal_direction,
@@ -246,6 +247,26 @@ def test_combination_dedup_lookup_is_scoped_to_symbol_and_direction() -> None:
     assert "alert_dedup_cache.symbol = 'RB'" in compiled
     assert "alert_dedup_cache.direction = 'bullish'" in compiled
     assert "alert_dedup_cache.evaluator != 'momentum'" in compiled
+    assert (
+        "ORDER BY alert_dedup_cache.last_emitted_at DESC, "
+        "alert_dedup_cache.updated_at DESC, alert_dedup_cache.id DESC"
+    ) in compiled
+
+
+def test_alert_dedup_lookup_uses_stable_latest_row() -> None:
+    statement = alert_dedup_lookup_statement(
+        symbol="RB",
+        direction="bullish",
+        evaluator="momentum",
+    )
+
+    compiled = str(statement.compile(compile_kwargs={"literal_binds": True}))
+
+    assert "alert_dedup_cache.symbol = 'RB'" in compiled
+    assert "alert_dedup_cache.direction = 'bullish'" in compiled
+    assert "alert_dedup_cache.evaluator = 'momentum'" in compiled
+    assert "ORDER BY alert_dedup_cache.updated_at DESC, alert_dedup_cache.id DESC" in compiled
+    assert "LIMIT 1" in compiled
 
 
 async def test_dedup_suppresses_recent_same_symbol_direction_without_upgrade() -> None:
