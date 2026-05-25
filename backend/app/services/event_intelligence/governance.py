@@ -14,7 +14,7 @@ from app.models.event_intelligence import (
     EventIntelligenceItem,
 )
 from app.models.vector_chunks import VectorChunk
-from app.services.governance.review_queue import enqueue_review
+from app.services.governance.review_queue import _active_review_lookup_statement, enqueue_review
 from app.services.governance.triage import triage_event_intelligence
 
 DECISION_STATUS: dict[str, str] = {
@@ -386,16 +386,22 @@ async def _open_review_for_event(
     statuses: tuple[str, ...] = ("pending", "shadow_review"),
 ) -> ChangeReviewQueue | None:
     rows = await session.scalars(
-        select(ChangeReviewQueue)
-        .where(
-            ChangeReviewQueue.source == EVENT_INTELLIGENCE_REVIEW_SOURCE,
-            ChangeReviewQueue.target_table == EVENT_INTELLIGENCE_REVIEW_TABLE,
-            ChangeReviewQueue.target_key == str(event_item_id),
-            ChangeReviewQueue.status.in_(statuses),
-        )
-        .limit(1)
+        _event_intelligence_review_lookup_statement(event_item_id=event_item_id, statuses=statuses)
     )
     return rows.first()
+
+
+def _event_intelligence_review_lookup_statement(
+    *,
+    event_item_id: UUID,
+    statuses: tuple[str, ...] = ("pending", "shadow_review"),
+):
+    return _active_review_lookup_statement(
+        source=EVENT_INTELLIGENCE_REVIEW_SOURCE,
+        target_table=EVENT_INTELLIGENCE_REVIEW_TABLE,
+        target_key=str(event_item_id),
+        statuses=statuses,
+    )
 
 
 def _review_payload(

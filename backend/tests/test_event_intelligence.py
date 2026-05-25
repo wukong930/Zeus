@@ -34,6 +34,7 @@ from app.services.event_intelligence import (
     update_event_impact_link,
 )
 from app.services.event_intelligence.eval_cases import EVENT_INTELLIGENCE_EVAL_CASES
+from app.services.event_intelligence.governance import _event_intelligence_review_lookup_statement
 from app.services.event_intelligence.ingress import (
     _market_signal_rows_statement,
     _recent_news_events_statement,
@@ -662,6 +663,12 @@ def test_event_intelligence_scoped_statements_push_filters_to_database() -> None
             limit=20,
         )
     )
+    review_sql = _compile_postgres(
+        _event_intelligence_review_lookup_statement(
+            event_item_id=event_id,
+            statuses=("pending", "shadow_review", "pending"),
+        )
+    )
 
     assert "event_intelligence_items.symbols" in items_sql
     assert "event_intelligence_items.regions" in items_sql
@@ -700,6 +707,13 @@ def test_event_intelligence_scoped_statements_push_filters_to_database() -> None
         "ORDER BY event_intelligence_audit_logs.created_at DESC, "
         "event_intelligence_audit_logs.id DESC"
     ) in audit_sql
+    assert "change_review_queue.source =" in review_sql
+    assert "change_review_queue.target_table =" in review_sql
+    assert "change_review_queue.target_key =" in review_sql
+    assert "change_review_queue.status IN" in review_sql
+    assert (
+        "ORDER BY change_review_queue.created_at ASC, change_review_queue.id ASC"
+    ) in review_sql
 
 
 def test_event_intelligence_snapshot_response_keeps_items_links_and_quality_together() -> None:
