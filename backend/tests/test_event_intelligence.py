@@ -42,6 +42,10 @@ from app.services.event_intelligence.ingress import (
     market_signal_event_candidate,
     weather_event_candidates_from_industry_rows,
 )
+from app.services.event_intelligence.resolver import (
+    _event_intelligence_item_links_statement,
+    _event_intelligence_source_item_statement,
+)
 
 
 def test_build_event_intelligence_from_news_maps_weather_to_rubber_impacts() -> None:
@@ -669,6 +673,10 @@ def test_event_intelligence_scoped_statements_push_filters_to_database() -> None
             statuses=("pending", "shadow_review", "pending"),
         )
     )
+    resolver_source_sql = _compile_postgres(
+        _event_intelligence_source_item_statement(source_type="news_event", source_id=str(news_id))
+    )
+    resolver_links_sql = _compile_postgres(_event_intelligence_item_links_statement(event_item_id=event_id))
 
     assert "event_intelligence_items.symbols" in items_sql
     assert "event_intelligence_items.regions" in items_sql
@@ -714,6 +722,17 @@ def test_event_intelligence_scoped_statements_push_filters_to_database() -> None
     assert (
         "ORDER BY change_review_queue.created_at ASC, change_review_queue.id ASC"
     ) in review_sql
+    assert "event_intelligence_items.source_type =" in resolver_source_sql
+    assert "event_intelligence_items.source_id =" in resolver_source_sql
+    assert (
+        "ORDER BY event_intelligence_items.created_at ASC, event_intelligence_items.id ASC"
+    ) in resolver_source_sql
+    assert "LIMIT" in resolver_source_sql
+    assert "event_impact_links.event_item_id =" in resolver_links_sql
+    assert (
+        "ORDER BY event_impact_links.impact_score DESC, "
+        "event_impact_links.confidence DESC, event_impact_links.id DESC"
+    ) in resolver_links_sql
 
 
 def test_event_intelligence_snapshot_response_keeps_items_links_and_quality_together() -> None:

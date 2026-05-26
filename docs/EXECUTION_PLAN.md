@@ -1184,6 +1184,7 @@ Causa 的 `event_driven` 评估器实际上是纯技术面（gap + volume），*
   - [x] Phase 10.60.83：Position Propagation 商品节点 lookup 稳定化，持仓传播按 symbol 查找商品图谱节点时抽为可测试 statement，并按 `id asc` 兜底排序，避免异常重复节点导致持仓联动监控入口漂移。
   - [x] Phase 10.60.84：Alert Router 校准历史点时化，`lacks_history` 按当前路由时间过滤 `effective_from/computed_at <= as_of`，并按 `effective_from desc, computed_at desc, id desc` 稳定选择历史校准；补充 signal_type/category/regime/effective/computed/id 复合索引，避免未来校准记录提前影响人工/LLM 路由。
   - [x] Phase 10.60.85：Trade Plan 开放计划复用口径统一化，开放交易计划扫描改为按 `created_at asc, id asc` 选择最早主计划，与重复计划合并保留主计划的口径一致，避免新增证据先挂到较新的重复计划后再被搬迁。
+  - [x] Phase 10.60.86：Event Intelligence Resolver source lookup 统一化，规则解析、草稿创建和 LLM 语义增强共用可测试 source item / impact link 查询；source item 按 `created_at asc, id asc` 稳定复用最早记录，impact links 统一按 `impact_score desc, confidence desc, id desc` 输出，避免重复维护导致事件作用域读取口径分叉。
 - [ ] 后端慢查询、索引、分页和缓存继续复查。
 - [x] 调度任务真实 handler 覆盖率继续复查，避免 enabled 但实际 noop。
 - [x] 全量回归测试、浏览器验证和部署 smoke 流程固化。

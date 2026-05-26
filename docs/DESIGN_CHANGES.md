@@ -823,3 +823,4 @@ threshold_modifier、propagation_activator、risk_recalc、数据腐烂防护
 - Position Propagation 商品节点 lookup 稳定化：持仓传播按 symbol 查找商品图谱节点时抽为可测试 statement，并按 `id asc` 兜底排序，保证异常重复节点下持仓联动监控入口可复现。
 - Alert Router 校准历史点时化：`lacks_history` 按当前路由时间过滤 `effective_from/computed_at <= as_of`，并按 `effective_from desc, computed_at desc, id desc` 稳定选择历史校准；补充 signal_type/category/regime/effective/computed/id 复合索引，保证未来校准记录不会提前影响人工/LLM 路由。
 - Trade Plan 开放计划复用口径统一化：开放交易计划扫描改为按 `created_at asc, id asc` 选择最早主计划，与重复计划合并保留主计划的口径一致，保证新增证据不会先挂到较新的重复计划后再被搬迁。
+- Event Intelligence Resolver source lookup 统一化：规则解析、草稿创建和 LLM 语义增强共用可测试 source item / impact link 查询，source item 按 `created_at asc, id asc` 稳定复用最早记录，impact links 统一按 `impact_score desc, confidence desc, id desc` 输出，保证事件作用域读取口径不分叉。
