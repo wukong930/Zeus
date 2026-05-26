@@ -22,11 +22,14 @@ from app.api.causal_web import (
     _latest_market_metrics_statement,
     _layout_nodes,
     _linked_alerts_statement,
+    _news_display_key,
     _merge_pinned_event_intelligence,
     _recent_alerts_statement,
     _recent_industry_metrics_statement,
     _recent_news_statement,
     _recent_signals_statement,
+    _seed_from_alert,
+    _seed_from_news,
     _seed_from_event_intelligence_item,
     _seed_from_event_intelligence_link,
     _unique_recent_event_intelligence,
@@ -583,6 +586,67 @@ def test_unique_recent_news_collapses_syndicated_titles() -> None:
     )
 
     assert [row.id for row in unique] == [first.id, unrelated.id]
+
+
+def test_news_and_alert_symbol_normalization_for_display_nodes() -> None:
+    now = datetime.now(timezone.utc)
+    news = NewsEvent(
+        id=uuid4(),
+        source="gdelt",
+        title="Rubber weather disruption",
+        summary="Rainfall disrupts logistics.",
+        published_at=now,
+        event_type="weather",
+        affected_symbols=[" ru ", "", "NR"],
+        direction="bullish",
+        severity=3,
+        time_horizon="short",
+        llm_confidence=0.73,
+        verification_status="single_source",
+        requires_manual_confirmation=False,
+        dedup_hash="news-normalized",
+    )
+    duplicate = NewsEvent(
+        id=uuid4(),
+        source="gdelt",
+        title="Rubber weather disruption",
+        summary="Rainfall disrupts logistics.",
+        published_at=now,
+        event_type="weather",
+        affected_symbols=["NR", "RU"],
+        direction="bullish",
+        severity=3,
+        time_horizon="short",
+        llm_confidence=0.73,
+        verification_status="single_source",
+        requires_manual_confirmation=False,
+        dedup_hash="news-normalized-2",
+    )
+    alert = Alert(
+        id=uuid4(),
+        title="SC bullish supply risk",
+        summary="Oil supply risk is rising.",
+        severity="high",
+        category="energy",
+        type="momentum",
+        status="active",
+        triggered_at=now,
+        confidence=0.8,
+        related_assets=["", " sc "],
+        trigger_chain=[],
+        risk_items=[],
+        manual_check_items=[],
+    )
+
+    news_seed = _seed_from_news(news)
+    alert_seed = _seed_from_alert(alert)
+
+    assert news_seed.category == "rubber"
+    assert "NR" in news_seed.tags
+    assert "RU" in news_seed.tags
+    assert _news_display_key(news) == _news_display_key(duplicate)
+    assert alert_seed.portfolio_linked is True
+    assert "SC" in alert_seed.tags
 
 
 def test_unique_recent_event_intelligence_collapses_syndicated_titles() -> None:

@@ -835,3 +835,4 @@ threshold_modifier、propagation_activator、risk_recalc、数据腐烂防护
 - Alert Dedup key 归一化：primary symbol、evaluator 和 severity 统一清洗，lookup statement 也防御式归一化，避免空格 / 大小写或空 related asset 导致重复预警漏抑制。
 - Alert 分类 / one-liner 归一化：分类等级和短文案统一复用 symbol / severity 清洗口径，避免空 related asset、重复 symbol 或大小写差异影响等级与展示。
 - Shadow Tracker 归因 symbol 归一化：outcome 评估读取 PIT 行情前跳过空 related asset，并对 related assets / spread leg 去空格、转大写，避免脏输入导致行情查询漏命中。
+- Causal Web symbol 归一化：新闻 / 预警节点、展示去重 key 和边匹配集合统一清洗 symbol，避免空格 / 大小写导致重复节点、错分板块或联动漏边。

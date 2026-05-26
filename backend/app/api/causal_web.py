@@ -636,7 +636,7 @@ def _humanize_token(value: str | None) -> str:
 
 
 def _seed_from_news(row: NewsEvent) -> GraphNodeSeed:
-    symbols = [str(symbol).upper() for symbol in row.affected_symbols[:3]]
+    symbols = _normalize_symbols(row.affected_symbols, limit=3)
     category = _category_from_symbols(symbols)
     label = row.title_zh or row.title
     narrative = row.summary_zh or row.summary or label
@@ -724,7 +724,7 @@ def _seed_from_signal(row: SignalTrack) -> GraphNodeSeed:
 
 
 def _seed_from_alert(row: Alert) -> GraphNodeSeed:
-    assets = [str(asset).upper() for asset in row.related_assets[:3]]
+    assets = _normalize_symbols(row.related_assets, limit=3)
     label = row.title_zh or row.title
     narrative = row.summary_zh or row.one_liner or row.summary or label
     return GraphNodeSeed(
@@ -837,12 +837,12 @@ def _build_edges(
     edge_keys: set[tuple[str, str]] = set()
     news_contexts = []
     for item in news:
-        symbols = {str(symbol).upper() for symbol in item.affected_symbols}
+        symbols = set(_normalize_symbols(item.affected_symbols))
         news_contexts.append((item, symbols, _category_from_symbols(list(symbols))))
     signal_by_alert = _latest_signal_by_alert(signals)
     alerts_by_id = {row.id: row for row in alerts}
     alert_symbols_by_id = {
-        row.id: {str(asset).upper() for asset in row.related_assets}
+        row.id: set(_normalize_symbols(row.related_assets))
         for row in alerts
     }
     for context in event_intelligence_links or []:
@@ -1028,7 +1028,7 @@ def _signal_sort_key(row: SignalTrack) -> tuple[datetime, float]:
 
 
 def _news_matches_metric(symbols: set[str], category: str, metric: MetricContext) -> bool:
-    if metric.symbol.upper() in symbols:
+    if _normalize_symbol(metric.symbol) in symbols:
         return True
     return category != "unknown" and category == metric.category
 
@@ -1087,12 +1087,12 @@ def _merge_pinned_event_intelligence(
 
 
 def _news_display_key(row: NewsEvent) -> tuple[str, tuple[str, ...], str]:
-    symbols = tuple(sorted(str(symbol).upper() for symbol in row.affected_symbols[:5]))
+    symbols = tuple(_normalize_symbols(row.affected_symbols, limit=5))
     return (row.event_type.lower(), symbols, _normalize_news_title(row.title))
 
 
 def _event_intelligence_display_key(row: EventIntelligenceItem) -> tuple[str, tuple[str, ...], str]:
-    symbols = tuple(sorted(str(symbol).upper() for symbol in (row.symbols or [])[:5]))
+    symbols = tuple(_normalize_symbols(row.symbols or [], limit=5))
     return (row.event_type.lower(), symbols, _normalize_news_title(row.title))
 
 
@@ -1246,7 +1246,7 @@ def _event_intelligence_link_statement(
 
 
 def _metric_context_from_industry(row: IndustryData) -> MetricContext:
-    symbol = str(row.symbol).upper()
+    symbol = _normalize_symbol(row.symbol)
     return MetricContext(
         node_id=f"metric-{row.id}",
         symbol=symbol,
@@ -1255,7 +1255,7 @@ def _metric_context_from_industry(row: IndustryData) -> MetricContext:
 
 
 def _metric_context_from_market(row: MarketData) -> MetricContext:
-    symbol = str(row.symbol).upper()
+    symbol = _normalize_symbol(row.symbol)
     return MetricContext(
         node_id=f"metric-market-{row.id}",
         symbol=symbol,
@@ -1424,8 +1424,13 @@ def _event_quality_label_en(status: EventQualityStatus | None) -> str:
     }[status]
 
 
-def _normalize_symbol(value: str) -> str:
+def _normalize_symbol(value: object) -> str:
     return str(value).upper().strip()
+
+
+def _normalize_symbols(values: list[object], *, limit: int | None = None) -> list[str]:
+    normalized = sorted({symbol for value in values if (symbol := _normalize_symbol(value))})
+    return normalized if limit is None else normalized[:limit]
 
 
 def _direction_from_text(text: str) -> EdgeDirection:
