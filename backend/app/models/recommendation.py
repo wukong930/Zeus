@@ -25,6 +25,7 @@ class Recommendation(Base):
         Index("ix_recommendations_strategy_id", "strategy_id"),
         Index("ix_recommendations_alert_id", "alert_id"),
         Index("ix_recommendations_alert_created_id", "alert_id", "created_at", "id"),
+        Index("ix_recommendations_legs", "legs", postgresql_using="gin"),
         Index("ix_recommendations_created_at", "created_at"),
         Index("ix_recommendations_created_id", "created_at", "id"),
         Index("ix_recommendations_actual_exit_reason", "actual_exit_reason"),

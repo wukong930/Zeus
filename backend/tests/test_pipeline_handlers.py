@@ -86,6 +86,30 @@ def test_open_trade_plans_statement_uses_stable_tie_breakers() -> None:
     assert "LIMIT" in sql
 
 
+def test_open_trade_plans_statement_can_push_match_filters_to_database() -> None:
+    candidate_sql = _compile_postgres(
+        _open_trade_plans_statement(
+            as_of=datetime(2026, 5, 18, tzinfo=timezone.utc),
+            match_key=("open_directional", (("RB", "short"),)),
+            limit=None,
+        )
+    )
+    context_sql = _compile_postgres(
+        _open_trade_plans_statement(
+            as_of=datetime(2026, 5, 18, tzinfo=timezone.utc),
+            symbol="I",
+            direction="long",
+            limit=None,
+        )
+    )
+
+    assert "recommendations.recommended_action =" in candidate_sql
+    assert "recommendations.legs @>" in candidate_sql
+    assert "LIMIT" not in candidate_sql
+    assert "recommendations.legs @>" in context_sql
+    assert "LIMIT" not in context_sql
+
+
 async def test_open_trade_plan_for_candidate_reuses_first_canonical_match() -> None:
     now = datetime(2026, 5, 18, tzinfo=timezone.utc)
     primary = Recommendation(
