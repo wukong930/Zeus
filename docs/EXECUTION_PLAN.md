@@ -1194,6 +1194,7 @@ Causa 的 `event_driven` 评估器实际上是纯技术面（gap + volume），*
   - [x] Phase 10.60.93：结构反证图谱查询和匹配统一归一化商品 symbol，并对结构边读取增加稳定排序，避免空格 / 大小写差异导致反证边漏匹配。
   - [x] Phase 10.60.94：Alert Router 统一归一化 signal type / category / regime，用于 fuzzy 多信号判断、校准历史 lookup 和反馈提示，避免大小写或空格触发错误 LLM 仲裁 / 无历史判断。
   - [x] Phase 10.60.95：Alert Dedup key 统一归一化 primary symbol、evaluator 和 severity，避免空格 / 大小写或空 related asset 导致重复预警漏抑制。
+  - [x] Phase 10.60.96：Alert 分类和 one-liner 阅读文案统一复用 symbol / severity 清洗口径，避免空 related asset、重复 symbol 或大小写差异影响等级与展示。
 - [ ] 后端慢查询、索引、分页和缓存继续复查。
 - [x] 调度任务真实 handler 覆盖率继续复查，避免 enabled 但实际 noop。
 - [x] 全量回归测试、浏览器验证和部署 smoke 流程固化。

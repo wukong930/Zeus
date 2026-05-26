@@ -23,6 +23,7 @@ from app.services.alert_agent.dedup import (
     signal_direction,
 )
 from app.services.alert_agent.human_decision import apply_decision_to_alert
+from app.services.alert_agent.narrative import generate_one_liner
 from app.services.alert_agent.router import (
     calibration_history_statement,
     lacks_history,
@@ -125,6 +126,40 @@ def test_classifier_marks_spread_signal_as_l3() -> None:
     }
 
     assert classify_alert(signal, {"priority": 70, "combined": 70}) == "L3"
+
+
+def test_classifier_normalizes_related_assets_and_severity() -> None:
+    assert (
+        classify_alert(
+            {
+                "signal_type": "momentum",
+                "severity": " HIGH ",
+                "related_assets": [" rb ", "RB", ""],
+            },
+            {"priority": 20, "combined": 20},
+        )
+        == "L2"
+    )
+    assert (
+        classify_alert(
+            {"signal_type": "momentum", "severity": "low", "related_assets": ["", " "]},
+            {"priority": 20, "combined": 20},
+        )
+        == "L0"
+    )
+
+
+def test_one_liner_normalizes_primary_symbol_and_severity() -> None:
+    text = generate_one_liner(
+        {
+            "signal_type": "momentum",
+            "severity": " HIGH ",
+            "related_assets": ["", " rb "],
+        },
+        "L2",
+    )
+
+    assert text == "RB high momentum L2"
 
 
 async def test_router_sends_conflict_to_arbitration() -> None:
