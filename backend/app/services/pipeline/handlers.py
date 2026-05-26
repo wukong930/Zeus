@@ -111,9 +111,15 @@ def _parse_datetime(value: str | datetime | None) -> datetime:
     if value is None:
         return datetime.now(timezone.utc)
     if isinstance(value, datetime):
-        return value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
+        return _ensure_aware_utc(value)
     parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=timezone.utc)
+    return _ensure_aware_utc(parsed)
+
+
+def _ensure_aware_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
 
 
 def context_triggered_at(context: dict[str, Any]) -> datetime:
@@ -871,6 +877,7 @@ def build_trade_plan_recommendation(
     score: dict[str, Any] | Any | None,
     event_payload: dict[str, Any],
     triggered_at: datetime,
+    as_of: datetime | None = None,
 ) -> Recommendation | None:
     return evaluate_trade_plan_candidate(
         alert=alert,
@@ -879,6 +886,7 @@ def build_trade_plan_recommendation(
         score=score,
         event_payload=event_payload,
         triggered_at=triggered_at,
+        as_of=as_of,
     ).recommendation
 
 
@@ -890,7 +898,9 @@ def evaluate_trade_plan_candidate(
     score: dict[str, Any] | Any | None,
     event_payload: dict[str, Any],
     triggered_at: datetime,
+    as_of: datetime | None = None,
 ) -> TradePlanCandidateEvaluation:
+    evaluated_at = _ensure_aware_utc(as_of or datetime.now(timezone.utc))
     raw_action = str(event_payload.get("recommended_action") or "")
     current_action = recommended_action(signal)
     action = current_action if raw_action in {"", "watchlist_only"} else raw_action
@@ -903,7 +913,7 @@ def evaluate_trade_plan_candidate(
     if not adversarial_allows_trade_plan(alert, event_payload):
         return TradePlanCandidateEvaluation(None, "adversarial_failed")
     expires_at = triggered_at + TRADE_PLAN_EXPIRES_AFTER
-    if expires_at <= datetime.now(timezone.utc):
+    if _ensure_aware_utc(expires_at) <= evaluated_at:
         return TradePlanCandidateEvaluation(None, "stale_signal")
 
     score_payload = score if isinstance(score, dict) else {}

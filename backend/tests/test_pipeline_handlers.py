@@ -460,6 +460,62 @@ def test_trade_plan_candidate_evaluation_reports_score_gate_reason() -> None:
     assert evaluation.skip_reason == "score_below_gate"
 
 
+def test_trade_plan_candidate_evaluation_uses_supplied_as_of_for_replay() -> None:
+    triggered_at = datetime(2026, 5, 18, 9, tzinfo=timezone.utc)
+    alert = Alert(
+        id=uuid4(),
+        title="RB bullish momentum",
+        summary="Historical signal should replay as live at the requested as-of time.",
+        severity="high",
+        category="rubber",
+        type="momentum",
+        status="active",
+        triggered_at=triggered_at,
+        expires_at=triggered_at + timedelta(days=1),
+        confidence=0.9,
+        adversarial_passed=True,
+        llm_involved=False,
+        confidence_tier="auto",
+        human_action_required=False,
+        dedup_suppressed=False,
+        related_assets=["RB"],
+        trigger_chain=[],
+        risk_items=[],
+        manual_check_items=[],
+    )
+    common_payload = {
+        "alert": alert,
+        "signal": {
+            "signal_type": "momentum",
+            "severity": "high",
+            "confidence": 0.9,
+            "direction": "bullish",
+            "title": "RB bullish momentum",
+            "summary": "Bullish momentum signal.",
+            "related_assets": ["RB"],
+        },
+        "context": {"category": "rubber", "market_data": [{"close": 13250.0}]},
+        "score": {"combined": 85, "priority": 85, "portfolio_fit": 75, "margin_efficiency": 80},
+        "event_payload": {"recommended_action": "watchlist_only", "adversarial_result": {"passed": True}},
+        "triggered_at": triggered_at,
+    }
+
+    live_at_replay_time = evaluate_trade_plan_candidate(
+        **common_payload,
+        as_of=triggered_at + timedelta(hours=6),
+    )
+    stale_after_window = evaluate_trade_plan_candidate(
+        **common_payload,
+        as_of=triggered_at + timedelta(days=2),
+    )
+
+    assert live_at_replay_time.passed is True
+    assert live_at_replay_time.recommendation is not None
+    assert live_at_replay_time.recommendation.expires_at == triggered_at + timedelta(days=1)
+    assert stale_after_window.passed is False
+    assert stale_after_window.skip_reason == "stale_signal"
+
+
 def test_trade_plan_candidate_evaluation_reports_missing_price_reason() -> None:
     now = datetime.now(timezone.utc)
     alert = Alert(

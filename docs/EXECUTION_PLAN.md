@@ -1186,6 +1186,7 @@ Causa 的 `event_driven` 评估器实际上是纯技术面（gap + volume），*
   - [x] Phase 10.60.85：Trade Plan 开放计划复用口径统一化，开放交易计划扫描改为按 `created_at asc, id asc` 选择最早主计划，与重复计划合并保留主计划的口径一致，避免新增证据先挂到较新的重复计划后再被搬迁。
   - [x] Phase 10.60.86：Event Intelligence Resolver source lookup 统一化，规则解析、草稿创建和 LLM 语义增强共用可测试 source item / impact link 查询；source item 按 `created_at asc, id asc` 稳定复用最早记录，impact links 统一按 `impact_score desc, confidence desc, id desc` 输出，避免重复维护导致事件作用域读取口径分叉。
   - [x] Phase 10.60.87：Trade Plan 补偿任务 alert lookup 放宽相关商品匹配，按 JSONB `related_assets` 包含主商品查询，而不是只匹配数组第一项；避免多商品预警顺序变化导致 `missing_alert`，提升历史 signal.scored 补回交易计划的成功率。
+  - [x] Phase 10.60.88：Trade Plan 候选评估支持点时 `as_of` 过期判断，补偿任务按调度评估时间判断信号是否仍有效，避免历史回放 / 补偿时把指定时间点仍有效的 signal.scored 误判为 `stale_signal`。
 - [ ] 后端慢查询、索引、分页和缓存继续复查。
 - [x] 调度任务真实 handler 覆盖率继续复查，避免 enabled 但实际 noop。
 - [x] 全量回归测试、浏览器验证和部署 smoke 流程固化。

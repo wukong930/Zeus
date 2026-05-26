@@ -111,6 +111,7 @@ async def sync_trade_plan_recommendations(
             score=payload.get("score", {}),
             event_payload=payload,
             triggered_at=alert.triggered_at,
+            as_of=now,
         )
         recommendation = evaluation.recommendation
         if recommendation is None:

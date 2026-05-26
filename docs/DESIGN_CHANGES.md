@@ -825,3 +825,4 @@ threshold_modifier、propagation_activator、risk_recalc、数据腐烂防护
 - Trade Plan 开放计划复用口径统一化：开放交易计划扫描改为按 `created_at asc, id asc` 选择最早主计划，与重复计划合并保留主计划的口径一致，保证新增证据不会先挂到较新的重复计划后再被搬迁。
 - Event Intelligence Resolver source lookup 统一化：规则解析、草稿创建和 LLM 语义增强共用可测试 source item / impact link 查询，source item 按 `created_at asc, id asc` 稳定复用最早记录，impact links 统一按 `impact_score desc, confidence desc, id desc` 输出，保证事件作用域读取口径不分叉。
 - Trade Plan 补偿任务 alert lookup 放宽相关商品匹配：按 JSONB `related_assets` 包含主商品查询，而不是只匹配数组第一项，避免多商品预警顺序变化导致 `missing_alert`，提升历史 `signal.scored` 补回交易计划的成功率。
+- Trade Plan 候选评估支持点时 `as_of` 过期判断：补偿任务按调度评估时间判断信号是否仍有效，避免历史回放 / 补偿时把指定时间点仍有效的 `signal.scored` 误判为 `stale_signal`。
