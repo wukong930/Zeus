@@ -26,6 +26,12 @@ def normalize_title(title: str) -> str:
     return normalized.strip()
 
 
+def normalize_affected_symbols(affected_symbols: list[str]) -> list[str]:
+    return sorted(
+        {str(symbol).strip().upper() for symbol in affected_symbols if str(symbol).strip()}
+    )
+
+
 def news_dedup_hash(
     *,
     title: str,
@@ -37,7 +43,7 @@ def news_dedup_hash(
         [
             day_bucket,
             normalize_title(title),
-            ",".join(sorted(symbol.upper() for symbol in affected_symbols)),
+            ",".join(normalize_affected_symbols(affected_symbols)),
         ]
     )
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()

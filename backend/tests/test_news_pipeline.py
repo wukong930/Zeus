@@ -7,8 +7,8 @@ from app.models.industry_data import IndustryData
 from app.services.news.collectors.gdelt import GdeltCollector
 from app.models.news_events import NewsEvent
 from app.services.news.collectors.rubber_supply import RubberSupplyCollector
-from app.services.news.dedup import news_dedup_hash, normalize_title
 from app.services.news.dedup import DedupDecision
+from app.services.news.dedup import news_dedup_hash, normalize_affected_symbols, normalize_title
 from app.services.news.event_publisher import (
     event_row_is_evaluable,
     jsonable_news_payload,
@@ -177,6 +177,24 @@ def test_news_title_hash_normalizes_punctuation() -> None:
     )
 
     assert normalize_title("OPEC+ 宣布延长减产！") == "opec宣布延长减产"
+    assert left == right
+
+
+def test_news_title_hash_normalizes_affected_symbols() -> None:
+    published_at = datetime(2026, 5, 3, tzinfo=timezone.utc)
+
+    left = news_dedup_hash(
+        title="Rubber rainfall disrupts logistics",
+        published_at=published_at,
+        affected_symbols=["ru", " NR ", "RU", ""],
+    )
+    right = news_dedup_hash(
+        title="Rubber rainfall disrupts logistics",
+        published_at=published_at,
+        affected_symbols=["NR", "RU"],
+    )
+
+    assert normalize_affected_symbols(["ru", " NR ", "RU", ""]) == ["NR", "RU"]
     assert left == right
 
 
