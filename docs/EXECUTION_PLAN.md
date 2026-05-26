@@ -1188,6 +1188,7 @@ Causa 的 `event_driven` 评估器实际上是纯技术面（gap + volume），*
   - [x] Phase 10.60.87：Trade Plan 补偿任务 alert lookup 放宽相关商品匹配，按 JSONB `related_assets` 包含主商品查询，而不是只匹配数组第一项；避免多商品预警顺序变化导致 `missing_alert`，提升历史 signal.scored 补回交易计划的成功率。
   - [x] Phase 10.60.88：Trade Plan 候选评估支持点时 `as_of` 过期判断，补偿任务按调度评估时间判断信号是否仍有效，避免历史回放 / 补偿时把指定时间点仍有效的 signal.scored 误判为 `stale_signal`。
   - [x] Phase 10.60.89：Trade Plan 开放计划匹配下推 action / legs JSONB 过滤，候选复用和上下文证据挂载不再只扫描最早 100 条开放计划；补充 `recommendations.legs` GIN 索引，降低开放计划增长后重复生成或漏挂证据的风险。
+  - [x] Phase 10.60.90：Trade Plan 匹配键 legs 顺序无关化，按 `(asset, direction)` 排序后匹配，避免同一价差 / 组合计划仅因 legs 顺序不同而无法复用、合并或挂载证据。
 - [ ] 后端慢查询、索引、分页和缓存继续复查。
 - [x] 调度任务真实 handler 覆盖率继续复查，避免 enabled 但实际 noop。
 - [x] 全量回归测试、浏览器验证和部署 smoke 流程固化。

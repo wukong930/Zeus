@@ -1186,7 +1186,7 @@ def trade_plan_match_key(recommendation: Recommendation) -> tuple[str, tuple[tup
         for leg in recommendation.legs
         if isinstance(leg, dict)
     ]
-    normalized = tuple((asset, direction) for asset, direction in legs if asset and direction)
+    normalized = tuple(sorted((asset, direction) for asset, direction in legs if asset and direction))
     if not normalized:
         return None
     return recommendation.recommended_action, normalized

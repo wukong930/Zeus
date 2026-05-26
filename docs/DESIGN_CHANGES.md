@@ -827,3 +827,4 @@ threshold_modifier、propagation_activator、risk_recalc、数据腐烂防护
 - Trade Plan 补偿任务 alert lookup 放宽相关商品匹配：按 JSONB `related_assets` 包含主商品查询，而不是只匹配数组第一项，避免多商品预警顺序变化导致 `missing_alert`，提升历史 `signal.scored` 补回交易计划的成功率。
 - Trade Plan 候选评估支持点时 `as_of` 过期判断：补偿任务按调度评估时间判断信号是否仍有效，避免历史回放 / 补偿时把指定时间点仍有效的 `signal.scored` 误判为 `stale_signal`。
 - Trade Plan 开放计划匹配下推 action / legs JSONB 过滤：候选复用和上下文证据挂载不再只扫描最早 100 条开放计划，并补充 `recommendations.legs` GIN 索引，降低开放计划增长后重复生成或漏挂证据的风险。
+- Trade Plan 匹配键 legs 顺序无关化：`trade_plan_match_key` 按 `(asset, direction)` 排序后匹配，避免同一价差 / 组合计划仅因 legs 顺序不同而无法复用、合并或挂载证据。

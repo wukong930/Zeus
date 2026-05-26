@@ -20,6 +20,7 @@ from app.services.pipeline.handlers import (
     open_trade_plan_for_candidate,
     open_trade_plan_for_context_signal,
     recommended_action,
+    trade_plan_match_key,
     trade_plan_matches,
 )
 
@@ -826,6 +827,47 @@ def test_trade_plan_match_and_merge_combines_same_symbol_direction_evidence() ->
         "median_pressure",
     ]
     assert target.backtest_summary["linked_supporting_alerts"][0]["alert_id"] == str(alert.id)
+
+
+def test_trade_plan_match_key_ignores_leg_order() -> None:
+    now = datetime.now(timezone.utc)
+    first = Recommendation(
+        id=uuid4(),
+        alert_id=uuid4(),
+        status="pending_review",
+        recommended_action="open_spread",
+        legs=[
+            {"asset": "RB", "direction": "short", "lots": 1.0},
+            {"asset": "HC", "direction": "long", "lots": 1.0},
+        ],
+        priority_score=42,
+        portfolio_fit_score=72,
+        margin_efficiency_score=81,
+        margin_required=100000,
+        reasoning="Ferrous spread.",
+        risk_items=[],
+        expires_at=now + timedelta(hours=8),
+    )
+    second = Recommendation(
+        id=uuid4(),
+        alert_id=uuid4(),
+        status="pending_review",
+        recommended_action="open_spread",
+        legs=[
+            {"asset": "HC", "direction": "long", "lots": 1.0},
+            {"asset": "RB", "direction": "short", "lots": 1.0},
+        ],
+        priority_score=45,
+        portfolio_fit_score=75,
+        margin_efficiency_score=82,
+        margin_required=120000,
+        reasoning="Same ferrous spread with reversed legs.",
+        risk_items=[],
+        expires_at=now + timedelta(hours=10),
+    )
+
+    assert trade_plan_match_key(first) == trade_plan_match_key(second)
+    assert trade_plan_matches(first, second) is True
 
 
 def test_compact_trade_plan_risk_items_preserves_order_and_caps_response_limit() -> None:
