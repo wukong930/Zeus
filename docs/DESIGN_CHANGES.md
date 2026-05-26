@@ -831,3 +831,4 @@ threshold_modifier、propagation_activator、risk_recalc、数据腐烂防护
 - 新闻 dedup hash 商品归一化：affected symbols 统一去空格、转大写、去重和排序，避免不同采集器带空格或重复商品时把同一新闻写成多条事件。
 - 校准 / 对抗组合 hash 归一化：signal type、category、regime 和相关商品统一清洗后参与 hash 与历史候选匹配，避免大小写、空格或重复商品把同一组合拆成不同历史桶。
 - 结构反证商品归一化：图谱节点查询和结构边匹配统一清洗 symbol，并对结构边读取增加 `strength desc, id asc` 稳定排序，避免空格 / 大小写差异导致反证边漏匹配。
+- Alert Router 信号作用域归一化：fuzzy 多信号判断、校准历史 lookup 和反馈提示统一清洗 signal type / category / regime，避免大小写或空格触发错误 LLM 仲裁 / 无历史判断。

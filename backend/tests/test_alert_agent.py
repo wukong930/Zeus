@@ -22,7 +22,12 @@ from app.services.alert_agent.dedup import (
     signal_direction,
 )
 from app.services.alert_agent.human_decision import apply_decision_to_alert
-from app.services.alert_agent.router import calibration_history_statement, lacks_history, route_alert
+from app.services.alert_agent.router import (
+    calibration_history_statement,
+    lacks_history,
+    route_alert,
+    signal_type_set,
+)
 
 
 class FailingSession:
@@ -163,6 +168,30 @@ async def test_router_requires_confirmation_for_low_confidence() -> None:
     assert decision.human_action_required is True
 
 
+async def test_router_signal_type_set_normalization_avoids_false_fuzzy_arbitration() -> None:
+    decision = await route_alert(
+        None,
+        signal={
+            "signal_type": " Momentum ",
+            "confidence": 0.60,
+            "severity": "medium",
+            "title": "RB momentum",
+            "summary": "Momentum signal.",
+            "risk_items": [],
+            "related_assets": ["RB"],
+        },
+        context={"category": "ferrous", "signal_types": [" Momentum ", "momentum", "MOMENTUM", ""]},
+        score={"priority": 50, "combined": 50},
+    )
+
+    assert signal_type_set(
+        {"signal_type": " Momentum "},
+        {"signal_types": [" Momentum ", "momentum", "MOMENTUM", ""]},
+    ) == {"momentum"}
+    assert decision.route == "notify"
+    assert "fuzzy_confidence" not in decision.reasons
+
+
 async def test_confidence_threshold_config_ignores_invalid_values() -> None:
     thresholds = await load_confidence_thresholds(
         ConfigSession({"auto": "bad", "notify": None})  # type: ignore[arg-type]
@@ -192,9 +221,9 @@ def test_alert_agent_config_row_statement_uses_stable_latest_lookup() -> None:
 
 def test_calibration_history_statement_uses_as_of_and_stable_latest_lookup() -> None:
     statement = calibration_history_statement(
-        signal_type="momentum",
-        category="ferrous",
-        regime="volatile",
+        signal_type=" Momentum ",
+        category=" Ferrous ",
+        regime=" Volatile ",
         as_of=datetime(2026, 5, 19, 12, tzinfo=timezone.utc),
     )
     compiled = str(statement.compile(compile_kwargs={"literal_binds": True}))

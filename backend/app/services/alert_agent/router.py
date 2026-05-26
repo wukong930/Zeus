@@ -62,7 +62,7 @@ async def route_alert(
 
     feedback_hint = await feedback_hint_for_signal(
         session,
-        signal_type=str(signal.get("signal_type") or "unknown"),
+        signal_type=normalize_signal_label(signal.get("signal_type")) or "unknown",
     )
     if feedback_hint is not None:
         reasons.append("feedback_caution")
@@ -129,10 +129,10 @@ def route_for(confidence_tier: str, *, conflict: bool, llm_candidate: bool) -> s
 def signal_type_set(signal: dict[str, Any], context: dict[str, Any]) -> set[str]:
     raw = context.get("signal_types") or context.get("signal_type_set")
     if isinstance(raw, (list, tuple, set)):
-        values = {str(item) for item in raw if str(item)}
+        values = {normalized for item in raw if (normalized := normalize_signal_label(item))}
         if values:
             return values
-    return {str(signal.get("signal_type") or "unknown")}
+    return {normalize_signal_label(signal.get("signal_type")) or "unknown"}
 
 
 def has_direction_conflict(signal: dict[str, Any], context: dict[str, Any]) -> bool:
@@ -165,9 +165,15 @@ async def lacks_history(
         row = (
             await session.scalars(
                 calibration_history_statement(
-                    signal_type=str(signal.get("signal_type") or "unknown"),
-                    category=str(context.get("category") or signal.get("category") or "unknown"),
-                    regime=str(context.get("regime") or context.get("regime_at_emission") or "unknown"),
+                    signal_type=normalize_signal_label(signal.get("signal_type")) or "unknown",
+                    category=normalize_signal_label(
+                        context.get("category") or signal.get("category")
+                    )
+                    or "unknown",
+                    regime=normalize_signal_label(
+                        context.get("regime") or context.get("regime_at_emission")
+                    )
+                    or "unknown",
                     as_of=effective_at,
                 )
             )
@@ -185,12 +191,15 @@ def calibration_history_statement(
     regime: str,
     as_of: datetime,
 ):
+    normalized_signal_type = normalize_signal_label(signal_type) or "unknown"
+    normalized_category = normalize_signal_label(category) or "unknown"
+    normalized_regime = normalize_signal_label(regime) or "unknown"
     return (
         select(SignalCalibration)
         .where(
-            SignalCalibration.signal_type == signal_type,
-            SignalCalibration.category == category,
-            SignalCalibration.regime == regime,
+            SignalCalibration.signal_type == normalized_signal_type,
+            SignalCalibration.category == normalized_category,
+            SignalCalibration.regime == normalized_regime,
             SignalCalibration.effective_from <= as_of,
             SignalCalibration.computed_at <= as_of,
         )
@@ -222,3 +231,7 @@ def symbol_sector(symbol: str) -> str:
     if root in {"M", "Y", "P", "C", "A", "CF", "SR"}:
         return "agriculture"
     return "unknown"
+
+
+def normalize_signal_label(value: Any) -> str:
+    return str(value or "").strip().lower()
