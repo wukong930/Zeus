@@ -295,7 +295,7 @@ def alert_result_event_statement(*, correlation_id: str, signal_type: str, symbo
             EventLog.channel.in_(ALERT_RESULT_CHANNELS),
             EventLog.correlation_id == correlation_id,
             EventLog.payload["signal_type"].as_string() == signal_type,
-            EventLog.payload["related_assets"][0].as_string() == symbol,
+            EventLog.payload["related_assets"].contains([symbol]),
         )
         .order_by(EventLog.created_at.desc(), EventLog.id.desc())
         .limit(1)

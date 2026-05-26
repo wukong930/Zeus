@@ -146,6 +146,7 @@ def test_trade_plan_lookup_statements_use_stable_tie_breakers() -> None:
     recommendation_sql = _compile_postgres(recommendation_for_alert_statement(alert_id=uuid4()))
 
     assert "event_log.correlation_id =" in alert_sql
+    assert "@>" in alert_sql
     assert "ORDER BY event_log.created_at DESC, event_log.id DESC" in alert_sql
     assert "recommendations.alert_id =" in recommendation_sql
     assert (
