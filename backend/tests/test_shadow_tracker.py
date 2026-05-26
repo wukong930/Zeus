@@ -89,6 +89,12 @@ def test_alert_to_signal_payload_uses_alert_and_track_metadata() -> None:
     assert primary_symbol(payload) == "RB"
 
 
+def test_primary_symbol_normalizes_related_assets_and_spread_leg() -> None:
+    assert primary_symbol({"related_assets": ["", " rb ", "RB"]}) == "RB"
+    assert primary_symbol({"related_assets": [], "spread_info": {"leg1": " hc "}}) == "HC"
+    assert primary_symbol({"related_assets": ["", " "], "spread_info": {"leg1": ""}}) is None
+
+
 def test_apply_outcome_updates_signal_track() -> None:
     track = SignalTrack(signal_type="momentum", category="ferrous", confidence=0.8)
     resolved_at = datetime(2026, 6, 1, tzinfo=timezone.utc)
@@ -189,7 +195,7 @@ async def test_load_forward_market_data_uses_pit_as_of(monkeypatch) -> None:
 
     rows = await load_forward_market_data(
         object(),  # type: ignore[arg-type]
-        signal={"related_assets": ["RB"]},
+        signal={"related_assets": [" rb "]},
         start_at=start_at,
         end_at=end_at,
         as_of=as_of,

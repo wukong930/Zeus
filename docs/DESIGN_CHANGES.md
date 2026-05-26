@@ -834,3 +834,4 @@ threshold_modifier、propagation_activator、risk_recalc、数据腐烂防护
 - Alert Router 信号作用域归一化：fuzzy 多信号判断、校准历史 lookup 和反馈提示统一清洗 signal type / category / regime，避免大小写或空格触发错误 LLM 仲裁 / 无历史判断。
 - Alert Dedup key 归一化：primary symbol、evaluator 和 severity 统一清洗，lookup statement 也防御式归一化，避免空格 / 大小写或空 related asset 导致重复预警漏抑制。
 - Alert 分类 / one-liner 归一化：分类等级和短文案统一复用 symbol / severity 清洗口径，避免空 related asset、重复 symbol 或大小写差异影响等级与展示。
+- Shadow Tracker 归因 symbol 归一化：outcome 评估读取 PIT 行情前跳过空 related asset，并对 related assets / spread leg 去空格、转大写，避免脏输入导致行情查询漏命中。

@@ -192,13 +192,21 @@ async def load_forward_market_data(
 
 def primary_symbol(signal: dict[str, Any]) -> str | None:
     related_assets = signal.get("related_assets") or []
-    if related_assets:
-        return str(related_assets[0])
+    for asset in related_assets:
+        symbol = normalize_symbol(asset)
+        if symbol:
+            return symbol
 
     spread_info = signal.get("spread_info")
     if isinstance(spread_info, dict) and spread_info.get("leg1") is not None:
-        return str(spread_info["leg1"])
+        symbol = normalize_symbol(spread_info["leg1"])
+        if symbol:
+            return symbol
     return None
+
+
+def normalize_symbol(value: Any) -> str:
+    return str(value or "").strip().upper()
 
 
 def apply_outcome(
