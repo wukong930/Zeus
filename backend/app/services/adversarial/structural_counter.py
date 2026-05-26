@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from typing import Any
+from uuid import UUID
 
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -50,10 +51,12 @@ def structural_counterarguments(
     edges: list[StructuralEdge],
 ) -> list[dict[str, Any]]:
     arguments: list[dict[str, Any]] = []
-    related_assets = {str(asset) for asset in signal.get("related_assets", [])}
+    related_assets = set(normalize_symbols(signal.get("related_assets", [])))
 
     for edge in edges:
-        if edge.source_symbol not in related_assets and edge.target_symbol not in related_assets:
+        source_symbol = normalize_symbol(edge.source_symbol)
+        target_symbol = normalize_symbol(edge.target_symbol)
+        if source_symbol not in related_assets and target_symbol not in related_assets:
             continue
         if (edge.propagation_direction or 0) < 0 or edge.type in {"substitute", "inverse"}:
             arguments.append(
@@ -104,27 +107,17 @@ async def load_structural_edges(
     *,
     symbols: list[str],
 ) -> list[StructuralEdge]:
-    if not symbols:
+    normalized_symbols = normalize_symbols(symbols)
+    if not normalized_symbols:
         return []
 
-    nodes = (
-        await session.scalars(select(CommodityNode).where(CommodityNode.symbol.in_(symbols)))
-    ).all()
+    nodes = (await session.scalars(structural_nodes_statement(normalized_symbols))).all()
     node_symbols = {node.id: node.symbol for node in nodes}
     if not node_symbols:
         return []
     node_ids = list(node_symbols)
 
-    edges = (
-        await session.scalars(
-            select(RelationshipEdge).where(
-                or_(
-                    RelationshipEdge.source.in_(node_ids),
-                    RelationshipEdge.target.in_(node_ids),
-                )
-            )
-        )
-    ).all()
+    edges = (await session.scalars(structural_edges_statement(node_ids))).all()
     return [
         StructuralEdge(
             source_symbol=node_symbols.get(edge.source, "unknown"),
@@ -136,3 +129,32 @@ async def load_structural_edges(
         )
         for edge in edges
     ]
+
+
+def structural_nodes_statement(symbols: list[str]):
+    return (
+        select(CommodityNode)
+        .where(CommodityNode.symbol.in_(normalize_symbols(symbols)))
+        .order_by(CommodityNode.symbol.asc(), CommodityNode.id.asc())
+    )
+
+
+def structural_edges_statement(node_ids: list[UUID]):
+    return (
+        select(RelationshipEdge)
+        .where(
+            or_(
+                RelationshipEdge.source.in_(node_ids),
+                RelationshipEdge.target.in_(node_ids),
+            )
+        )
+        .order_by(RelationshipEdge.strength.desc(), RelationshipEdge.id.asc())
+    )
+
+
+def normalize_symbol(value: Any) -> str:
+    return str(value or "").strip().upper()
+
+
+def normalize_symbols(values: list[Any]) -> list[str]:
+    return sorted({normalize_symbol(value) for value in values if normalize_symbol(value)})

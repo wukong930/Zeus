@@ -1,4 +1,5 @@
 from datetime import date, datetime, timezone
+from uuid import uuid4
 
 from sqlalchemy.dialects import postgresql
 
@@ -18,6 +19,9 @@ from app.services.adversarial.null_hypothesis import (
 from app.services.adversarial.structural_counter import (
     StructuralEdge,
     evaluate_structural_counter,
+    normalize_symbols,
+    structural_edges_statement,
+    structural_nodes_statement,
 )
 from app.services.adversarial.types import (
     MODE_ENFORCING,
@@ -218,6 +222,38 @@ def test_structural_counter_fails_on_reverse_path_and_context_pressure() -> None
 
     assert result.passed is False
     assert result.sample_size == 3
+
+
+def test_structural_counter_normalizes_related_assets_and_edge_symbols() -> None:
+    result = evaluate_structural_counter(
+        signal={"signal_type": "momentum", "related_assets": [" rb ", "RB"]},
+        context={},
+        edges=[
+            StructuralEdge(
+                source_symbol="rb",
+                target_symbol="hc",
+                type="substitute",
+                strength=0.7,
+                propagation_direction=-1,
+            )
+        ],
+    )
+
+    assert result.passed is False
+    assert result.sample_size == 1
+    assert normalize_symbols([" rb ", "RB", " hc "]) == ["HC", "RB"]
+
+
+def test_structural_lookup_statements_normalize_symbols_and_are_stable() -> None:
+    node_id = uuid4()
+    nodes_sql = _compile_postgres(structural_nodes_statement([" ru ", "RB", "RU"]))
+    edges_sql = _compile_postgres(structural_edges_statement([node_id]))
+
+    assert "commodity_nodes.symbol IN ('RB', 'RU')" in nodes_sql
+    assert "ORDER BY commodity_nodes.symbol ASC, commodity_nodes.id ASC" in nodes_sql
+    assert "relationship_edges.source IN" in edges_sql
+    assert "relationship_edges.target IN" in edges_sql
+    assert "ORDER BY relationship_edges.strength DESC, relationship_edges.id ASC" in edges_sql
 
 
 def test_warmup_historical_failure_does_not_suppress_signal() -> None:

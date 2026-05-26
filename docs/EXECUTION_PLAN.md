@@ -1191,6 +1191,7 @@ Causa 的 `event_driven` 评估器实际上是纯技术面（gap + volume），*
   - [x] Phase 10.60.90：Trade Plan 匹配键 legs 顺序无关化，按 `(asset, direction)` 排序后匹配，避免同一价差 / 组合计划仅因 legs 顺序不同而无法复用、合并或挂载证据。
   - [x] Phase 10.60.91：新闻 dedup hash 的 affected symbols 统一去空格、转大写、去重和排序，避免不同采集器带空格或重复商品时把同一新闻写成多条事件。
   - [x] Phase 10.60.92：校准 / 对抗组合 hash 统一归一化 signal type、category、regime 和相关商品，避免大小写、空格或重复商品把同一组合拆成不同历史桶。
+  - [x] Phase 10.60.93：结构反证图谱查询和匹配统一归一化商品 symbol，并对结构边读取增加稳定排序，避免空格 / 大小写差异导致反证边漏匹配。
 - [ ] 后端慢查询、索引、分页和缓存继续复查。
 - [x] 调度任务真实 handler 覆盖率继续复查，避免 enabled 但实际 noop。
 - [x] 全量回归测试、浏览器验证和部署 smoke 流程固化。
