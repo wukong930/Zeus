@@ -59,6 +59,23 @@ def test_signal_combination_hash_is_order_insensitive_for_assets() -> None:
     assert len(first) == 64
 
 
+def test_signal_combination_hash_normalizes_scope_and_assets() -> None:
+    first = signal_combination_hash(
+        signal_type=" Spread_Anomaly ",
+        category=" Ferrous ",
+        regime=" Range_Low_Vol ",
+        related_assets=[" rb ", "HC", "RB", ""],
+    )
+    second = signal_combination_hash(
+        signal_type="spread_anomaly",
+        category="ferrous",
+        regime="range_low_vol",
+        related_assets=["HC", "RB"],
+    )
+
+    assert first == second
+
+
 def test_active_calibration_statement_is_point_in_time_and_stable() -> None:
     sql = _compile_postgres(
         _active_calibration_statement(

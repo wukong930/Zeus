@@ -29,15 +29,17 @@ def fuzzy_combo_hash(
     regime: str,
 ) -> str:
     payload = {
-        "signal_types": sorted(signal_types),
-        "category": category,
-        "regime": regime or "unknown",
+        "signal_types": sorted(_normalize_signal_types(signal_types)),
+        "category": _normalize_label(category),
+        "regime": _normalize_label(regime) or "unknown",
     }
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
 def jaccard_similarity(left: set[str] | frozenset[str], right: set[str] | frozenset[str]) -> float:
+    left = _normalize_signal_types(left)
+    right = _normalize_signal_types(right)
     if not left and not right:
         return 1.0
     union = set(left) | set(right)
@@ -118,15 +120,28 @@ def best_historical_candidate(
     min_similarity: float = MIN_JACCARD_SIMILARITY,
 ) -> tuple[HistoricalComboCandidate | None, float]:
     matches: list[tuple[HistoricalComboCandidate, float]] = []
+    normalized_category = _normalize_label(category)
+    normalized_regime = _normalize_label(regime) or "unknown"
+    normalized_signal_types = _normalize_signal_types(signal_types)
     for candidate in candidates:
-        if candidate.category != category:
+        candidate_category = _normalize_label(candidate.category)
+        candidate_regime = _normalize_label(candidate.regime) or "unknown"
+        if candidate_category != normalized_category:
             continue
-        if candidate.regime != regime and candidate.regime != "unknown":
+        if candidate_regime != normalized_regime and candidate_regime != "unknown":
             continue
-        similarity = jaccard_similarity(signal_types, candidate.signal_types)
+        similarity = jaccard_similarity(normalized_signal_types, candidate.signal_types)
         if similarity >= min_similarity:
             matches.append((candidate, similarity))
 
     if not matches:
         return None, 0.0
     return sorted(matches, key=lambda item: (-item[1], -item[0].sample_size))[0]
+
+
+def _normalize_signal_types(signal_types: set[str] | frozenset[str]) -> frozenset[str]:
+    return frozenset(str(signal_type).strip().lower() for signal_type in signal_types if str(signal_type).strip())
+
+
+def _normalize_label(value: str | None) -> str:
+    return str(value or "").strip().lower()

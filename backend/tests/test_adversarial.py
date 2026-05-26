@@ -128,6 +128,36 @@ def test_historical_combo_fuzzy_match_fails_in_enforcing_mode() -> None:
     )
 
 
+def test_historical_combo_normalizes_scope_and_signal_types() -> None:
+    result = evaluate_historical_combo(
+        signal_types={" Spread_Anomaly ", "basis_shift"},
+        category=" Ferrous ",
+        regime=" Range_Low_Vol ",
+        candidates=[
+            HistoricalComboCandidate(
+                signal_types=frozenset({"spread_anomaly", " Basis_Shift "}),
+                category="ferrous",
+                regime="range_low_vol",
+                hit_rate=0.8,
+                sample_size=30,
+            )
+        ],
+    )
+
+    assert result.passed is True
+    assert result.score == 0.8
+    assert jaccard_similarity({" Spread_Anomaly "}, {"spread_anomaly"}) == 1.0
+    assert fuzzy_combo_hash(
+        signal_types={" Spread_Anomaly ", "basis_shift"},
+        category=" Ferrous ",
+        regime=" Range_Low_Vol ",
+    ) == fuzzy_combo_hash(
+        signal_types={"basis_shift", "spread_anomaly"},
+        category="ferrous",
+        regime="range_low_vol",
+    )
+
+
 def test_historical_combo_low_sample_failure_is_informational() -> None:
     result = evaluate_historical_combo(
         signal_types={"spread_anomaly"},

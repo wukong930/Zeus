@@ -21,10 +21,10 @@ def signal_combination_hash(
     related_assets: list[str],
 ) -> str:
     payload = {
-        "signal_type": signal_type,
-        "category": category,
-        "regime": regime or "unknown",
-        "related_assets": sorted(related_assets),
+        "signal_type": _normalized_label(signal_type),
+        "category": _normalized_label(category),
+        "regime": _normalized_label(regime) or "unknown",
+        "related_assets": _normalized_assets(related_assets),
     }
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
@@ -138,3 +138,11 @@ async def track_signal_emission(
 def _normalized_direction(value: Any) -> str | None:
     direction = str(value or "").strip().lower()
     return direction if direction in {"bullish", "bearish", "mixed"} else None
+
+
+def _normalized_label(value: str | None) -> str:
+    return str(value or "").strip().lower()
+
+
+def _normalized_assets(values: list[str]) -> list[str]:
+    return sorted({str(value).strip().upper() for value in values if str(value).strip()})

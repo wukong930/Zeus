@@ -829,3 +829,4 @@ threshold_modifier、propagation_activator、risk_recalc、数据腐烂防护
 - Trade Plan 开放计划匹配下推 action / legs JSONB 过滤：候选复用和上下文证据挂载不再只扫描最早 100 条开放计划，并补充 `recommendations.legs` GIN 索引，降低开放计划增长后重复生成或漏挂证据的风险。
 - Trade Plan 匹配键 legs 顺序无关化：`trade_plan_match_key` 按 `(asset, direction)` 排序后匹配，避免同一价差 / 组合计划仅因 legs 顺序不同而无法复用、合并或挂载证据。
 - 新闻 dedup hash 商品归一化：affected symbols 统一去空格、转大写、去重和排序，避免不同采集器带空格或重复商品时把同一新闻写成多条事件。
+- 校准 / 对抗组合 hash 归一化：signal type、category、regime 和相关商品统一清洗后参与 hash 与历史候选匹配，避免大小写、空格或重复商品把同一组合拆成不同历史桶。
