@@ -39,12 +39,12 @@ async def check_alert_dedup(
 ) -> AlertDedupDecision:
     symbol = primary_symbol(signal)
     direction = signal_direction(signal)
-    evaluator = str(signal.get("signal_type") or "unknown")
+    evaluator = normalize_evaluator(signal.get("signal_type"))
     if session is None:
         return AlertDedupDecision(False, symbol=symbol, direction=direction, evaluator=evaluator)
 
     effective_at = as_of or datetime.now(timezone.utc)
-    severity = str(signal.get("severity") or "low")
+    severity = normalize_severity(signal.get("severity"))
     severity_rank = SEVERITY_RANK.get(severity, 1)
     score_value = combined_score(score)
 
@@ -131,13 +131,15 @@ def combination_dedup_lookup_statement(
     evaluator: str,
     signal_combination_hash: str,
 ):
+    normalized_symbol = normalize_symbol(symbol)
+    normalized_evaluator = normalize_evaluator(evaluator)
     return (
         select(AlertDedupCache)
         .where(
             AlertDedupCache.signal_combination_hash == signal_combination_hash,
-            AlertDedupCache.symbol == symbol,
+            AlertDedupCache.symbol == normalized_symbol,
             AlertDedupCache.direction == direction,
-            AlertDedupCache.evaluator != evaluator,
+            AlertDedupCache.evaluator != normalized_evaluator,
         )
         .order_by(
             AlertDedupCache.last_emitted_at.desc(),
@@ -149,12 +151,14 @@ def combination_dedup_lookup_statement(
 
 
 def alert_dedup_lookup_statement(*, symbol: str, direction: str, evaluator: str):
+    normalized_symbol = normalize_symbol(symbol)
+    normalized_evaluator = normalize_evaluator(evaluator)
     return (
         select(AlertDedupCache)
         .where(
-            AlertDedupCache.symbol == symbol,
+            AlertDedupCache.symbol == normalized_symbol,
             AlertDedupCache.direction == direction,
-            AlertDedupCache.evaluator == evaluator,
+            AlertDedupCache.evaluator == normalized_evaluator,
         )
         .order_by(AlertDedupCache.updated_at.desc(), AlertDedupCache.id.desc())
         .limit(1)
@@ -190,7 +194,7 @@ async def record_alert_emitted(
     effective_at = emitted_at or datetime.now(timezone.utc)
     symbol = primary_symbol(signal)
     direction = signal_direction(signal)
-    evaluator = str(signal.get("signal_type") or "unknown")
+    evaluator = normalize_evaluator(signal.get("signal_type"))
     try:
         row = (
             await session.scalars(
@@ -212,7 +216,7 @@ async def record_alert_emitted(
             evaluator=evaluator,
             signal_combination_hash=signal_combination_hash,
             last_emitted_at=effective_at,
-            last_severity=str(signal.get("severity") or "low"),
+            last_severity=normalize_severity(signal.get("severity")),
             last_score=int(combined_score(score)),
             hit_count=1,
             details={"title": signal.get("title")},
@@ -221,7 +225,7 @@ async def record_alert_emitted(
     else:
         row.signal_combination_hash = signal_combination_hash
         row.last_emitted_at = effective_at
-        row.last_severity = str(signal.get("severity") or "low")
+        row.last_severity = normalize_severity(signal.get("severity"))
         row.last_score = int(combined_score(score))
         row.hit_count = int(row.hit_count or 0) + 1
         row.details = {"title": signal.get("title")}
@@ -251,11 +255,15 @@ async def daily_limit_reached(
 
 def primary_symbol(signal: dict[str, Any]) -> str:
     related_assets = signal.get("related_assets") or []
-    if related_assets:
-        return str(related_assets[0])
+    for asset in related_assets:
+        symbol = normalize_symbol(asset)
+        if symbol:
+            return symbol
     spread_info = signal.get("spread_info")
     if isinstance(spread_info, dict) and spread_info.get("leg1") is not None:
-        return str(spread_info["leg1"])
+        symbol = normalize_symbol(spread_info["leg1"])
+        if symbol:
+            return symbol
     return "UNKNOWN"
 
 
@@ -274,3 +282,16 @@ def combined_score(score: dict[str, Any] | Any | None) -> float:
     if isinstance(score, dict):
         return float(score.get("combined") or score.get("priority") or 0)
     return float(getattr(score, "combined", getattr(score, "priority", 0)) or 0)
+
+
+def normalize_symbol(value: Any) -> str:
+    return str(value or "").strip().upper()
+
+
+def normalize_evaluator(value: Any) -> str:
+    return str(value or "unknown").strip().lower() or "unknown"
+
+
+def normalize_severity(value: Any) -> str:
+    severity = str(value or "low").strip().lower()
+    return severity if severity in SEVERITY_RANK else "low"

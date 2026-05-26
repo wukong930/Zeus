@@ -19,6 +19,7 @@ from app.services.alert_agent.dedup import (
     alert_dedup_lookup_statement,
     check_alert_dedup,
     combination_dedup_lookup_statement,
+    primary_symbol,
     signal_direction,
 )
 from app.services.alert_agent.human_decision import apply_decision_to_alert
@@ -285,9 +286,9 @@ async def test_dedup_rolls_back_after_combination_lookup_failure() -> None:
 
 def test_combination_dedup_lookup_is_scoped_to_symbol_and_direction() -> None:
     statement = combination_dedup_lookup_statement(
-        symbol="RB",
+        symbol=" rb ",
         direction="bullish",
-        evaluator="momentum",
+        evaluator=" Momentum ",
         signal_combination_hash="combo-hash",
     )
 
@@ -305,9 +306,9 @@ def test_combination_dedup_lookup_is_scoped_to_symbol_and_direction() -> None:
 
 def test_alert_dedup_lookup_uses_stable_latest_row() -> None:
     statement = alert_dedup_lookup_statement(
-        symbol="RB",
+        symbol=" rb ",
         direction="bullish",
-        evaluator="momentum",
+        evaluator=" Momentum ",
     )
 
     compiled = str(statement.compile(compile_kwargs={"literal_binds": True}))
@@ -350,6 +351,25 @@ async def test_dedup_suppresses_recent_same_symbol_direction_without_upgrade() -
 
     assert decision.suppressed is True
     assert decision.reason == "same_symbol_direction_evaluator"
+
+
+async def test_dedup_normalizes_primary_symbol_evaluator_and_severity() -> None:
+    decision = await check_alert_dedup(
+        None,
+        signal={
+            "signal_type": " Momentum ",
+            "severity": " HIGH ",
+            "direction": "bullish",
+            "related_assets": ["", " rb ", "RB"],
+        },
+        context={},
+        score={"combined": 82},
+    )
+
+    assert primary_symbol({"related_assets": ["", " rb "]}) == "RB"
+    assert decision.symbol == "RB"
+    assert decision.evaluator == "momentum"
+    assert decision.direction == "bullish"
 
 
 async def test_dedup_allows_recent_same_symbol_direction_when_score_breaks_out() -> None:
