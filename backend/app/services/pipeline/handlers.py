@@ -1111,7 +1111,7 @@ def _open_trade_plans_statement(*, as_of: datetime):
             Recommendation.status.in_(sorted(TRADE_PLAN_OPEN_STATUSES)),
             Recommendation.expires_at > as_of,
         )
-        .order_by(Recommendation.created_at.desc(), Recommendation.id.desc())
+        .order_by(Recommendation.created_at.asc(), Recommendation.id.asc())
         .limit(100)
     )
 

@@ -17,6 +17,7 @@ from app.services.pipeline.handlers import (
     handle_signal_scored,
     _open_trade_plans_statement,
     merge_trade_plan_evidence,
+    open_trade_plan_for_candidate,
     open_trade_plan_for_context_signal,
     recommended_action,
     trade_plan_matches,
@@ -81,8 +82,64 @@ def test_open_trade_plans_statement_uses_stable_tie_breakers() -> None:
 
     assert "recommendations.status IN" in sql
     assert "recommendations.expires_at >" in sql
-    assert "ORDER BY recommendations.created_at DESC, recommendations.id DESC" in sql
+    assert "ORDER BY recommendations.created_at ASC, recommendations.id ASC" in sql
     assert "LIMIT" in sql
+
+
+async def test_open_trade_plan_for_candidate_reuses_first_canonical_match() -> None:
+    now = datetime(2026, 5, 18, tzinfo=timezone.utc)
+    primary = Recommendation(
+        id=uuid4(),
+        alert_id=uuid4(),
+        status="pending_review",
+        recommended_action="open_directional",
+        legs=[{"asset": "RB", "direction": "short", "lots": 1.0}],
+        priority_score=66,
+        portfolio_fit_score=75,
+        margin_efficiency_score=80,
+        margin_required=100000,
+        reasoning="Primary RB short thesis.",
+        risk_items=[],
+        created_at=now - timedelta(hours=2),
+        expires_at=now + timedelta(hours=8),
+    )
+    duplicate = Recommendation(
+        id=uuid4(),
+        alert_id=uuid4(),
+        status="pending_review",
+        recommended_action="open_directional",
+        legs=[{"asset": "RB", "direction": "short", "lots": 1.0}],
+        priority_score=70,
+        portfolio_fit_score=77,
+        margin_efficiency_score=81,
+        margin_required=100000,
+        reasoning="Duplicate RB short thesis.",
+        risk_items=[],
+        created_at=now - timedelta(hours=1),
+        expires_at=now + timedelta(hours=8),
+    )
+    candidate = Recommendation(
+        id=uuid4(),
+        alert_id=uuid4(),
+        status="pending_review",
+        recommended_action="open_directional",
+        legs=[{"asset": "RB", "direction": "short", "lots": 1.0}],
+        priority_score=72,
+        portfolio_fit_score=79,
+        margin_efficiency_score=82,
+        margin_required=100000,
+        reasoning="Incoming RB short thesis.",
+        risk_items=[],
+        expires_at=now + timedelta(hours=8),
+    )
+
+    match = await open_trade_plan_for_candidate(
+        FakeOpenPlanSession([primary, duplicate]),
+        candidate,
+        as_of=now,
+    )
+
+    assert match is primary
 
 
 def _market_update_event() -> ZeusEvent:
