@@ -4,13 +4,14 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
-from sqlalchemy import or_, select
+from sqlalchemy import false, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.events import ZeusEvent, iter_events
 from app.models.alert import Alert
 from app.schemas.common import AlertCreate, AlertRead
+from app.services.symbols import normalize_root_symbol
 from app.services.translation import apply_alert_translation
 
 router = APIRouter(prefix="/api/alerts", tags=["alerts"])
@@ -113,7 +114,12 @@ def _alerts_statement(
     if severity is not None:
         statement = statement.where(Alert.severity.in_(severity.split(",")))
     if symbol is not None:
-        statement = statement.where(Alert.related_assets.contains([symbol.upper()]))
+        normalized_symbol = normalize_root_symbol(symbol)
+        statement = (
+            statement.where(Alert.related_assets.contains([normalized_symbol]))
+            if normalized_symbol is not None
+            else statement.where(false())
+        )
     if human_action_required is not None:
         statement = statement.where(Alert.human_action_required.is_(human_action_required))
     if adversarial_passed is not None:
@@ -123,19 +129,19 @@ def _alerts_statement(
     if q is not None:
         query_text = q.strip()
         if query_text:
-            query_symbol = query_text.upper()
-            if len(query_symbol) <= 2 and query_symbol.isascii() and query_symbol.isalnum():
+            query_symbol = normalize_root_symbol(query_text)
+            if query_symbol and len(query_symbol) <= 2 and query_symbol.isascii() and query_symbol.isalnum():
                 statement = statement.where(Alert.related_assets.contains([query_symbol]))
             else:
                 like_pattern = f"%{query_text}%"
-                statement = statement.where(
-                    or_(
-                        Alert.title.ilike(like_pattern),
-                        Alert.summary.ilike(like_pattern),
-                        Alert.title_zh.ilike(like_pattern),
-                        Alert.summary_zh.ilike(like_pattern),
-                        Alert.one_liner.ilike(like_pattern),
-                        Alert.related_assets.contains([query_symbol]),
-                    )
-                )
+                conditions = [
+                    Alert.title.ilike(like_pattern),
+                    Alert.summary.ilike(like_pattern),
+                    Alert.title_zh.ilike(like_pattern),
+                    Alert.summary_zh.ilike(like_pattern),
+                    Alert.one_liner.ilike(like_pattern),
+                ]
+                if query_symbol:
+                    conditions.append(Alert.related_assets.contains([query_symbol]))
+                statement = statement.where(or_(*conditions))
     return statement.limit(limit)

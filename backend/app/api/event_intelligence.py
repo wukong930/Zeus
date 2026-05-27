@@ -3,7 +3,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, false, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -38,6 +38,7 @@ from app.services.event_intelligence import (
 )
 from app.services.event_intelligence.eval_cases import EVENT_INTELLIGENCE_EVAL_CASES
 from app.services.llm.types import LLMConfigurationError
+from app.services.symbols import normalize_root_symbol
 
 router = APIRouter(prefix="/api/event-intelligence", tags=["event-intelligence"])
 EVENT_INTELLIGENCE_SNAPSHOT_CACHE_TTL_SECONDS = 12
@@ -268,7 +269,7 @@ def _event_intelligence_snapshot_cache_key(
     return (
         "snapshot",
         limit,
-        symbol.upper() if symbol is not None else None,
+        normalize_root_symbol(symbol) if symbol is not None else None,
         region_id,
         mechanism,
         status_filter,
@@ -360,7 +361,12 @@ def _event_intelligence_items_statement(
         EventIntelligenceItem.id.desc(),
     )
     if symbol is not None:
-        statement = statement.where(EventIntelligenceItem.symbols.contains([symbol.upper()]))
+        normalized_symbol = normalize_root_symbol(symbol)
+        statement = (
+            statement.where(EventIntelligenceItem.symbols.contains([normalized_symbol]))
+            if normalized_symbol is not None
+            else statement.where(false())
+        )
     if region_id is not None:
         statement = statement.where(EventIntelligenceItem.regions.contains([region_id]))
     if mechanism is not None:
@@ -408,7 +414,12 @@ def _event_impact_links_statement(
         EventImpactLink.id.desc(),
     )
     if symbol is not None:
-        statement = statement.where(EventImpactLink.symbol == symbol.upper())
+        normalized_symbol = normalize_root_symbol(symbol)
+        statement = (
+            statement.where(EventImpactLink.symbol == normalized_symbol)
+            if normalized_symbol is not None
+            else statement.where(false())
+        )
     if region_id is not None:
         statement = statement.where(EventImpactLink.region_id == region_id)
     if mechanism is not None:

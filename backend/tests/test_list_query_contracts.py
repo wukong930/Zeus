@@ -151,6 +151,38 @@ def test_alerts_statement_pushes_filters_to_database() -> None:
     assert "LIMIT" in sql
 
 
+def test_alerts_statement_normalizes_contract_symbol_filters() -> None:
+    symbol_params = _compile_params(
+        _alerts_statement(
+            status_filter=None,
+            category=None,
+            severity=None,
+            symbol=" ru2509 ",
+            human_action_required=None,
+            adversarial_passed=None,
+            q=None,
+            limit=20,
+            include_expired=True,
+        )
+    )
+    query_params = _compile_params(
+        _alerts_statement(
+            status_filter=None,
+            category=None,
+            severity=None,
+            symbol=None,
+            human_action_required=None,
+            adversarial_passed=None,
+            q=" ru2509 ",
+            limit=20,
+            include_expired=True,
+        )
+    )
+
+    assert symbol_params["related_assets_1"] == ["RU"]
+    assert query_params["related_assets_1"] == ["RU"]
+
+
 def test_alerts_short_query_matches_symbol_without_broad_text_scan() -> None:
     sql = _compile_postgres(
         _alerts_statement(
@@ -284,6 +316,36 @@ def test_news_events_statement_uses_keyset_cursor_and_stable_order() -> None:
     assert "LIMIT" in sql
 
 
+def test_news_events_statement_normalizes_contract_symbol_filters() -> None:
+    symbol_params = _compile_params(
+        _news_events_statement(
+            source=None,
+            symbol=" ru2509 ",
+            event_type=None,
+            direction=None,
+            min_severity=None,
+            verification_status=None,
+            q=None,
+            limit=20,
+        )
+    )
+    query_params = _compile_params(
+        _news_events_statement(
+            source=None,
+            symbol=None,
+            event_type=None,
+            direction=None,
+            min_severity=None,
+            verification_status=None,
+            q=" ru2509 ",
+            limit=20,
+        )
+    )
+
+    assert symbol_params["affected_symbols_1"] == ["RU"]
+    assert query_params["affected_symbols_1"] == ["RU"]
+
+
 def test_learning_hypotheses_statement_uses_keyset_cursor_and_stable_order() -> None:
     sql = _compile_postgres(
         _learning_hypotheses_statement(
@@ -400,3 +462,7 @@ def test_strategies_statement_uses_keyset_cursor_and_stable_order() -> None:
 
 def _compile_postgres(statement) -> str:
     return str(statement.compile(dialect=postgresql.dialect()))
+
+
+def _compile_params(statement) -> dict:
+    return statement.compile(dialect=postgresql.dialect()).params

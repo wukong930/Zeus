@@ -13,6 +13,7 @@ from app.api.event_intelligence import (
     _event_impact_links_statement,
     _event_intelligence_audit_logs_statement,
     _event_intelligence_items_statement,
+    _event_intelligence_snapshot_cache_key,
 )
 from app.core.database import get_db
 from app.models.change_review_queue import ChangeReviewQueue
@@ -735,6 +736,38 @@ def test_event_intelligence_scoped_statements_push_filters_to_database() -> None
     ) in resolver_links_sql
 
 
+def test_event_intelligence_symbol_filters_normalize_contract_values() -> None:
+    item_params = _compile_params(
+        _event_intelligence_items_statement(
+            symbol=" ru2509 ",
+            region_id=None,
+            mechanism=None,
+            status_filter=None,
+            limit=20,
+        )
+    )
+    link_params = _compile_params(
+        _event_impact_links_statement(
+            symbol=" ru2509 ",
+            region_id=None,
+            mechanism=None,
+            direction=None,
+            status_filter=None,
+            limit=20,
+        )
+    )
+
+    assert item_params["symbols_1"] == ["RU"]
+    assert link_params["symbol_1"] == "RU"
+    assert _event_intelligence_snapshot_cache_key(
+        symbol=" ru2509 ",
+        region_id=None,
+        mechanism=None,
+        status_filter=None,
+        limit=20,
+    ) == ("snapshot", 20, "RU", None, None, None)
+
+
 def test_event_intelligence_snapshot_response_keeps_items_links_and_quality_together() -> None:
     now = datetime(2026, 5, 10, tzinfo=UTC)
     event_id = uuid4()
@@ -1341,3 +1374,7 @@ class FakeScalars:
 
 def _compile_postgres(statement) -> str:
     return str(statement.compile(dialect=postgresql.dialect()))
+
+
+def _compile_params(statement) -> dict:
+    return statement.compile(dialect=postgresql.dialect()).params

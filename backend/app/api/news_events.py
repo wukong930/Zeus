@@ -4,7 +4,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
-from sqlalchemy import or_, select
+from sqlalchemy import false, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -12,6 +12,7 @@ from app.core.events import ZeusEvent, iter_events
 from app.models.news_events import NewsEvent
 from app.schemas.common import MAX_INGEST_SYMBOL_LENGTH, NewsEventCreate, NewsEventRead
 from app.services.news.event_publisher import record_and_publish_news_event
+from app.services.symbols import normalize_root_symbol
 from app.services.vector_search.embedder import DeterministicHashEmbedder
 
 router = APIRouter(prefix="/api/news-events", tags=["news-events"])
@@ -113,7 +114,12 @@ def _news_events_statement(
     if source is not None:
         statement = statement.where(NewsEvent.source == source)
     if symbol is not None:
-        statement = statement.where(NewsEvent.affected_symbols.contains([symbol.upper()]))
+        normalized_symbol = normalize_root_symbol(symbol)
+        statement = (
+            statement.where(NewsEvent.affected_symbols.contains([normalized_symbol]))
+            if normalized_symbol is not None
+            else statement.where(false())
+        )
     if event_type is not None:
         statement = statement.where(NewsEvent.event_type == event_type)
     if direction is not None:
@@ -128,13 +134,13 @@ def _news_events_statement(
         query_text = q.strip()
         if query_text:
             like_pattern = f"%{query_text}%"
-            statement = statement.where(
-                or_(
-                    NewsEvent.title.ilike(like_pattern),
-                    NewsEvent.summary.ilike(like_pattern),
-                    NewsEvent.title_zh.ilike(like_pattern),
-                    NewsEvent.summary_zh.ilike(like_pattern),
-                    NewsEvent.affected_symbols.contains([query_text.upper()]),
-                )
-            )
+            conditions = [
+                NewsEvent.title.ilike(like_pattern),
+                NewsEvent.summary.ilike(like_pattern),
+                NewsEvent.title_zh.ilike(like_pattern),
+                NewsEvent.summary_zh.ilike(like_pattern),
+            ]
+            if query_symbol := normalize_root_symbol(query_text):
+                conditions.append(NewsEvent.affected_symbols.contains([query_symbol]))
+            statement = statement.where(or_(*conditions))
     return statement.limit(limit)
