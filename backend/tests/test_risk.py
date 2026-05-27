@@ -105,16 +105,14 @@ def test_risk_market_data_statement_limits_rows_per_symbol() -> None:
     )
 
     assert "row_number() OVER" in compiled
-    assert "PARTITION BY market_data.symbol, market_data.contract_month, market_data.timestamp" in compiled
-    assert "ORDER BY market_data.vintage_at DESC, market_data.id DESC" in compiled
+    assert "PARTITION BY market_data.symbol, market_data.timestamp" in compiled
+    assert "ORDER BY market_data.vintage_at DESC" in compiled
+    assert "CASE WHEN (market_data.contract_month = 'main') THEN 0 ELSE 1 END" in compiled
+    assert "market_data.ingested_at DESC" in compiled
     assert (
-        "PARTITION BY market_data.symbol ORDER BY market_data.timestamp DESC, "
-        "market_data.contract_month ASC, market_data.vintage_at DESC, market_data.id DESC"
+        "PARTITION BY market_data.symbol ORDER BY market_data.timestamp DESC, market_data.id DESC"
     ) in compiled
-    assert (
-        "ORDER BY market_data.symbol ASC, market_data.timestamp DESC, "
-        "market_data.contract_month ASC, market_data.id DESC"
-    ) in compiled
+    assert "ORDER BY market_data.symbol ASC, market_data.timestamp DESC, market_data.id DESC" in compiled
     assert "symbol_rn <= 60" in compiled
 
 

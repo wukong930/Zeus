@@ -1,6 +1,6 @@
 from collections.abc import Sequence
 
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.market_data import MarketData
@@ -46,10 +46,14 @@ def _risk_market_data_statement(*, requested_symbols: tuple[str, ...], limit: in
             .over(
                 partition_by=(
                     MarketData.symbol,
-                    MarketData.contract_month,
                     MarketData.timestamp,
                 ),
-                order_by=(MarketData.vintage_at.desc(), MarketData.id.desc()),
+                order_by=(
+                    MarketData.vintage_at.desc(),
+                    case((MarketData.contract_month == "main", 0), else_=1),
+                    MarketData.ingested_at.desc(),
+                    MarketData.id.desc(),
+                ),
             )
             .label("pit_rn"),
         )
@@ -65,8 +69,6 @@ def _risk_market_data_statement(*, requested_symbols: tuple[str, ...], limit: in
                 partition_by=MarketData.symbol,
                 order_by=(
                     MarketData.timestamp.desc(),
-                    MarketData.contract_month.asc(),
-                    MarketData.vintage_at.desc(),
                     MarketData.id.desc(),
                 ),
             )
@@ -83,7 +85,6 @@ def _risk_market_data_statement(*, requested_symbols: tuple[str, ...], limit: in
         .order_by(
             MarketData.symbol.asc(),
             MarketData.timestamp.desc(),
-            MarketData.contract_month.asc(),
             MarketData.id.desc(),
         )
     )
