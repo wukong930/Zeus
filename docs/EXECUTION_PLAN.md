@@ -1197,6 +1197,7 @@ Causa 的 `event_driven` 评估器实际上是纯技术面（gap + volume），*
   - [x] Phase 10.60.96：Alert 分类和 one-liner 阅读文案统一复用 symbol / severity 清洗口径，避免空 related asset、重复 symbol 或大小写差异影响等级与展示。
   - [x] Phase 10.60.97：Shadow Tracker outcome 归因的 primary symbol 统一跳过空值、去空格并转大写，避免脏 related_assets / spread leg 导致 PIT 行情查询漏命中。
   - [x] Phase 10.60.98：Causal Web 新闻 / 预警节点、展示去重 key 和边匹配集合统一归一化 symbol，避免空格 / 大小写导致重复节点、错分板块或联动漏边。
+  - [x] Phase 10.60.99：World Risk Map 预警匹配、事件智能区域匹配、展示去重 key 和区域 symbol 交集统一归一化 base symbol；标题 token 提取改为独立商品码识别，避免合约月 / 空格 / 大小写导致地图区域漏命中或英文子串误命中商品。
 - [ ] 后端慢查询、索引、分页和缓存继续复查。
 - [x] 调度任务真实 handler 覆盖率继续复查，避免 enabled 但实际 noop。
 - [x] 全量回归测试、浏览器验证和部署 smoke 流程固化。

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Literal, TypeVar
@@ -26,6 +27,7 @@ from app.services.translation.market import signal_type_label
 router = APIRouter(prefix="/api/world-map", tags=["world-map"])
 WORLD_MAP_CACHE_TTL_SECONDS = 12
 WORLD_MAP_CACHE_MAX_ENTRIES = 128
+SYMBOL_TOKEN_PATTERN = re.compile(r"(?<![A-Z0-9])([A-Z]{1,3}\d{0,6})(?![A-Z0-9])")
 SnapshotT = TypeVar("SnapshotT", bound=BaseModel)
 
 RiskLevel = Literal["low", "watch", "elevated", "high", "critical"]
@@ -2632,7 +2634,7 @@ def _english_hint(signal_type: str, category: str) -> str:
 
 
 def _alert_symbols(alert: Alert) -> set[str]:
-    values = {str(value).upper() for value in (alert.related_assets or [])}
+    values = _symbol_value_set(alert.related_assets or [])
     values.update(_extract_symbol_tokens(alert.title))
     values.update(_extract_symbol_tokens(alert.summary))
     values.update(_extract_symbol_tokens(alert.title_zh or ""))
@@ -2659,7 +2661,7 @@ def _matched_event_intelligence_items(
     region_symbols = set(definition.symbols)
     matched: list[EventIntelligenceItem] = []
     for row in rows:
-        symbols = {str(symbol).upper() for symbol in row.symbols or []}
+        symbols = _symbol_value_set(row.symbols or [])
         regions = {str(region) for region in row.regions or []}
         if definition.id in regions or _symbols_intersect(symbols, region_symbols):
             matched.append(row)
@@ -2685,7 +2687,7 @@ def _unique_recent_event_intelligence(
 
 
 def _event_intelligence_display_key(row: EventIntelligenceItem) -> tuple[str, tuple[str, ...], str]:
-    symbols = tuple(sorted(str(symbol).upper() for symbol in (row.symbols or [])[:5]))
+    symbols = tuple(_symbol_value_list(row.symbols or [], limit=5))
     return (row.event_type.lower(), symbols, _normalize_event_title(row.title))
 
 
@@ -2723,16 +2725,17 @@ def _matched_event_intelligence_links(
 
 def _extract_symbol_tokens(text: str) -> set[str]:
     upper = text.upper()
+    valid_symbols = {symbol for definition in WORLD_RISK_REGIONS for symbol in definition.symbols}
     tokens: set[str] = set()
-    for definition in WORLD_RISK_REGIONS:
-        for symbol in definition.symbols:
-            if symbol in upper:
-                tokens.add(symbol)
+    for match in SYMBOL_TOKEN_PATTERN.finditer(upper):
+        symbol = _root_symbol(match.group(1))
+        if symbol in valid_symbols:
+            tokens.add(symbol)
     return tokens
 
 
 def _symbols_intersect(values: set[str], region_symbols: set[str]) -> bool:
-    return bool({_root_symbol(value) for value in values} & region_symbols)
+    return bool(_symbol_value_set(values) & region_symbols)
 
 
 def _root_symbol(value: str) -> str:
@@ -2741,6 +2744,27 @@ def _root_symbol(value: str) -> str:
         if char.isdigit():
             return upper[:index] or upper
     return upper
+
+
+def _symbol_value_set(values: Iterable[object]) -> set[str]:
+    return set(_symbol_value_list(values))
+
+
+def _symbol_value_list(values: Iterable[object], *, limit: int | None = None) -> list[str]:
+    normalized: set[str] = set()
+    for value in values:
+        if value is None:
+            continue
+        raw = str(value).strip()
+        if not raw:
+            continue
+        symbol = _root_symbol(raw)
+        if symbol:
+            normalized.add(symbol)
+    symbols = sorted(normalized)
+    if limit is None:
+        return symbols
+    return symbols[:limit]
 
 
 def _latest_event_at(

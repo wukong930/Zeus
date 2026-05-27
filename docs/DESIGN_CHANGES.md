@@ -836,3 +836,4 @@ threshold_modifier、propagation_activator、risk_recalc、数据腐烂防护
 - Alert 分类 / one-liner 归一化：分类等级和短文案统一复用 symbol / severity 清洗口径，避免空 related asset、重复 symbol 或大小写差异影响等级与展示。
 - Shadow Tracker 归因 symbol 归一化：outcome 评估读取 PIT 行情前跳过空 related asset，并对 related assets / spread leg 去空格、转大写，避免脏输入导致行情查询漏命中。
 - Causal Web symbol 归一化：新闻 / 预警节点、展示去重 key 和边匹配集合统一清洗 symbol，避免空格 / 大小写导致重复节点、错分板块或联动漏边。
+- World Risk Map symbol 归一化：预警匹配、事件智能区域匹配、展示去重 key 和区域交集统一清洗 base symbol；标题商品码提取改为 token 级识别，避免合约月、空格、大小写或英文子串导致地图区域漏命中 / 误命中。

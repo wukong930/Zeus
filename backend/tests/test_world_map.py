@@ -8,11 +8,15 @@ from app.api.world_map import (
     WORLD_RISK_REGIONS,
     WorldMapFilterScope,
     WorldMapTileViewport,
+    _alert_symbols,
     _build_region_snapshot,
     _build_world_map_tile_cells,
     _clear_world_map_caches,
+    _event_intelligence_display_key,
     _filter_tile_cells_for_viewport,
+    _matched_event_intelligence_items,
     _risk_level,
+    _symbols_intersect,
     _unique_recent_event_intelligence,
     _world_map_alerts_statement,
     _world_map_event_items_statement,
@@ -515,6 +519,64 @@ def test_world_map_event_intelligence_dedupe_keeps_one_display_event() -> None:
     )
 
     assert len(unique) == 1
+
+
+def test_world_map_runtime_symbol_matching_normalizes_contract_values() -> None:
+    now = datetime.now(timezone.utc)
+    alert = Alert(
+        id=uuid4(),
+        title="Rubber rainfall warning",
+        summary="Natural rubber supply risk",
+        severity="high",
+        category="rubber",
+        type="weather",
+        status="active",
+        triggered_at=now,
+        confidence=0.82,
+        related_assets=[" ru2509 ", "", "NR"],
+        trigger_chain=[],
+        risk_items=[],
+        manual_check_items=[],
+    )
+
+    assert _alert_symbols(alert) == {"RU", "NR"}
+    assert _symbols_intersect({" ru2509 ", ""}, {"RU"}) is True
+
+
+def test_world_map_event_intelligence_symbol_scope_normalizes_contract_values() -> None:
+    now = datetime.now(timezone.utc)
+
+    def event(symbols: list[str]) -> EventIntelligenceItem:
+        return EventIntelligenceItem(
+            id=uuid4(),
+            source_type="news_event",
+            source_id="rubber-contract-scope",
+            title="China zero - tariff policy opens rubber trade",
+            summary="Tariff change may redirect natural rubber trade into China.",
+            event_type="policy",
+            event_timestamp=now,
+            entities=["China", "rubber"],
+            symbols=symbols,
+            regions=[],
+            mechanisms=["policy"],
+            evidence=[],
+            counterevidence=[],
+            confidence=0.7,
+            impact_score=70,
+            status="shadow_review",
+            requires_manual_confirmation=False,
+            source_reliability=0.7,
+            freshness_score=0.9,
+            source_payload={},
+            created_at=now,
+            updated_at=now,
+        )
+
+    dirty = event([" ru2509 ", "", "NR"])
+    clean = event(["RU", "NR"])
+
+    assert _matched_event_intelligence_items(WORLD_RISK_REGIONS[0], [dirty]) == [dirty]
+    assert _event_intelligence_display_key(dirty) == _event_intelligence_display_key(clean)
 
 
 def test_region_snapshot_keeps_baseline_label_without_runtime_links() -> None:
