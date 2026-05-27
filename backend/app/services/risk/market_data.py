@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.market_data import MarketData
 from app.services.risk.types import RiskMarketPoint
+from app.services.symbols import normalize_root_symbol
 
 
 async def load_risk_market_data(
@@ -13,7 +14,13 @@ async def load_risk_market_data(
     *,
     limit: int,
 ) -> dict[str, list[RiskMarketPoint]]:
-    requested_symbols = tuple(dict.fromkeys(symbol for symbol in symbols if symbol))
+    requested_symbols = tuple(
+        dict.fromkeys(
+            normalized
+            for symbol in symbols
+            if (normalized := normalize_root_symbol(symbol)) is not None
+        )
+    )
     market_data: dict[str, list[RiskMarketPoint]] = {symbol: [] for symbol in requested_symbols}
     if not requested_symbols:
         return market_data
@@ -26,7 +33,8 @@ async def load_risk_market_data(
         ).all()
     )
     for row in rows:
-        market_data.setdefault(row.symbol, []).append(_risk_market_point(row))
+        key = normalize_root_symbol(row.symbol) or row.symbol
+        market_data.setdefault(key, []).append(_risk_market_point(row))
     return market_data
 
 
@@ -83,7 +91,7 @@ def _risk_market_data_statement(*, requested_symbols: tuple[str, ...], limit: in
 
 def _risk_market_point(row: MarketData) -> RiskMarketPoint:
     return RiskMarketPoint(
-        symbol=row.symbol,
+        symbol=normalize_root_symbol(row.symbol) or row.symbol,
         timestamp=row.timestamp,
         open=row.open,
         high=row.high,

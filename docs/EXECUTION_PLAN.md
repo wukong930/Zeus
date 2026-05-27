@@ -1200,6 +1200,7 @@ Causa 的 `event_driven` 评估器实际上是纯技术面（gap + volume），*
   - [x] Phase 10.60.99：World Risk Map 预警匹配、事件智能区域匹配、展示去重 key 和区域 symbol 交集统一归一化 base symbol；标题 token 提取改为独立商品码识别，避免合约月 / 空格 / 大小写导致地图区域漏命中或英文子串误命中商品。
   - [x] Phase 10.60.100：Alerts / News Events / Event Intelligence 列表和快照 symbol 查询统一归一化 root symbol，避免深链、筛选器或合约输入 `RU2509` 查不到已归档到 `RU` 的运行态证据。
   - [x] Phase 10.60.101：Market Data 最新 / 历史价格接口和 Causal Web symbol 作用域统一归一化 root symbol，避免 `SC2509` 这类合约输入导致当前价格、行情指标或因果网络深链漏命中。
+  - [x] Phase 10.60.102：Risk API 的持仓 symbol、相关性 symbol 和风险行情读取统一归一化 root symbol，避免持仓腿 `RB2506` 与行情表 `symbol=RB / contract_month=2506` 分列存储时 VaR、相关性和风险快照漏行情。
 - [ ] 后端慢查询、索引、分页和缓存继续复查。
 - [x] 调度任务真实 handler 覆盖率继续复查，避免 enabled 但实际 noop。
 - [x] 全量回归测试、浏览器验证和部署 smoke 流程固化。

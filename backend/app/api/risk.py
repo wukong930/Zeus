@@ -16,6 +16,7 @@ from app.services.risk.market_data import load_risk_market_data
 from app.services.risk.stress import STRESS_SCENARIOS, run_stress_test, symbol_prefix
 from app.services.risk.types import RiskLeg, RiskPosition, StressScenario
 from app.services.risk.var import calculate_var
+from app.services.symbols import normalize_root_symbol
 
 router = APIRouter(prefix="/api/risk", tags=["risk"])
 
@@ -248,7 +249,14 @@ def _leg_from_payload(payload: dict[str, Any]) -> RiskLeg:
 
 
 def _position_symbols(positions: list[RiskPosition]) -> list[str]:
-    return sorted({leg.asset for position in positions for leg in position.legs if leg.asset})
+    return sorted(
+        {
+            symbol
+            for position in positions
+            for leg in position.legs
+            if (symbol := normalize_root_symbol(leg.asset)) is not None
+        }
+    )
 
 
 def _latest_market_rows(market_data: dict[str, list[Any]]) -> list[dict[str, Any]]:
@@ -290,7 +298,13 @@ def _parse_risk_symbols(value: str, *, allow_empty: bool) -> list[str]:
 
 
 def _normalize_risk_symbols(symbols: list[str] | tuple[str, ...] | set[str]) -> list[str]:
-    return list(dict.fromkeys(symbol.strip().upper() for symbol in symbols if symbol.strip()))
+    return list(
+        dict.fromkeys(
+            normalized
+            for symbol in symbols
+            if (normalized := normalize_root_symbol(symbol)) is not None
+        )
+    )
 
 
 def _var_unavailable_sections(
