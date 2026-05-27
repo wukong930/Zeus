@@ -838,3 +838,4 @@ threshold_modifier、propagation_activator、risk_recalc、数据腐烂防护
 - Causal Web symbol 归一化：新闻 / 预警节点、展示去重 key 和边匹配集合统一清洗 symbol，避免空格 / 大小写导致重复节点、错分板块或联动漏边。
 - World Risk Map symbol 归一化：预警匹配、事件智能区域匹配、展示去重 key 和区域交集统一清洗 base symbol；标题商品码提取改为 token 级识别，避免合约月、空格、大小写或英文子串导致地图区域漏命中 / 误命中。
 - 运行态列表筛选 symbol 归一化：Alerts、News Events 和 Event Intelligence 的列表 / 快照 symbol 查询统一清洗为 root symbol，避免 `RU2509`、空格或大小写导致深链和筛选器漏查运行态证据。
+- Market Data / Causal Web 深链 symbol 归一化：最新价格、历史价格、行情指标和因果网络作用域统一接受合约输入并折叠到 root symbol，避免 `SC2509` 查不到 `SC` 的当前价格或因果证据。

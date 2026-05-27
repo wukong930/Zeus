@@ -10,6 +10,7 @@ from app.models.market_data import MarketData
 from app.schemas.common import MAX_INGEST_SYMBOL_LENGTH, MarketDataCreate, MarketDataRead
 from app.services.etl.writers import append_market_data
 from app.services.market_data.pit import get_market_data_pit
+from app.services.symbols import normalize_root_symbol
 
 router = APIRouter(prefix="/api/market-data", tags=["market-data"])
 MAX_BATCH_SYMBOLS = 50
@@ -30,9 +31,12 @@ async def list_market_data(
     limit: int = Query(default=500, ge=1, le=5000),
     session: AsyncSession = Depends(get_db),
 ) -> list[MarketData]:
+    normalized_symbol = normalize_root_symbol(symbol)
+    if normalized_symbol is None:
+        raise HTTPException(status_code=400, detail="symbol must be non-empty")
     return await get_market_data_pit(
         session,
-        symbol=symbol,
+        symbol=normalized_symbol,
         as_of=as_of,
         start=start,
         end=end,
@@ -113,7 +117,10 @@ async def get_latest_market_data(
     symbol: str = Path(..., min_length=1, max_length=MAX_INGEST_SYMBOL_LENGTH),
     session: AsyncSession = Depends(get_db),
 ) -> MarketData:
-    rows = await latest_market_data_for_symbols(session, [symbol])
+    normalized_symbol = normalize_root_symbol(symbol)
+    if normalized_symbol is None:
+        raise HTTPException(status_code=400, detail="symbol must be non-empty")
+    rows = await latest_market_data_for_symbols(session, [normalized_symbol])
     if not rows:
         raise HTTPException(status_code=404, detail="Market data row not found")
     return rows[0]
@@ -123,9 +130,7 @@ async def latest_market_data_for_symbols(
     session: AsyncSession,
     symbols: list[str],
 ) -> list[MarketData]:
-    requested_symbols = list(
-        dict.fromkeys(symbol.strip().upper() for symbol in symbols if symbol.strip())
-    )
+    requested_symbols = _normalize_market_symbols(symbols)
     if not requested_symbols:
         return []
 
@@ -141,9 +146,7 @@ async def recent_market_data_for_symbols(
     before: datetime | None = None,
     limit: int,
 ) -> list[MarketData]:
-    requested_symbols = list(
-        dict.fromkeys(symbol.strip().upper() for symbol in symbols if symbol.strip())
-    )
+    requested_symbols = _normalize_market_symbols(symbols)
     if not requested_symbols:
         return []
 
@@ -228,9 +231,7 @@ def _recent_market_data_statement(symbols: list[str], limit: int, *, before: dat
 
 
 def _parse_market_symbols(value: str) -> list[str]:
-    symbols = list(
-        dict.fromkeys(symbol.strip().upper() for symbol in value.split(",") if symbol.strip())
-    )
+    symbols = _normalize_market_symbols(value.split(","))
     if not symbols:
         raise HTTPException(status_code=400, detail="symbols must include at least one value")
     if len(symbols) > MAX_BATCH_SYMBOLS:
@@ -256,10 +257,18 @@ def _market_data_cache_key(
     limit: int | None = None,
     before: datetime | None = None,
 ) -> MarketDataCacheKey:
-    normalized_symbols = tuple(
-        dict.fromkeys(symbol.strip().upper() for symbol in symbols if symbol.strip())
-    )
+    normalized_symbols = tuple(_normalize_market_symbols(symbols))
     return (kind, normalized_symbols, limit, before.isoformat() if before is not None else None)
+
+
+def _normalize_market_symbols(symbols: list[str] | tuple[str, ...] | set[str]) -> list[str]:
+    return list(
+        dict.fromkeys(
+            normalized
+            for symbol in symbols
+            if (normalized := normalize_root_symbol(symbol)) is not None
+        )
+    )
 
 
 def _market_data_cache_get(

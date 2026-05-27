@@ -782,6 +782,31 @@ def test_causal_web_scoped_statements_push_symbol_filters_to_database() -> None:
     assert "event_impact_links.symbol =" in event_link_sql
 
 
+def test_causal_web_scoped_statements_normalize_contract_symbol_filters() -> None:
+    news_params = _compile_params(_recent_news_statement(limit=8, symbols=[" sc2509 "]))
+    alert_params = _compile_params(_recent_alerts_statement(limit=8, symbols=[" sc2509 "]))
+    industry_params = _compile_params(_recent_industry_metrics_statement(limit=8, symbols=[" sc2509 "]))
+    market_params = _compile_params(_latest_market_metrics_statement(limit=8, symbols=[" sc2509 "]))
+    event_item_params = _compile_params(
+        _event_intelligence_statement(limit=8, symbol=" sc2509 ", region=None)
+    )
+    event_link_params = _compile_params(
+        _event_intelligence_link_statement(
+            event_item_ids=[uuid4()],
+            limit=8,
+            symbol=" sc2509 ",
+            region=None,
+        )
+    )
+
+    assert ["SC"] in news_params.values()
+    assert ["SC"] in alert_params.values()
+    assert "SC" in _flatten_param_values(industry_params)
+    assert "SC" in _flatten_param_values(market_params)
+    assert ["SC"] in event_item_params.values()
+    assert "SC" in event_link_params.values()
+
+
 def test_causal_web_runtime_statements_use_stable_tie_breakers() -> None:
     news_sql = _compile_postgres(_recent_news_statement(limit=8, symbols=[]))
     signal_sql = _compile_postgres(_recent_signals_statement(limit=8, category=None))
@@ -846,8 +871,24 @@ def test_causal_scope_symbols_merges_query_and_pinned_event_symbols() -> None:
         updated_at=now,
     )
 
-    assert _causal_scope_symbols("sc", event_item) == ["SC", "RU"]
+    event_item.symbols = ["SC2509", " ru2509 "]
+
+    assert _causal_scope_symbols("sc2509", event_item) == ["SC", "RU"]
 
 
 def _compile_postgres(statement) -> str:
     return str(statement.compile(dialect=postgresql.dialect()))
+
+
+def _compile_params(statement) -> dict:
+    return statement.compile(dialect=postgresql.dialect()).params
+
+
+def _flatten_param_values(params: dict) -> list[object]:
+    flattened: list[object] = []
+    for value in params.values():
+        if isinstance(value, list):
+            flattened.extend(value)
+        else:
+            flattened.append(value)
+    return flattened

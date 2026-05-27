@@ -23,7 +23,7 @@ def clear_market_data_cache_between_tests():
 
 
 def test_parse_market_symbols_dedupes_and_normalizes() -> None:
-    assert _parse_market_symbols(" rb,HC, rb ,,sc ") == ["RB", "HC", "SC"]
+    assert _parse_market_symbols(" rb2509,HC2601, rb ,,sc ") == ["RB", "HC", "SC"]
 
 
 def test_parse_market_symbols_rejects_empty_after_normalization() -> None:
@@ -39,7 +39,7 @@ def test_parse_market_symbols_rejects_empty_after_normalization() -> None:
 def test_parse_market_symbols_rejects_too_many_unique_values() -> None:
     app = create_app()
     client = TestClient(app)
-    symbols = ",".join(f"S{i}" for i in range(51))
+    symbols = ",".join(f"S{chr(65 + index // 26)}{chr(65 + index % 26)}" for index in range(51))
 
     response = client.get(f"/api/market-data/latest?symbols={symbols}")
 
@@ -150,7 +150,7 @@ def test_latest_market_data_batch_endpoint_returns_requested_rows(monkeypatch) -
     app.dependency_overrides[get_db] = fake_db
     client = TestClient(app)
 
-    response = client.get("/api/market-data/latest?symbols=rb,hc,rb")
+    response = client.get("/api/market-data/latest?symbols=rb2509,hc2601,rb")
 
     assert response.status_code == 200
     assert captured == {"session": session, "symbols": ["RB", "HC"]}
@@ -179,7 +179,7 @@ def test_recent_market_data_batch_endpoint_returns_requested_rows(monkeypatch) -
     app.dependency_overrides[get_db] = fake_db
     client = TestClient(app)
 
-    response = client.get("/api/market-data/recent?symbols=rb,hc,rb&limit=2&before=2026-05-18T00:00:00Z")
+    response = client.get("/api/market-data/recent?symbols=rb2509,hc2601,rb&limit=2&before=2026-05-18T00:00:00Z")
 
     assert response.status_code == 200
     assert captured == {
@@ -283,11 +283,35 @@ def test_single_latest_market_data_endpoint_uses_shared_lookup(monkeypatch) -> N
     app.dependency_overrides[get_db] = fake_db
     client = TestClient(app)
 
-    response = client.get("/api/market-data/symbols/sc/latest")
+    response = client.get("/api/market-data/symbols/sc2509/latest")
 
     assert response.status_code == 200
-    assert captured == {"session": session, "symbols": ["sc"]}
+    assert captured == {"session": session, "symbols": ["SC"]}
     assert response.json()["symbol"] == "SC"
+
+
+def test_market_data_pit_endpoint_normalizes_contract_symbol(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+    session = object()
+
+    async def fake_db():
+        yield session
+
+    async def fake_get_market_data_pit(db_session, *, symbol, as_of, start, end, limit):
+        captured["session"] = db_session
+        captured["symbol"] = symbol
+        captured["limit"] = limit
+        return []
+
+    monkeypatch.setattr("app.api.market_data.get_market_data_pit", fake_get_market_data_pit)
+    app = create_app()
+    app.dependency_overrides[get_db] = fake_db
+    client = TestClient(app)
+
+    response = client.get("/api/market-data?symbol=sc2509&limit=10")
+
+    assert response.status_code == 200
+    assert captured == {"session": session, "symbol": "SC", "limit": 10}
 
 
 def _market_row(symbol: str, *, days: int) -> MarketData:

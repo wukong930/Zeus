@@ -22,6 +22,7 @@ from app.schemas.event_intelligence import EventImpactLinkQualityRead, EventInte
 from app.services.data_sources.akshare_futures import COMMODITY_NAMES
 from app.services.data_sources.free_ingest import CATEGORY_BY_SYMBOL
 from app.services.event_intelligence import evaluate_event_intelligence_quality
+from app.services.symbols import normalize_root_symbol
 from app.services.translation.market import category_label, signal_type_label
 
 router = APIRouter(prefix="/api/causal-web", tags=["causal-web"])
@@ -1118,6 +1119,7 @@ def _causal_scope_symbols(
 
 
 def _recent_news_statement(*, limit: int, symbols: list[str]):
+    symbols = _normalize_symbols(symbols)
     statement = select(NewsEvent).order_by(NewsEvent.published_at.desc(), NewsEvent.id.desc()).limit(limit)
     if symbols:
         statement = statement.where(or_(*(NewsEvent.affected_symbols.contains([symbol]) for symbol in symbols)))
@@ -1132,6 +1134,7 @@ def _recent_signals_statement(*, limit: int, category: str | None):
 
 
 def _recent_alerts_statement(*, limit: int, symbols: list[str]):
+    symbols = _normalize_symbols(symbols)
     statement = (
         select(Alert)
         .where(Alert.status != "suppressed")
@@ -1153,6 +1156,7 @@ def _linked_alerts_statement(*, alert_ids: list[UUID]):
 
 
 def _recent_industry_metrics_statement(*, limit: int, symbols: list[str]):
+    symbols = _normalize_symbols(symbols)
     statement = (
         select(IndustryData)
         .order_by(IndustryData.ingested_at.desc(), IndustryData.id.desc())
@@ -1164,7 +1168,7 @@ def _recent_industry_metrics_statement(*, limit: int, symbols: list[str]):
 
 
 def _latest_market_metrics_statement(*, limit: int, symbols: list[str] | None = None):
-    symbols = list(dict.fromkeys(symbols or []))
+    symbols = _normalize_symbols(symbols or [])
     ranked = (
         select(
             MarketData.id.label("id"),
@@ -1212,6 +1216,7 @@ def _event_intelligence_statement(
         .limit(limit)
     )
     if symbol:
+        symbol = _normalize_symbol(symbol)
         statement = statement.where(EventIntelligenceItem.symbols.contains([symbol]))
     if region:
         statement = statement.where(EventIntelligenceItem.regions.contains([region]))
@@ -1239,6 +1244,7 @@ def _event_intelligence_link_statement(
         .limit(limit)
     )
     if symbol:
+        symbol = _normalize_symbol(symbol)
         statement = statement.where(EventImpactLink.symbol == symbol)
     if region:
         statement = statement.where(or_(EventImpactLink.region_id == region, EventImpactLink.region_id.is_(None)))
@@ -1425,7 +1431,7 @@ def _event_quality_label_en(status: EventQualityStatus | None) -> str:
 
 
 def _normalize_symbol(value: object) -> str:
-    return str(value).upper().strip()
+    return normalize_root_symbol(value) or ""
 
 
 def _normalize_symbols(values: list[object], *, limit: int | None = None) -> list[str]:
