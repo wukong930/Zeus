@@ -996,6 +996,86 @@ async def test_context_signal_links_to_single_open_symbol_plan_without_changing_
     assert "Mean-reversion assumptions may need review." in plan.risk_items
 
 
+async def test_context_signal_falls_back_to_legacy_contract_plan() -> None:
+    now = datetime.now(timezone.utc)
+    legacy_plan = Recommendation(
+        id=uuid4(),
+        alert_id=uuid4(),
+        status="pending_review",
+        recommended_action="open_directional",
+        legs=[{"asset": "I2601", "direction": "short", "lots": 1.0}],
+        priority_score=44,
+        portfolio_fit_score=75,
+        margin_efficiency_score=80,
+        margin_required=100000,
+        reasoning="Legacy I contract short thesis.",
+        risk_items=[],
+        expires_at=now + timedelta(hours=8),
+    )
+    session = FakeFallbackOpenPlanSession(first_rows=[], fallback_rows=[legacy_plan])
+
+    linked_plan = await open_trade_plan_for_context_signal(
+        session,
+        {
+            "signal_type": "regime_shift",
+            "confidence": 0.58,
+            "title": "I regime shift",
+            "summary": "I regime changed.",
+            "related_assets": ["I2509"],
+        },
+        as_of=now,
+    )
+
+    assert linked_plan is legacy_plan
+    assert session.scalars_calls == 2
+
+
+async def test_context_signal_fallback_preserves_conflicting_direction_guard() -> None:
+    now = datetime.now(timezone.utc)
+    root_long = Recommendation(
+        id=uuid4(),
+        alert_id=uuid4(),
+        status="pending_review",
+        recommended_action="open_directional",
+        legs=[{"asset": "I", "direction": "long", "lots": 1.0}],
+        priority_score=44,
+        portfolio_fit_score=75,
+        margin_efficiency_score=80,
+        margin_required=100000,
+        reasoning="I long thesis.",
+        risk_items=[],
+        expires_at=now + timedelta(hours=8),
+    )
+    legacy_short = Recommendation(
+        id=uuid4(),
+        alert_id=uuid4(),
+        status="pending_review",
+        recommended_action="open_directional",
+        legs=[{"asset": "I2601", "direction": "short", "lots": 1.0}],
+        priority_score=44,
+        portfolio_fit_score=75,
+        margin_efficiency_score=80,
+        margin_required=100000,
+        reasoning="Legacy I short thesis.",
+        risk_items=[],
+        expires_at=now + timedelta(hours=8),
+    )
+
+    linked_plan = await open_trade_plan_for_context_signal(
+        FakeFallbackOpenPlanSession(first_rows=[root_long], fallback_rows=[root_long, legacy_short]),
+        {
+            "signal_type": "regime_shift",
+            "confidence": 0.58,
+            "title": "I regime shift",
+            "summary": "I regime changed.",
+            "related_assets": ["I2509"],
+        },
+        as_of=now,
+    )
+
+    assert linked_plan is None
+
+
 async def test_context_signal_does_not_link_when_symbol_has_conflicting_open_directions() -> None:
     now = datetime.now(timezone.utc)
     long_plan = Recommendation(

@@ -1205,6 +1205,7 @@ Causa 的 `event_driven` 评估器实际上是纯技术面（gap + volume），*
   - [x] Phase 10.60.104：Position Risk 重算的集中度、行情读取和相关性矩阵统一归一化 root symbol，避免合约腿 symbol 与 root 行情 key 不一致导致持仓风险联动漏算。
   - [x] Phase 10.60.105：Portfolio Fit 和持仓冲突提示统一按 root symbol 比较，避免交易计划腿 `RU2509` 与持仓 `RU` 被误判为无重叠而高估组合适配分。
   - [x] Phase 10.60.106：Trade Plan 复用键、上下文挂载和重复计划合并统一按 root symbol 比较，并为历史合约腿计划增加开放计划兜底匹配。
+  - [x] Phase 10.60.107：Trade Plan 弱上下文证据挂载增加历史合约腿兜底扫描，并在无方向上下文信号下继续识别多方向开放计划冲突，避免证据漏挂或误挂。
 - [ ] 后端慢查询、索引、分页和缓存继续复查。
 - [x] 调度任务真实 handler 覆盖率继续复查，避免 enabled 但实际 noop。
 - [x] 全量回归测试、浏览器验证和部署 smoke 流程固化。

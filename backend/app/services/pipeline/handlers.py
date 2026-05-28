@@ -1109,6 +1109,38 @@ async def open_trade_plan_for_context_signal(
     )
     rows = result.all() if hasattr(result, "all") else []
     matches: list[tuple[Recommendation, str]] = []
+    _collect_context_trade_plan_matches(
+        matches,
+        rows,
+        symbol=symbol,
+        preferred_direction=preferred_direction,
+    )
+
+    if not matches or preferred_direction is None:
+        fallback = await session.scalars(_open_trade_plans_statement(as_of=effective_as_of, limit=None))
+        fallback_rows = fallback.all() if hasattr(fallback, "all") else []
+        matched_ids = {row.id for row, _ in matches}
+        _collect_context_trade_plan_matches(
+            matches,
+            [row for row in fallback_rows if row.id not in matched_ids],
+            symbol=symbol,
+            preferred_direction=preferred_direction,
+        )
+
+    if not matches:
+        return None
+    if preferred_direction is None and len({direction for _, direction in matches}) > 1:
+        return None
+    return matches[0][0]
+
+
+def _collect_context_trade_plan_matches(
+    matches: list[tuple[Recommendation, str]],
+    rows: list[Recommendation],
+    *,
+    symbol: str,
+    preferred_direction: str | None,
+) -> None:
     for row in rows:
         for leg in row.legs or []:
             if not isinstance(leg, dict):
@@ -1121,12 +1153,6 @@ async def open_trade_plan_for_context_signal(
                 continue
             matches.append((row, leg_direction))
             break
-
-    if not matches:
-        return None
-    if preferred_direction is None and len({direction for _, direction in matches}) > 1:
-        return None
-    return matches[0][0]
 
 
 def _open_trade_plans_statement(

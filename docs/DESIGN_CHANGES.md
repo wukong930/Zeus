@@ -844,3 +844,4 @@ threshold_modifier、propagation_activator、risk_recalc、数据腐烂防护
 - Position Risk symbol 归一化：持仓风险重算的集中度、行情读取和相关性矩阵统一使用 root symbol，避免 `RU2509 / NR2510` 这类合约腿和 root 行情 key 不一致，导致相关性为空或同一商品风险被拆散。
 - Portfolio Fit symbol 归一化：交易计划组合适配分和持仓反向冲突提示统一按 root symbol 比较，避免 `RU2509` 计划腿与 `RU` 持仓被误判为不重叠，从而高估组合适配分。
 - Trade Plan 匹配键 root 化：交易计划生成、上下文挂载和重复计划合并的 legs match key 统一按 root symbol 比较，并在 root JSONB 预筛选未命中时兜底扫描开放计划，避免历史合约腿计划无法被新 root 计划复用。
+- Trade Plan 上下文挂载兜底：弱上下文信号查找开放计划时，root JSONB 预筛选未命中或无方向信号需要排除多方向冲突时，会兜底扫描开放计划并按 root symbol 比较，避免历史合约腿计划漏挂证据或误挂到多方向计划。
