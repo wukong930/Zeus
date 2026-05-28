@@ -1014,7 +1014,7 @@ def executable_trade_legs(
     for raw_leg in candidates:
         if not isinstance(raw_leg, dict):
             continue
-        asset = str(raw_leg.get("asset") or raw_leg.get("symbol") or "").strip().upper()
+        asset = symbol_prefix(str(raw_leg.get("asset") or raw_leg.get("symbol") or ""))
         direction = str(raw_leg.get("direction") or "").strip().lower()
         if not asset or direction not in {"long", "short"}:
             continue
@@ -1040,7 +1040,7 @@ def directional_trade_leg(signal: dict[str, Any]) -> dict[str, Any] | None:
     direction = signal_direction(signal)
     if direction == "neutral":
         return None
-    asset = primary_symbol(signal).strip().upper()
+    asset = symbol_prefix(primary_symbol(signal))
     if not asset or asset == "UNKNOWN":
         return None
     return {
@@ -1076,6 +1076,11 @@ async def open_trade_plan_for_candidate(
     for row in rows:
         if trade_plan_matches(row, candidate):
             return row
+    fallback = await session.scalars(_open_trade_plans_statement(as_of=effective_as_of, limit=None))
+    fallback_rows = fallback.all() if hasattr(fallback, "all") else []
+    for row in fallback_rows:
+        if trade_plan_matches(row, candidate):
+            return row
     return None
 
 
@@ -1088,7 +1093,7 @@ async def open_trade_plan_for_context_signal(
 ) -> Recommendation | None:
     if session is None or not trade_plan_context_signal(signal, skip_reason=skip_reason):
         return None
-    symbol = primary_symbol(signal).strip().upper()
+    symbol = symbol_prefix(primary_symbol(signal))
     if not symbol or symbol == "UNKNOWN":
         return None
 
@@ -1108,7 +1113,7 @@ async def open_trade_plan_for_context_signal(
         for leg in row.legs or []:
             if not isinstance(leg, dict):
                 continue
-            leg_symbol = str(leg.get("asset") or leg.get("symbol") or "").strip().upper()
+            leg_symbol = symbol_prefix(str(leg.get("asset") or leg.get("symbol") or ""))
             leg_direction = str(leg.get("direction") or "").strip().lower()
             if leg_symbol != symbol or leg_direction not in {"long", "short"}:
                 continue
@@ -1182,7 +1187,7 @@ def trade_plan_matches(left: Recommendation, right: Recommendation) -> bool:
 
 def trade_plan_match_key(recommendation: Recommendation) -> tuple[str, tuple[tuple[str, str], ...]] | None:
     legs = [
-        (str(leg.get("asset") or "").strip().upper(), str(leg.get("direction") or "").strip().lower())
+        (symbol_prefix(str(leg.get("asset") or "")), str(leg.get("direction") or "").strip().lower())
         for leg in recommendation.legs
         if isinstance(leg, dict)
     ]

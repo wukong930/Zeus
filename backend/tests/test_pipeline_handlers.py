@@ -76,6 +76,17 @@ class FakeOpenPlanSession:
         return FakeRows(self.rows)
 
 
+class FakeFallbackOpenPlanSession:
+    def __init__(self, *, first_rows, fallback_rows) -> None:
+        self.first_rows = first_rows
+        self.fallback_rows = fallback_rows
+        self.scalars_calls = 0
+
+    async def scalars(self, _):
+        self.scalars_calls += 1
+        return FakeRows(self.first_rows if self.scalars_calls == 1 else self.fallback_rows)
+
+
 def test_open_trade_plans_statement_uses_stable_tie_breakers() -> None:
     sql = _compile_postgres(
         _open_trade_plans_statement(as_of=datetime(2026, 5, 18, tzinfo=timezone.utc))
@@ -165,6 +176,44 @@ async def test_open_trade_plan_for_candidate_reuses_first_canonical_match() -> N
     )
 
     assert match is primary
+
+
+async def test_open_trade_plan_for_candidate_falls_back_to_legacy_contract_plan() -> None:
+    now = datetime(2026, 5, 18, tzinfo=timezone.utc)
+    legacy = Recommendation(
+        id=uuid4(),
+        alert_id=uuid4(),
+        status="pending_review",
+        recommended_action="open_directional",
+        legs=[{"asset": "RU2509", "direction": "long", "lots": 1.0}],
+        priority_score=66,
+        portfolio_fit_score=75,
+        margin_efficiency_score=80,
+        margin_required=100000,
+        reasoning="Legacy RU contract long thesis.",
+        risk_items=[],
+        expires_at=now + timedelta(hours=8),
+    )
+    candidate = Recommendation(
+        id=uuid4(),
+        alert_id=uuid4(),
+        status="pending_review",
+        recommended_action="open_directional",
+        legs=[{"asset": "RU", "direction": "long", "lots": 1.0}],
+        priority_score=72,
+        portfolio_fit_score=79,
+        margin_efficiency_score=82,
+        margin_required=100000,
+        reasoning="Incoming RU root thesis.",
+        risk_items=[],
+        expires_at=now + timedelta(hours=8),
+    )
+    session = FakeFallbackOpenPlanSession(first_rows=[], fallback_rows=[legacy])
+
+    match = await open_trade_plan_for_candidate(session, candidate, as_of=now)
+
+    assert match is legacy
+    assert session.scalars_calls == 2
 
 
 def _market_update_event() -> ZeusEvent:
@@ -837,7 +886,7 @@ def test_trade_plan_match_key_ignores_leg_order() -> None:
         status="pending_review",
         recommended_action="open_spread",
         legs=[
-            {"asset": "RB", "direction": "short", "lots": 1.0},
+            {"asset": "RB2506", "direction": "short", "lots": 1.0},
             {"asset": "HC", "direction": "long", "lots": 1.0},
         ],
         priority_score=42,
@@ -887,7 +936,7 @@ async def test_context_signal_links_to_single_open_symbol_plan_without_changing_
         alert_id=uuid4(),
         status="pending_review",
         recommended_action="open_directional",
-        legs=[{"asset": "I", "direction": "short", "lots": 1.0}],
+        legs=[{"asset": "I2601", "direction": "short", "lots": 1.0}],
         priority_score=44,
         portfolio_fit_score=75,
         margin_efficiency_score=80,
@@ -904,7 +953,7 @@ async def test_context_signal_links_to_single_open_symbol_plan_without_changing_
         "confidence": 0.58,
         "title": "I regime shift",
         "summary": "I regime changed.",
-        "related_assets": ["I"],
+        "related_assets": ["I2509"],
         "risk_items": ["Mean-reversion assumptions may need review."],
     }
     alert = Alert(
