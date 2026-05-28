@@ -1558,13 +1558,17 @@ def position_conflict_warnings(
     for leg in legs:
         if leg.direction not in {"long", "short"}:
             continue
+        leg_asset = symbol_prefix(leg.asset)
+        if not leg_asset:
+            continue
         for position in open_positions:
             for existing in position.legs:
-                if existing.asset != leg.asset or existing.direction not in {"long", "short"}:
+                existing_asset = symbol_prefix(existing.asset)
+                if existing_asset != leg_asset or existing.direction not in {"long", "short"}:
                     continue
                 if existing.direction != leg.direction:
                     warnings.append(
-                        f"Position conflict: {leg.asset} signal is {leg.direction}, "
+                        f"Position conflict: {leg_asset} signal is {leg.direction}, "
                         f"open position is {existing.direction}."
                     )
     return sorted(set(warnings))

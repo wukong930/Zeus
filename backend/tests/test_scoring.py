@@ -32,6 +32,13 @@ def test_portfolio_fit_penalizes_overlap() -> None:
     assert portfolio_fit_score(legs, positions) == 55
 
 
+def test_portfolio_fit_normalizes_contract_symbol_overlap() -> None:
+    legs = [RecommendationLeg(asset=" rb2506 ", direction="long")]
+    positions = [PositionGroup(legs=[RecommendationLeg(asset="RB", direction="short")])]
+
+    assert portfolio_fit_score(legs, positions) == 55
+
+
 def test_margin_efficiency_scores_capital_usage() -> None:
     assert margin_efficiency_score(10_000, 100_000) == 80
     assert margin_efficiency_score(0, 0) == 50

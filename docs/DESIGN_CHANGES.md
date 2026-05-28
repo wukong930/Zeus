@@ -842,3 +842,4 @@ threshold_modifier、propagation_activator、risk_recalc、数据腐烂防护
 - Risk API symbol 归一化：持仓腿、相关性查询和风险行情读取统一折叠到 root symbol，匹配 Zeus 行情表的 `symbol + contract_month` 分列存储，避免 `RB2506` 持仓查不到 `RB` 行情导致 VaR / 相关性 / 风险快照降级。
 - Risk API 主序列行情去重：风险行情读取按 `symbol + timestamp` 做 PIT 去重，并优先选择 `contract_month = main` 的最新修订行，避免同一品种同一天多个合约月混入 VaR / 相关性序列造成虚假收益。
 - Position Risk symbol 归一化：持仓风险重算的集中度、行情读取和相关性矩阵统一使用 root symbol，避免 `RU2509 / NR2510` 这类合约腿和 root 行情 key 不一致，导致相关性为空或同一商品风险被拆散。
+- Portfolio Fit symbol 归一化：交易计划组合适配分和持仓反向冲突提示统一按 root symbol 比较，避免 `RU2509` 计划腿与 `RU` 持仓被误判为不重叠，从而高估组合适配分。

@@ -156,6 +156,15 @@ def test_position_conflict_warning_marks_reverse_signal() -> None:
     assert warnings == ["Position conflict: RU signal is short, open position is long."]
 
 
+def test_position_conflict_warning_normalizes_contract_symbols() -> None:
+    warnings = position_conflict_warnings(
+        [RecommendationLeg(asset=" ru2509 ", direction="short")],
+        [PositionGroup(legs=[RecommendationLeg(asset="RU", direction="long")])],
+    )
+
+    assert warnings == ["Position conflict: RU signal is short, open position is long."]
+
+
 async def test_recommendation_attribution_updates_closed_trade() -> None:
     recommendation_id = uuid4()
     recommendation = _recommendation(recommendation_id)
