@@ -9,6 +9,7 @@ from app.services.risk.correlation import build_correlation_matrix
 from app.services.risk.market_data import load_risk_market_data
 from app.services.risk.types import RiskLeg, RiskPosition
 from app.services.risk.var import calculate_var
+from app.services.symbols import normalize_root_symbol
 
 CONCENTRATION_LIMIT = 0.55
 
@@ -67,7 +68,7 @@ async def recalculate_position_risk(session: AsyncSession) -> PositionRiskSnapsh
         warnings.append(f"{largest_symbol} concentration {concentration:.0%} exceeds limit")
 
     risk_positions = [_position_to_risk_position(row) for row in rows]
-    symbols = sorted({leg.asset for position in risk_positions for leg in position.legs if leg.asset})
+    symbols = _risk_symbols(risk_positions)
     market_data = await load_risk_market_data(session, symbols, limit=252)
     var_result = calculate_var(risk_positions, market_data)
     correlation = build_correlation_matrix(market_data, symbols, window=60)
@@ -98,10 +99,21 @@ def position_symbols(position: Position) -> set[str]:
     symbols: set[str] = set()
     for leg in position.legs or []:
         if isinstance(leg, dict):
-            value = str(leg.get("asset") or leg.get("symbol") or "").strip().upper()
-            if value:
+            value = normalize_root_symbol(leg.get("asset") or leg.get("symbol"))
+            if value is not None:
                 symbols.add(value)
     return symbols
+
+
+def _risk_symbols(positions: list[RiskPosition]) -> list[str]:
+    return sorted(
+        {
+            symbol
+            for position in positions
+            for leg in position.legs
+            if (symbol := normalize_root_symbol(leg.asset)) is not None
+        }
+    )
 
 
 def _position_to_risk_position(position: Position) -> RiskPosition:

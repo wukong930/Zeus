@@ -1202,6 +1202,7 @@ Causa 的 `event_driven` 评估器实际上是纯技术面（gap + volume），*
   - [x] Phase 10.60.101：Market Data 最新 / 历史价格接口和 Causal Web symbol 作用域统一归一化 root symbol，避免 `SC2509` 这类合约输入导致当前价格、行情指标或因果网络深链漏命中。
   - [x] Phase 10.60.102：Risk API 的持仓 symbol、相关性 symbol 和风险行情读取统一归一化 root symbol，避免持仓腿 `RB2506` 与行情表 `symbol=RB / contract_month=2506` 分列存储时 VaR、相关性和风险快照漏行情。
   - [x] Phase 10.60.103：Risk Market Data 主序列选择按 `symbol + timestamp` 做 PIT 去重，并优先 `main` 合约最新修订行，避免同一日多个合约月混入 VaR / 相关性收益序列。
+  - [x] Phase 10.60.104：Position Risk 重算的集中度、行情读取和相关性矩阵统一归一化 root symbol，避免合约腿 symbol 与 root 行情 key 不一致导致持仓风险联动漏算。
 - [ ] 后端慢查询、索引、分页和缓存继续复查。
 - [x] 调度任务真实 handler 覆盖率继续复查，避免 enabled 但实际 noop。
 - [x] 全量回归测试、浏览器验证和部署 smoke 流程固化。

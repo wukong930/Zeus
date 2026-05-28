@@ -26,7 +26,11 @@ from app.services.positions.propagation_activator import (
     _graph_neighbors_statement,
     infer_category_from_symbol,
 )
-from app.services.positions.risk_recalc import _position_risk_rows_statement
+from app.services.positions.risk_recalc import (
+    _position_risk_rows_statement,
+    position_symbols,
+    recalculate_position_risk,
+)
 from app.services.positions.threshold_modifier import (
     _position_threshold_cache_statement,
     get_position_aware_thresholds,
@@ -34,6 +38,7 @@ from app.services.positions.threshold_modifier import (
     refresh_position_threshold_cache,
     update_position_threshold_cache,
 )
+from app.services.risk.types import RiskMarketPoint
 from app.services.scoring.portfolio_fit import PositionGroup, RecommendationLeg
 
 
@@ -104,6 +109,18 @@ def _recommendation(recommendation_id) -> Recommendation:
         expires_at=datetime(2026, 5, 10, tzinfo=timezone.utc),
         entry_price=100,
     )
+
+
+def _risk_points(symbol: str, start_price: float) -> list[RiskMarketPoint]:
+    start = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    return [
+        RiskMarketPoint(
+            symbol=symbol,
+            timestamp=start + timedelta(days=index),
+            close=start_price + index * 3,
+        )
+        for index in range(20)
+    ]
 
 
 def test_position_threshold_cache_lowers_held_symbol_thresholds() -> None:
@@ -177,6 +194,37 @@ async def test_position_freshness_marks_stale_and_degrades_old_positions() -> No
     assert result.degraded == 1
     assert position.data_mode == "stale_no_position"
     assert get_position_threshold_multiplier(("RU",)) == 1.0
+
+
+async def test_position_risk_recalc_normalizes_contract_symbols(monkeypatch) -> None:
+    position = _position(
+        legs=[
+            {"asset": " ru2509 ", "direction": "long", "lots": 2, "current_price": 12_000},
+            {"asset": "NR2510", "direction": "short", "lots": 1, "current_price": 11_000},
+        ],
+        total_margin_used=20_000,
+    )
+    captured: dict[str, object] = {}
+
+    async def fake_load_risk_market_data(_session, symbols, *, limit):
+        captured["symbols"] = symbols
+        captured["limit"] = limit
+        return {
+            "NR": _risk_points("NR", 11_000),
+            "RU": _risk_points("RU", 12_000),
+        }
+
+    monkeypatch.setattr(
+        "app.services.positions.risk_recalc.load_risk_market_data",
+        fake_load_risk_market_data,
+    )
+
+    snapshot = await recalculate_position_risk(FakeSession(rows=[position]))  # type: ignore[arg-type]
+
+    assert captured["symbols"] == ["NR", "RU"]
+    assert captured["limit"] == 252
+    assert snapshot.correlation_symbols == ["NR", "RU"]
+    assert position_symbols(position) == {"NR", "RU"}
 
 
 def test_position_service_statements_use_stable_tie_breakers() -> None:
