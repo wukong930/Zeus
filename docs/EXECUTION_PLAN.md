@@ -1207,6 +1207,7 @@ Causa 的 `event_driven` 评估器实际上是纯技术面（gap + volume），*
   - [x] Phase 10.60.106：Trade Plan 复用键、上下文挂载和重复计划合并统一按 root symbol 比较，并为历史合约腿计划增加开放计划兜底匹配。
   - [x] Phase 10.60.107：Trade Plan 弱上下文证据挂载增加历史合约腿兜底扫描，并在无方向上下文信号下继续识别多方向开放计划冲突，避免证据漏挂或误挂。
   - [x] Phase 10.60.108：Trade Plan 补偿任务回查 alert result 时统一 root 化合约 symbol，避免历史 `signal.scored` 使用 `RU2509` 但 `alert.created` 以 `RU` 入库时误判 `missing_alert`。
+  - [x] Phase 10.60.109：Event Intelligence impact link 列表分页补齐 `before_id` keyset 游标，并为 symbol / region / mechanism / status 过滤下的 score-confidence-id 排序补充复合索引。
 - [ ] 后端慢查询、索引、分页和缓存继续复查。
 - [x] 调度任务真实 handler 覆盖率继续复查，避免 enabled 但实际 noop。
 - [x] 全量回归测试、浏览器验证和部署 smoke 流程固化。

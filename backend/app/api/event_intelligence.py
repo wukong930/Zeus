@@ -80,6 +80,7 @@ async def list_event_impact_links(
     status_filter: str | None = Query(default=None, alias="status", pattern=EVENT_INTELLIGENCE_STATUS_PATTERN),
     before_impact_score: float | None = Query(default=None, ge=0, le=100),
     before_confidence: float | None = Query(default=None, ge=0, le=1),
+    before_id: UUID | None = Query(default=None),
     limit: int = Query(default=100, ge=1, le=500),
     session: AsyncSession = Depends(get_db),
 ) -> list[EventImpactLink]:
@@ -92,6 +93,7 @@ async def list_event_impact_links(
         limit=limit,
         before_impact_score=before_impact_score,
         before_confidence=before_confidence,
+        before_id=before_id,
     )
     return list((await session.scalars(statement)).all())
 
@@ -407,6 +409,7 @@ def _event_impact_links_statement(
     limit: int,
     before_impact_score: float | None = None,
     before_confidence: float | None = None,
+    before_id: UUID | None = None,
 ):
     statement = select(EventImpactLink).order_by(
         EventImpactLink.impact_score.desc(),
@@ -430,14 +433,23 @@ def _event_impact_links_statement(
         statement = statement.where(EventImpactLink.status == status_filter)
     if before_impact_score is not None:
         if before_confidence is not None:
-            statement = statement.where(
-                or_(
-                    EventImpactLink.impact_score < before_impact_score,
+            cursor_conditions = [
+                EventImpactLink.impact_score < before_impact_score,
+                and_(
+                    EventImpactLink.impact_score == before_impact_score,
+                    EventImpactLink.confidence < before_confidence,
+                ),
+            ]
+            if before_id is not None:
+                cursor_conditions.append(
                     and_(
                         EventImpactLink.impact_score == before_impact_score,
-                        EventImpactLink.confidence < before_confidence,
-                    ),
+                        EventImpactLink.confidence == before_confidence,
+                        EventImpactLink.id < before_id,
+                    )
                 )
+            statement = statement.where(
+                or_(*cursor_conditions)
             )
         else:
             statement = statement.where(EventImpactLink.impact_score < before_impact_score)

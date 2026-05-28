@@ -651,6 +651,7 @@ def test_event_intelligence_scoped_statements_push_filters_to_database() -> None
             status_filter="shadow_review",
             before_impact_score=75,
             before_confidence=0.8,
+            before_id=event_id,
             limit=20,
         )
     )
@@ -695,6 +696,7 @@ def test_event_intelligence_scoped_statements_push_filters_to_database() -> None
     assert "event_impact_links.status =" in links_sql
     assert "event_impact_links.impact_score <" in links_sql
     assert "event_impact_links.confidence <" in links_sql
+    assert "event_impact_links.id <" in links_sql
     assert (
         "ORDER BY event_impact_links.impact_score DESC, "
         "event_impact_links.confidence DESC, event_impact_links.id DESC"

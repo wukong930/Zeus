@@ -100,12 +100,16 @@ class EventImpactLink(Base):
         ),
         Index("ix_event_impact_links_symbol", "symbol"),
         Index("ix_event_impact_links_symbol_score", "symbol", "impact_score", "confidence"),
+        Index("ix_event_impact_links_symbol_score_id", "symbol", "impact_score", "confidence", "id"),
         Index("ix_event_impact_links_region_id", "region_id"),
+        Index("ix_event_impact_links_region_score_id", "region_id", "impact_score", "confidence", "id"),
         Index("ix_event_impact_links_mechanism", "mechanism"),
         Index("ix_event_impact_links_mechanism_score", "mechanism", "impact_score", "confidence"),
+        Index("ix_event_impact_links_mechanism_score_id", "mechanism", "impact_score", "confidence", "id"),
         Index("ix_event_impact_links_direction", "direction"),
         Index("ix_event_impact_links_status", "status"),
         Index("ix_event_impact_links_status_score", "status", "impact_score", "confidence"),
+        Index("ix_event_impact_links_status_score_id", "status", "impact_score", "confidence", "id"),
         Index("ix_event_impact_links_confidence", "confidence"),
     )
 
