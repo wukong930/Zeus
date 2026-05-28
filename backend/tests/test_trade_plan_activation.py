@@ -10,6 +10,7 @@ from app.services.trade_plans.activation import (
     ALERT_RESULT_CHANNELS,
     TradePlanActivationResult,
     actionable_scored_events_statement,
+    alert_for_scored_event,
     alert_result_event_statement,
     alert_id_from_event,
     existing_recommendation_for_alert,
@@ -62,6 +63,22 @@ class FakeExistingSession:
     async def get(self, model, row_id):
         if model is Recommendation and row_id == self.recommendation.id:
             return self.recommendation
+        return None
+
+
+class FakeAlertLookupSession:
+    def __init__(self, event, alert) -> None:
+        self.event = event
+        self.alert = alert
+        self.compiled_params = {}
+
+    async def scalar(self, statement):
+        self.compiled_params = statement.compile(dialect=postgresql.dialect()).params
+        return self.event
+
+    async def get(self, model, row_id):
+        if model is Alert and row_id == self.alert.id:
+            return self.alert
         return None
 
 
@@ -136,13 +153,12 @@ def test_actionable_scored_events_statement_limits_scan_to_trade_plan_window() -
 
 
 def test_trade_plan_lookup_statements_use_stable_tie_breakers() -> None:
-    alert_sql = _compile_postgres(
-        alert_result_event_statement(
-            correlation_id="corr-1",
-            signal_type="spread_anomaly",
-            symbol="RB",
-        )
+    alert_statement = alert_result_event_statement(
+        correlation_id="corr-1",
+        signal_type="spread_anomaly",
+        symbol="RB2506",
     )
+    alert_sql = _compile_postgres(alert_statement)
     recommendation_sql = _compile_postgres(recommendation_for_alert_statement(alert_id=uuid4()))
 
     assert "event_log.correlation_id =" in alert_sql
@@ -153,6 +169,62 @@ def test_trade_plan_lookup_statements_use_stable_tie_breakers() -> None:
         "ORDER BY recommendations.created_at DESC, recommendations.id DESC"
         in recommendation_sql
     )
+    assert ["RB"] in alert_statement.compile(dialect=postgresql.dialect()).params.values()
+
+
+async def test_alert_for_scored_event_matches_contract_signal_to_root_alert_event() -> None:
+    alert_id = uuid4()
+    created_event = EventLog(
+        event_id=uuid4(),
+        channel="alert.created",
+        source="test",
+        correlation_id="corr-root-symbol",
+        payload={
+            "alert_id": str(alert_id),
+            "signal_type": "inventory_shock",
+            "related_assets": ["RU"],
+        },
+        status="handled",
+    )
+    scored_event = EventLog(
+        event_id=uuid4(),
+        channel="signal.scored",
+        source="test",
+        correlation_id="corr-root-symbol",
+        payload={
+            "signal": {
+                "signal_type": "inventory_shock",
+                "related_assets": [" ru2509 "],
+            }
+        },
+        status="handled",
+    )
+    alert = Alert(
+        id=alert_id,
+        title="RU inventory shock",
+        summary="Contract-level signal should recover the root-symbol alert event.",
+        severity="high",
+        category="rubber",
+        type="inventory_shock",
+        status="active",
+        triggered_at=datetime.now(timezone.utc),
+        confidence=0.8,
+        adversarial_passed=True,
+        llm_involved=False,
+        confidence_tier="notify",
+        human_action_required=False,
+        dedup_suppressed=False,
+        related_assets=["RU"],
+        trigger_chain=[],
+        risk_items=[],
+        manual_check_items=[],
+    )
+    session = FakeAlertLookupSession(created_event, alert)
+
+    result = await alert_for_scored_event(session, scored_event)
+
+    assert result is alert
+    assert ["RU"] in session.compiled_params.values()
 
 
 def test_live_trade_plan_scored_events_filters_by_effective_signal_time() -> None:

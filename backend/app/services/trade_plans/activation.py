@@ -20,6 +20,7 @@ from app.services.pipeline.handlers import (
     open_trade_plan_for_candidate,
     trade_plan_match_key,
 )
+from app.services.symbols import normalize_root_symbol
 
 ALERT_RESULT_CHANNELS = ("alert.created", "alert.suppressed")
 
@@ -275,7 +276,7 @@ async def alert_for_scored_event(session: AsyncSession, scored_event: EventLog) 
     payload = scored_event.payload if isinstance(scored_event.payload, dict) else {}
     signal = payload.get("signal") if isinstance(payload.get("signal"), dict) else {}
     signal_type = str(signal.get("signal_type") or "")
-    symbol = primary_symbol(signal)
+    symbol = normalize_alert_lookup_symbol(primary_symbol(signal))
     created_event = await session.scalar(
         alert_result_event_statement(
             correlation_id=scored_event.correlation_id,
@@ -290,17 +291,22 @@ async def alert_for_scored_event(session: AsyncSession, scored_event: EventLog) 
 
 
 def alert_result_event_statement(*, correlation_id: str, signal_type: str, symbol: str):
+    normalized_symbol = normalize_alert_lookup_symbol(symbol)
     return (
         select(EventLog)
         .where(
             EventLog.channel.in_(ALERT_RESULT_CHANNELS),
             EventLog.correlation_id == correlation_id,
             EventLog.payload["signal_type"].as_string() == signal_type,
-            EventLog.payload["related_assets"].contains([symbol]),
+            EventLog.payload["related_assets"].contains([normalized_symbol]),
         )
         .order_by(EventLog.created_at.desc(), EventLog.id.desc())
         .limit(1)
     )
+
+
+def normalize_alert_lookup_symbol(symbol: str) -> str:
+    return normalize_root_symbol(symbol) or ""
 
 
 def alert_id_from_event(event: EventLog | None) -> UUID | None:
