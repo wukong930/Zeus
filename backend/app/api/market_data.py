@@ -171,6 +171,7 @@ def _latest_market_data_statement(symbols: list[str]):
                     MarketData.vintage_at.desc(),
                     case((MarketData.contract_month == "main", 0), else_=1),
                     MarketData.ingested_at.desc(),
+                    MarketData.id.desc(),
                 ),
             )
             .label("row_number"),
@@ -198,6 +199,7 @@ def _recent_market_data_statement(symbols: list[str], limit: int, *, before: dat
                     MarketData.vintage_at.desc(),
                     case((MarketData.contract_month == "main", 0), else_=1),
                     MarketData.ingested_at.desc(),
+                    MarketData.id.desc(),
                 ),
             )
             .label("pit_row_number"),

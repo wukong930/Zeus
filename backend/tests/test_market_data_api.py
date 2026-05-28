@@ -91,6 +91,7 @@ def test_latest_market_data_statement_uses_window_per_symbol() -> None:
     assert "PARTITION BY market_data.symbol" in compiled
     assert "ORDER BY market_data.timestamp DESC" in compiled
     assert "CASE WHEN (market_data.contract_month = 'main')" in compiled
+    assert "market_data.ingested_at DESC, market_data.id DESC" in compiled
     assert "market_data.symbol IN ('RB', 'HC')" in compiled
 
 
@@ -103,6 +104,7 @@ def test_recent_market_data_statement_limits_rows_per_symbol() -> None:
 
     assert "row_number() OVER" in compiled
     assert "PARTITION BY market_data.symbol, market_data.timestamp" in compiled
+    assert "market_data.ingested_at DESC, market_data.id DESC" in compiled
     assert "ORDER BY anon_" in compiled
     assert ".timestamp DESC" in compiled
     assert "symbol_row_number <= 5" in compiled
