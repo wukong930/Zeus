@@ -847,3 +847,4 @@ threshold_modifier、propagation_activator、risk_recalc、数据腐烂防护
 - Trade Plan 上下文挂载兜底：弱上下文信号查找开放计划时，root JSONB 预筛选未命中或无方向信号需要排除多方向冲突时，会兜底扫描开放计划并按 root symbol 比较，避免历史合约腿计划漏挂证据或误挂到多方向计划。
 - Trade Plan 补偿 alert lookup root 化：历史 `signal.scored` 回查 `alert.created/alert.suppressed` 时统一把合约符号折叠到 root symbol，避免 `RU2509` scored 事件查不到按 `RU` 存储的告警结果而误报 `missing_alert`。
 - Event Intelligence impact link 分页稳定化：impact link 列表游标补充 `before_id`，与 `impact_score desc, confidence desc, id desc` 排序完全对齐，并为 symbol / region / mechanism / status 过滤下的 keyset 查询补充复合索引，避免同分同置信度 link 在分页边界重复或跳过。
+- Event Intelligence item 分页稳定化：事件智能主列表游标补充 `before_impact_score` 和 `before_id`，与 `event_timestamp desc, impact_score desc, id desc` 排序完全对齐，避免同时间事件在分页边界被跳过。

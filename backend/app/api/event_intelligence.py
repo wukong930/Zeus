@@ -57,6 +57,8 @@ async def list_event_intelligence(
     mechanism: str | None = Query(default=None, pattern=EVENT_IMPACT_MECHANISM_PATTERN),
     status_filter: str | None = Query(default=None, alias="status", pattern=EVENT_INTELLIGENCE_STATUS_PATTERN),
     before: datetime | None = Query(default=None),
+    before_impact_score: float | None = Query(default=None, ge=0, le=100),
+    before_id: UUID | None = Query(default=None),
     limit: int = Query(default=100, ge=1, le=500),
     session: AsyncSession = Depends(get_db),
 ) -> list[EventIntelligenceItem]:
@@ -67,6 +69,8 @@ async def list_event_intelligence(
         status_filter=status_filter,
         limit=limit,
         before=before,
+        before_impact_score=before_impact_score,
+        before_id=before_id,
     )
     return list((await session.scalars(statement)).all())
 
@@ -356,6 +360,8 @@ def _event_intelligence_items_statement(
     status_filter: str | None,
     limit: int,
     before: datetime | None = None,
+    before_impact_score: float | None = None,
+    before_id: UUID | None = None,
 ):
     statement = select(EventIntelligenceItem).order_by(
         EventIntelligenceItem.event_timestamp.desc(),
@@ -376,7 +382,25 @@ def _event_intelligence_items_statement(
     if status_filter is not None:
         statement = statement.where(EventIntelligenceItem.status == status_filter)
     if before is not None:
-        statement = statement.where(EventIntelligenceItem.event_timestamp < before)
+        if before_impact_score is not None:
+            cursor_conditions = [
+                EventIntelligenceItem.event_timestamp < before,
+                and_(
+                    EventIntelligenceItem.event_timestamp == before,
+                    EventIntelligenceItem.impact_score < before_impact_score,
+                ),
+            ]
+            if before_id is not None:
+                cursor_conditions.append(
+                    and_(
+                        EventIntelligenceItem.event_timestamp == before,
+                        EventIntelligenceItem.impact_score == before_impact_score,
+                        EventIntelligenceItem.id < before_id,
+                    )
+                )
+            statement = statement.where(or_(*cursor_conditions))
+        else:
+            statement = statement.where(EventIntelligenceItem.event_timestamp < before)
     return statement.limit(limit)
 
 

@@ -639,6 +639,8 @@ def test_event_intelligence_scoped_statements_push_filters_to_database() -> None
             mechanism="energy_cost",
             status_filter="shadow_review",
             before=datetime(2026, 5, 18, 12, tzinfo=UTC),
+            before_impact_score=75,
+            before_id=event_id,
             limit=20,
         )
     )
@@ -685,6 +687,8 @@ def test_event_intelligence_scoped_statements_push_filters_to_database() -> None
     assert "event_intelligence_items.mechanisms" in items_sql
     assert "event_intelligence_items.status" in items_sql
     assert "event_intelligence_items.event_timestamp <" in items_sql
+    assert "event_intelligence_items.impact_score <" in items_sql
+    assert "event_intelligence_items.id <" in items_sql
     assert (
         "ORDER BY event_intelligence_items.event_timestamp DESC, "
         "event_intelligence_items.impact_score DESC, event_intelligence_items.id DESC"
