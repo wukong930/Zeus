@@ -849,3 +849,4 @@ threshold_modifier、propagation_activator、risk_recalc、数据腐烂防护
 - Event Intelligence impact link 分页稳定化：impact link 列表游标补充 `before_id`，与 `impact_score desc, confidence desc, id desc` 排序完全对齐，并为 symbol / region / mechanism / status 过滤下的 keyset 查询补充复合索引，避免同分同置信度 link 在分页边界重复或跳过。
 - Event Intelligence item 分页稳定化：事件智能主列表游标补充 `before_impact_score` 和 `before_id`，与 `event_timestamp desc, impact_score desc, id desc` 排序完全对齐，避免同时间事件在分页边界被跳过。
 - Market Data 批量最新 / 近期窗口稳定化：`/api/market-data/latest` 和 `/api/market-data/recent` 的窗口函数在 `timestamp/vintage/main/ingested` 打平时追加 `id desc`，避免重复修订行情导致报价条、板块页和持仓快照读取结果漂移。
+- Alerts 列表分页稳定化：告警列表游标补充 `before_id`，与 `triggered_at desc, id desc` 排序完全对齐，并补充 status/category 过滤下的 triggered/id 复合索引，避免同一触发时间的告警分页跳过或重复。

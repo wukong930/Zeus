@@ -239,6 +239,7 @@ def test_alerts_statement_can_include_expired_for_audit_views() -> None:
 
 
 def test_alerts_statement_uses_keyset_cursor_and_stable_order() -> None:
+    alert_id = uuid4()
     sql = _compile_postgres(
         _alerts_statement(
             status_filter="active",
@@ -249,6 +250,7 @@ def test_alerts_statement_uses_keyset_cursor_and_stable_order() -> None:
             adversarial_passed=None,
             q=None,
             before=datetime(2026, 5, 18, 12, tzinfo=timezone.utc),
+            before_id=alert_id,
             limit=20,
             include_expired=True,
         )
@@ -256,6 +258,7 @@ def test_alerts_statement_uses_keyset_cursor_and_stable_order() -> None:
 
     assert "alerts.status =" in sql
     assert "alerts.triggered_at <" in sql
+    assert "alerts.id <" in sql
     assert "ORDER BY alerts.triggered_at DESC, alerts.id DESC" in sql
     assert "LIMIT" in sql
 

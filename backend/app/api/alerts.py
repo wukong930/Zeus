@@ -4,7 +4,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
-from sqlalchemy import false, or_, select
+from sqlalchemy import and_, false, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -31,6 +31,7 @@ async def list_alerts(
     include_expired: bool = False,
     q: str | None = Query(default=None, min_length=1, max_length=120),
     before: datetime | None = Query(default=None),
+    before_id: UUID | None = Query(default=None),
     limit: int = Query(default=100, ge=1, le=500),
     session: AsyncSession = Depends(get_db),
 ) -> list[Alert]:
@@ -45,6 +46,7 @@ async def list_alerts(
         as_of=datetime.now(UTC),
         q=q,
         before=before,
+        before_id=before_id,
         limit=limit,
     )
     return list((await session.scalars(statement)).all())
@@ -98,6 +100,7 @@ def _alerts_statement(
     q: str | None,
     limit: int,
     before: datetime | None = None,
+    before_id: UUID | None = None,
     include_expired: bool = False,
     as_of: datetime | None = None,
 ):
@@ -125,7 +128,15 @@ def _alerts_statement(
     if adversarial_passed is not None:
         statement = statement.where(Alert.adversarial_passed.is_(adversarial_passed))
     if before is not None:
-        statement = statement.where(Alert.triggered_at < before)
+        if before_id is not None:
+            statement = statement.where(
+                or_(
+                    Alert.triggered_at < before,
+                    and_(Alert.triggered_at == before, Alert.id < before_id),
+                )
+            )
+        else:
+            statement = statement.where(Alert.triggered_at < before)
     if q is not None:
         query_text = q.strip()
         if query_text:
