@@ -13,6 +13,7 @@ class Recommendation(Base):
     __table_args__ = (
         Index("ix_recommendations_status", "status"),
         Index("ix_recommendations_status_created_at", "status", "created_at"),
+        Index("ix_recommendations_status_created_id", "status", "created_at", "id"),
         Index("ix_recommendations_status_expires_at", "status", "expires_at"),
         Index("ix_recommendations_status_expires_id", "status", "expires_at", "id"),
         Index(

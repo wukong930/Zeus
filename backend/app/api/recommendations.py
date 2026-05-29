@@ -2,7 +2,7 @@ from uuid import UUID
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.positions import publish_position_changed
@@ -25,12 +25,14 @@ router = APIRouter(prefix="/api/recommendations", tags=["recommendations"])
 async def list_recommendations(
     status_filter: str | None = Query(default=None, max_length=20),
     before: datetime | None = Query(default=None),
+    before_id: UUID | None = Query(default=None),
     limit: int = Query(default=100, ge=1, le=500),
     session: AsyncSession = Depends(get_db),
 ) -> list[Recommendation]:
     statement = _recommendations_statement(
         status_filter=status_filter,
         before=before,
+        before_id=before_id,
         limit=limit,
     )
     return list((await session.scalars(statement)).all())
@@ -41,6 +43,7 @@ def _recommendations_statement(
     status_filter: str | None,
     before: datetime | None,
     limit: int,
+    before_id: UUID | None = None,
 ):
     statement = select(Recommendation).order_by(
         Recommendation.created_at.desc(),
@@ -49,7 +52,15 @@ def _recommendations_statement(
     if status_filter is not None:
         statement = statement.where(Recommendation.status == status_filter)
     if before is not None:
-        statement = statement.where(Recommendation.created_at < before)
+        if before_id is not None:
+            statement = statement.where(
+                or_(
+                    Recommendation.created_at < before,
+                    and_(Recommendation.created_at == before, Recommendation.id < before_id),
+                )
+            )
+        else:
+            statement = statement.where(Recommendation.created_at < before)
     return statement.limit(limit)
 
 

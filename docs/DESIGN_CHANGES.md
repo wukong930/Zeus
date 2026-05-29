@@ -851,3 +851,4 @@ threshold_modifier、propagation_activator、risk_recalc、数据腐烂防护
 - Market Data 批量最新 / 近期窗口稳定化：`/api/market-data/latest` 和 `/api/market-data/recent` 的窗口函数在 `timestamp/vintage/main/ingested` 打平时追加 `id desc`，避免重复修订行情导致报价条、板块页和持仓快照读取结果漂移。
 - Alerts 列表分页稳定化：告警列表游标补充 `before_id`，与 `triggered_at desc, id desc` 排序完全对齐，并补充 status/category 过滤下的 triggered/id 复合索引，避免同一触发时间的告警分页跳过或重复。
 - News Events 列表分页稳定化：新闻事件列表游标补充 `before_id`，与 `published_at desc, id desc` 排序完全对齐，并补充 source/event_type/verification 过滤下的 published/id 复合索引，避免同发布时间新闻分页跳过或重复。
+- Recommendations 列表分页稳定化：交易计划列表游标补充 `before_id`，与 `created_at desc, id desc` 排序完全对齐，并补充 status 过滤下的 created/id 复合索引，避免同一创建时间的交易建议分页跳过或重复。

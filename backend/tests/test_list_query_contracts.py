@@ -264,16 +264,19 @@ def test_alerts_statement_uses_keyset_cursor_and_stable_order() -> None:
 
 
 def test_recommendations_statement_uses_keyset_cursor_and_stable_order() -> None:
+    recommendation_id = uuid4()
     sql = _compile_postgres(
         _recommendations_statement(
             status_filter="pending",
             before=datetime(2026, 5, 18, 12, tzinfo=timezone.utc),
+            before_id=recommendation_id,
             limit=20,
         )
     )
 
     assert "recommendations.status =" in sql
     assert "recommendations.created_at <" in sql
+    assert "recommendations.id <" in sql
     assert "ORDER BY recommendations.created_at DESC, recommendations.id DESC" in sql
     assert "LIMIT" in sql
 
