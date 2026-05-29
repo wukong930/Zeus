@@ -149,7 +149,10 @@ def test_settings_snapshot_collapses_settings_page_runtime_calls(monkeypatch) ->
     app.dependency_overrides[get_db] = fake_db
     client = TestClient(app)
 
-    response = client.get("/api/settings/snapshot?module=event_intelligence&month=2026-05-01")
+    response = client.get(
+        "/api/settings/snapshot",
+        params={"module": " Event_Intelligence ", "month": "2026-05-01"},
+    )
 
     assert response.status_code == 200
     assert captured["usage_session"] is session
@@ -166,6 +169,14 @@ def test_settings_snapshot_collapses_settings_page_runtime_calls(monkeypatch) ->
     assert payload["alert_dedup"]["daily_alert_limit"] == DEFAULT_DAILY_ALERT_LIMIT
     assert payload["notifications"]["feishu_webhook"] is True
     assert payload["adversarial_runtime"]["mode"] == "enforcing"
+
+
+def test_settings_snapshot_bounds_module_query() -> None:
+    client = TestClient(create_app())
+
+    response = client.get("/api/settings/snapshot", params={"module": "x" * 41})
+
+    assert response.status_code == 422
 
 
 def test_notification_settings_api_returns_runtime_config(monkeypatch) -> None:

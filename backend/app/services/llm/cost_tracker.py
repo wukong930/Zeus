@@ -7,6 +7,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import rollback_if_possible
 from app.models.llm_cache import LLMUsageLog
 
+DEFAULT_LLM_MODULE = "alert_agent"
+MAX_LLM_MODULE_LENGTH = 40
+
 
 @dataclass(frozen=True)
 class LLMUsageSummary:
@@ -18,6 +21,11 @@ class LLMUsageSummary:
     estimated_cost_usd: float
     input_tokens: int
     output_tokens: int
+
+
+def normalize_llm_module(module: str | None) -> str:
+    normalized = str(module or "").strip().lower()
+    return normalized or DEFAULT_LLM_MODULE
 
 
 async def record_llm_usage(
@@ -35,9 +43,10 @@ async def record_llm_usage(
 ) -> LLMUsageLog | None:
     if session is None:
         return None
+    normalized_module = normalize_llm_module(module)
     try:
         row = LLMUsageLog(
-            module=module,
+            module=normalized_module,
             provider=provider,
             model=model,
             input_tokens=max(0, input_tokens),
@@ -66,28 +75,18 @@ async def monthly_usage_summary(
     period_start: date,
     period_end: date,
 ) -> LLMUsageSummary:
+    normalized_module = normalize_llm_module(module)
     result = (
         await session.execute(
-            select(
-                func.count(LLMUsageLog.id),
-                func.count(LLMUsageLog.id).filter(LLMUsageLog.cache_hit.is_(True)),
-                func.coalesce(func.sum(LLMUsageLog.estimated_cost_usd), 0),
-                func.coalesce(func.sum(LLMUsageLog.input_tokens), 0),
-                func.coalesce(func.sum(LLMUsageLog.output_tokens), 0),
-            ).where(
-                LLMUsageLog.module == module,
-                LLMUsageLog.created_at >= datetime.combine(
-                    period_start,
-                    datetime.min.time(),
-                    tzinfo=timezone.utc,
-                ),
-                LLMUsageLog.created_at
-                < datetime.combine(period_end, datetime.min.time(), tzinfo=timezone.utc),
+            _monthly_usage_summary_statement(
+                module=normalized_module,
+                period_start=period_start,
+                period_end=period_end,
             )
         )
     ).one()
     return LLMUsageSummary(
-        module=module,
+        module=normalized_module,
         period_start=period_start,
         period_end=period_end,
         calls=int(result[0] or 0),
@@ -95,6 +94,25 @@ async def monthly_usage_summary(
         estimated_cost_usd=float(result[2] or 0),
         input_tokens=int(result[3] or 0),
         output_tokens=int(result[4] or 0),
+    )
+
+
+def _monthly_usage_summary_statement(*, module: str, period_start: date, period_end: date):
+    return select(
+        func.count(LLMUsageLog.id),
+        func.count(LLMUsageLog.id).filter(LLMUsageLog.cache_hit.is_(True)),
+        func.coalesce(func.sum(LLMUsageLog.estimated_cost_usd), 0),
+        func.coalesce(func.sum(LLMUsageLog.input_tokens), 0),
+        func.coalesce(func.sum(LLMUsageLog.output_tokens), 0),
+    ).where(
+        LLMUsageLog.module == normalize_llm_module(module),
+        LLMUsageLog.created_at >= datetime.combine(
+            period_start,
+            datetime.min.time(),
+            tzinfo=timezone.utc,
+        ),
+        LLMUsageLog.created_at
+        < datetime.combine(period_end, datetime.min.time(), tzinfo=timezone.utc),
     )
 
 

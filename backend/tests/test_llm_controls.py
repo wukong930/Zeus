@@ -8,7 +8,13 @@ from app.main import create_app
 from app.models.llm_cache import LLMCache, LLMBudget
 from app.services.llm.budget_guard import active_llm_budget_statement, add_budget_spend, month_bounds
 from app.services.llm.cache import get_cached_completion, llm_cache_key, store_cached_completion
-from app.services.llm.cost_tracker import LLMUsageSummary, estimate_cost_usd, record_llm_usage
+from app.services.llm.cost_tracker import (
+    LLMUsageSummary,
+    _monthly_usage_summary_statement,
+    estimate_cost_usd,
+    normalize_llm_module,
+    record_llm_usage,
+)
 from app.services.llm.types import LLMCompletionResult, LLMUsage
 
 
@@ -104,6 +110,11 @@ def test_llm_cache_key_canonicalizes_json_schema() -> None:
     )
 
     assert left == right
+
+
+def test_normalize_llm_module_strips_and_lowers() -> None:
+    assert normalize_llm_module(" Event_Intelligence ") == "event_intelligence"
+    assert normalize_llm_module("") == "alert_agent"
 
 
 async def test_store_cached_completion_updates_existing_cache_row() -> None:
@@ -266,6 +277,20 @@ def test_active_llm_budget_statement_uses_stable_latest_lookup() -> None:
     assert "LIMIT 1" in sql
 
 
+def test_monthly_usage_summary_statement_normalizes_module_and_bounds_period() -> None:
+    sql = _compile_postgres(
+        _monthly_usage_summary_statement(
+            module=" Event_Intelligence ",
+            period_start=date(2026, 5, 1),
+            period_end=date(2026, 6, 1),
+        )
+    )
+
+    assert "llm_usage_log.module = 'event_intelligence'" in sql
+    assert "llm_usage_log.created_at >= '2026-05-01 00:00:00+00:00'" in sql
+    assert "llm_usage_log.created_at < '2026-06-01 00:00:00+00:00'" in sql
+
+
 def test_cost_estimate_is_zero_for_unknown_usage() -> None:
     assert estimate_cost_usd("gpt-test", 0, 0) == 0.0
     assert estimate_cost_usd("gpt-test", 1000, 1000) > 0
@@ -311,7 +336,10 @@ def test_llm_usage_api_returns_requested_month_summary(monkeypatch) -> None:
     app.dependency_overrides[get_db] = fake_db
     client = TestClient(app)
 
-    response = client.get("/api/llm/usage?module=news&month=2026-05-16")
+    response = client.get(
+        "/api/llm/usage",
+        params={"module": " News ", "month": "2026-05-16"},
+    )
 
     assert response.status_code == 200
     assert captured["module"] == "news"
@@ -327,6 +355,14 @@ def test_llm_usage_api_returns_requested_month_summary(monkeypatch) -> None:
         "input_tokens": 1200,
         "output_tokens": 450,
     }
+
+
+def test_llm_usage_api_bounds_module_query() -> None:
+    client = TestClient(create_app())
+
+    response = client.get("/api/llm/usage", params={"module": "x" * 41})
+
+    assert response.status_code == 422
 
 
 def _compile_postgres(statement) -> str:

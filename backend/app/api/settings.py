@@ -1,7 +1,7 @@
 from datetime import date, datetime, timezone
 from typing import Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, StrictBool
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -24,7 +24,11 @@ from app.services.adversarial.runtime import (
     save_adversarial_runtime_config,
 )
 from app.services.llm.budget_guard import month_bounds
-from app.services.llm.cost_tracker import monthly_usage_summary
+from app.services.llm.cost_tracker import (
+    MAX_LLM_MODULE_LENGTH,
+    monthly_usage_summary,
+    normalize_llm_module,
+)
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
@@ -103,11 +107,15 @@ class SettingsSnapshotRead(BaseModel):
 
 @router.get("/snapshot", response_model=SettingsSnapshotRead)
 async def get_settings_snapshot(
-    module: str = "alert_agent",
+    module: str = Query(
+        default="alert_agent",
+        min_length=1,
+        max_length=MAX_LLM_MODULE_LENGTH,
+    ),
     month: date | None = None,
     session: AsyncSession = Depends(get_db),
 ) -> SettingsSnapshotRead:
-    return await build_settings_snapshot(session, module=module, month=month)
+    return await build_settings_snapshot(session, module=normalize_llm_module(module), month=month)
 
 
 @router.get("/alert-dedup", response_model=AlertDedupSettingsRead)
@@ -168,10 +176,11 @@ async def build_settings_snapshot(
     module: str,
     month: date | None,
 ) -> SettingsSnapshotRead:
+    normalized_module = normalize_llm_module(module)
     period_start, period_end = month_bounds(month or date.today())
     llm_usage = await monthly_usage_summary(
         session,
-        module=module,
+        module=normalized_module,
         period_start=period_start,
         period_end=period_end,
     )
