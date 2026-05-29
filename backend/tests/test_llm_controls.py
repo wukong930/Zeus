@@ -232,6 +232,25 @@ async def test_store_cached_completion_rolls_back_lookup_failure() -> None:
     assert session.flush_count == 0
 
 
+async def test_record_llm_usage_normalizes_identity_fields() -> None:
+    session = FakeSession()
+
+    row = await record_llm_usage(
+        session,  # type: ignore[arg-type]
+        module=" Event_Intelligence ",
+        provider=" XAI ",
+        model=" grok-4.3 ",
+        input_tokens=10,
+        output_tokens=4,
+    )
+
+    assert row is not None
+    assert row.module == "event_intelligence"
+    assert row.provider == "xai"
+    assert row.model == "grok-4.3"
+    assert session.flush_count == 1
+
+
 async def test_record_llm_usage_rolls_back_flush_failure() -> None:
     session = FakeSession(fail_flush=True)
 

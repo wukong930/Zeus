@@ -1216,6 +1216,7 @@ Causa 的 `event_driven` 评估器实际上是纯技术面（gap + volume），*
   - [x] Phase 10.60.115：LLM Usage / Settings Snapshot 的 `module` 查询增加长度边界并统一去空格、小写归一化，避免大小写、空格或超长输入导致成本面板与设置页出现误导性零值或无效扫描。
   - [x] Phase 10.60.116：LLM Budget 守卫统一复用 `module` 归一化口径，预算检查、扣费和 active budget lookup 与成本统计 / 设置页保持一致，避免大小写或空格导致预算误放行。
   - [x] Phase 10.60.117：LLM Cache key 对 provider 和 model 做保守归一化，provider 去空格小写、model 去空格；缓存写入同步清洗 module/provider/model，避免配置空格或大小写变体造成重复模型调用。
+  - [x] Phase 10.60.118：LLM Usage Log 写入 provider/model 前统一复用缓存身份归一化口径，避免成本审计按 provider/model 聚合时被空格或大小写变体拆散。
 - [ ] 后端慢查询、索引、分页和缓存继续复查。
 - [x] 调度任务真实 handler 覆盖率继续复查，避免 enabled 但实际 noop。
 - [x] 全量回归测试、浏览器验证和部署 smoke 流程固化。

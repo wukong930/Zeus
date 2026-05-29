@@ -28,6 +28,14 @@ def normalize_llm_module(module: str | None) -> str:
     return normalized or DEFAULT_LLM_MODULE
 
 
+def normalize_llm_provider(provider: str | None) -> str:
+    return str(provider or "").strip().lower()
+
+
+def normalize_llm_model(model: str | None) -> str:
+    return str(model or "").strip()
+
+
 async def record_llm_usage(
     session: AsyncSession | None,
     *,
@@ -44,15 +52,17 @@ async def record_llm_usage(
     if session is None:
         return None
     normalized_module = normalize_llm_module(module)
+    normalized_provider = normalize_llm_provider(provider)
+    normalized_model = normalize_llm_model(model)
     try:
         row = LLMUsageLog(
             module=normalized_module,
-            provider=provider,
-            model=model,
+            provider=normalized_provider,
+            model=normalized_model,
             input_tokens=max(0, input_tokens),
             output_tokens=max(0, output_tokens),
             estimated_cost_usd=(
-                estimate_cost_usd(model, input_tokens, output_tokens)
+                estimate_cost_usd(normalized_model, input_tokens, output_tokens)
                 if estimated_cost_usd is None
                 else estimated_cost_usd
             ),
