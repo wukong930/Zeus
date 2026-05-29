@@ -69,6 +69,13 @@ def test_llm_cache_key_is_stable_and_provider_scoped() -> None:
     assert left != other
 
 
+def test_llm_cache_key_normalizes_provider_and_model_spacing() -> None:
+    canonical = llm_cache_key(provider="openai", model="gpt-4o", system="s", user="u")
+    variant = llm_cache_key(provider=" OpenAI ", model=" gpt-4o ", system="s", user="u")
+
+    assert variant == canonical
+
+
 def test_llm_cache_key_includes_output_constraints() -> None:
     base = llm_cache_key(provider="openai", model="m1", system="s", user="u")
     json_mode = llm_cache_key(
@@ -146,9 +153,9 @@ async def test_store_cached_completion_updates_existing_cache_row() -> None:
     row = await store_cached_completion(
         session,  # type: ignore[arg-type]
         cache_key="cache-key",
-        module="news",
-        provider="xai",
-        model="grok-4.3",
+        module=" News ",
+        provider=" XAI ",
+        model=" grok-4.3 ",
         system="system",
         user="user",
         result=result,
@@ -162,6 +169,7 @@ async def test_store_cached_completion_updates_existing_cache_row() -> None:
     assert session.flush_count == 1
     assert existing.module == "news"
     assert existing.provider == "xai"
+    assert existing.model == "grok-4.3"
     assert existing.response["content"] == "fresh"
     assert existing.response["usage"] == {"input_tokens": 10, "output_tokens": 4}
     assert existing.hit_count == 0

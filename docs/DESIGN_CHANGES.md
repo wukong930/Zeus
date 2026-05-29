@@ -854,3 +854,4 @@ threshold_modifier、propagation_activator、risk_recalc、数据腐烂防护
 - Recommendations 列表分页稳定化：交易计划列表游标补充 `before_id`，与 `created_at desc, id desc` 排序完全对齐，并补充 status 过滤下的 created/id 复合索引，避免同一创建时间的交易建议分页跳过或重复。
 - LLM Usage / Settings Snapshot module 归一化：成本统计与设置页入口统一清洗 `module`，并对查询参数增加长度边界，避免大小写、空格或超长输入导致成本视图读到错误空结果。
 - LLM Budget module 归一化：预算检查、扣费和 active budget lookup 复用同一 `module` 清洗口径，避免调用方传入大小写或空格变体时绕过预算控制。
+- LLM Cache provider/model 归一化：cache key 清洗 provider 与 model，缓存行写入同步清洗 module/provider/model，避免配置空格或大小写变体导致缓存命中率下降。
