@@ -6,7 +6,12 @@ from sqlalchemy.dialects import postgresql
 from app.core.database import get_db
 from app.main import create_app
 from app.models.llm_cache import LLMCache, LLMBudget
-from app.services.llm.budget_guard import active_llm_budget_statement, add_budget_spend, month_bounds
+from app.services.llm.budget_guard import (
+    active_llm_budget_statement,
+    add_budget_spend,
+    check_llm_budget,
+    month_bounds,
+)
 from app.services.llm.cache import get_cached_completion, llm_cache_key, store_cached_completion
 from app.services.llm.cost_tracker import (
     LLMUsageSummary,
@@ -250,7 +255,7 @@ async def test_add_budget_spend_rolls_back_flush_failure() -> None:
 
     await add_budget_spend(
         session,  # type: ignore[arg-type]
-        module="alert_agent",
+        module=" Alert_Agent ",
         amount_usd=0.25,
         as_of=now,
     )
@@ -267,7 +272,7 @@ def test_month_bounds_returns_next_month_exclusive_end() -> None:
 
 def test_active_llm_budget_statement_uses_stable_latest_lookup() -> None:
     sql = _compile_postgres(
-        active_llm_budget_statement(module="event_intelligence", period_start=date(2026, 5, 1))
+        active_llm_budget_statement(module=" Event_Intelligence ", period_start=date(2026, 5, 1))
     )
 
     assert "llm_budgets.module = 'event_intelligence'" in sql
@@ -275,6 +280,14 @@ def test_active_llm_budget_statement_uses_stable_latest_lookup() -> None:
     assert "llm_budgets.status = 'active'" in sql
     assert "ORDER BY llm_budgets.updated_at DESC, llm_budgets.id DESC" in sql
     assert "LIMIT 1" in sql
+
+
+async def test_check_llm_budget_returns_normalized_module_without_session() -> None:
+    decision = await check_llm_budget(None, module=" Event_Intelligence ")
+
+    assert decision.allowed is True
+    assert decision.module == "event_intelligence"
+    assert decision.reason == "no_session"
 
 
 def test_monthly_usage_summary_statement_normalizes_module_and_bounds_period() -> None:
