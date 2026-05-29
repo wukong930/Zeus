@@ -4,7 +4,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
-from sqlalchemy import false, or_, select
+from sqlalchemy import and_, false, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -30,6 +30,7 @@ async def list_news_events(
     verification_status: str | None = Query(default=None, min_length=1, max_length=30),
     q: str | None = Query(default=None, min_length=1, max_length=120),
     before: datetime | None = Query(default=None),
+    before_id: UUID | None = Query(default=None),
     limit: int = Query(default=100, ge=1, le=500),
     session: AsyncSession = Depends(get_db),
 ) -> list[NewsEvent]:
@@ -42,6 +43,7 @@ async def list_news_events(
         verification_status=verification_status,
         q=q,
         before=before,
+        before_id=before_id,
         limit=limit,
     )
     return list((await session.scalars(statement)).all())
@@ -109,6 +111,7 @@ def _news_events_statement(
     q: str | None,
     limit: int,
     before: datetime | None = None,
+    before_id: UUID | None = None,
 ):
     statement = select(NewsEvent).order_by(NewsEvent.published_at.desc(), NewsEvent.id.desc())
     if source is not None:
@@ -129,7 +132,15 @@ def _news_events_statement(
     if verification_status is not None:
         statement = statement.where(NewsEvent.verification_status == verification_status)
     if before is not None:
-        statement = statement.where(NewsEvent.published_at < before)
+        if before_id is not None:
+            statement = statement.where(
+                or_(
+                    NewsEvent.published_at < before,
+                    and_(NewsEvent.published_at == before, NewsEvent.id < before_id),
+                )
+            )
+        else:
+            statement = statement.where(NewsEvent.published_at < before)
     if q is not None:
         query_text = q.strip()
         if query_text:

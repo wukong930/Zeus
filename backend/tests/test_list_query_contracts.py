@@ -294,6 +294,7 @@ def test_positions_statement_uses_keyset_cursor_and_stable_order() -> None:
 
 
 def test_news_events_statement_uses_keyset_cursor_and_stable_order() -> None:
+    news_id = uuid4()
     sql = _compile_postgres(
         _news_events_statement(
             source="gdelt",
@@ -304,6 +305,7 @@ def test_news_events_statement_uses_keyset_cursor_and_stable_order() -> None:
             verification_status="cross_verified",
             q="原油",
             before=datetime(2026, 5, 18, 12, tzinfo=timezone.utc),
+            before_id=news_id,
             limit=20,
         )
     )
@@ -315,6 +317,7 @@ def test_news_events_statement_uses_keyset_cursor_and_stable_order() -> None:
     assert "news_events.severity >=" in sql
     assert "news_events.verification_status =" in sql
     assert "news_events.published_at <" in sql
+    assert "news_events.id <" in sql
     assert "ORDER BY news_events.published_at DESC, news_events.id DESC" in sql
     assert "LIMIT" in sql
 
