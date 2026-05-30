@@ -6,6 +6,7 @@ from app.api.settings import (
     AdversarialRuntimeSettingsRead,
     LLMProviderSettingsRead,
     NotificationSettingsRead,
+    _env_provider_config,
 )
 from app.core.config import Settings
 from app.core.database import get_db
@@ -419,7 +420,12 @@ def test_llm_provider_settings_api_uses_env_runtime(monkeypatch) -> None:
     monkeypatch.setattr("app.api.settings.get_active_llm_config", fake_active_config)
     monkeypatch.setattr(
         "app.core.config.get_settings",
-        lambda: Settings(xai_api_key="xai-test", _env_file=None),
+        lambda: Settings(
+            xai_api_key="xai-test",
+            llm_model=" grok-4.3 ",
+            xai_base_url=" https://api.x.ai/v1 ",
+            _env_file=None,
+        ),
     )
     app = create_app()
     app.dependency_overrides[get_db] = fake_db
@@ -442,6 +448,32 @@ def test_llm_provider_settings_api_uses_env_runtime(monkeypatch) -> None:
     assert rows["openai"]["configured"] is False
     assert rows["openai"]["status"] == "unconfigured"
     assert rows["openai"]["reason"] == "OPENAI_API_KEY is not configured"
+
+
+def test_env_provider_config_normalizes_model_and_base_url() -> None:
+    config = _env_provider_config(
+        "xai",
+        Settings(
+            xai_api_key="xai-test",
+            llm_model=" custom-grok ",
+            xai_base_url=" https://api.x.ai/v1 ",
+            _env_file=None,
+        ),
+    )
+
+    assert config is not None
+    assert config.model == "custom-grok"
+    assert config.base_url == "https://api.x.ai/v1"
+
+
+def test_env_provider_config_uses_default_model_for_blank_override() -> None:
+    config = _env_provider_config(
+        "xai",
+        Settings(xai_api_key="xai-test", llm_model=" ", _env_file=None),
+    )
+
+    assert config is not None
+    assert config.model == "grok-4.3"
 
 
 def test_llm_provider_settings_api_marks_database_route_active(monkeypatch) -> None:

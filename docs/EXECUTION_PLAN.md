@@ -1218,6 +1218,7 @@ Causa 的 `event_driven` 评估器实际上是纯技术面（gap + volume），*
   - [x] Phase 10.60.117：LLM Cache key 对 provider 和 model 做保守归一化，provider 去空格小写、model 去空格；缓存写入同步清洗 module/provider/model，避免配置空格或大小写变体造成重复模型调用。
   - [x] Phase 10.60.118：LLM Usage Log 写入 provider/model 前统一复用缓存身份归一化口径，避免成本审计按 provider/model 聚合时被空格或大小写变体拆散。
   - [x] Phase 10.60.119：LLM Registry 的数据库配置和环境配置读取复用 provider/model 归一化口径，DB provider 带空格不再被误判为未知 provider，env model 空格不再透传到实际请求。
+  - [x] Phase 10.60.120：Settings LLM Providers 视图复用环境配置清洗口径，模型名空格和空 base_url 不再污染设置页展示，空白 `llm_model` 会回落到 provider 默认模型。
 - [ ] 后端慢查询、索引、分页和缓存继续复查。
 - [x] 调度任务真实 handler 覆盖率继续复查，避免 enabled 但实际 noop。
 - [x] 全量回归测试、浏览器验证和部署 smoke 流程固化。

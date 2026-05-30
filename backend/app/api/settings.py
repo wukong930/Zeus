@@ -27,6 +27,7 @@ from app.services.llm.budget_guard import month_bounds
 from app.services.llm.cost_tracker import (
     MAX_LLM_MODULE_LENGTH,
     monthly_usage_summary,
+    normalize_llm_model,
     normalize_llm_module,
 )
 
@@ -303,7 +304,7 @@ def _llm_provider_read(
     is_active = active is not None and active.provider == provider
     configured = is_active or env_config is not None
     source = active_source if is_active and active_source else "environment" if env_config else "not_configured"
-    model = active.model if is_active and active is not None else env_config.model if env_config else None
+    model = _llm_provider_model(active=active, env_config=env_config, is_active=is_active)
     status = "active" if is_active else "configured" if configured else "unconfigured"
     reason = None if configured else _missing_key_reason(provider)
     return LLMProviderSettingsRead(
@@ -316,6 +317,19 @@ def _llm_provider_read(
         status=status,
         reason=reason,
     )
+
+
+def _llm_provider_model(
+    *,
+    active: LLMProviderConfig | None,
+    env_config: LLMProviderConfig | None,
+    is_active: bool,
+) -> str | None:
+    if is_active and active is not None:
+        return normalize_llm_model(active.model)
+    if env_config is not None:
+        return env_config.model
+    return None
 
 
 def _env_provider_config(
@@ -333,12 +347,12 @@ def _env_provider_config(
     return LLMProviderConfig(
         provider=provider,
         api_key=str(api_key),
-        model=settings.llm_model or DEFAULT_MODELS[provider][0],
+        model=normalize_llm_model(settings.llm_model) or DEFAULT_MODELS[provider][0],
         base_url={
-            "openai": settings.openai_base_url,
-            "xai": settings.xai_base_url,
-            "anthropic": settings.anthropic_base_url,
-            "deepseek": settings.deepseek_base_url,
+            "openai": _clean_optional_url(settings.openai_base_url),
+            "xai": _clean_optional_url(settings.xai_base_url),
+            "anthropic": _clean_optional_url(settings.anthropic_base_url),
+            "deepseek": _clean_optional_url(settings.deepseek_base_url),
         }[provider],
         timeout_seconds=settings.llm_timeout_seconds,
     )
@@ -346,6 +360,13 @@ def _env_provider_config(
 
 def _has_secret(value: str | None) -> bool:
     return bool(value and value.strip())
+
+
+def _clean_optional_url(value: str | None) -> str | None:
+    if value is None:
+        return None
+    value = value.strip()
+    return value or None
 
 
 def _missing_key_reason(provider: LLMProviderName) -> str:

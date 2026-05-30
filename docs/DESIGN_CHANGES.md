@@ -857,3 +857,4 @@ threshold_modifier、propagation_activator、risk_recalc、数据腐烂防护
 - LLM Cache provider/model 归一化：cache key 清洗 provider 与 model，缓存行写入同步清洗 module/provider/model，避免配置空格或大小写变体导致缓存命中率下降。
 - LLM Usage Log provider/model 归一化：使用日志写入时同步清洗 provider 与 model，避免成本审计或后续 provider/model 维度分析被配置变体拆散。
 - LLM Registry 配置读取归一化：数据库 provider 和环境 model 读取复用同一身份清洗口径，避免配置空格导致 provider 失效或模型名带空格透传到请求。
+- Settings LLM Providers 视图归一化：设置页环境 provider 读取复用模型名和 base_url 清洗口径，避免 UI 展示与实际 Registry 路由口径不一致。
