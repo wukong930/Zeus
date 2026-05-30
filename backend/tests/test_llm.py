@@ -230,7 +230,7 @@ def test_registry_prefers_env_provider_order() -> None:
     settings = Settings(
         openai_api_key="sk-openai",
         anthropic_api_key="sk-ant",
-        llm_model="gpt-test",
+        llm_model=" gpt-test ",
         _env_file=None,
     )
 
@@ -276,7 +276,7 @@ async def test_registry_trims_database_config_secret_and_base_url() -> None:
     config = await get_active_llm_config(
         session=FakeSession(
             LLMConfigModel(
-                provider="xai",
+                provider=" XAI ",
                 api_key=" xai-test ",
                 model=" ",
                 base_url=" https://api.x.ai/v1/ ",
