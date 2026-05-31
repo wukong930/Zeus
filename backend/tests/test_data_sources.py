@@ -1111,17 +1111,17 @@ def test_market_context_payloads_keeps_recent_realtime_contexts() -> None:
 async def test_free_data_ingest_reports_enabled_keyed_sources_without_keys() -> None:
     settings = Settings(
         data_source_noaa_cdo_enabled=True,
-        noaa_cdo_api_key="",
+        noaa_cdo_api_key="  ",
         data_source_accuweather_enabled=True,
-        accuweather_api_key="",
+        accuweather_api_key="\t",
         data_source_fred_enabled=True,
-        fred_api_key="",
+        fred_api_key=" ",
         data_source_eia_enabled=True,
-        eia_api_key="",
+        eia_api_key="\n",
         data_source_tushare_enabled=True,
-        tushare_token="",
+        tushare_token="  ",
         data_source_shipping_index_enabled=True,
-        shipping_index_url="",
+        shipping_index_url="  ",
         _env_file=None,
     )
 
@@ -1151,13 +1151,13 @@ async def test_free_data_ingest_reports_enabled_keyed_sources_without_keys() -> 
 def test_data_source_registry_marks_keyed_sources() -> None:
     settings = Settings(
         data_source_fred_enabled=True,
-        fred_api_key="fred-test",
+        fred_api_key=" fred-test ",
         data_source_eia_enabled=True,
-        eia_api_key="",
+        eia_api_key="  ",
         data_source_tushare_enabled=True,
-        tushare_token="tushare-test",
+        tushare_token="\ttushare-test\t",
         data_source_shipping_index_enabled=True,
-        shipping_index_url="",
+        shipping_index_url="  ",
         _env_file=None,
     )
 
@@ -1182,9 +1182,9 @@ def test_data_source_registry_marks_keyed_sources() -> None:
 def test_data_source_registry_marks_weather_keyed_sources() -> None:
     settings = Settings(
         data_source_noaa_cdo_enabled=True,
-        noaa_cdo_api_key="noaa-test",
+        noaa_cdo_api_key=" noaa-test ",
         data_source_accuweather_enabled=True,
-        accuweather_api_key="",
+        accuweather_api_key="  ",
         _env_file=None,
     )
 

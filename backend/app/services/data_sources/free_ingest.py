@@ -130,26 +130,28 @@ async def run_free_data_ingest(
             errors.append({"source": "nasa_power", "error": safe_error_message(exc)})
 
     if current.data_source_accuweather_enabled:
-        if current.accuweather_api_key:
+        accuweather_api_key = _clean_runtime_config(current.accuweather_api_key)
+        if accuweather_api_key:
             try:
                 accuweather_rows = await collect_accuweather_current_conditions(
-                    api_key=current.accuweather_api_key,
+                    api_key=accuweather_api_key,
                     base_url=current.accuweather_base_url,
                     max_locations=current.accuweather_max_locations_per_run,
                 )
                 industry_payloads.extend(accuweather_rows)
                 source_counts["accuweather"] = len(accuweather_rows)
             except Exception as exc:
-                errors.append({"source": "accuweather", "error": safe_error_message(exc, current.accuweather_api_key)})
+                errors.append({"source": "accuweather", "error": safe_error_message(exc, accuweather_api_key)})
         else:
             source_counts["accuweather"] = 0
             errors.append({"source": "accuweather", "error": "enabled source missing ACCUWEATHER_API_KEY"})
 
     if current.data_source_noaa_cdo_enabled:
-        if current.noaa_cdo_api_key:
+        noaa_cdo_api_key = _clean_runtime_config(current.noaa_cdo_api_key)
+        if noaa_cdo_api_key:
             try:
                 noaa_rows = await collect_noaa_cdo_daily_summaries(
-                    api_key=current.noaa_cdo_api_key,
+                    api_key=noaa_cdo_api_key,
                     base_url=current.noaa_cdo_base_url,
                     max_locations=current.noaa_cdo_max_locations_per_run,
                     station_radius_degrees=current.noaa_cdo_station_radius_degrees,
@@ -158,46 +160,49 @@ async def run_free_data_ingest(
                 industry_payloads.extend(noaa_rows)
                 source_counts["noaa_cdo"] = len(noaa_rows)
             except Exception as exc:
-                errors.append({"source": "noaa_cdo", "error": safe_error_message(exc, current.noaa_cdo_api_key)})
+                errors.append({"source": "noaa_cdo", "error": safe_error_message(exc, noaa_cdo_api_key)})
         else:
             source_counts["noaa_cdo"] = 0
             errors.append({"source": "noaa_cdo", "error": "enabled source missing NOAA_CDO_API_KEY"})
 
     if current.data_source_fred_enabled:
-        if current.fred_api_key:
+        fred_api_key = _clean_runtime_config(current.fred_api_key)
+        if fred_api_key:
             try:
                 fred_rows = await collect_fred_indicators(
-                    api_key=current.fred_api_key,
+                    api_key=fred_api_key,
                     base_url=current.fred_base_url,
                 )
                 industry_payloads.extend(fred_rows)
                 source_counts["fred"] = len(fred_rows)
             except Exception as exc:
-                errors.append({"source": "fred", "error": safe_error_message(exc, current.fred_api_key)})
+                errors.append({"source": "fred", "error": safe_error_message(exc, fred_api_key)})
         else:
             source_counts["fred"] = 0
             errors.append({"source": "fred", "error": "enabled source missing FRED_API_KEY"})
 
     if current.data_source_eia_enabled:
-        if current.eia_api_key:
+        eia_api_key = _clean_runtime_config(current.eia_api_key)
+        if eia_api_key:
             try:
                 eia_rows = await collect_eia_indicators(
-                    api_key=current.eia_api_key,
+                    api_key=eia_api_key,
                     base_url=current.eia_base_url,
                 )
                 industry_payloads.extend(eia_rows)
                 source_counts["eia"] = len(eia_rows)
             except Exception as exc:
-                errors.append({"source": "eia", "error": safe_error_message(exc, current.eia_api_key)})
+                errors.append({"source": "eia", "error": safe_error_message(exc, eia_api_key)})
         else:
             source_counts["eia"] = 0
             errors.append({"source": "eia", "error": "enabled source missing EIA_API_KEY"})
 
     if current.data_source_tushare_enabled:
-        if current.tushare_token:
+        tushare_token = _clean_runtime_config(current.tushare_token)
+        if tushare_token:
             try:
                 tushare_result = await collect_tushare_market_data(
-                    token=current.tushare_token,
+                    token=tushare_token,
                     base_url=current.tushare_base_url,
                     exchanges=parse_csv_tuple(
                         current.data_source_tushare_exchanges,
@@ -209,10 +214,10 @@ async def run_free_data_ingest(
                     ),
                 )
                 market_payloads.extend(tushare_result.rows)
-                errors.extend(sanitize_source_errors(tushare_result.errors, current.tushare_token))
+                errors.extend(sanitize_source_errors(tushare_result.errors, tushare_token))
                 source_counts["tushare"] = len(tushare_result.rows)
             except Exception as exc:
-                errors.append({"source": "tushare", "error": safe_error_message(exc, current.tushare_token)})
+                errors.append({"source": "tushare", "error": safe_error_message(exc, tushare_token)})
         else:
             source_counts["tushare"] = 0
             errors.append({"source": "tushare", "error": "enabled source missing TUSHARE_TOKEN"})
@@ -230,10 +235,11 @@ async def run_free_data_ingest(
             errors.append({"source": "rubber_spot", "error": safe_error_message(exc)})
 
     if current.data_source_shipping_index_enabled:
-        if current.shipping_index_url:
+        shipping_index_url = _clean_runtime_config(current.shipping_index_url)
+        if shipping_index_url:
             try:
                 shipping_index_rows = await collect_shipping_index_indicators(
-                    url=current.shipping_index_url,
+                    url=shipping_index_url,
                     symbols=parse_shipping_index_symbols(current.shipping_index_symbols),
                     timeout=current.shipping_index_timeout_seconds,
                 )
@@ -412,3 +418,7 @@ def safe_error_message(error: object, *secrets: str | None) -> str:
             message = message.replace(secret, "[redacted]")
     message = re.sub(r"([?&](?:api_key|token)=)[^&\s']+", r"\1[redacted]", message)
     return message
+
+
+def _clean_runtime_config(value: str | None) -> str:
+    return (value or "").strip()
