@@ -6,7 +6,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import Field, field_validator
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -136,6 +136,7 @@ async def create_initial_shadow_applications_endpoint(
 async def list_shadow_runs(
     status_filter: str | None = Query(default=None, max_length=MAX_SHADOW_STATUS_LENGTH),
     before: datetime | None = Query(default=None),
+    before_id: UUID | None = Query(default=None),
     limit: int = Query(default=50, ge=1, le=200),
     session: AsyncSession = Depends(get_db),
 ) -> list[dict[str, Any]]:
@@ -144,6 +145,7 @@ async def list_shadow_runs(
             _shadow_runs_statement(
                 status_filter=status_filter,
                 before=before,
+                before_id=before_id,
                 limit=limit,
             )
         )
@@ -259,6 +261,7 @@ def _shadow_runs_statement(
     status_filter: str | None,
     before: datetime | None,
     limit: int,
+    before_id: UUID | None = None,
 ):
     statement = select(ShadowRun).order_by(
         ShadowRun.started_at.desc(),
@@ -267,7 +270,18 @@ def _shadow_runs_statement(
     if status_filter is not None:
         statement = statement.where(ShadowRun.status == status_filter)
     if before is not None:
-        statement = statement.where(ShadowRun.started_at < before)
+        if before_id is not None:
+            statement = statement.where(
+                or_(
+                    ShadowRun.started_at < before,
+                    and_(
+                        ShadowRun.started_at == before,
+                        ShadowRun.id < before_id,
+                    ),
+                )
+            )
+        else:
+            statement = statement.where(ShadowRun.started_at < before)
     return statement.limit(limit)
 
 

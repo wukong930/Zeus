@@ -359,16 +359,19 @@ def test_news_events_statement_normalizes_contract_symbol_filters() -> None:
 
 
 def test_learning_hypotheses_statement_uses_keyset_cursor_and_stable_order() -> None:
+    hypothesis_id = uuid4()
     sql = _compile_postgres(
         _learning_hypotheses_statement(
             status_filter="shadow_testing",
             before=datetime(2026, 5, 18, 12, tzinfo=timezone.utc),
+            before_id=hypothesis_id,
             limit=20,
         )
     )
 
     assert "learning_hypotheses.status =" in sql
     assert "learning_hypotheses.created_at <" in sql
+    assert "learning_hypotheses.id <" in sql
     assert "ORDER BY learning_hypotheses.created_at DESC, learning_hypotheses.id DESC" in sql
     assert "LIMIT" in sql
 
@@ -398,16 +401,19 @@ def test_shadow_query_strings_are_bounded() -> None:
 
 
 def test_shadow_runs_statement_uses_keyset_cursor_and_stable_order() -> None:
+    run_id = uuid4()
     sql = _compile_postgres(
         _shadow_runs_statement(
             status_filter="active",
             before=datetime(2026, 5, 18, 12, tzinfo=timezone.utc),
+            before_id=run_id,
             limit=20,
         )
     )
 
     assert "shadow_runs.status =" in sql
     assert "shadow_runs.started_at <" in sql
+    assert "shadow_runs.id <" in sql
     assert "ORDER BY shadow_runs.started_at DESC, shadow_runs.id DESC" in sql
     assert "LIMIT" in sql
 
@@ -420,12 +426,14 @@ def test_shadow_signal_count_statement_uses_database_count() -> None:
 
 
 def test_drift_metrics_statement_uses_filters_cursor_and_stable_order() -> None:
+    metric_id = uuid4()
     sql = _compile_postgres(
         _drift_metrics_statement(
             metric_type="feature_distribution",
             category="rubber",
             drift_severity="yellow",
             before=datetime(2026, 5, 18, 12, tzinfo=timezone.utc),
+            before_id=metric_id,
             limit=20,
         )
     )
@@ -434,17 +442,20 @@ def test_drift_metrics_statement_uses_filters_cursor_and_stable_order() -> None:
     assert "drift_metrics.category =" in sql
     assert "drift_metrics.drift_severity =" in sql
     assert "drift_metrics.computed_at <" in sql
+    assert "drift_metrics.id <" in sql
     assert "ORDER BY drift_metrics.computed_at DESC, drift_metrics.id DESC" in sql
     assert "LIMIT" in sql
 
 
 def test_human_decisions_statement_uses_filters_cursor_and_stable_order() -> None:
+    decision_id = uuid4()
     sql = _compile_postgres(
         _human_decisions_statement(
             alert_id=uuid4(),
             signal_track_id=uuid4(),
             decision="approve",
             before=datetime(2026, 5, 18, 12, tzinfo=timezone.utc),
+            before_id=decision_id,
             limit=20,
         )
     )
@@ -453,6 +464,7 @@ def test_human_decisions_statement_uses_filters_cursor_and_stable_order() -> Non
     assert "human_decisions.signal_track_id =" in sql
     assert "human_decisions.decision =" in sql
     assert "human_decisions.created_at <" in sql
+    assert "human_decisions.id <" in sql
     assert "ORDER BY human_decisions.created_at DESC, human_decisions.id DESC" in sql
     assert "LIMIT" in sql
 

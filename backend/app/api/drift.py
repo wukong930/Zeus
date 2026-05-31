@@ -4,7 +4,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -55,6 +55,7 @@ async def list_drift_metrics(
     category: str | None = Query(default=None, min_length=1, max_length=MAX_DRIFT_FILTER_LENGTH),
     drift_severity: str | None = Query(default=None, pattern=DRIFT_SEVERITY_PATTERN),
     before: datetime | None = Query(default=None),
+    before_id: UUID | None = Query(default=None),
     limit: int = Query(default=100, ge=1, le=500),
     session: AsyncSession = Depends(get_db),
 ) -> DriftSnapshotRead:
@@ -63,6 +64,7 @@ async def list_drift_metrics(
         category=category,
         drift_severity=drift_severity,
         before=before,
+        before_id=before_id,
         limit=limit,
     )
     rows = list((await session.scalars(statement)).all())
@@ -76,6 +78,7 @@ def _drift_metrics_statement(
     drift_severity: str | None,
     before: datetime | None,
     limit: int,
+    before_id: UUID | None = None,
 ):
     statement = select(DriftMetric).order_by(
         DriftMetric.computed_at.desc(),
@@ -88,7 +91,18 @@ def _drift_metrics_statement(
     if drift_severity is not None:
         statement = statement.where(DriftMetric.drift_severity == drift_severity)
     if before is not None:
-        statement = statement.where(DriftMetric.computed_at < before)
+        if before_id is not None:
+            statement = statement.where(
+                or_(
+                    DriftMetric.computed_at < before,
+                    and_(
+                        DriftMetric.computed_at == before,
+                        DriftMetric.id < before_id,
+                    ),
+                )
+            )
+        else:
+            statement = statement.where(DriftMetric.computed_at < before)
     return statement.limit(limit)
 
 

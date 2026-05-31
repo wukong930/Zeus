@@ -3,7 +3,7 @@ from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -28,12 +28,14 @@ MAX_VECTOR_CANDIDATE_NAME_LENGTH = 120
 async def list_learning_hypotheses(
     status_filter: str | None = Query(default=None, max_length=MAX_LEARNING_STATUS_LENGTH),
     before: datetime | None = Query(default=None),
+    before_id: UUID | None = Query(default=None),
     limit: int = Query(default=100, ge=1, le=500),
     session: AsyncSession = Depends(get_db),
 ) -> list[dict[str, Any]]:
     statement = _learning_hypotheses_statement(
         status_filter=status_filter,
         before=before,
+        before_id=before_id,
         limit=limit,
     )
     rows = (await session.scalars(statement)).all()
@@ -268,6 +270,7 @@ def _learning_hypotheses_statement(
     status_filter: str | None,
     before: datetime | None,
     limit: int,
+    before_id: UUID | None = None,
 ):
     statement = select(LearningHypothesis).order_by(
         LearningHypothesis.created_at.desc(),
@@ -276,7 +279,18 @@ def _learning_hypotheses_statement(
     if status_filter is not None:
         statement = statement.where(LearningHypothesis.status == status_filter)
     if before is not None:
-        statement = statement.where(LearningHypothesis.created_at < before)
+        if before_id is not None:
+            statement = statement.where(
+                or_(
+                    LearningHypothesis.created_at < before,
+                    and_(
+                        LearningHypothesis.created_at == before,
+                        LearningHypothesis.id < before_id,
+                    ),
+                )
+            )
+        else:
+            statement = statement.where(LearningHypothesis.created_at < before)
     return statement.limit(limit)
 
 
