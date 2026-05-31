@@ -3,7 +3,7 @@ from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import or_, select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -26,12 +26,14 @@ router = APIRouter(prefix="/api/strategies", tags=["strategies"])
 async def list_strategies(
     status_filter: str | None = Query(default=None, max_length=20),
     before: datetime | None = Query(default=None),
+    before_id: UUID | None = Query(default=None),
     limit: int = Query(default=100, ge=1, le=500),
     session: AsyncSession = Depends(get_db),
 ) -> list[Strategy]:
     statement = _strategies_statement(
         status_filter=status_filter,
         before=before,
+        before_id=before_id,
         limit=limit,
     )
     return list((await session.scalars(statement)).all())
@@ -42,6 +44,7 @@ def _strategies_statement(
     status_filter: str | None,
     before: datetime | None,
     limit: int,
+    before_id: UUID | None = None,
 ):
     statement = select(Strategy).order_by(
         Strategy.created_at.desc(),
@@ -50,7 +53,18 @@ def _strategies_statement(
     if status_filter is not None:
         statement = statement.where(Strategy.status == status_filter)
     if before is not None:
-        statement = statement.where(Strategy.created_at < before)
+        if before_id is not None:
+            statement = statement.where(
+                or_(
+                    Strategy.created_at < before,
+                    and_(
+                        Strategy.created_at == before,
+                        Strategy.id < before_id,
+                    ),
+                )
+            )
+        else:
+            statement = statement.where(Strategy.created_at < before)
     return statement.limit(limit)
 
 

@@ -282,16 +282,19 @@ def test_recommendations_statement_uses_keyset_cursor_and_stable_order() -> None
 
 
 def test_positions_statement_uses_keyset_cursor_and_stable_order() -> None:
+    position_id = uuid4()
     sql = _compile_postgres(
         _positions_statement(
             status_filter="open",
             before=datetime(2026, 5, 18, 12, tzinfo=timezone.utc),
+            before_id=position_id,
             limit=20,
         )
     )
 
     assert "positions.status =" in sql
     assert "positions.opened_at <" in sql
+    assert "positions.id <" in sql
     assert "ORDER BY positions.opened_at DESC, positions.id DESC" in sql
     assert "LIMIT" in sql
 
@@ -455,16 +458,19 @@ def test_human_decisions_statement_uses_filters_cursor_and_stable_order() -> Non
 
 
 def test_strategies_statement_uses_keyset_cursor_and_stable_order() -> None:
+    strategy_id = uuid4()
     sql = _compile_postgres(
         _strategies_statement(
             status_filter="active",
             before=datetime(2026, 5, 18, 12, tzinfo=timezone.utc),
+            before_id=strategy_id,
             limit=20,
         )
     )
 
     assert "strategies.status =" in sql
     assert "strategies.created_at <" in sql
+    assert "strategies.id <" in sql
     assert "ORDER BY strategies.created_at DESC, strategies.id DESC" in sql
     assert "LIMIT" in sql
 

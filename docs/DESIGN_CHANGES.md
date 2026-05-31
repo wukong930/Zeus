@@ -859,3 +859,4 @@ threshold_modifier、propagation_activator、risk_recalc、数据腐烂防护
 - LLM Registry 配置读取归一化：数据库 provider 和环境 model 读取复用同一身份清洗口径，避免配置空格导致 provider 失效或模型名带空格透传到请求。
 - Settings LLM Providers 视图归一化：设置页环境 provider 读取复用模型名和 base_url 清洗口径，避免 UI 展示与实际 Registry 路由口径不一致。
 - Free Data Ingest 配置归一化：采集入口对 key / token / URL 去空白后再判断和传递，避免 Settings 已标记 missing 的空白配置在运行时仍触发外部请求。
+- 治理 / 反馈 / 持仓 / 策略列表分页稳定化：补齐 `before_id` 游标条件，同时间戳数据会按 `id desc` 继续翻页，避免 keyset 分页边界丢行。

@@ -200,6 +200,7 @@ def test_feedback_statement_filters_recommendation_and_uses_stable_cursor() -> N
             alert_id=uuid4(),
             recommendation_id=uuid4(),
             before=datetime(2026, 5, 18, 12, tzinfo=timezone.utc),
+            before_id=uuid4(),
             limit=20,
         ).compile(dialect=postgresql.dialect())
     )
@@ -207,5 +208,6 @@ def test_feedback_statement_filters_recommendation_and_uses_stable_cursor() -> N
     assert "user_feedback.alert_id =" in sql
     assert "user_feedback.recommendation_id =" in sql
     assert "user_feedback.recorded_at <" in sql
+    assert "user_feedback.id <" in sql
     assert "ORDER BY user_feedback.recorded_at DESC, user_feedback.id DESC" in sql
     assert "LIMIT" in sql

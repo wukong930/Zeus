@@ -5,7 +5,7 @@ from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import Float, cast, select
+from sqlalchemy import Float, and_, cast, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -54,6 +54,7 @@ async def list_change_reviews(
     min_attention_score: float | None = Query(default=None, ge=0, le=100),
     requires_human_attention: bool | None = None,
     before: datetime | None = Query(default=None),
+    before_id: UUID | None = Query(default=None),
     limit: int = Query(default=100, ge=1, le=500),
     session: AsyncSession = Depends(get_db),
 ) -> list[ChangeReviewQueue]:
@@ -65,6 +66,7 @@ async def list_change_reviews(
         min_attention_score=min_attention_score,
         requires_human_attention=requires_human_attention,
         before=before,
+        before_id=before_id,
         limit=limit,
     )
     return list((await session.scalars(statement)).all())
@@ -80,6 +82,7 @@ def change_reviews_statement(
     requires_human_attention: bool | None,
     limit: int,
     before: datetime | None = None,
+    before_id: UUID | None = None,
 ):
     statement = select(ChangeReviewQueue).order_by(
         ChangeReviewQueue.created_at.desc(),
@@ -110,7 +113,18 @@ def change_reviews_statement(
             .is_(requires_human_attention)
         )
     if before is not None:
-        statement = statement.where(ChangeReviewQueue.created_at < before)
+        if before_id is not None:
+            statement = statement.where(
+                or_(
+                    ChangeReviewQueue.created_at < before,
+                    and_(
+                        ChangeReviewQueue.created_at == before,
+                        ChangeReviewQueue.id < before_id,
+                    ),
+                )
+            )
+        else:
+            statement = statement.where(ChangeReviewQueue.created_at < before)
     return statement.limit(limit)
 
 

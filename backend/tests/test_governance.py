@@ -203,6 +203,7 @@ def test_change_reviews_statement_pushes_triage_filters_and_cursor_to_database()
             min_attention_score=45,
             requires_human_attention=False,
             before=datetime(2026, 5, 18, 12, tzinfo=timezone.utc),
+            before_id=uuid4(),
             limit=50,
         ).compile(dialect=postgresql.dialect())
     )
@@ -214,6 +215,7 @@ def test_change_reviews_statement_pushes_triage_filters_and_cursor_to_database()
     assert "CAST" in sql
     assert "BOOLEAN" in sql
     assert "change_review_queue.created_at <" in sql
+    assert "change_review_queue.id <" in sql
     assert "ORDER BY change_review_queue.created_at DESC, change_review_queue.id DESC" in sql
     assert "LIMIT" in sql
 
