@@ -861,3 +861,4 @@ threshold_modifier、propagation_activator、risk_recalc、数据腐烂防护
 - Free Data Ingest 配置归一化：采集入口对 key / token / URL 去空白后再判断和传递，避免 Settings 已标记 missing 的空白配置在运行时仍触发外部请求。
 - 治理 / 反馈 / 持仓 / 策略列表分页稳定化：补齐 `before_id` 游标条件，同时间戳数据会按 `id desc` 继续翻页，避免 keyset 分页边界丢行。
 - Drift / Arbitration / Learning / Shadow 列表分页稳定化：补齐 `before_id` 游标条件，使运行态指标、人工决策、学习假设和 Shadow Run 的分页条件与 `时间 desc, id desc` 排序一致。
+- Notebook 混合流分页稳定化：新增 `before_id + before_kind` 游标，并把报告、学习假设、研究假设按 kind rank + id 明确排序，避免同时间跨表条目在翻页边界被跳过。

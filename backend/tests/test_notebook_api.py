@@ -86,6 +86,8 @@ async def test_notebook_snapshot_accepts_cursor() -> None:
         session,  # type: ignore[arg-type]
         limit=10,
         before=datetime(2026, 5, 6, tzinfo=timezone.utc),
+        before_id=learning.id,
+        before_kind="learning_hypothesis",
     )
 
     assert len(snapshot.notes) == 3
@@ -96,9 +98,32 @@ def test_notebook_statements_use_cursor_and_stable_order() -> None:
     before = datetime(2026, 5, 6, tzinfo=timezone.utc)
     report_id = uuid4()
     alert_id = uuid4()
-    report_sql = _compile_postgres(_research_reports_statement(before=before, limit=20))
-    learning_sql = _compile_postgres(_learning_hypotheses_statement(before=before, limit=20))
-    research_sql = _compile_postgres(_research_hypotheses_statement(before=before, limit=20))
+    learning_id = uuid4()
+    research_id = uuid4()
+    report_sql = _compile_postgres(
+        _research_reports_statement(
+            before=before,
+            before_id=report_id,
+            before_kind="report",
+            limit=20,
+        )
+    )
+    learning_sql = _compile_postgres(
+        _learning_hypotheses_statement(
+            before=before,
+            before_id=learning_id,
+            before_kind="learning_hypothesis",
+            limit=20,
+        )
+    )
+    research_sql = _compile_postgres(
+        _research_hypotheses_statement(
+            before=before,
+            before_id=research_id,
+            before_kind="research_hypothesis",
+            limit=20,
+        )
+    )
     report_alert_sql = _compile_postgres(
         _report_alerts_statement(
             report_ids={report_id},
@@ -108,10 +133,13 @@ def test_notebook_statements_use_cursor_and_stable_order() -> None:
     )
 
     assert "research_reports.published_at <" in report_sql
+    assert "research_reports.id <" in report_sql
     assert "ORDER BY research_reports.published_at DESC, research_reports.id DESC" in report_sql
     assert "learning_hypotheses.updated_at <" in learning_sql
+    assert "learning_hypotheses.id <" in learning_sql
     assert "ORDER BY learning_hypotheses.updated_at DESC, learning_hypotheses.id DESC" in learning_sql
     assert "research_hypotheses.created_at <" in research_sql
+    assert "research_hypotheses.id <" in research_sql
     assert "ORDER BY research_hypotheses.created_at DESC, research_hypotheses.id DESC" in research_sql
     assert "alerts.id IN" in report_alert_sql
     assert "alerts.related_research_id IN" in report_alert_sql
@@ -155,13 +183,23 @@ def test_string_list_trims_truncates_and_caps_items() -> None:
 
 def test_notebook_route_is_registered(monkeypatch) -> None:
     captured: dict[str, object] = {}
+    before_id = uuid4()
 
     async def fake_db():
         yield object()
 
-    async def fake_snapshot(_session, *, limit: int = 100, before=None):
+    async def fake_snapshot(
+        _session,
+        *,
+        limit: int = 100,
+        before=None,
+        before_id=None,
+        before_kind=None,
+    ):
         captured["limit"] = limit
         captured["before"] = before
+        captured["before_id"] = before_id
+        captured["before_kind"] = before_kind
         return NotebookSnapshot(
             generated_at=datetime(2026, 5, 7, tzinfo=timezone.utc),
             source="database",
@@ -175,12 +213,18 @@ def test_notebook_route_is_registered(monkeypatch) -> None:
     app.dependency_overrides[get_db] = fake_db
     client = TestClient(app)
 
-    response = client.get("/api/notebook?limit=7&before=2026-05-06T00:00:00Z")
+    response = client.get(
+        "/api/notebook"
+        f"?limit=7&before=2026-05-06T00:00:00Z&before_id={before_id}"
+        "&before_kind=learning_hypothesis"
+    )
 
     assert response.status_code == 200
     assert captured == {
         "limit": 7,
         "before": datetime(2026, 5, 6, tzinfo=timezone.utc),
+        "before_id": before_id,
+        "before_kind": "learning_hypothesis",
     }
     assert response.json()["source"] == "database"
     assert response.json()["notes"] == []
@@ -191,6 +235,10 @@ def test_notebook_route_rejects_invalid_cursor() -> None:
     client = TestClient(app)
 
     response = client.get("/api/notebook?before=not-a-date")
+
+    assert response.status_code == 422
+
+    response = client.get(f"/api/notebook?before_id={uuid4()}&before_kind=trade")
 
     assert response.status_code == 422
 
