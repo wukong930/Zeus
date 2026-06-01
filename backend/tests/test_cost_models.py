@@ -267,15 +267,20 @@ async def test_cost_histories_for_symbols_uses_single_batch_query() -> None:
 
 
 def test_cost_history_ranked_ids_uses_date_cursor_and_stable_order() -> None:
+    cursor_id = uuid4()
     sql = _compile_postgres(
         _cost_history_ranked_ids(
             ("RB", "HC"),
             before=date(2026, 5, 3),
+            before_created_at=datetime(2026, 5, 3, 12, tzinfo=timezone.utc),
+            before_id=cursor_id,
         )
     )
 
     assert "cost_snapshots.symbol IN" in sql
     assert "cost_snapshots.snapshot_date <" in sql
+    assert "cost_snapshots.created_at <" in sql
+    assert "cost_snapshots.id <" in sql
     assert (
         "ORDER BY cost_snapshots.snapshot_date DESC, "
         "cost_snapshots.created_at DESC, cost_snapshots.id DESC"
@@ -359,15 +364,27 @@ def test_build_cost_signal_context_serializes_snapshot_history() -> None:
 def test_cost_histories_api_batches_requested_symbols_and_cursor(monkeypatch) -> None:
     captured: dict[str, object] = {}
     session = object()
+    cursor_id = uuid4()
+    cursor_created_at = datetime(2026, 5, 3, 12, tzinfo=timezone.utc)
 
     async def fake_db():
         yield session
 
-    async def fake_cost_histories_for_symbols(db_session, *, symbols, limit_per_symbol, before=None):
+    async def fake_cost_histories_for_symbols(
+        db_session,
+        *,
+        symbols,
+        limit_per_symbol,
+        before=None,
+        before_created_at=None,
+        before_id=None,
+    ):
         captured["session"] = db_session
         captured["symbols"] = symbols
         captured["limit"] = limit_per_symbol
         captured["before"] = before
+        captured["before_created_at"] = before_created_at
+        captured["before_id"] = before_id
         return {
             "RB": [cost_snapshot_row("RB", date(2026, 5, 4))],
             "HC": [cost_snapshot_row("HC", date(2026, 5, 4))],
@@ -381,7 +398,16 @@ def test_cost_histories_api_batches_requested_symbols_and_cursor(monkeypatch) ->
     app.dependency_overrides[get_db] = fake_db
     client = TestClient(app)
 
-    response = client.get("/api/cost-models/histories?symbols=rb,hc,rb&limit=3&before=2026-05-03")
+    response = client.get(
+        "/api/cost-models/histories",
+        params={
+            "symbols": "rb,hc,rb",
+            "limit": "3",
+            "before": "2026-05-03",
+            "before_created_at": cursor_created_at.isoformat(),
+            "before_id": str(cursor_id),
+        },
+    )
 
     assert response.status_code == 200
     assert captured == {
@@ -389,6 +415,8 @@ def test_cost_histories_api_batches_requested_symbols_and_cursor(monkeypatch) ->
         "symbols": ("RB", "HC"),
         "limit": 3,
         "before": date(2026, 5, 3),
+        "before_created_at": cursor_created_at,
+        "before_id": cursor_id,
     }
     assert set(response.json()) == {"RB", "HC"}
 
@@ -401,6 +429,13 @@ def test_cost_histories_api_rejects_invalid_cursor() -> None:
 
     assert response.status_code == 422
 
+    response = client.get(
+        f"/api/cost-models/histories?symbols=RB&before=2026-05-03"
+        f"&before_created_at=not-a-time&before_id={uuid4()}"
+    )
+
+    assert response.status_code == 422
+
 
 def test_cost_model_history_api_rejects_invalid_cursor() -> None:
     app = create_app()
@@ -410,18 +445,30 @@ def test_cost_model_history_api_rejects_invalid_cursor() -> None:
 
     assert response.status_code == 422
 
+    response = client.get(
+        f"/api/cost-models/RB/history?before=2026-05-03"
+        f"&before_created_at=not-a-time&before_id={uuid4()}"
+    )
+
+    assert response.status_code == 422
+
 
 def test_cost_model_history_statement_uses_date_cursor_and_stable_order() -> None:
+    cursor_id = uuid4()
     sql = _compile_postgres(
         _cost_model_history_statement(
             symbol="RB",
             before=date(2026, 5, 3),
+            before_created_at=datetime(2026, 5, 3, 12, tzinfo=timezone.utc),
+            before_id=cursor_id,
             limit=20,
         )
     )
 
     assert "cost_snapshots.symbol =" in sql
     assert "cost_snapshots.snapshot_date <" in sql
+    assert "cost_snapshots.created_at <" in sql
+    assert "cost_snapshots.id <" in sql
     assert (
         "ORDER BY cost_snapshots.snapshot_date DESC, "
         "cost_snapshots.created_at DESC, cost_snapshots.id DESC"

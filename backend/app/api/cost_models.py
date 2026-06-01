@@ -1,4 +1,5 @@
-from datetime import date
+from datetime import date, datetime
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
 from sqlalchemy import select
@@ -19,6 +20,7 @@ from app.services.cost_models.cost_chain import calculate_cost_chain, chain_orde
 from app.services.cost_models.quality import run_ferrous_quality_report, run_rubber_quality_report
 from app.services.cost_models.snapshots import (
     calculate_cost_snapshot,
+    cost_snapshot_cursor_clause,
     cost_histories_for_symbols,
     current_prices_for_symbols,
     snapshot_ferrous_costs,
@@ -46,6 +48,8 @@ async def get_rubber_cost_quality_report(session: AsyncSession = Depends(get_db)
 async def get_cost_model_histories(
     symbols: str = Query(..., min_length=1, max_length=MAX_COST_HISTORY_SYMBOL_QUERY_LENGTH),
     before: date | None = Query(default=None),
+    before_created_at: datetime | None = Query(default=None),
+    before_id: UUID | None = Query(default=None),
     limit: int = Query(default=30, ge=1, le=1000),
     session: AsyncSession = Depends(get_db),
 ) -> dict[str, list[CostSnapshot]]:
@@ -53,6 +57,8 @@ async def get_cost_model_histories(
         session,
         symbols=_parse_cost_symbols(symbols),
         before=before,
+        before_created_at=before_created_at,
+        before_id=before_id,
         limit_per_symbol=limit,
     )
 
@@ -73,6 +79,8 @@ async def get_cost_model(
 async def get_cost_model_history(
     symbol: str = Path(..., min_length=1, max_length=MAX_COST_SIMULATION_SYMBOL_LENGTH),
     before: date | None = Query(default=None),
+    before_created_at: datetime | None = Query(default=None),
+    before_id: UUID | None = Query(default=None),
     limit: int = Query(default=120, ge=1, le=1000),
     session: AsyncSession = Depends(get_db),
 ) -> list[CostSnapshot]:
@@ -80,7 +88,13 @@ async def get_cost_model_history(
         normalized = normalize_commodity_symbol(symbol)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=f"Unsupported cost model symbol: {symbol}") from exc
-    statement = _cost_model_history_statement(symbol=normalized, before=before, limit=limit)
+    statement = _cost_model_history_statement(
+        symbol=normalized,
+        before=before,
+        before_created_at=before_created_at,
+        before_id=before_id,
+        limit=limit,
+    )
     return list((await session.scalars(statement)).all())
 
 
@@ -89,10 +103,17 @@ def _cost_model_history_statement(
     symbol: str,
     before: date | None,
     limit: int,
+    before_created_at: datetime | None = None,
+    before_id: UUID | None = None,
 ):
     statement = select(CostSnapshot).where(CostSnapshot.symbol == symbol)
-    if before is not None:
-        statement = statement.where(CostSnapshot.snapshot_date < before)
+    cursor_clause = cost_snapshot_cursor_clause(
+        before=before,
+        before_created_at=before_created_at,
+        before_id=before_id,
+    )
+    if cursor_clause is not None:
+        statement = statement.where(cursor_clause)
     return statement.order_by(
         CostSnapshot.snapshot_date.desc(),
         CostSnapshot.created_at.desc(),

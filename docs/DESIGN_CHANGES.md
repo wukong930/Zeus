@@ -862,3 +862,4 @@ threshold_modifier、propagation_activator、risk_recalc、数据腐烂防护
 - 治理 / 反馈 / 持仓 / 策略列表分页稳定化：补齐 `before_id` 游标条件，同时间戳数据会按 `id desc` 继续翻页，避免 keyset 分页边界丢行。
 - Drift / Arbitration / Learning / Shadow 列表分页稳定化：补齐 `before_id` 游标条件，使运行态指标、人工决策、学习假设和 Shadow Run 的分页条件与 `时间 desc, id desc` 排序一致。
 - Notebook 混合流分页稳定化：新增 `before_id + before_kind` 游标，并把报告、学习假设、研究假设按 kind rank + id 明确排序，避免同时间跨表条目在翻页边界被跳过。
+- Cost Models 历史分页稳定化：单品种和批量 histories 新增 `before_created_at + before_id` 复合游标，保持日期游标兼容，同时支持同一 `snapshot_date` 下继续按创建时间和 id 翻页。

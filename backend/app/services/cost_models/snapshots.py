@@ -1,7 +1,8 @@
 from datetime import date, datetime, timezone
 from typing import Any
+from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.commodity_config import CommodityConfig
@@ -298,6 +299,8 @@ async def cost_histories_for_symbols(
     symbols: tuple[str, ...],
     limit_per_symbol: int,
     before: date | None = None,
+    before_created_at: datetime | None = None,
+    before_id: UUID | None = None,
 ) -> dict[str, list[CostSnapshot]]:
     if not symbols:
         return {}
@@ -306,7 +309,12 @@ async def cost_histories_for_symbols(
     if not normalized_symbols:
         return {}
 
-    ranked_ids = _cost_history_ranked_ids(normalized_symbols, before=before)
+    ranked_ids = _cost_history_ranked_ids(
+        normalized_symbols,
+        before=before,
+        before_created_at=before_created_at,
+        before_id=before_id,
+    )
     rows = list(
         (
             await session.scalars(
@@ -328,7 +336,13 @@ async def cost_histories_for_symbols(
     return rows_by_symbol
 
 
-def _cost_history_ranked_ids(symbols: tuple[str, ...], *, before: date | None = None):
+def _cost_history_ranked_ids(
+    symbols: tuple[str, ...],
+    *,
+    before: date | None = None,
+    before_created_at: datetime | None = None,
+    before_id: UUID | None = None,
+):
     statement = (
         select(
             CostSnapshot.id.label("id"),
@@ -345,9 +359,46 @@ def _cost_history_ranked_ids(symbols: tuple[str, ...], *, before: date | None = 
         )
         .where(CostSnapshot.symbol.in_(symbols))
     )
-    if before is not None:
-        statement = statement.where(CostSnapshot.snapshot_date < before)
+    cursor_clause = cost_snapshot_cursor_clause(
+        before=before,
+        before_created_at=before_created_at,
+        before_id=before_id,
+    )
+    if cursor_clause is not None:
+        statement = statement.where(cursor_clause)
     return statement.subquery()
+
+
+def cost_snapshot_cursor_clause(
+    *,
+    before: date | None,
+    before_created_at: datetime | None = None,
+    before_id: UUID | None = None,
+):
+    if before is None:
+        return None
+    if before_created_at is None:
+        return CostSnapshot.snapshot_date < before
+    if before_id is None:
+        return or_(
+            CostSnapshot.snapshot_date < before,
+            and_(
+                CostSnapshot.snapshot_date == before,
+                CostSnapshot.created_at < before_created_at,
+            ),
+        )
+    return or_(
+        CostSnapshot.snapshot_date < before,
+        and_(
+            CostSnapshot.snapshot_date == before,
+            CostSnapshot.created_at < before_created_at,
+        ),
+        and_(
+            CostSnapshot.snapshot_date == before,
+            CostSnapshot.created_at == before_created_at,
+            CostSnapshot.id < before_id,
+        ),
+    )
 
 
 async def latest_cost_snapshot(session: AsyncSession, symbol: str) -> CostSnapshot | None:
