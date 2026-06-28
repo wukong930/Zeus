@@ -48,7 +48,7 @@ def test_rolling_zscores_are_point_in_time():
 
 def test_detect_spread_trades_shorts_a_rich_spread():
     dates = [_BASE + timedelta(days=d) for d in range(7)]
-    spread = [0.0, 0.0, 1.0, 2.0, 3.0, 4.0, 5.0]
+    spread = [0.0, 0.0, 0.01, 0.02, 0.05, 0.04, 0.03]
     zscores = [None, None, 1.0, 2.5, 1.0, 0.0, 0.0]  # crosses above +2 at index 3
 
     trades = detect_spread_trades("RB-HC", dates, spread, zscores, entry_z=2.0)
@@ -57,7 +57,19 @@ def test_detect_spread_trades_shorts_a_rich_spread():
     trade = trades[0]
     assert trade.bet_sign == -1  # short the rich spread
     assert trade.entry_z == pytest.approx(2.5)
-    assert trade.forward_spread_return[1] == pytest.approx(1.0)  # spread[4] - spread[3]
+    assert trade.forward_spread_return[1] == pytest.approx(0.03)  # spread[4] - spread[3]
+
+
+def test_detect_spread_trades_drop_roll_artifact_forward_returns():
+    dates = [_BASE + timedelta(days=d) for d in range(4)]
+    spread = [0.0, 0.0, 0.01, 5.0]  # index 3 is a ~5.0 contract-roll jump
+    zscores = [None, 1.0, 2.5, 0.0]  # crosses above +2 at index 2
+
+    trades = detect_spread_trades("RB-HC", dates, spread, zscores, entry_z=2.0)
+
+    assert len(trades) == 1
+    # forward[1] = spread[3] - spread[2] ~= 5.0 -> dropped as a roll artifact
+    assert trades[0].forward_spread_return[1] is None
 
 
 def test_detect_spread_trades_longs_a_cheap_spread():

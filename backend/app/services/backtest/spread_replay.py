@@ -56,6 +56,13 @@ Z_WINDOW = 60
 ENTRY_Z = 2.0
 HORIZONS: tuple[int, ...] = (1, 5, 20)
 TRADING_DAYS_PER_YEAR = 252
+# Both legs use the non-back-adjusted main-continuous series, which jump at
+# contract rolls (the legs roll on different schedules), so the log-ratio spread
+# spikes at rolls — observed up to +341% over 5 days. Drop spread forward returns
+# beyond this magnitude as artifacts (a cointegrated commodity spread never moves
+# this much in 1–20 days). Residual smaller roll gaps still bias the result; a
+# definitive verdict needs roll-adjusted series for both legs.
+MAX_ABS_SPREAD_RETURN = 0.30
 
 
 @dataclass(frozen=True, slots=True)
@@ -160,6 +167,17 @@ def rolling_zscores(spread: list[float], window: int = Z_WINDOW) -> list[float |
     return zscores
 
 
+def _forward_spread_change(
+    spread: list[float], index: int, horizon: int, max_abs: float
+) -> float | None:
+    ahead = index + horizon
+    if ahead >= len(spread):
+        return None
+    change = spread[ahead] - spread[index]
+    # Drop contract-roll artifacts rather than let them dominate the mean.
+    return change if abs(change) <= max_abs else None
+
+
 def detect_spread_trades(
     pair: str,
     dates: list[datetime],
@@ -168,6 +186,7 @@ def detect_spread_trades(
     *,
     entry_z: float = ENTRY_Z,
     horizons: tuple[int, ...] = HORIZONS,
+    max_abs_return: float = MAX_ABS_SPREAD_RETURN,
 ) -> list[SpreadTrade]:
     trades: list[SpreadTrade] = []
     for index in range(1, len(spread)):
@@ -181,7 +200,7 @@ def detect_spread_trades(
             continue
         bet_sign = -1 if crossed_high else 1  # short the spread when it is rich
         forward = {
-            horizon: (spread[index + horizon] - spread[index] if index + horizon < len(spread) else None)
+            horizon: _forward_spread_change(spread, index, horizon, max_abs_return)
             for horizon in horizons
         }
         trades.append(
