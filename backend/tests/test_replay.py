@@ -30,6 +30,15 @@ def test_forward_returns_slice_and_bound():
     assert forward[20] is None  # not enough forward bars
 
 
+def test_forward_returns_drop_contract_roll_artifacts():
+    # a ~30x roll jump is a data artifact, not a tradable return -> dropped
+    rolled = [100.0, 3000.0] + [3000.0] * 25
+    assert _forward_returns(rolled, 0)[1] is None
+    # a plausible move is kept
+    normal = [100.0, 105.0] + [105.0] * 25
+    assert _forward_returns(normal, 0)[1] == pytest.approx(0.05)
+
+
 def test_bars_from_rows_sorts_ascending():
     class _Row:
         def __init__(self, ts, close):

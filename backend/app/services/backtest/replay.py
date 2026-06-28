@@ -40,6 +40,13 @@ MIN_CONTEXT_BARS = 21
 HORIZONS: tuple[Horizon, ...] = (1, 5, 20)
 MAX_SERIES_BARS = 20000
 MAIN_CONTRACT = "main"
+# The non-back-adjusted main-continuous series jumps at contract rolls, so a
+# forward window spanning a roll produces a spurious return (observed up to
+# +2900% / -97%). Treat returns beyond this magnitude as data artifacts and drop
+# them (set to None) — an interim guard until the series is properly
+# roll-adjusted. For 1–20 day horizons on liquid futures a real move never
+# approaches this bound.
+MAX_ABS_FORWARD_RETURN = 0.5
 
 SECTOR_BY_SYMBOL: dict[str, str] = {
     "RB": "ferrous",
@@ -94,14 +101,19 @@ def directional_outcome_label(direction: str | None, forward_return: float | Non
     return "hit" if forward_return * sign > 0 else "miss"
 
 
-def _forward_returns(closes: list[float], index: int) -> dict[Horizon, float | None]:
+def _forward_returns(
+    closes: list[float], index: int, *, max_abs: float = MAX_ABS_FORWARD_RETURN
+) -> dict[Horizon, float | None]:
     base = closes[index]
     result: dict[Horizon, float | None] = {}
     for horizon in HORIZONS:
         ahead = index + horizon
-        result[horizon] = (
-            (closes[ahead] - base) / base if ahead < len(closes) and base != 0 else None
-        )
+        if ahead >= len(closes) or base == 0:
+            result[horizon] = None
+            continue
+        value = (closes[ahead] - base) / base
+        # Drop contract-roll / bad-print artifacts rather than let them dominate.
+        result[horizon] = value if abs(value) <= max_abs else None
     return result
 
 
@@ -113,6 +125,7 @@ async def replay_symbol_signals(
     signal_types: frozenset[str] = REPLAYABLE_SIGNAL_TYPES,
     lookback: int = DEFAULT_LOOKBACK,
     category: str | None = None,
+    max_abs_forward_return: float = MAX_ABS_FORWARD_RETURN,
 ) -> list[BacktestSignal]:
     detector = detector or SignalDetector()
     sector = category or SECTOR_BY_SYMBOL.get(symbol, "unknown")
@@ -131,7 +144,7 @@ async def replay_symbol_signals(
         results = await detector.detect(context, signal_types=requested)
         if not results:
             continue
-        forward = _forward_returns(closes, index)
+        forward = _forward_returns(closes, index, max_abs=max_abs_forward_return)
         for result in results:
             horizon = NATURAL_HORIZON.get(result.signal_type, 5)
             signals.append(
