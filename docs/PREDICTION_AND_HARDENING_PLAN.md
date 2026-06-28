@@ -1,8 +1,8 @@
 # Zeus 加固与预测能力实施计划
 
 > 版本: 1.0 | 日期: 2026-06-28 | 负责人: 平台团队
-> 关联文档: `docs/EXECUTION_PLAN.md`（主计划）、`docs/ARCHITECTURE.md`、本次深度评估结论
-> 状态: 执行中（Track 2 / A 期第一刀已开工）
+> 关联文档: `docs/EXECUTION_PLAN.md`（主计划）、`docs/ARCHITECTURE.md`、`docs/PREDICTION_RESEARCH_FINDINGS.md`（研究结论）
+> 状态: Track 1 加固完成（全部 P0/P1 收口，P0-2 密钥轮换为用户配置项）；Track 2 研究阶段收口——**横截面反转因子已验证并定稿为受治理生产信号，carry 因子证明有前景但卡数据未上生产**。详见研究结论文档。
 
 ---
 
