@@ -17,6 +17,7 @@ from app.services.prediction.cross_sectional import (
     MODEL_VERSION,
     generate_cross_sectional_forecast,
 )
+from app.services.prediction.divergence import evaluate_and_demote
 from app.services.prediction.governance import is_signal_promoted
 from app.services.prediction.shadow import score_due_forecasts
 from app.services.cost_models.snapshots import (
@@ -85,6 +86,7 @@ DEFAULT_JOB_DEFINITIONS: tuple[JobDefinition, ...] = (
     JobDefinition("translation-backfill", "新闻预警翻译回填", "35 */4 * * *"),
     JobDefinition("forecast-emit", "横截面预测产出", "55 16 * * 1-5"),
     JobDefinition("forecast-score", "预测影子评分", "0 17 * * 1-5"),
+    JobDefinition("forecast-divergence", "预测背离降级", "5 17 * * 1-5"),
 )
 
 
@@ -538,6 +540,22 @@ async def forecast_score_job() -> dict[str, Any]:
     }
 
 
+async def forecast_divergence_job() -> dict[str, Any]:
+    signal = f"xs_reversal_mom{DEFAULT_LOOKBACK}"
+    async with AsyncSessionLocal() as session:
+        result = await evaluate_and_demote(session, signal=signal, model_version=MODEL_VERSION)
+        await session.commit()
+    return {
+        "status": "completed",
+        "live_periods": result.performance.periods,
+        "live_sharpe": round(result.performance.sharpe, 4),
+        "breached": result.breached,
+        "demoted": result.demoted,
+        "reason": result.reason,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+
 DEFAULT_JOB_HANDLERS: dict[str, JobHandler] = {
     "ingest": ingest_job,
     "track-outcomes": track_outcomes_job,
@@ -559,4 +577,5 @@ DEFAULT_JOB_HANDLERS: dict[str, JobHandler] = {
     "translation-backfill": translation_backfill_job,
     "forecast-emit": forecast_emit_job,
     "forecast-score": forecast_score_job,
+    "forecast-divergence": forecast_divergence_job,
 }
