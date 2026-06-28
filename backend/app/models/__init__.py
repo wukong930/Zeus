@@ -14,6 +14,7 @@ from app.models.event_intelligence import (
     EventIntelligenceAuditLog,
     EventIntelligenceItem,
 )
+from app.models.forecast import ForecastRecord
 from app.models.graph import CommodityNode, RelationshipEdge
 from app.models.industry_data import IndustryData
 from app.models.live_divergence_metrics import LiveDivergenceMetric
@@ -55,6 +56,7 @@ __all__ = [
     "EventImpactLink",
     "EventIntelligenceAuditLog",
     "EventIntelligenceItem",
+    "ForecastRecord",
     "IndustryData",
     "LiveDivergenceMetric",
     "HumanDecision",
