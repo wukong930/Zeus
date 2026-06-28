@@ -299,7 +299,18 @@ def test_market_data_pit_endpoint_normalizes_contract_symbol(monkeypatch) -> Non
     async def fake_db():
         yield session
 
-    async def fake_get_market_data_pit(db_session, *, symbol, as_of, start, end, limit):
+    async def fake_get_market_data_pit(
+        db_session,
+        *,
+        symbol,
+        as_of,
+        start,
+        end,
+        before,
+        before_contract_month,
+        before_id,
+        limit,
+    ):
         captured["session"] = db_session
         captured["symbol"] = symbol
         captured["limit"] = limit

@@ -33,6 +33,9 @@ async def get_market_data_pit(
     as_of: datetime | None = None,
     start: datetime | None = None,
     end: datetime | None = None,
+    before: datetime | None = None,
+    before_contract_month: str | None = None,
+    before_id: UUID | None = None,
     limit: int = 500,
 ) -> list[MarketData]:
     statement = _market_data_pit_statement(
@@ -40,6 +43,9 @@ async def get_market_data_pit(
         as_of=as_of,
         start=start,
         end=end,
+        before=before,
+        before_contract_month=before_contract_month,
+        before_id=before_id,
         limit=limit,
     )
 
@@ -52,6 +58,9 @@ def _market_data_pit_statement(
     as_of: datetime | None = None,
     start: datetime | None = None,
     end: datetime | None = None,
+    before: datetime | None = None,
+    before_contract_month: str | None = None,
+    before_id: UUID | None = None,
     limit: int = 500,
 ) -> Select:
     statement = select(MarketData).where(MarketData.symbol == symbol)
@@ -61,6 +70,30 @@ def _market_data_pit_statement(
         statement = statement.where(MarketData.timestamp >= start)
     if end is not None:
         statement = statement.where(MarketData.timestamp <= end)
+    if before is not None:
+        # Keyset cursor matching the (timestamp desc, contract_month asc, id desc)
+        # output order. contract_month is a *middle* sort key (one timestamp can
+        # carry several contract months), so a 2-key (timestamp, id) cursor — as used
+        # for industry_data — would skip rows that share a timestamp. Require the full
+        # 3-key cursor for stable paging; fall back to a coarse timestamp filter when
+        # the caller only knows the timestamp.
+        if before_contract_month is not None and before_id is not None:
+            statement = statement.where(
+                or_(
+                    MarketData.timestamp < before,
+                    and_(
+                        MarketData.timestamp == before,
+                        MarketData.contract_month > before_contract_month,
+                    ),
+                    and_(
+                        MarketData.timestamp == before,
+                        MarketData.contract_month == before_contract_month,
+                        MarketData.id < before_id,
+                    ),
+                )
+            )
+        else:
+            statement = statement.where(MarketData.timestamp < before)
 
     return _windowed_latest_statement(
         MarketData,

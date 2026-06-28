@@ -28,6 +28,9 @@ async def list_market_data(
     as_of: datetime | None = None,
     start: datetime | None = None,
     end: datetime | None = None,
+    before: datetime | None = Query(default=None),
+    before_contract_month: str | None = Query(default=None, max_length=20),
+    before_id: UUID | None = Query(default=None),
     limit: int = Query(default=500, ge=1, le=5000),
     session: AsyncSession = Depends(get_db),
 ) -> list[MarketData]:
@@ -40,6 +43,9 @@ async def list_market_data(
         as_of=as_of,
         start=start,
         end=end,
+        before=before,
+        before_contract_month=before_contract_month,
+        before_id=before_id,
         limit=limit,
     )
 
@@ -207,6 +213,10 @@ def _recent_market_data_statement(symbols: list[str], limit: int, *, before: dat
         .where(MarketData.symbol.in_(symbols))
     )
     if before is not None:
+        # A bare timestamp cursor is sufficient here (unlike the other list
+        # endpoints): pit_ranked dedups to one row per (symbol, timestamp), so
+        # within each symbol's stream timestamps are unique and `timestamp < before`
+        # cannot skip a tied row at the page boundary.
         pit_ranked = pit_ranked.where(MarketData.timestamp < before)
     pit_ranked = pit_ranked.subquery()
     symbol_ranked = (
