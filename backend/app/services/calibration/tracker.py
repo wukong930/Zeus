@@ -1,6 +1,6 @@
 import hashlib
 import json
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any
 from uuid import UUID
 
@@ -36,19 +36,18 @@ async def get_calibration_weight(
     signal_type: str,
     category: str,
     regime: str | None,
-    as_of: datetime | None = None,
+    as_of: datetime,
 ) -> float:
     if session is None:
         return DEFAULT_CALIBRATION_WEIGHT
 
-    effective_at = as_of or datetime.now(timezone.utc)
     row = (
         await session.scalars(
             _active_calibration_statement(
                 signal_type=signal_type,
                 category=category,
                 regime=regime or "unknown",
-                as_of=effective_at,
+                as_of=as_of,
             )
         )
     ).first()
@@ -61,7 +60,7 @@ async def get_calibration_weight(
                 signal_type=signal_type,
                 category=category,
                 regime="unknown",
-                as_of=effective_at,
+                as_of=as_of,
             )
         )
     ).first()

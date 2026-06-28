@@ -365,6 +365,7 @@ async def handle_signal_detected(
         signal=signal,
         context=context,
         correlation_id=event.correlation_id,
+        as_of=context_triggered_at(context),
     )
     if adversarial_decision.suppressed:
         return await publisher(
@@ -390,6 +391,7 @@ async def handle_signal_detected(
         signal_type=str(signal["signal_type"]),
         category=category,
         regime=str(regime),
+        as_of=context_triggered_at(context),
     )
     base_score = score_recommendation(
         spread_info=spread_info,

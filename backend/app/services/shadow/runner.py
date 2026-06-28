@@ -142,7 +142,9 @@ async def run_shadow_for_event(
     written = 0
     would_emit = 0
     for signal, context, score_payload in candidates:
-        score = score_payload or await _score_signal(session, run, signal=signal, context=context)
+        score = score_payload or await _score_signal(
+            session, run, signal=signal, context=context, as_of=event.timestamp
+        )
         row = await record_shadow_signal(
             session,
             run=run,
@@ -306,6 +308,7 @@ async def _score_signal(
     *,
     signal: dict[str, Any],
     context: dict[str, Any],
+    as_of: datetime,
 ) -> dict[str, Any]:
     category = str(context.get("category") or signal.get("category") or "unknown")
     regime = str(context.get("regime") or context.get("regime_at_emission") or "unknown")
@@ -314,6 +317,7 @@ async def _score_signal(
         signal_type=str(signal.get("signal_type") or "unknown"),
         category=category,
         regime=regime,
+        as_of=as_of,
     )
     calibration_weight = await _shadow_calibration_weight(
         session,

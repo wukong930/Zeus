@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any
 from uuid import UUID
 
@@ -62,9 +62,8 @@ async def evaluate_adversarial_signal(
     signal: dict[str, Any],
     context: dict[str, Any],
     correlation_id: str | None = None,
-    as_of: datetime | None = None,
+    as_of: datetime,
 ) -> AdversarialDecision:
-    effective_as_of = as_of or datetime.now(timezone.utc)
     signal_type = str(signal["signal_type"])
     category = str(context.get("category") or signal.get("category") or "unknown")
     regime = str(context.get("regime") or context.get("regime_at_emission") or "unknown")
@@ -81,7 +80,7 @@ async def evaluate_adversarial_signal(
             session,
             signal_type=signal_type,
             category=category,
-            as_of=effective_as_of,
+            as_of=as_of,
         )
         if session is not None
         else None
@@ -258,9 +257,15 @@ async def load_historical_combo_candidates(
 ) -> list[HistoricalComboCandidate]:
     rows = (
         await session.scalars(
-            select(SignalCalibration).where(
+            select(SignalCalibration)
+            .where(
                 SignalCalibration.category == category,
                 SignalCalibration.regime.in_([regime, "unknown"]),
+            )
+            .order_by(
+                SignalCalibration.signal_type.asc(),
+                SignalCalibration.regime.asc(),
+                SignalCalibration.id.asc(),
             )
         )
     ).all()

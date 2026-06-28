@@ -214,6 +214,7 @@ async def test_shadow_score_loads_live_positions_by_default(monkeypatch) -> None
             "related_assets": ["RB"],
         },
         context={"category": "ferrous", "regime": "range_low_vol"},
+        as_of=datetime(2026, 5, 18, tzinfo=timezone.utc),
     )
 
     assert captured_payloads == [{}]
@@ -239,6 +240,7 @@ async def test_shadow_score_allows_explicit_position_override(monkeypatch) -> No
             "related_assets": ["RB"],
         },
         context={"category": "ferrous", "regime": "range_low_vol"},
+        as_of=datetime(2026, 5, 18, tzinfo=timezone.utc),
     )
 
     assert captured_payloads == [{"open_positions": configured_positions}]

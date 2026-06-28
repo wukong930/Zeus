@@ -136,7 +136,19 @@ def best_historical_candidate(
 
     if not matches:
         return None, 0.0
-    return sorted(matches, key=lambda item: (-item[1], -item[0].sample_size))[0]
+    # Stable, fully-deterministic ordering: best similarity, then largest sample,
+    # then a content tiebreaker so ties never resolve by input/query row order
+    # (which is non-deterministic and would leak into enforcing-mode decisions).
+    return sorted(
+        matches,
+        key=lambda item: (
+            -item[1],
+            -item[0].sample_size,
+            tuple(sorted(item[0].signal_types)),
+            item[0].category,
+            item[0].regime,
+        ),
+    )[0]
 
 
 def _normalize_signal_types(signal_types: set[str] | frozenset[str]) -> frozenset[str]:

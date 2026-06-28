@@ -89,15 +89,14 @@ async def latest_null_distribution_cache(
     *,
     signal_type: str,
     category: str,
-    as_of: datetime | None = None,
+    as_of: datetime,
 ) -> NullDistributionCache | None:
-    effective_as_of = as_of or datetime.now(timezone.utc)
     return (
         await session.scalars(
             _latest_null_distribution_cache_statement(
                 signal_type=signal_type,
                 category=category,
-                as_of_date=effective_as_of.date(),
+                as_of_date=as_of.date(),
             )
         )
     ).first()
