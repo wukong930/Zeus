@@ -1224,6 +1224,7 @@ Causa 的 `event_driven` 评估器实际上是纯技术面（gap + volume），*
   - [x] Phase 10.60.123：Drift、Arbitration、Learning 和 Shadow 列表补齐 `before_id` keyset 游标，避免同时间指标、人工决策、学习假设或 shadow run 在分页边界丢失。
   - [x] Phase 10.60.124：Notebook 混合时间流新增 `before_id + before_kind` 游标，报告、学习假设和研究假设在同一时间戳下按 kind rank + id 稳定翻页，避免跨表合并列表边界丢项。
   - [x] Phase 10.60.125：Cost Models 历史列表新增 `before_created_at + before_id` 复合游标，单品种和批量 histories 与 `snapshot_date desc, created_at desc, id desc` 排序完全对齐，避免同一天多版本成本快照翻页丢行。
+  - [x] Phase 10.60.126：Industry Data PIT 列表补齐 `before_id` 游标，和 `timestamp desc, id desc` 输出排序对齐，避免同一时间戳多 data_type 行在翻页边界被跳过。
 - [ ] 后端慢查询、索引、分页和缓存继续复查。
 - [x] 调度任务真实 handler 覆盖率继续复查，避免 enabled 但实际 noop。
 - [x] 全量回归测试、浏览器验证和部署 smoke 流程固化。

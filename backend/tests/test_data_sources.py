@@ -1,4 +1,5 @@
 import json
+from uuid import UUID
 
 import httpx
 import pandas as pd
@@ -1277,13 +1278,18 @@ def test_industry_data_api_rejects_unbounded_query_filters() -> None:
     response = client.get("/api/industry-data?symbol=SC&before=not-a-date")
     assert response.status_code == 422
 
+    response = client.get("/api/industry-data?symbol=SC&before_id=not-a-uuid")
+    assert response.status_code == 422
+
 
 def test_industry_data_pit_statement_uses_cursor_and_stable_order() -> None:
+    before_id = UUID("00000000-0000-0000-0000-000000000020")
     compiled = str(
         _industry_data_pit_statement(
             symbol="RU",
             data_type="rubber_spot_price_cny_t",
             before=pd.Timestamp("2026-05-18T00:00:00Z").to_pydatetime(),
+            before_id=before_id,
             limit=20,
         ).compile(dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True})
     )
@@ -1291,6 +1297,7 @@ def test_industry_data_pit_statement_uses_cursor_and_stable_order() -> None:
     assert "industry_data.symbol = 'RU'" in compiled
     assert "industry_data.data_type = 'rubber_spot_price_cny_t'" in compiled
     assert "industry_data.timestamp < '2026-05-18" in compiled
+    assert "industry_data.id < '00000000-0000-0000-0000-000000000020'" in compiled
     assert "ORDER BY industry_data.vintage_at DESC, industry_data.id DESC" in compiled
     assert "ORDER BY industry_data.timestamp DESC, industry_data.id DESC" in compiled
     assert "LIMIT 20" in compiled

@@ -1,6 +1,7 @@
 from datetime import datetime
+from uuid import UUID
 
-from sqlalchemy import Select, func, select
+from sqlalchemy import Select, and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.industry_data import IndustryData
@@ -78,6 +79,7 @@ async def get_industry_data_pit(
     start: datetime | None = None,
     end: datetime | None = None,
     before: datetime | None = None,
+    before_id: UUID | None = None,
     limit: int = 500,
 ) -> list[IndustryData]:
     statement = _industry_data_pit_statement(
@@ -87,6 +89,7 @@ async def get_industry_data_pit(
         start=start,
         end=end,
         before=before,
+        before_id=before_id,
         limit=limit,
     )
 
@@ -101,6 +104,7 @@ def _industry_data_pit_statement(
     start: datetime | None = None,
     end: datetime | None = None,
     before: datetime | None = None,
+    before_id: UUID | None = None,
     limit: int = 500,
 ) -> Select:
     statement = select(IndustryData).where(IndustryData.symbol == symbol)
@@ -113,7 +117,15 @@ def _industry_data_pit_statement(
     if end is not None:
         statement = statement.where(IndustryData.timestamp <= end)
     if before is not None:
-        statement = statement.where(IndustryData.timestamp < before)
+        if before_id is not None:
+            statement = statement.where(
+                or_(
+                    IndustryData.timestamp < before,
+                    and_(IndustryData.timestamp == before, IndustryData.id < before_id),
+                )
+            )
+        else:
+            statement = statement.where(IndustryData.timestamp < before)
 
     return _windowed_latest_statement(
         IndustryData,
