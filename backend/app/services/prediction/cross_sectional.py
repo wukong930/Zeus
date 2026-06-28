@@ -117,6 +117,7 @@ async def generate_cross_sectional_forecast(
     k: int = DEFAULT_K,
     horizon_days: int = DEFAULT_HORIZON,
     symbols: list[str] | None = None,
+    decision_grade: bool = False,
     persist: bool = True,
 ) -> ForecastRecord:
     universe = symbols or sorted(SECTOR_BY_SYMBOL)
@@ -134,7 +135,9 @@ async def generate_cross_sectional_forecast(
         feature_hash=forecast.feature_hash,
         target_weights=forecast.target_weights,
         universe_size=forecast.universe_size,
-        decision_grade=False,  # advisory / shadow until governed
+        # advisory / shadow by default; only an approved governance promotion
+        # may pass decision_grade=True (via the forecast-promotion applier).
+        decision_grade=decision_grade,
         horizon_days=horizon_days,
     )
     if persist:

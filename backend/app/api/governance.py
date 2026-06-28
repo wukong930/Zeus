@@ -21,6 +21,7 @@ from app.services.event_intelligence.governance import (
     EVENT_INTELLIGENCE_REVIEW_TABLE,
     apply_event_intelligence_decision,
 )
+from app.services.governance.appliers import apply_approved_change
 
 router = APIRouter(prefix="/api/governance", tags=["governance"])
 
@@ -171,12 +172,16 @@ async def decide_change_review(
                     detail="Linked event intelligence item not found",
                 ) from exc
             raise HTTPException(status_code=400, detail=str(exc)) from exc
-    else:
+    applied: dict[str, Any] | None = None
+    if not _is_event_intelligence_review(row) or payload.decision not in EVENT_INTELLIGENCE_DECISION_MAP:
         row.status = DECISION_TO_STATUS[payload.decision]
         row.reviewed_by = payload.reviewed_by
         row.reviewed_at = now
+        # approval -> apply: dispatch the production write to the registered applier
+        if row.status == "approved":
+            applied = await apply_approved_change(session, row, decided_by=payload.reviewed_by)
 
-    _append_review_decision(row, payload, now)
+    _append_review_decision(row, payload, now, applied=applied)
     await session.commit()
     await session.refresh(row)
     return row
@@ -198,6 +203,8 @@ def _append_review_decision(
     row: ChangeReviewQueue,
     payload: ChangeReviewDecisionCreate,
     decided_at: datetime,
+    *,
+    applied: dict[str, Any] | None = None,
 ) -> None:
     proposed_change: dict[str, Any] = dict(row.proposed_change or {})
     proposed_change["review_decision"] = {
@@ -206,6 +213,7 @@ def _append_review_decision(
         "reviewed_by": payload.reviewed_by,
         "reviewed_at": (row.reviewed_at or decided_at).isoformat(),
         "note": payload.note,
-        "production_effect": "none",
+        "production_effect": (applied or {}).get("production_effect", "none"),
+        "applied": applied,
     }
     row.proposed_change = proposed_change

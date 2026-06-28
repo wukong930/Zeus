@@ -7,6 +7,7 @@ from typing import Any
 FORCE_PENDING_SOURCES = {
     "backtest_live_divergence",
     "calibration",
+    "forecast_promotion",
     "llm_agent",
     "signal_calibration",
     "threshold_calibration",

@@ -12,7 +12,12 @@ from app.services.calibration.regime_batch import detect_and_record_all_regimes
 from app.services.calibration.shadow_tracker import evaluate_pending_signals
 from app.services.calibration.updater import generate_calibration_reviews
 from app.services.contracts.main_contract_batch import detect_and_apply_main_contracts
-from app.services.prediction.cross_sectional import generate_cross_sectional_forecast
+from app.services.prediction.cross_sectional import (
+    DEFAULT_LOOKBACK,
+    MODEL_VERSION,
+    generate_cross_sectional_forecast,
+)
+from app.services.prediction.governance import is_signal_promoted
 from app.services.prediction.shadow import score_due_forecasts
 from app.services.cost_models.snapshots import (
     RUBBER_SYMBOLS,
@@ -503,8 +508,12 @@ async def cleanup_job() -> dict[str, Any]:
 
 
 async def forecast_emit_job() -> dict[str, Any]:
+    signal = f"xs_reversal_mom{DEFAULT_LOOKBACK}"
     async with AsyncSessionLocal() as session:
-        row = await generate_cross_sectional_forecast(session, as_of=datetime.now(timezone.utc))
+        promoted = await is_signal_promoted(session, signal=signal, model_version=MODEL_VERSION)
+        row = await generate_cross_sectional_forecast(
+            session, as_of=datetime.now(timezone.utc), decision_grade=promoted
+        )
         await session.commit()
     return {
         "status": "completed",
