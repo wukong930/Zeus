@@ -29,6 +29,7 @@ from app.services.backtest.replay import SECTOR_BY_SYMBOL, load_main_series
 MODEL_VERSION = "xs_reversal/1.0"
 DEFAULT_LOOKBACK = 120
 DEFAULT_K = 10
+DEFAULT_HORIZON = 21
 
 
 @dataclass(frozen=True, slots=True)
@@ -114,6 +115,7 @@ async def generate_cross_sectional_forecast(
     as_of: datetime,
     lookback: int = DEFAULT_LOOKBACK,
     k: int = DEFAULT_K,
+    horizon_days: int = DEFAULT_HORIZON,
     symbols: list[str] | None = None,
     persist: bool = True,
 ) -> ForecastRecord:
@@ -133,6 +135,7 @@ async def generate_cross_sectional_forecast(
         target_weights=forecast.target_weights,
         universe_size=forecast.universe_size,
         decision_grade=False,  # advisory / shadow until governed
+        horizon_days=horizon_days,
     )
     if persist:
         session.add(row)

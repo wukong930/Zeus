@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import Boolean, DateTime, Index, Integer, String, func
+from sqlalchemy import Boolean, DateTime, Float, Index, Integer, String, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -32,6 +32,10 @@ class ForecastRecord(Base):
     target_weights: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     universe_size: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     decision_grade: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    horizon_days: Mapped[int] = mapped_column(Integer, nullable=False, default=21)
+    # filled by shadow scoring once the holding period elapses (non-authoritative)
+    realized_return: Mapped[float | None] = mapped_column(Float)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),

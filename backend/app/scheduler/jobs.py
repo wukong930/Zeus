@@ -12,6 +12,8 @@ from app.services.calibration.regime_batch import detect_and_record_all_regimes
 from app.services.calibration.shadow_tracker import evaluate_pending_signals
 from app.services.calibration.updater import generate_calibration_reviews
 from app.services.contracts.main_contract_batch import detect_and_apply_main_contracts
+from app.services.prediction.cross_sectional import generate_cross_sectional_forecast
+from app.services.prediction.shadow import score_due_forecasts
 from app.services.cost_models.snapshots import (
     RUBBER_SYMBOLS,
     cost_signal_contexts,
@@ -76,6 +78,8 @@ DEFAULT_JOB_DEFINITIONS: tuple[JobDefinition, ...] = (
     JobDefinition("event-intelligence-sync", "事件智能入口同步", "10 */2 * * *"),
     JobDefinition("trade-plan-activation", "交易计划激活", "20 */1 * * *"),
     JobDefinition("translation-backfill", "新闻预警翻译回填", "35 */4 * * *"),
+    JobDefinition("forecast-emit", "横截面预测产出", "55 16 * * 1-5"),
+    JobDefinition("forecast-score", "预测影子评分", "0 17 * * 1-5"),
 )
 
 
@@ -498,6 +502,33 @@ async def cleanup_job() -> dict[str, Any]:
     }
 
 
+async def forecast_emit_job() -> dict[str, Any]:
+    async with AsyncSessionLocal() as session:
+        row = await generate_cross_sectional_forecast(session, as_of=datetime.now(timezone.utc))
+        await session.commit()
+    return {
+        "status": "completed",
+        "signal": row.signal,
+        "as_of": row.as_of.isoformat(),
+        "universe": row.universe_size,
+        "decision_grade": row.decision_grade,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+async def forecast_score_job() -> dict[str, Any]:
+    async with AsyncSessionLocal() as session:
+        result = await score_due_forecasts(session, now=datetime.now(timezone.utc))
+        await session.commit()
+    return {
+        "status": "completed",
+        "scanned": result.scanned,
+        "resolved": result.resolved,
+        "pending": result.pending,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+
 DEFAULT_JOB_HANDLERS: dict[str, JobHandler] = {
     "ingest": ingest_job,
     "track-outcomes": track_outcomes_job,
@@ -517,4 +548,6 @@ DEFAULT_JOB_HANDLERS: dict[str, JobHandler] = {
     "event-intelligence-sync": event_intelligence_sync_job,
     "trade-plan-activation": trade_plan_activation_job,
     "translation-backfill": translation_backfill_job,
+    "forecast-emit": forecast_emit_job,
+    "forecast-score": forecast_score_job,
 }
