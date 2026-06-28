@@ -88,6 +88,7 @@ export default function EventIntelligencePage() {
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [decisionPending, setDecisionPending] = useState<EventIntelligenceDecision | null>(null);
+  const [decisionError, setDecisionError] = useState<string | null>(null);
   const [linkEditPendingId, setLinkEditPendingId] = useState<string | null>(null);
   const [linkEditError, setLinkEditError] = useState<string | null>(null);
   const [auditLogs, setAuditLogs] = useState<EventIntelligenceAuditLog[]>([]);
@@ -215,6 +216,7 @@ export default function EventIntelligencePage() {
   const handleDecision = async (decision: EventIntelligenceDecision) => {
     if (!selected) return;
     setDecisionPending(decision);
+    setDecisionError(null);
     try {
       const result = await decideEventIntelligence(selected.id, decision, decisionNote(decision));
       setItems((current) =>
@@ -229,6 +231,8 @@ export default function EventIntelligencePage() {
       );
       setAuditLogs((current) => mergeAuditLogs([result.auditLog, ...current]));
       setAuditSource("api");
+    } catch (error) {
+      setDecisionError(error instanceof Error ? error.message : "决策提交失败");
     } finally {
       setDecisionPending(null);
     }
@@ -349,6 +353,7 @@ export default function EventIntelligencePage() {
               quality={selectedQuality}
               onDecision={handleDecision}
               decisionPending={decisionPending}
+              decisionError={decisionError}
               onUpdateImpactLink={handleUpdateImpactLink}
               linkEditPendingId={linkEditPendingId}
               linkEditError={linkEditError}
@@ -460,6 +465,7 @@ function EventDetail({
   quality,
   onDecision,
   decisionPending,
+  decisionError,
   onUpdateImpactLink,
   linkEditPendingId,
   linkEditError,
@@ -472,6 +478,7 @@ function EventDetail({
   quality: EventIntelligenceQualityReport | null;
   onDecision: (decision: EventIntelligenceDecision) => void;
   decisionPending: EventIntelligenceDecision | null;
+  decisionError: string | null;
   onUpdateImpactLink: (linkId: string, payload: EventImpactLinkUpdateInput) => Promise<boolean>;
   linkEditPendingId: string | null;
   linkEditError: string | null;
@@ -546,6 +553,11 @@ function EventDetail({
             onDecision={onDecision}
           />
         </div>
+        {decisionError && (
+          <div className="mb-4 rounded-sm border border-data-down/25 bg-data-down/10 p-2 text-caption text-data-down">
+            {decisionError}
+          </div>
+        )}
         <div className="grid gap-3 md:grid-cols-3">
           <TokenGroup title="品种" values={item.symbols} />
           <TokenGroup title="机制" values={item.mechanisms.map(mechanismLabel)} tone="orange" />

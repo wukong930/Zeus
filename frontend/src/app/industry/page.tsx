@@ -926,7 +926,11 @@ function RubberSeasonalityPanel({
       </CardHeader>
 
       <div className="grid grid-cols-1 lg:grid-cols-[1.2fr_1fr] gap-5">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div>
+          <div className="mb-2 text-caption text-text-muted">
+            {text("典型季节区间（参考，非实时模型输出）")}
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {[
             { label: "停割期", months: "12-2月", value: "+6%" },
             { label: "低供给", months: "3-4月", value: "+4%" },
@@ -945,6 +949,7 @@ function RubberSeasonalityPanel({
               <div className="mt-3 font-mono text-h3 text-text-primary">{item.value}</div>
             </div>
           ))}
+          </div>
         </div>
 
         <div className="rounded-sm bg-bg-base border border-border-subtle p-4">

@@ -52,7 +52,11 @@ export default function PortfolioPage() {
 
   const totalPnL = useMemo(() => positions.reduce((sum, p) => sum + p.pnl, 0), [positions]);
   const totalMargin = useMemo(() => positions.reduce((sum, p) => sum + p.marginUsed, 0), [positions]);
-  const totalEquity = 100000;
+  // The portfolio snapshot does not expose real account equity yet, so margin
+  // occupancy is computed against an assumed base and labelled as such below —
+  // it is not a real account balance.
+  const ASSUMED_ACCOUNT_EQUITY = 100000;
+  const totalEquity = ASSUMED_ACCOUNT_EQUITY;
   const usage = (totalMargin / totalEquity) * 100;
   const worstStress = useMemo(
     () =>
@@ -101,7 +105,7 @@ export default function PortfolioPage() {
         <MetricTile
           label={text("保证金占用")}
           value={`${usage.toFixed(1)}%`}
-          caption={`¥${totalMargin.toLocaleString()} / ¥${totalEquity.toLocaleString()}`}
+          caption={`¥${totalMargin.toLocaleString()} / ¥${totalEquity.toLocaleString()}（${text("假设权益")}）`}
           icon={WalletCards}
           tone={usage > 50 ? "warning" : "cyan"}
         />
