@@ -1,7 +1,9 @@
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+
+from app.core.auth import verify_api_key
 
 from app.api.alerts import router as alerts_router
 from app.api.arbitration import router as arbitration_router
@@ -52,12 +54,19 @@ async def lifespan(_: FastAPI):
 
 def create_app() -> FastAPI:
     settings = get_settings()
+    auth_enabled = settings.auth_enabled
 
     app = FastAPI(
         title=settings.app_name,
         version=settings.app_version,
         description="Python control plane for Zeus.",
         lifespan=lifespan,
+        # global gate — every route runs through verify_api_key (health is exempt)
+        dependencies=[Depends(verify_api_key)],
+        # close the schema/docs when auth is on (they'd otherwise expose the API surface)
+        docs_url=None if auth_enabled else "/docs",
+        redoc_url=None if auth_enabled else "/redoc",
+        openapi_url=None if auth_enabled else "/openapi.json",
     )
 
     app.add_middleware(

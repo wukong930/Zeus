@@ -11,6 +11,19 @@ class Settings(BaseSettings):
     api_host: str = "0.0.0.0"
     api_port: int = 8000
     log_level: str = "info"
+    api_keys: str = Field(
+        default="",
+        description="Comma-separated API keys. When set, all /api routes except health "
+        "require a matching X-API-Key header. Empty disables auth (local dev only).",
+    )
+
+    @property
+    def api_key_set(self) -> frozenset[str]:
+        return frozenset(key.strip() for key in self.api_keys.split(",") if key.strip())
+
+    @property
+    def auth_enabled(self) -> bool:
+        return bool(self.api_key_set)
 
     database_url: str = Field(
         default="postgresql+asyncpg://zeus:zeus@localhost:55432/zeus",
