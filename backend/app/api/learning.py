@@ -14,7 +14,7 @@ from app.services.shadow.comparator import compare_shadow_run
 from app.services.shadow.runner import create_shadow_run
 from app.services.vector_search.eval import compare_vector_search_candidate, evaluate_vector_search
 from app.services.vector_search.eval_seed import seed_vector_eval_cases
-from app.services.vector_search.hybrid_search import hybrid_search
+from app.services.vector_search.hybrid_search import VectorSearchResult, hybrid_search
 
 router = APIRouter(prefix="/api/learning", tags=["learning"])
 
@@ -207,13 +207,13 @@ async def compare_vector_embedding_shadow(
     )
 
     async def candidate_searcher(
-        search_session: AsyncSession,
+        session: AsyncSession,
         *,
         query_text: str,
         limit: int = 10,
-    ):
+    ) -> list[VectorSearchResult]:
         return await hybrid_search(
-            search_session,
+            session,
             query_text=query_text,
             limit=limit,
             **candidate_config,

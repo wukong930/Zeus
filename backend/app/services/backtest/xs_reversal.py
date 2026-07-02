@@ -78,10 +78,10 @@ def select_long_short(
 
 def _leg_mean(symbols: tuple[str, ...], forward_by_symbol: dict[str, float | None]) -> float | None:
     values = [
-        forward_by_symbol[symbol]
+        value
         for symbol in symbols
-        if forward_by_symbol.get(symbol) is not None
-        and abs(forward_by_symbol[symbol]) <= MAX_ABS_PERIOD_RETURN  # type: ignore[arg-type]
+        if (value := forward_by_symbol.get(symbol)) is not None
+        and abs(value) <= MAX_ABS_PERIOD_RETURN
     ]
     return sum(values) / len(values) if values else None
 

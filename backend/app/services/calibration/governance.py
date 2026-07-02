@@ -30,7 +30,9 @@ async def apply_calibration_review(
     except (KeyError, TypeError):
         return {"applied": False, "production_effect": "none", "reason": "incomplete calibration proposal"}
 
-    calibration = await apply_signal_calibration_change(session, proposal, human_approved=True)
+    # Approval is enforced structurally — this applier only runs on an approved
+    # review (via the applier registry) — not by a passable human_approved flag.
+    calibration = await apply_signal_calibration_change(session, proposal)
     return {
         "applied": True,
         "production_effect": "calibration_applied",

@@ -50,8 +50,7 @@ async def test_calibration_applier_reconstructs_and_applies_with_approval(monkey
     proposed_change = {**asdict(proposal), "review_triage": {"tier": "must_review"}}
     captured = {}
 
-    async def fake_apply(session, prop, *, human_approved=False):
-        captured["human_approved"] = human_approved
+    async def fake_apply(session, prop, *, applied_at=None):
         captured["signal_type"] = prop.signal_type
         return SimpleNamespace(id="cal-123")
 
@@ -64,7 +63,9 @@ async def test_calibration_applier_reconstructs_and_applies_with_approval(monkey
 
     assert result["production_effect"] == "calibration_applied"
     assert result["target_key"] == "momentum:ferrous:trend"
-    assert captured["human_approved"] is True  # connects the previously-dead loop
+    # approval is structural (this applier only runs on an approved review), so the
+    # applier is called with the reconstructed proposal — no human_approved flag.
+    assert captured["signal_type"] == "momentum"
     assert captured["signal_type"] == "momentum"
 
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Literal
@@ -901,14 +902,14 @@ def _build_edges(
                 break
 
     for counter in counters:
-        alert = alerts_by_id.get(counter.alert_id)
-        if alert is None:
+        counter_alert = alerts_by_id.get(counter.alert_id)
+        if counter_alert is None:
             continue
         _append_edge(
             edges,
-            f"edge-counter-alert-{counter.node_id}-{alert.id}",
+            f"edge-counter-alert-{counter.node_id}-{counter_alert.id}",
             counter.node_id,
-            f"alert-{alert.id}",
+            f"alert-{counter_alert.id}",
             counter.confidence,
             "review",
             counter.confidence,
@@ -919,12 +920,12 @@ def _build_edges(
         )
 
     for signal in signals[:8]:
-        for item in metrics:
-            if signal.category == item.category:
+        for metric in metrics:
+            if signal.category == metric.category:
                 _append_edge(
                     edges,
-                    f"edge-metric-signal-{item.node_id}-{signal.id}",
-                    item.node_id,
+                    f"edge-metric-signal-{metric.node_id}-{signal.id}",
+                    metric.node_id,
                     f"signal-{signal.id}",
                     min(0.88, max(0.35, signal.confidence)),
                     "same day",
@@ -1434,7 +1435,7 @@ def _normalize_symbol(value: object) -> str:
     return normalize_root_symbol(value) or ""
 
 
-def _normalize_symbols(values: list[object], *, limit: int | None = None) -> list[str]:
+def _normalize_symbols(values: Sequence[object], *, limit: int | None = None) -> list[str]:
     normalized = sorted({symbol for value in values if (symbol := _normalize_symbol(value))})
     return normalized if limit is None else normalized[:limit]
 

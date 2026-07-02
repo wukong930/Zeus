@@ -15,7 +15,8 @@ class HotCoilCostFormula(CostFormula):
         upstream: dict[str, CostModelResult] | None = None,
         current_price: float | None = None,
     ) -> CostModelResult:
-        base_rebar_cost = upstream.get("RB").unit_cost if upstream and upstream.get("RB") else 3740
+        rebar = upstream.get("RB") if upstream else None
+        base_rebar_cost = rebar.unit_cost if rebar else 3740
         hot_rolling_delta = numeric_input(inputs, "hot_rolling_delta", 180)
         quality_premium = numeric_input(inputs, "quality_premium", 65)
         freight_tax = numeric_input(inputs, "freight_tax_fee", 45)

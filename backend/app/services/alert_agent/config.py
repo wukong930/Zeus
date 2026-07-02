@@ -46,6 +46,8 @@ def alert_agent_config_row_statement(*, key: str):
 
 
 def _threshold_value(value: object, fallback: float) -> float:
+    if not isinstance(value, (int, float, str)):
+        return fallback
     try:
         parsed = float(value)
     except (TypeError, ValueError):

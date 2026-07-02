@@ -80,7 +80,7 @@ def row_from_fred_payload(
         if not isinstance(observation, dict):
             continue
         value = observation.get("value")
-        if value in {None, "."}:
+        if value is None or value in {None, "."}:
             continue
         try:
             numeric = float(value)

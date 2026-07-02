@@ -1778,6 +1778,7 @@ def _region_weather(
         )
 
     rainfall_7d_mm = _mean([row.value for row in recent_precip_rows])
+    rainfall_7d_mm = rainfall_7d_mm if rainfall_7d_mm is not None else seed.rainfall_7d_mm
     baseline_precip_rows = _rows_for_type(latest, "weather_baseline_precip_7d")
     baseline_precip = _mean([row.value for row in baseline_precip_rows])
     baseline_precip = baseline_precip if baseline_precip is not None and baseline_precip > 0 else seed.rainfall_7d_mm
@@ -2297,49 +2298,49 @@ def _factor_signals(
                 source=f"alert:{row.id}",
             )
         )
-    for row in matched_news[:8]:
-        title = row.title_zh or row.title
-        summary = row.summary_zh or row.summary
+    for news_row in matched_news[:8]:
+        title = news_row.title_zh or news_row.title
+        summary = news_row.summary_zh or news_row.summary
         factor = _factor_from_text(
-            " ".join([title, summary, row.event_type, row.direction])
+            " ".join([title, summary, news_row.event_type, news_row.direction])
         )
         signals.append(
             FactorSignal(
                 factor=factor,
-                weight=min(max(row.llm_confidence, row.severity / 5), 1.0),
+                weight=min(max(news_row.llm_confidence, news_row.severity / 5), 1.0),
                 evidence_kind="news",
                 label_zh=title[:40],
-                label_en=(row.title_original or row.title)[:80],
-                source=f"news:{row.id}",
+                label_en=(news_row.title_original or news_row.title)[:80],
+                source=f"news:{news_row.id}",
             )
         )
-    for row in matched_signals[:8]:
-        factor = _factor_from_text(row.signal_type)
-        signal_zh = signal_type_label(row.signal_type)
+    for signal_row in matched_signals[:8]:
+        factor = _factor_from_text(signal_row.signal_type)
+        signal_zh = signal_type_label(signal_row.signal_type)
         signals.append(
             FactorSignal(
                 factor=factor,
-                weight=min(max(row.confidence, 0.3), 1.0),
+                weight=min(max(signal_row.confidence, 0.3), 1.0),
                 evidence_kind="signal",
                 label_zh=f"{signal_zh}信号",
-                label_en=f"{str(row.signal_type).replace('_', ' ')} signal",
-                source=f"signal:{row.id}",
+                label_en=f"{str(signal_row.signal_type).replace('_', ' ')} signal",
+                source=f"signal:{signal_row.id}",
             )
         )
-    for row in matched_event_links[:8]:
-        link_quality = event_link_quality_by_id.get(row.id)
+    for link_row in matched_event_links[:8]:
+        link_quality = event_link_quality_by_id.get(link_row.id)
         link_weight = _link_quality_weight(link_quality)
         if link_weight <= 0:
             continue
-        factor = _factor_from_event_intelligence_link(row)
+        factor = _factor_from_event_intelligence_link(link_row)
         signals.append(
             FactorSignal(
                 factor=factor,
-                weight=min(max(row.confidence, row.impact_score / 100, 0.35) * link_weight, 1.0),
+                weight=min(max(link_row.confidence, link_row.impact_score / 100, 0.35) * link_weight, 1.0),
                 evidence_kind="event_intelligence",
-                label_zh=_event_intelligence_factor_label_zh(row, factor),
-                label_en=_event_intelligence_factor_label_en(row, factor),
-                source=f"event_intelligence:{row.event_item_id}:{row.id}",
+                label_zh=_event_intelligence_factor_label_zh(link_row, factor),
+                label_en=_event_intelligence_factor_label_en(link_row, factor),
+                source=f"event_intelligence:{link_row.event_item_id}:{link_row.id}",
             )
         )
     if matched_positions:

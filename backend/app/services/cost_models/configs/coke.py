@@ -15,7 +15,8 @@ class CokeCostFormula(CostFormula):
         upstream: dict[str, CostModelResult] | None = None,
         current_price: float | None = None,
     ) -> CostModelResult:
-        upstream_cost = upstream.get("JM").unit_cost if upstream and upstream.get("JM") else 1170
+        coking_coal = upstream.get("JM") if upstream else None
+        upstream_cost = coking_coal.unit_cost if coking_coal else 1170
         coal_ratio = numeric_input(inputs, "coal_ratio", 1.34, unit="t/t")
         processing = numeric_input(inputs, "coking_processing_fee", 250)
         energy = numeric_input(inputs, "energy_and_labor", 85)

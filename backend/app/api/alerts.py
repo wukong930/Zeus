@@ -5,6 +5,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy import and_, false, or_, select
+from sqlalchemy.sql.elements import ColumnElement
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -145,7 +146,7 @@ def _alerts_statement(
                 statement = statement.where(Alert.related_assets.contains([query_symbol]))
             else:
                 like_pattern = f"%{query_text}%"
-                conditions = [
+                conditions: list[ColumnElement[bool]] = [
                     Alert.title.ilike(like_pattern),
                     Alert.summary.ilike(like_pattern),
                     Alert.title_zh.ilike(like_pattern),

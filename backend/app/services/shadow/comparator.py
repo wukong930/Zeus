@@ -164,20 +164,20 @@ def _sample_cases(
         for key, count in shadow_counts.items()
         if count > production_counts.get(key, 0)
     }
-    for row in shadow_rows:
+    for shadow_row in shadow_rows:
         if len(cases) >= limit:
             break
-        if _shadow_key(row) not in shadow_only_keys:
+        if _shadow_key(shadow_row) not in shadow_only_keys:
             continue
         cases.append(
             ShadowComparisonCase(
                 kind="shadow_only",
-                signal_type=row.signal_type,
-                category=row.category,
-                symbol=row.symbol,
-                confidence=row.confidence,
-                score=row.score,
-                reason=row.reason,
+                signal_type=shadow_row.signal_type,
+                category=shadow_row.category,
+                symbol=shadow_row.symbol,
+                confidence=shadow_row.confidence,
+                score=shadow_row.score,
+                reason=shadow_row.reason,
             )
         )
 
@@ -186,20 +186,20 @@ def _sample_cases(
         for key, count in production_counts.items()
         if count > shadow_counts.get(key, 0)
     }
-    for row in production_rows:
+    for production_row in production_rows:
         if len(cases) >= limit:
             break
-        if _production_key(row) not in production_only_keys:
+        if _production_key(production_row) not in production_only_keys:
             continue
         cases.append(
             ShadowComparisonCase(
                 kind="production_only",
-                signal_type=row.signal_type,
-                category=row.category,
+                signal_type=production_row.signal_type,
+                category=production_row.category,
                 symbol=None,
-                confidence=row.confidence,
+                confidence=production_row.confidence,
                 score=None,
-                reason=row.outcome,
+                reason=production_row.outcome,
             )
         )
     return cases

@@ -1,5 +1,5 @@
 import logging
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import asdict, dataclass, is_dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -98,7 +98,7 @@ class TradePlanCandidateEvaluation:
 def jsonable(value: Any) -> Any:
     if isinstance(value, datetime):
         return value.isoformat()
-    if is_dataclass(value):
+    if is_dataclass(value) and not isinstance(value, type):
         return jsonable(asdict(value))
     if isinstance(value, dict):
         return {key: jsonable(item) for key, item in value.items()}
@@ -418,6 +418,7 @@ async def handle_signal_detected(
         adversarial_passed=adversarial_decision.passed,
     )
     if signal_track is not None:
+        assert session is not None  # track_signal_emission returns None when session is None
         await attach_signal_track_to_adversarial_result(
             session,
             result_id=adversarial_decision.result_id,
@@ -1138,7 +1139,7 @@ async def open_trade_plan_for_context_signal(
 
 def _collect_context_trade_plan_matches(
     matches: list[tuple[Recommendation, str]],
-    rows: list[Recommendation],
+    rows: Sequence[Recommendation],
     *,
     symbol: str,
     preferred_direction: str | None,
@@ -1503,7 +1504,8 @@ def trade_plan_backtest_summary(
     action: str,
 ) -> dict[str, Any]:
     adversarial_result = adversarial_payload(event_payload)
-    spread_info = signal.get("spread_info") if isinstance(signal.get("spread_info"), dict) else {}
+    raw_spread_info = signal.get("spread_info")
+    spread_info: dict[str, Any] = raw_spread_info if isinstance(raw_spread_info, dict) else {}
     alert_route = alert_route_payload(event_payload)
     review_reasons = trade_plan_review_reasons(alert, event_payload)
     return {

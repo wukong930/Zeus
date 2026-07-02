@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import select
@@ -252,7 +253,8 @@ def live_trade_plan_scored_events(
 
 def scored_event_effective_at(row: EventLog) -> datetime:
     payload = row.payload if isinstance(row.payload, dict) else {}
-    context = payload.get("context") if isinstance(payload.get("context"), dict) else {}
+    raw_context = payload.get("context")
+    context: dict[str, Any] = raw_context if isinstance(raw_context, dict) else {}
     for key in ("freshness_timestamp", "timestamp"):
         parsed = parse_payload_datetime(context.get(key))
         if parsed is not None:
@@ -274,7 +276,8 @@ def parse_payload_datetime(value: object) -> datetime | None:
 
 async def alert_for_scored_event(session: AsyncSession, scored_event: EventLog) -> Alert | None:
     payload = scored_event.payload if isinstance(scored_event.payload, dict) else {}
-    signal = payload.get("signal") if isinstance(payload.get("signal"), dict) else {}
+    raw_signal = payload.get("signal")
+    signal: dict[str, Any] = raw_signal if isinstance(raw_signal, dict) else {}
     signal_type = str(signal.get("signal_type") or "")
     symbol = normalize_alert_lookup_symbol(primary_symbol(signal))
     created_event = await session.scalar(

@@ -120,7 +120,7 @@ async def load_notebook_snapshot(
             )
         )
     ).all()
-    report_alerts = await load_report_alerts(session, report_rows)
+    report_alerts = await load_report_alerts(session, list(report_rows))
 
     entries = [
         *(entry_from_report(row, report_alerts) for row in report_rows),
@@ -130,7 +130,7 @@ async def load_notebook_snapshot(
     entries.sort(key=entry_sort_key, reverse=True)
     entries = entries[:limit]
 
-    folder_counts = defaultdict(int)
+    folder_counts: defaultdict[str, int] = defaultdict(int)
     reference_counts = {"alerts": 0, "hypotheses": 0, "reports": 0}
     for entry in entries:
         folder_counts[entry.folder] += 1
@@ -385,7 +385,7 @@ def parse_uuid_list(
     *,
     max_items: int = MAX_NOTEBOOK_UUID_REFERENCES,
 ) -> list[UUID]:
-    parsed = []
+    parsed: list[UUID] = []
     for value in values or []:
         if len(parsed) >= max_items:
             break

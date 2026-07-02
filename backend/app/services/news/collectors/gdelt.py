@@ -22,7 +22,7 @@ class GdeltCollector:
         self.transport = transport
 
     async def collect(self, limit: int = 50) -> list[RawNewsItem]:
-        params = {
+        params: dict[str, str | int] = {
             "query": self.query,
             "mode": "artlist",
             "format": "json",

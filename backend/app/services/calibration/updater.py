@@ -11,7 +11,7 @@ from app.services.calibration.decay_detector import detect_decay
 from app.services.calibration.hit_rate import summarize_outcomes
 from app.services.calibration.tracker import _active_calibration_statement
 from app.services.calibration.weight_adjuster import calculate_bayesian_weight
-from app.services.governance.review_queue import ReviewRequiredError, enqueue_review, review_required
+from app.services.governance.review_queue import enqueue_review, review_required
 
 RESOLVED_OUTCOMES = {"hit", "miss", "success", "failure", "win", "loss"}
 
@@ -219,19 +219,3 @@ async def apply_signal_calibration_change(
     session.add(row)
     await session.flush()
     return row
-
-
-async def try_apply_without_review(
-    session: AsyncSession,
-    proposal: CalibrationProposal,
-) -> None:
-    try:
-        await apply_signal_calibration_change(
-            session,
-            proposal,
-            proposed_change=proposal.to_change(),
-            review_source="calibration",
-            target_key=proposal.target_key,
-        )
-    except ReviewRequiredError:
-        return

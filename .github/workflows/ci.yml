@@ -45,6 +45,9 @@ jobs:
       - name: Run backend tests
         run: docker compose run --rm backend-test
 
+      - name: Type check (mypy)
+        run: docker compose run --rm --no-deps backend-test mypy app
+
   frontend:
     name: Frontend Build
     runs-on: ubuntu-latest

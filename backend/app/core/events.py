@@ -5,7 +5,7 @@ import logging
 from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, cast
 from uuid import UUID, uuid4
 
 from redis.exceptions import ResponseError
@@ -467,7 +467,7 @@ async def handle_stream_messages(
     redis_client: Redis,
 ) -> None:
     for message_id, fields in messages:
-        raw = fields.get("event") or fields.get(b"event")
+        raw = fields.get("event") or cast("dict[Any, Any]", fields).get(b"event")
         if raw is None:
             await redis_client.xack(key, group, message_id)
             continue

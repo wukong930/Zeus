@@ -115,7 +115,7 @@ async def stations_for_location(
     lat_max = min(location.latitude + radius_degrees, 90.0)
     lon_min = max(location.longitude - radius_degrees, -180.0)
     lon_max = min(location.longitude + radius_degrees, 180.0)
-    params = {
+    params: dict[str, str | int] = {
         "datasetid": NOAA_DAILY_DATASET,
         "extent": f"{lat_min:.4f},{lon_min:.4f},{lat_max:.4f},{lon_max:.4f}",
         "limit": max_candidates,
@@ -137,8 +137,8 @@ async def stations_for_location(
         for item in results
         if isinstance(item, dict) and item.get("id")
     ]
-    candidates = [candidate for candidate in candidates if candidate is not None]
-    return sorted(candidates, key=lambda item: (-(item.datacoverage or 0), item.distance_km))
+    resolved = [candidate for candidate in candidates if candidate is not None]
+    return sorted(resolved, key=lambda item: (-(item.datacoverage or 0), item.distance_km))
 
 
 async def _best_rows_for_location(

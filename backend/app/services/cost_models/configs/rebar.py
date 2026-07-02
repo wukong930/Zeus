@@ -15,8 +15,10 @@ class RebarCostFormula(CostFormula):
         upstream: dict[str, CostModelResult] | None = None,
         current_price: float | None = None,
     ) -> CostModelResult:
-        iron_ore_cost = upstream.get("I").unit_cost if upstream and upstream.get("I") else 880
-        coke_cost = upstream.get("J").unit_cost if upstream and upstream.get("J") else 1920
+        iron_ore = upstream.get("I") if upstream else None
+        iron_ore_cost = iron_ore.unit_cost if iron_ore else 880
+        coke = upstream.get("J") if upstream else None
+        coke_cost = coke.unit_cost if coke else 1920
         iron_ratio = numeric_input(inputs, "iron_ore_ratio", 1.60, unit="t/t")
         coke_ratio = numeric_input(inputs, "coke_ratio", 0.50, unit="t/t")
         conversion = numeric_input(inputs, "blast_furnace_conversion_fee", 760)

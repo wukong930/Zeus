@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import UUID
@@ -29,12 +30,12 @@ class EventIntelligenceDraft:
     summary: str
     event_type: str
     event_timestamp: datetime
-    entities: tuple[str, ...]
-    symbols: tuple[str, ...]
-    regions: tuple[str, ...]
-    mechanisms: tuple[str, ...]
-    evidence: tuple[str, ...]
-    counterevidence: tuple[str, ...]
+    entities: Sequence[str]
+    symbols: Sequence[str]
+    regions: Sequence[str]
+    mechanisms: Sequence[str]
+    evidence: Sequence[str]
+    counterevidence: Sequence[str]
     confidence: float
     impact_score: float
     status: str

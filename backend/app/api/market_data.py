@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 from datetime import datetime, timezone
 from uuid import UUID
 
@@ -218,7 +219,7 @@ def _recent_market_data_statement(symbols: list[str], limit: int, *, before: dat
         # within each symbol's stream timestamps are unique and `timestamp < before`
         # cannot skip a tied row at the page boundary.
         pit_ranked = pit_ranked.where(MarketData.timestamp < before)
-    pit_ranked = pit_ranked.subquery()
+    pit_ranked = pit_ranked.subquery()  # type: ignore[assignment]  # idiomatic Select -> Subquery
     symbol_ranked = (
         select(
             pit_ranked.c.id.label("id"),
@@ -314,7 +315,7 @@ def _market_data_cache_set(
     )
 
 
-def _market_data_read_rows(rows: list[MarketData | MarketDataRead]) -> list[MarketDataRead]:
+def _market_data_read_rows(rows: Sequence[MarketData | MarketDataRead]) -> list[MarketDataRead]:
     return [
         row if isinstance(row, MarketDataRead) else MarketDataRead.model_validate(row)
         for row in rows

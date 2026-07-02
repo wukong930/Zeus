@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import math
-from typing import Any
+from typing import Any, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import Field, StrictBool, field_validator
@@ -14,7 +14,7 @@ from app.schemas.common import MAX_INGEST_SYMBOL_LENGTH, PositionRead, StrictInp
 from app.services.risk.correlation import build_correlation_matrix
 from app.services.risk.market_data import load_risk_market_data
 from app.services.risk.stress import STRESS_SCENARIOS, run_stress_test, symbol_prefix
-from app.services.risk.types import RiskLeg, RiskPosition, StressScenario
+from app.services.risk.types import Direction, RiskLeg, RiskPosition, StressScenario
 from app.services.risk.var import calculate_var
 from app.services.symbols import normalize_root_symbol
 
@@ -238,7 +238,7 @@ def _leg_from_payload(payload: dict[str, Any]) -> RiskLeg:
     direction = "short" if str(payload.get("direction", "long")).lower() == "short" else "long"
     return RiskLeg(
         asset=asset,
-        direction=direction,
+        direction=cast("Direction", direction),
         size=_float_from_payload(payload, "size", "quantity", "lots", default=0.0),
         current_price=_float_from_payload(payload, "currentPrice", "current_price", "price", default=0.0),
         entry_price=_optional_float_from_payload(payload, "entryPrice", "entry_price"),

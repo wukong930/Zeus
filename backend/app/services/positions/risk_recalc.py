@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, cast
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.position import Position
 from app.services.risk.correlation import build_correlation_matrix
 from app.services.risk.market_data import load_risk_market_data
-from app.services.risk.types import RiskLeg, RiskPosition
+from app.services.risk.types import Direction, RiskLeg, RiskPosition
 from app.services.risk.var import calculate_var
 from app.services.symbols import normalize_root_symbol
 
@@ -68,10 +68,10 @@ async def recalculate_position_risk(session: AsyncSession) -> PositionRiskSnapsh
         warnings.append(f"{largest_symbol} concentration {concentration:.0%} exceeds limit")
 
     risk_positions = [_position_to_risk_position(row) for row in rows]
-    symbols = _risk_symbols(risk_positions)
-    market_data = await load_risk_market_data(session, symbols, limit=252)
+    risk_symbols = _risk_symbols(risk_positions)
+    market_data = await load_risk_market_data(session, risk_symbols, limit=252)
     var_result = calculate_var(risk_positions, market_data)
-    correlation = build_correlation_matrix(market_data, symbols, window=60)
+    correlation = build_correlation_matrix(market_data, risk_symbols, window=60)
 
     return PositionRiskSnapshot(
         open_positions=len(rows),
@@ -130,7 +130,7 @@ def _leg_from_payload(payload: dict) -> RiskLeg:
     direction = "short" if str(payload.get("direction", "long")).lower() == "short" else "long"
     return RiskLeg(
         asset=asset,
-        direction=direction,
+        direction=cast("Direction", direction),
         size=float(payload.get("size") or payload.get("quantity") or payload.get("lots") or 0),
         current_price=float(
             payload.get("currentPrice")

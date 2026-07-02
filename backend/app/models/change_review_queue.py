@@ -55,6 +55,8 @@ class ChangeReviewQueue(Base):
     def triage_attention_score(self) -> float | None:
         triage = _review_triage_payload(self.proposed_change)
         value = triage.get("attention_score")
+        if value is None:
+            return None
         try:
             return float(value)
         except (TypeError, ValueError):

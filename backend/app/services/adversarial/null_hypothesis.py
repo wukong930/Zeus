@@ -12,7 +12,7 @@ from app.models.null_distribution_cache import NullDistributionCache
 from app.models.signal import SignalTrack
 from app.services.adversarial.types import AdversarialCheckResult
 
-DEFAULT_NULL_STATS = {
+DEFAULT_NULL_STATS: dict[str, Any] = {
     "mean": 1.0,
     "std_dev": 0.5,
     "p95": 1.96,

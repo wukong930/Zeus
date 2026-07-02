@@ -58,7 +58,7 @@ def triage_change_review(
         score = _bounded_score(review_triage.get("attention_score"))
         requested_status = review_triage.get("queue_status")
         if requested_status in {"pending", "shadow_review"}:
-            queue_status = str(requested_status)
+            queue_status: str | None = str(requested_status)
         elif requested_status in {"evidence_only", None}:
             queue_status = None if requested_status == "evidence_only" else default_status
         else:
