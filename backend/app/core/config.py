@@ -34,6 +34,8 @@ class Settings(BaseSettings):
 
     redis_url: str = "redis://localhost:6379/0"
     cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:3000"])
+    # Per-client requests/minute; 0 disables (local dev/tests). See RateLimitMiddleware.
+    rate_limit_per_minute: int = 0
 
     llm_model: str | None = None
     llm_timeout_seconds: float = 120.0
