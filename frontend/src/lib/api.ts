@@ -1661,6 +1661,148 @@ export async function decideGovernanceReview(
   return mapGovernanceReview(row);
 }
 
+export interface ForecastRecordView {
+  id: string;
+  asOf: string;
+  signal: string;
+  modelVersion: string;
+  featureHash: string;
+  decisionGrade: boolean;
+  horizonDays: number;
+  universeSize: number;
+  long: string[];
+  short: string[];
+  targetWeights: Record<string, number>;
+  realizedReturn: number | null;
+  resolvedAt: string | null;
+  createdAt: string | null;
+}
+
+export interface ForecastDeflated {
+  deflated_sharpe: number;
+  deflated_pvalue: number;
+  passed_gate: boolean;
+}
+
+export interface ForecastShadowPerformance {
+  resolved: number;
+  meanReturn: number | null;
+  winRate: number | null;
+  sharpe: number | null;
+  deflated: ForecastDeflated | null;
+}
+
+export interface ForecastLive {
+  periods: number;
+  meanReturn: number;
+  sharpe: number;
+  maxDrawdown: number;
+  breached: boolean;
+  reason: string | null;
+}
+
+export interface ForecastOverview {
+  signal: string;
+  modelVersion: string;
+  promoted: boolean;
+  status: "authoritative" | "shadow";
+  latest: ForecastRecordView | null;
+  shadowPerformance: ForecastShadowPerformance;
+  live: ForecastLive;
+}
+
+interface BackendForecastRecord {
+  id: string;
+  as_of: string;
+  signal: string;
+  model_version: string;
+  feature_hash: string;
+  decision_grade: boolean;
+  horizon_days: number;
+  universe_size: number;
+  long: string[];
+  short: string[];
+  target_weights: Record<string, number>;
+  realized_return: number | null;
+  resolved_at: string | null;
+  created_at: string | null;
+}
+
+interface BackendForecastOverview {
+  signal: string;
+  model_version: string;
+  promoted: boolean;
+  status: "authoritative" | "shadow";
+  latest: BackendForecastRecord | null;
+  shadow_performance: {
+    resolved: number;
+    mean_return: number | null;
+    win_rate: number | null;
+    sharpe: number | null;
+    deflated: ForecastDeflated | null;
+  };
+  live: {
+    periods: number;
+    mean_return: number;
+    sharpe: number;
+    max_drawdown: number;
+    breached: boolean;
+    reason: string | null;
+  };
+}
+
+function mapForecastRecord(row: BackendForecastRecord): ForecastRecordView {
+  return {
+    id: row.id,
+    asOf: row.as_of,
+    signal: row.signal,
+    modelVersion: row.model_version,
+    featureHash: row.feature_hash,
+    decisionGrade: row.decision_grade,
+    horizonDays: row.horizon_days,
+    universeSize: row.universe_size,
+    long: row.long,
+    short: row.short,
+    targetWeights: row.target_weights,
+    realizedReturn: row.realized_return,
+    resolvedAt: row.resolved_at,
+    createdAt: row.created_at,
+  };
+}
+
+export async function fetchForecastOverview(): Promise<ForecastOverview> {
+  const row = await fetchJson<BackendForecastOverview>("/api/forecast/overview");
+  return {
+    signal: row.signal,
+    modelVersion: row.model_version,
+    promoted: row.promoted,
+    status: row.status,
+    latest: row.latest ? mapForecastRecord(row.latest) : null,
+    shadowPerformance: {
+      resolved: row.shadow_performance.resolved,
+      meanReturn: row.shadow_performance.mean_return,
+      winRate: row.shadow_performance.win_rate,
+      sharpe: row.shadow_performance.sharpe,
+      deflated: row.shadow_performance.deflated,
+    },
+    live: {
+      periods: row.live.periods,
+      meanReturn: row.live.mean_return,
+      sharpe: row.live.sharpe,
+      maxDrawdown: row.live.max_drawdown,
+      breached: row.live.breached,
+      reason: row.live.reason,
+    },
+  };
+}
+
+export async function fetchForecastHistory(limit = 30): Promise<ForecastRecordView[]> {
+  const row = await fetchJson<{ signal: string; records: BackendForecastRecord[] }>(
+    `/api/forecast/history?limit=${limit}`
+  );
+  return row.records.map(mapForecastRecord);
+}
+
 export async function createEventIntelligenceFromNews(
   newsEventId: string
 ): Promise<EventIntelligenceResolveResult> {

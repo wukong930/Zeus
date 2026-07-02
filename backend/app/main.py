@@ -18,6 +18,7 @@ from app.api.data_sources import router as data_sources_router
 from app.api.drift import router as drift_router
 from app.api.event_intelligence import router as event_intelligence_router
 from app.api.feedback import router as feedback_router
+from app.api.forecast import router as forecast_router
 from app.api.governance import router as governance_router
 from app.api.health import router as health_router
 from app.api.industry_data import router as industry_data_router
@@ -107,6 +108,7 @@ def create_app() -> FastAPI:
     app.include_router(notebook_router)
     app.include_router(industry_data_router)
     app.include_router(feedback_router)
+    app.include_router(forecast_router)
     app.include_router(governance_router)
     app.include_router(learning_router)
     app.include_router(llm_usage_router)
