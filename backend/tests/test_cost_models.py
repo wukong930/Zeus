@@ -741,7 +741,9 @@ async def test_quality_report_recommends_deferring_paid_feed_when_checks_pass() 
 
 
 async def test_rubber_quality_report_validates_public_breakevens() -> None:
-    chain = calculate_cost_chain(symbols=("NR", "RU"))
+    # Seasonality is now deterministic and as-of driven: use the same reference
+    # month as the snapshot_date and the May-3 public benchmarks (no wall clock).
+    chain = calculate_cost_chain(symbols=("NR", "RU"), as_of=date(2026, 5, 3))
     snapshots = {
         symbol: CostSnapshot(
             snapshot_date=date(2026, 5, 3),
@@ -762,6 +764,24 @@ async def test_rubber_quality_report_validates_public_breakevens() -> None:
     assert report.benchmark_error_avg_pct < 2
     assert report.signal_case_hit_rate == 1.0
     assert report.paid_data_recommendation == "defer_paid_purchase_monitor_weekly"
+
+
+def test_cost_chain_is_deterministic_and_as_of_driven() -> None:
+    # Same as-of month -> identical output: no wall-clock leak in the calculation.
+    may_early = calculate_cost_chain(symbols=("NR", "RU"), as_of=date(2026, 5, 3))
+    may_late = calculate_cost_chain(symbols=("NR", "RU"), as_of=date(2026, 5, 28))
+    assert may_early.results["NR"].breakevens == may_late.results["NR"].breakevens
+
+    # A different season (winter tapping premium) shifts the rubber cost, so
+    # seasonality is genuinely applied from the as-of date, not ignored.
+    winter = calculate_cost_chain(symbols=("NR", "RU"), as_of=date(2026, 1, 15))
+    assert winter.results["NR"].unit_cost != may_early.results["NR"].unit_cost
+
+    # No as_of -> still deterministic (no seasonal claim), never the wall clock.
+    assert (
+        calculate_cost_chain(symbols=("NR", "RU")).results["NR"].breakevens
+        == calculate_cost_chain(symbols=("NR", "RU")).results["NR"].breakevens
+    )
 
 
 def test_news_extractor_finds_cost_data_points() -> None:

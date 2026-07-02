@@ -115,6 +115,7 @@ async def calculate_cost_snapshot(
         normalized,
         inputs_by_symbol=inputs_by_symbol,
         current_prices=current_prices,
+        as_of=datetime.now(timezone.utc).date(),
     )
 
 
@@ -216,15 +217,17 @@ async def snapshot_costs(
     await ensure_commodity_configs(session, symbols=symbols)
     if current_prices is None:
         current_prices = await current_prices_for_symbols(session, symbols)
+    effective_date = snapshot_date or datetime.now(timezone.utc).date()
     chain = calculate_cost_chain(
         symbols=symbols,
         inputs_by_symbol=inputs_by_symbol,
         current_prices=current_prices,
+        as_of=effective_date,
     )
     return await write_cost_snapshots(
         session,
         [chain.results[symbol] for symbol in symbols],
-        snapshot_date=snapshot_date,
+        snapshot_date=effective_date,
     )
 
 

@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
@@ -135,6 +135,7 @@ async def simulate_cost_model(
             symbols=chain_order,
             inputs_by_symbol=inputs_by_symbol,
             current_prices=current_prices,
+            as_of=datetime.now(timezone.utc).date(),
         )
         result = chain.results[normalized]
     except (KeyError, ValueError) as exc:
@@ -153,7 +154,11 @@ async def get_cost_chain(
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=f"Unsupported cost model symbol: {symbol}") from exc
     current_prices = await current_prices_for_symbols(session, chain_order)
-    chain = calculate_cost_chain(symbols=chain_order, current_prices=current_prices)
+    chain = calculate_cost_chain(
+        symbols=chain_order,
+        current_prices=current_prices,
+        as_of=datetime.now(timezone.utc).date(),
+    )
     return {
         "sector": chain.sector,
         "symbols": chain.symbols,

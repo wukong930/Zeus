@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from datetime import date
 from typing import Any
 
 from app.services.cost_models.configs import ALL_COST_FORMULAS
@@ -61,13 +62,33 @@ def chain_order_for_symbol(symbol: str) -> tuple[str, ...]:
     raise ValueError(f"Unsupported cost model symbol: {symbol}")
 
 
+def _inject_as_of(
+    inputs_by_symbol: dict[str, dict[str, Any]] | None,
+    symbols: tuple[str, ...],
+    as_of: date | None,
+) -> dict[str, dict[str, Any]]:
+    """Return a copy of ``inputs_by_symbol`` with the as-of month propagated.
+
+    Seasonality-aware formulas (rubber) read ``seasonal_month``; we set it from
+    ``as_of`` so the chain is deterministic — same as_of always yields the same
+    cost. An explicit ``seasonal_month`` in the inputs still wins (setdefault).
+    """
+
+    merged = {key.upper(): dict(value) for key, value in (inputs_by_symbol or {}).items()}
+    if as_of is not None:
+        for symbol in symbols:
+            merged.setdefault(symbol.upper(), {}).setdefault("seasonal_month", as_of.month)
+    return merged
+
+
 def calculate_cost_chain(
     *,
     symbols: tuple[str, ...] = FERROUS_CHAIN_ORDER,
     inputs_by_symbol: dict[str, dict[str, Any]] | None = None,
     current_prices: dict[str, float | None] | None = None,
+    as_of: date | None = None,
 ) -> CostChainResult:
-    inputs_by_symbol = inputs_by_symbol or {}
+    inputs_by_symbol = _inject_as_of(inputs_by_symbol, symbols, as_of)
     current_prices = current_prices or {}
     results: dict[str, CostModelResult] = {}
 
@@ -90,6 +111,7 @@ def calculate_symbol_cost(
     *,
     inputs_by_symbol: dict[str, dict[str, Any]] | None = None,
     current_prices: dict[str, float | None] | None = None,
+    as_of: date | None = None,
 ) -> CostModelResult:
     normalized = symbol.upper()
     if normalized in {"RB", "HC", "RU"}:
@@ -97,14 +119,17 @@ def calculate_symbol_cost(
             symbols=chain_order_for_symbol(normalized),
             inputs_by_symbol=inputs_by_symbol,
             current_prices=current_prices,
+            as_of=as_of,
         ).results[normalized]
     if normalized == "J":
         return calculate_cost_chain(
             symbols=("JM", "J"),
             inputs_by_symbol=inputs_by_symbol,
             current_prices=current_prices,
+            as_of=as_of,
         ).results[normalized]
+    injected = _inject_as_of(inputs_by_symbol, (normalized,), as_of)
     return get_cost_formula(normalized).calculate(
-        (inputs_by_symbol or {}).get(normalized, {}),
+        injected.get(normalized, {}),
         current_price=(current_prices or {}).get(normalized),
     )

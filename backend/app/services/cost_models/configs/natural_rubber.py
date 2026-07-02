@@ -1,4 +1,3 @@
-from datetime import datetime, timezone
 from typing import Any
 
 from app.services.cost_models.framework import CostFormula, CostModelResult, component, numeric_input
@@ -22,11 +21,18 @@ class NaturalRubberCostFormula(CostFormula):
     ) -> CostModelResult:
         del upstream
         defaults = public_rubber_inputs()
-        observed_month = int((inputs or {}).get("seasonal_month") or datetime.now(timezone.utc).month)
+        # Seasonality is a function of the AS-OF month, threaded in explicitly via
+        # ``seasonal_month`` (calculate_cost_chain injects it from its ``as_of``).
+        # No wall-clock fallback: an unspecified month means no seasonal claim, so
+        # the same inputs always produce the same cost (deterministic / PIT-safe).
+        observed_month = (inputs or {}).get("seasonal_month")
+        default_seasonal = (
+            rubber_seasonal_factor(int(observed_month)) if observed_month is not None else 0.0
+        )
         seasonal_factor = numeric_input(
             inputs,
             "seasonal_factor_pct",
-            rubber_seasonal_factor(observed_month),
+            default_seasonal,
             unit="pct",
         )
         origin = numeric_input(inputs, "thai_field_latex_cny", defaults["thai_field_latex_cny"])
