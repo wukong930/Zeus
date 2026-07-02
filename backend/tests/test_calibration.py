@@ -3,7 +3,10 @@ from datetime import datetime, timezone
 from sqlalchemy.dialects import postgresql
 
 from app.models.signal import SignalTrack
-from app.services.calibration.hit_rate import summarize_outcomes
+from app.services.calibration.hit_rate import (
+    summarize_outcomes,
+    summarize_outcomes_by_semantics,
+)
 from app.services.calibration.tracker import (
     _active_calibration_statement,
     signal_combination_hash,
@@ -173,6 +176,37 @@ def test_summarize_outcomes_counts_hit_and_miss_only() -> None:
     assert summary.misses == 1
     assert summary.total == 2
     assert summary.hit_rate == 0.5
+
+
+def _track(signal_type: str, outcome: str) -> SignalTrack:
+    return SignalTrack(
+        signal_type=signal_type,
+        category="ferrous",
+        confidence=0.7,
+        outcome=outcome,
+        created_at=datetime.now(timezone.utc),
+    )
+
+
+def test_summarize_outcomes_by_semantics_does_not_blend_classes() -> None:
+    rows = [
+        _track("momentum", "hit"),  # directional
+        _track("momentum", "miss"),  # directional
+        _track("spread_anomaly", "hit"),  # mean_reversion
+        _track("regime_shift", "miss"),  # volatility
+    ]
+
+    # The pooled number hides the split: 2/4 = 50% overall...
+    assert summarize_outcomes(rows).hit_rate == 0.5
+
+    # ...while the honest breakdown shows a 100% mean-reversion and a 0% volatility
+    # bucket that the pooled figure blended away.
+    by_sem = summarize_outcomes_by_semantics(rows)
+    assert by_sem["directional"].hits == 1 and by_sem["directional"].total == 2
+    assert by_sem["directional"].hit_rate == 0.5
+    assert by_sem["mean_reversion"].hit_rate == 1.0
+    assert by_sem["volatility"].hit_rate == 0.0
+    assert by_sem["volatility"].hits == 0 and by_sem["volatility"].total == 1
 
 
 def _compile_postgres(statement) -> str:

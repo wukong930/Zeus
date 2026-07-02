@@ -7,6 +7,17 @@ from app.services.signals.types import MarketBar, OutcomeEvaluation, SpreadInfo,
 
 
 class SpreadAnomalyEvaluator:
+    """DORMANT in production — see ``detector.DORMANT_SIGNAL_TYPES``.
+
+    Requires ``context.spread_stats``, which no production pipeline computes (only
+    ``tools/performance_baseline.py`` hand-feeds it), so ``evaluate`` always
+    returns None in the live scan/shadow paths. Kept because the logic is
+    unit-tested and spread mean-reversion is a valid concept, but note the naive
+    z-score version was shown to be a contract-roll artifact with no validated
+    edge (docs/PREDICTION_RESEARCH_FINDINGS.md). Reactivate by adding a
+    roll-adjusted spread_stats producer upstream, not by editing this class.
+    """
+
     signal_type = "spread_anomaly"
 
     async def evaluate(self, context: TriggerContext) -> TriggerResult | None:

@@ -35,6 +35,18 @@ DEFAULT_EVALUATORS: tuple[TriggerEvaluator, ...] = (
 
 ROLL_WINDOW_DEGRADED_SIGNALS = {"spread_anomaly", "basis_shift"}
 
+# Signal types whose evaluators are coherent + unit-tested but DORMANT in
+# production: they gate on ``context.spread_stats`` (z-score / ADF / half-life),
+# which NO production producer computes — the scan/shadow pipelines never put a
+# ``spread_stats`` key in the payload, so these evaluators always return None and
+# never emit a live signal. Only ``app/tools/performance_baseline.py`` hand-feeds
+# spread_stats. They are intentionally kept (not deleted) because spread/basis are
+# valid concepts and the logic is tested — but note the naive z-score spread
+# mean-reversion was shown to be a contract-roll artifact with no validated edge
+# (see docs/PREDICTION_RESEARCH_FINDINGS.md §2). Reactivation requires adding a
+# roll-adjusted spread_stats producer upstream, not changing these evaluators.
+DORMANT_SIGNAL_TYPES = frozenset({"spread_anomaly", "basis_shift"})
+
 logger = logging.getLogger(__name__)
 
 

@@ -41,6 +41,8 @@
 | 持仓量（OI）因子 | OI 变化 / 价-OI 背离 IC | ❌ 与反转正交但 IC 弱且符号不稳——正交但无预测力 |
 | **carry（期限结构）** | 17 SHFE 品种、近月/次月展期收益 | 🟡 **真因子但卡数据**（见 §4） |
 
+> **由此产生的代码诚实性标注**：价差 MR 无 edge 的结论意味着依赖它的 `spread_anomaly` / `basis_shift` 评估器不值得为交易接线。它们本就是**休眠**的——gate 在 `context.spread_stats` 上，而生产管线从不计算/注入该字段（只有 `tools/performance_baseline.py` 手喂），故在实盘 scan/shadow 路径中**永不触发**。已在 `detector.DORMANT_SIGNAL_TYPES` + 两个评估器的 docstring 中显式标注为休眠（保留可复活：上游加一个换月复权的 spread_stats 生产者即可，无需改评估器）。
+
 ---
 
 ## 3. 生产信号：横截面反转（已验证、已定稿）

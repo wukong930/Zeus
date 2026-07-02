@@ -43,33 +43,15 @@ from app.services.backtest.multiple_testing import (
 )
 from app.services.backtest.path_metrics import PathMetrics, calculate_path_metrics
 from app.services.backtest.slippage import BASE_SLIPPAGE_BPS_BY_TIER
+from app.services.signals.semantics import OutcomeSemantics, classify_semantics
 
-OutcomeSemantics = Literal["directional", "mean_reversion", "volatility", "unknown"]
 Horizon = Literal[1, 5, 20]
 
 TRADING_DAYS_PER_YEAR = 252
 
-# signal_type -> outcome semantics, mirroring which outcome helper each
-# evaluator in app/services/signals/evaluators/*.py actually calls. Only
-# "directional" signals make a price-direction claim that can be scored as a
-# cost-aware long/short return; the rest assert mean reversion or volatility
-# expansion and must not be folded into a directional edge number.
-DIRECTIONAL_SIGNALS: frozenset[str] = frozenset(
-    {
-        "momentum",
-        "basis_shift",
-        "price_gap",
-        "event_driven",
-        "news_event",
-        "rubber_supply_shock",
-        "capacity_contraction",
-        "marginal_capacity_squeeze",
-        "median_pressure",
-        "restart_expectation",
-    }
-)
-MEAN_REVERSION_SIGNALS: frozenset[str] = frozenset({"spread_anomaly"})
-VOLATILITY_SIGNALS: frozenset[str] = frozenset({"regime_shift", "inventory_shock"})
+# Signal outcome semantics (directional / mean_reversion / volatility) live in
+# app/services/signals/semantics.py — the single source of truth shared with the
+# live calibration hit-rate breakdown — and are imported above.
 
 # Natural scoring horizon per signal, mirroring the horizon each evaluator uses
 # for its own outcome. Used only as the default when the caller does not pin a
@@ -89,16 +71,6 @@ DEFAULT_HORIZON_BY_SIGNAL: dict[str, Horizon] = {
     "regime_shift": 20,
     "inventory_shock": 5,
 }
-
-
-def classify_semantics(signal_type: str) -> OutcomeSemantics:
-    if signal_type in DIRECTIONAL_SIGNALS:
-        return "directional"
-    if signal_type in MEAN_REVERSION_SIGNALS:
-        return "mean_reversion"
-    if signal_type in VOLATILITY_SIGNALS:
-        return "volatility"
-    return "unknown"
 
 
 def default_round_trip_cost_bps() -> float:
