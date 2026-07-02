@@ -47,3 +47,6 @@ target-version = "py311"
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+markers = [
+    "integration: needs a live Postgres (skipped when none is reachable); run only these with -m integration, exclude with -m 'not integration'",
+]
