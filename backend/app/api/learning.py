@@ -3,7 +3,7 @@ from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -14,7 +14,7 @@ from app.services.shadow.comparator import compare_shadow_run
 from app.services.shadow.runner import create_shadow_run
 from app.services.vector_search.eval import compare_vector_search_candidate, evaluate_vector_search
 from app.services.vector_search.eval_seed import seed_vector_eval_cases
-from app.services.vector_search.hybrid_search import hybrid_search
+from app.services.vector_search.hybrid_search import VectorSearchResult, hybrid_search
 
 router = APIRouter(prefix="/api/learning", tags=["learning"])
 
@@ -27,13 +27,18 @@ MAX_VECTOR_CANDIDATE_NAME_LENGTH = 120
 @router.get("/hypotheses")
 async def list_learning_hypotheses(
     status_filter: str | None = Query(default=None, max_length=MAX_LEARNING_STATUS_LENGTH),
+    before: datetime | None = Query(default=None),
+    before_id: UUID | None = Query(default=None),
     limit: int = Query(default=100, ge=1, le=500),
     session: AsyncSession = Depends(get_db),
 ) -> list[dict[str, Any]]:
-    statement = select(LearningHypothesis).order_by(LearningHypothesis.created_at.desc())
-    if status_filter is not None:
-        statement = statement.where(LearningHypothesis.status == status_filter)
-    rows = (await session.scalars(statement.limit(limit))).all()
+    statement = _learning_hypotheses_statement(
+        status_filter=status_filter,
+        before=before,
+        before_id=before_id,
+        limit=limit,
+    )
+    rows = (await session.scalars(statement)).all()
     return [learning_hypothesis_to_dict(row) for row in rows]
 
 
@@ -202,13 +207,13 @@ async def compare_vector_embedding_shadow(
     )
 
     async def candidate_searcher(
-        search_session: AsyncSession,
+        session: AsyncSession,
         *,
         query_text: str,
         limit: int = 10,
-    ):
+    ) -> list[VectorSearchResult]:
         return await hybrid_search(
-            search_session,
+            session,
             query_text=query_text,
             limit=limit,
             **candidate_config,
@@ -258,6 +263,35 @@ def learning_hypothesis_to_dict(row: LearningHypothesis) -> dict[str, Any]:
         "created_at": row.created_at.isoformat() if row.created_at else None,
         "updated_at": row.updated_at.isoformat() if row.updated_at else None,
     }
+
+
+def _learning_hypotheses_statement(
+    *,
+    status_filter: str | None,
+    before: datetime | None,
+    limit: int,
+    before_id: UUID | None = None,
+):
+    statement = select(LearningHypothesis).order_by(
+        LearningHypothesis.created_at.desc(),
+        LearningHypothesis.id.desc(),
+    )
+    if status_filter is not None:
+        statement = statement.where(LearningHypothesis.status == status_filter)
+    if before is not None:
+        if before_id is not None:
+            statement = statement.where(
+                or_(
+                    LearningHypothesis.created_at < before,
+                    and_(
+                        LearningHypothesis.created_at == before,
+                        LearningHypothesis.id < before_id,
+                    ),
+                )
+            )
+        else:
+            statement = statement.where(LearningHypothesis.created_at < before)
+    return statement.limit(limit)
 
 
 def shadow_run_belongs_to_hypothesis(row: ShadowRun, hypothesis_id: UUID) -> bool:

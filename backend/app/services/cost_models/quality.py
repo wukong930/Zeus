@@ -265,8 +265,10 @@ async def latest_or_calculated_snapshots(
 
     if symbols in {FERROUS_CHAIN_ORDER, RUBBER_CHAIN_ORDER}:
         current_prices = await current_prices_for_symbols(session, symbols)
-        chain = calculate_cost_chain(symbols=symbols, current_prices=current_prices)
         snapshot_date = datetime.now(timezone.utc).date()
+        chain = calculate_cost_chain(
+            symbols=symbols, current_prices=current_prices, as_of=snapshot_date
+        )
         for symbol in missing_symbols:
             snapshots[symbol] = CostSnapshot(
                 snapshot_date=snapshot_date,

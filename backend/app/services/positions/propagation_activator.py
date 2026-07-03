@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from typing import Any
+from uuid import UUID
 
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -123,29 +124,14 @@ async def deactivate_position_propagation(session: AsyncSession, position: Posit
 
 async def graph_neighbors(session: AsyncSession, symbol: str) -> list[PropagationNode]:
     source = (
-        await session.scalars(
-            select(CommodityNode).where(CommodityNode.symbol == symbol).limit(1)
-        )
+        await session.scalars(_commodity_node_lookup_statement(symbol=symbol))
     ).first()
     if source is None:
         return []
 
     rows = (
         await session.execute(
-            select(RelationshipEdge, CommodityNode)
-            .join(
-                CommodityNode,
-                or_(
-                    CommodityNode.id == RelationshipEdge.target,
-                    CommodityNode.id == RelationshipEdge.source,
-                ),
-            )
-            .where(
-                or_(RelationshipEdge.source == source.id, RelationshipEdge.target == source.id),
-                CommodityNode.id != source.id,
-            )
-            .order_by(RelationshipEdge.strength.desc())
-            .limit(8)
+            _graph_neighbors_statement(source_id=source.id, limit=8)
         )
     ).all()
     return [
@@ -158,6 +144,34 @@ async def graph_neighbors(session: AsyncSession, symbol: str) -> list[Propagatio
         )
         for edge, node in rows
     ]
+
+
+def _commodity_node_lookup_statement(*, symbol: str):
+    return (
+        select(CommodityNode)
+        .where(CommodityNode.symbol == symbol)
+        .order_by(CommodityNode.id.asc())
+        .limit(1)
+    )
+
+
+def _graph_neighbors_statement(*, source_id: UUID, limit: int):
+    return (
+        select(RelationshipEdge, CommodityNode)
+        .join(
+            CommodityNode,
+            or_(
+                CommodityNode.id == RelationshipEdge.target,
+                CommodityNode.id == RelationshipEdge.source,
+            ),
+        )
+        .where(
+            or_(RelationshipEdge.source == source_id, RelationshipEdge.target == source_id),
+            CommodityNode.id != source_id,
+        )
+        .order_by(RelationshipEdge.strength.desc(), RelationshipEdge.id.asc())
+        .limit(limit)
+    )
 
 
 async def active_position_symbols(

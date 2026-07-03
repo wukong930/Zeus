@@ -69,6 +69,7 @@ class LLMBudget(Base):
     __tablename__ = "llm_budgets"
     __table_args__ = (
         UniqueConstraint("module", "period_start", name="uq_llm_budget_module_period"),
+        Index("ix_llm_budgets_active_lookup", "module", "period_start", "status", "updated_at", "id"),
         Index("ix_llm_budgets_module", "module"),
         Index("ix_llm_budgets_status", "status"),
     )

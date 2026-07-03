@@ -11,6 +11,19 @@ class Settings(BaseSettings):
     api_host: str = "0.0.0.0"
     api_port: int = 8000
     log_level: str = "info"
+    api_keys: str = Field(
+        default="",
+        description="Comma-separated API keys. When set, all /api routes except health "
+        "require a matching X-API-Key header. Empty disables auth (local dev only).",
+    )
+
+    @property
+    def api_key_set(self) -> frozenset[str]:
+        return frozenset(key.strip() for key in self.api_keys.split(",") if key.strip())
+
+    @property
+    def auth_enabled(self) -> bool:
+        return bool(self.api_key_set)
 
     database_url: str = Field(
         default="postgresql+asyncpg://zeus:zeus@localhost:55432/zeus",
@@ -21,6 +34,8 @@ class Settings(BaseSettings):
 
     redis_url: str = "redis://localhost:6379/0"
     cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:3000"])
+    # Per-client requests/minute; 0 disables (local dev/tests). See RateLimitMiddleware.
+    rate_limit_per_minute: int = 0
 
     llm_model: str | None = None
     llm_timeout_seconds: float = 120.0
@@ -40,6 +55,7 @@ class Settings(BaseSettings):
         "RB0,HC0,I0,J0,JM0,RU0,NR0,BR0,SC0,TA0,MA0,PP0,CU0,AL0,ZN0,NI0,M0,Y0,P0,AU0,AG0"
     )
     data_source_akshare_history_limit: int = 80
+    data_source_market_context_max_age_hours: int = Field(default=24, ge=1, le=720)
     data_source_gdelt_enabled: bool = False
     data_source_gdelt_query: str = "commodities futures OR supply chain OR inventory"
     data_source_open_meteo_enabled: bool = False

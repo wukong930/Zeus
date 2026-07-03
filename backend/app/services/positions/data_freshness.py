@@ -36,9 +36,7 @@ async def check_position_freshness(
 ) -> FreshnessResult:
     effective_at = as_of or datetime.now(timezone.utc)
     rows = (
-        await session.scalars(
-            select(Position).where(Position.status == "open").order_by(Position.opened_at.desc())
-        )
+        await session.scalars(_position_freshness_statement())
     ).all()
     stale_count = 0
     degraded_count = 0
@@ -66,4 +64,12 @@ async def check_position_freshness(
         stale=stale_count,
         degraded=degraded_count,
         position_ids=affected,
+    )
+
+
+def _position_freshness_statement():
+    return (
+        select(Position)
+        .where(Position.status == "open")
+        .order_by(Position.opened_at.desc(), Position.id.desc())
     )

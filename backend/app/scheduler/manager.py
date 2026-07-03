@@ -23,6 +23,8 @@ class ScheduledJobState:
 
     def status(self, *, handler_registered: bool = True) -> str:
         if not handler_registered:
+            if not self.enabled and not _missing_handler_error(self.last_error):
+                return "planned"
             return "unconfigured"
         if not self.enabled:
             return "disabled"
@@ -37,6 +39,7 @@ class ScheduledJobState:
     def to_dict(self, *, handler_registered: bool = True) -> dict[str, Any]:
         data = asdict(self)
         data["status"] = self.status(handler_registered=handler_registered)
+        data["handler_registered"] = handler_registered
         if self.last_run is not None:
             data["last_run"] = self.last_run.isoformat()
         return data
@@ -92,18 +95,33 @@ class SchedulerManager:
             job.id: job.status(handler_registered=job.id in self._handlers)
             for job in jobs
         }
+        registered_jobs = [job.id for job in jobs if job.id in self._handlers]
+        missing_jobs = [job.id for job in jobs if job.id not in self._handlers]
+        unconfigured_jobs = [job.id for job in jobs if statuses[job.id] == "unconfigured"]
+        planned_unconfigured_jobs = [
+            job.id for job in jobs if statuses[job.id] == "planned"
+        ]
         return {
             "total_jobs": len(jobs),
             "enabled_jobs": sum(1 for job in jobs if job.enabled and job.id in self._handlers),
             "degraded_jobs": [job.id for job in jobs if statuses[job.id] == "degraded"],
             "warning_jobs": [job.id for job in jobs if statuses[job.id] == "warning"],
-            "unconfigured_jobs": [job.id for job in jobs if statuses[job.id] == "unconfigured"],
+            "unconfigured_jobs": unconfigured_jobs,
+            "planned_unconfigured_jobs": planned_unconfigured_jobs,
+            "handler_coverage": {
+                "total": len(jobs),
+                "registered": len(registered_jobs),
+                "missing": len(missing_jobs),
+                "unconfigured": len(unconfigured_jobs),
+                "planned": len(planned_unconfigured_jobs),
+            },
             "last_activity": last_activity,
             "jobs": [
                 {
                     "id": job.id,
                     "name": job.name,
                     "status": statuses[job.id],
+                    "handler_registered": job.id in self._handlers,
                     "last_run": job.last_run.isoformat() if job.last_run else None,
                     "last_error": job.last_error if job.consecutive_failures > 0 else None,
                 }
@@ -147,7 +165,8 @@ class SchedulerManager:
 
     def start_all(self) -> None:
         for job_id in self._jobs:
-            self.start_job(job_id)
+            if job_id in self._handlers:
+                self.start_job(job_id)
 
     def stop_all(self) -> None:
         for job_id in self._jobs:
@@ -210,3 +229,7 @@ def job_result_status(payload: dict[str, Any]) -> str:
     if status in {"degraded", "skipped"}:
         return str(status)
     return "success"
+
+
+def _missing_handler_error(error: str | None) -> bool:
+    return bool(error and error.startswith("No handler registered"))

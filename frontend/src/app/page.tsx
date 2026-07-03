@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Card, CardHeader, CardTitle, CardSubtitle } from "@/components/Card";
 import { CausalWeb } from "@/components/CausalWeb";
 import { DataSourceBadge, type DataSourceState } from "@/components/DataSourceBadge";
+import { MarketQuoteStrip } from "@/components/MarketQuoteStrip";
 import { SectorHeatmap } from "@/components/SectorHeatmap";
 import { Badge } from "@/components/Badge";
 import { MetricTile } from "@/components/MetricTile";
@@ -18,11 +19,10 @@ import {
   fetchCausalWebGraph,
   fetchLLMUsageSummary,
   fetchPortfolioSnapshot,
+  fetchRuntimeHeartbeatSnapshot,
   fetchSectorSnapshot,
-  fetchThresholdCalibrationReport,
   type LLMUsageSummary,
   type PortfolioPosition,
-  type ThresholdCalibrationReport,
 } from "@/lib/api";
 
 export default function CommandCenterPage() {
@@ -37,7 +37,7 @@ export default function CommandCenterPage() {
   const [causalSource, setCausalSource] = useState<DataSourceState>("loading");
   const [sectorSource, setSectorSource] = useState<DataSourceState>("loading");
   const [llmUsage, setLlmUsage] = useState<LLMUsageSummary | null>(null);
-  const [calibrationReport, setCalibrationReport] = useState<ThresholdCalibrationReport | null>(null);
+  const [calibrationSamples, setCalibrationSamples] = useState<number | null>(null);
   const [calibrationSource, setCalibrationSource] = useState<DataSourceState>("loading");
   const { text } = useI18n();
   const totalPnl = useMemo(
@@ -47,6 +47,10 @@ export default function CommandCenterPage() {
   const activeSignals = useMemo(
     () => causalNodes.filter((node) => node.type === "signal" && node.active).length,
     [causalNodes]
+  );
+  const quoteSymbols = useMemo(
+    () => dashboardQuoteSymbols(recentAlerts, positions),
+    [positions, recentAlerts]
   );
 
   useEffect(() => {
@@ -101,15 +105,15 @@ export default function CommandCenterPage() {
         if (mounted) setLlmUsage(summary);
       })
       .catch(() => undefined);
-    fetchThresholdCalibrationReport()
-      .then((report) => {
+    fetchRuntimeHeartbeatSnapshot()
+      .then((snapshot) => {
         if (!mounted) return;
-        setCalibrationReport(report);
+        setCalibrationSamples(snapshot.calibration.samples);
         setCalibrationSource("api");
       })
       .catch(() => {
         if (!mounted) return;
-        setCalibrationReport(null);
+        setCalibrationSamples(null);
         setCalibrationSource("fallback");
       });
     return () => {
@@ -130,6 +134,8 @@ export default function CommandCenterPage() {
           {text("重点：")} <span className="text-text-primary">{text(runtimeHighlight(recentAlerts, alertSource))}</span>
         </div>
       </div>
+
+      <MarketQuoteStrip symbols={quoteSymbols} />
 
       {/* Top row: Causal Web + Alerts */}
       <div className="grid grid-cols-12 gap-5">
@@ -296,7 +302,7 @@ export default function CommandCenterPage() {
         />
         <MetricTile
           label={text("校准进度")}
-          value={calibrationReport ? String(calibrationReport.samples) : "--"}
+          value={calibrationSamples !== null ? String(calibrationSamples) : "--"}
           caption={text(calibrationCaption(calibrationSource))}
           icon={Gauge}
           tone={calibrationSource === "fallback" ? "warning" : "cyan"}
@@ -357,4 +363,24 @@ function calibrationCaption(source: DataSourceState): string {
   if (source === "loading") return "校准加载中";
   if (source === "fallback") return "校准接口暂不可用";
   return "样本量";
+}
+
+const DEFAULT_COMMAND_QUOTE_SYMBOLS = ["RB", "RU", "NR", "SC", "I", "CU", "AU", "AG"];
+const DASHBOARD_SYMBOL_UNIVERSE = new Set(
+  SECTORS.flatMap((sector) => sector.symbols.map((symbol) => symbol.code))
+);
+
+function dashboardQuoteSymbols(alerts: Alert[], positions: PortfolioPosition[]): string[] {
+  const candidates = [
+    ...positions.map((position) => position.symbol),
+    ...alerts.flatMap((alert) => [alert.symbol, ...alert.signalChain]),
+    ...DEFAULT_COMMAND_QUOTE_SYMBOLS,
+  ];
+  return Array.from(
+    new Set(
+      candidates
+        .map((symbol) => symbol.trim().toUpperCase())
+        .filter((symbol) => DASHBOARD_SYMBOL_UNIVERSE.has(symbol))
+    )
+  ).slice(0, 10);
 }

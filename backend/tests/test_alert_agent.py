@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 import pytest
@@ -10,10 +10,26 @@ from app.models.alert_agent import AlertAgentConfig, AlertDedupCache
 from app.models.signal import SignalTrack
 from app.schemas.common import HumanDecisionCreate
 from app.services.alert_agent.classifier import classify_alert
-from app.services.alert_agent.config import ConfidenceThresholds, load_confidence_thresholds
-from app.services.alert_agent.dedup import check_alert_dedup, signal_direction
+from app.services.alert_agent.config import (
+    ConfidenceThresholds,
+    alert_agent_config_row_statement,
+    load_confidence_thresholds,
+)
+from app.services.alert_agent.dedup import (
+    alert_dedup_lookup_statement,
+    check_alert_dedup,
+    combination_dedup_lookup_statement,
+    primary_symbol,
+    signal_direction,
+)
 from app.services.alert_agent.human_decision import apply_decision_to_alert
-from app.services.alert_agent.router import lacks_history, route_alert
+from app.services.alert_agent.narrative import generate_one_liner
+from app.services.alert_agent.router import (
+    calibration_history_statement,
+    lacks_history,
+    route_alert,
+    signal_type_set,
+)
 
 
 class FailingSession:
@@ -63,6 +79,20 @@ class FailingSecondLookupSession:
         self.rollback_count += 1
 
 
+class SequencedLookupSession:
+    def __init__(self, rows: list[object | None]) -> None:
+        self.rows = list(rows)
+        self.statements = []
+
+    async def scalars(self, statement):
+        self.statements.append(statement)
+        row = self.rows.pop(0) if self.rows else None
+        return SingleScalarResult(row)
+
+    async def scalar(self, _):
+        return 0
+
+
 class TargetSession:
     def __init__(
         self,
@@ -96,6 +126,40 @@ def test_classifier_marks_spread_signal_as_l3() -> None:
     }
 
     assert classify_alert(signal, {"priority": 70, "combined": 70}) == "L3"
+
+
+def test_classifier_normalizes_related_assets_and_severity() -> None:
+    assert (
+        classify_alert(
+            {
+                "signal_type": "momentum",
+                "severity": " HIGH ",
+                "related_assets": [" rb ", "RB", ""],
+            },
+            {"priority": 20, "combined": 20},
+        )
+        == "L2"
+    )
+    assert (
+        classify_alert(
+            {"signal_type": "momentum", "severity": "low", "related_assets": ["", " "]},
+            {"priority": 20, "combined": 20},
+        )
+        == "L0"
+    )
+
+
+def test_one_liner_normalizes_primary_symbol_and_severity() -> None:
+    text = generate_one_liner(
+        {
+            "signal_type": "momentum",
+            "severity": " HIGH ",
+            "related_assets": ["", " rb "],
+        },
+        "L2",
+    )
+
+    assert text == "RB high momentum L2"
 
 
 async def test_router_sends_conflict_to_arbitration() -> None:
@@ -140,6 +204,30 @@ async def test_router_requires_confirmation_for_low_confidence() -> None:
     assert decision.human_action_required is True
 
 
+async def test_router_signal_type_set_normalization_avoids_false_fuzzy_arbitration() -> None:
+    decision = await route_alert(
+        None,
+        signal={
+            "signal_type": " Momentum ",
+            "confidence": 0.60,
+            "severity": "medium",
+            "title": "RB momentum",
+            "summary": "Momentum signal.",
+            "risk_items": [],
+            "related_assets": ["RB"],
+        },
+        context={"category": "ferrous", "signal_types": [" Momentum ", "momentum", "MOMENTUM", ""]},
+        score={"priority": 50, "combined": 50},
+    )
+
+    assert signal_type_set(
+        {"signal_type": " Momentum "},
+        {"signal_types": [" Momentum ", "momentum", "MOMENTUM", ""]},
+    ) == {"momentum"}
+    assert decision.route == "notify"
+    assert "fuzzy_confidence" not in decision.reasons
+
+
 async def test_confidence_threshold_config_ignores_invalid_values() -> None:
     thresholds = await load_confidence_thresholds(
         ConfigSession({"auto": "bad", "notify": None})  # type: ignore[arg-type]
@@ -154,6 +242,38 @@ async def test_confidence_threshold_config_rejects_inverted_values() -> None:
     )
 
     assert thresholds == ConfidenceThresholds()
+
+
+def test_alert_agent_config_row_statement_uses_stable_latest_lookup() -> None:
+    statement = alert_agent_config_row_statement(key="confidence_thresholds")
+    compiled = str(statement.compile(compile_kwargs={"literal_binds": True}))
+
+    assert "alert_agent_config.key = 'confidence_thresholds'" in compiled
+    assert (
+        "ORDER BY alert_agent_config.updated_at DESC, alert_agent_config.id DESC"
+    ) in compiled
+    assert "LIMIT 1" in compiled
+
+
+def test_calibration_history_statement_uses_as_of_and_stable_latest_lookup() -> None:
+    statement = calibration_history_statement(
+        signal_type=" Momentum ",
+        category=" Ferrous ",
+        regime=" Volatile ",
+        as_of=datetime(2026, 5, 19, 12, tzinfo=timezone.utc),
+    )
+    compiled = str(statement.compile(compile_kwargs={"literal_binds": True}))
+
+    assert "signal_calibration.signal_type = 'momentum'" in compiled
+    assert "signal_calibration.category = 'ferrous'" in compiled
+    assert "signal_calibration.regime = 'volatile'" in compiled
+    assert "signal_calibration.effective_from <=" in compiled
+    assert "signal_calibration.computed_at <=" in compiled
+    assert (
+        "ORDER BY signal_calibration.effective_from DESC, "
+        "signal_calibration.computed_at DESC, signal_calibration.id DESC"
+    ) in compiled
+    assert "LIMIT 1" in compiled
 
 
 async def test_lacks_history_rolls_back_after_lookup_failure() -> None:
@@ -197,6 +317,126 @@ async def test_dedup_rolls_back_after_combination_lookup_failure() -> None:
     assert decision.suppressed is False
     assert session.scalars_count == 2
     assert session.rollback_count == 1
+
+
+def test_combination_dedup_lookup_is_scoped_to_symbol_and_direction() -> None:
+    statement = combination_dedup_lookup_statement(
+        symbol=" rb ",
+        direction="bullish",
+        evaluator=" Momentum ",
+        signal_combination_hash="combo-hash",
+    )
+
+    compiled = str(statement.compile(compile_kwargs={"literal_binds": True}))
+
+    assert "alert_dedup_cache.signal_combination_hash = 'combo-hash'" in compiled
+    assert "alert_dedup_cache.symbol = 'RB'" in compiled
+    assert "alert_dedup_cache.direction = 'bullish'" in compiled
+    assert "alert_dedup_cache.evaluator != 'momentum'" in compiled
+    assert (
+        "ORDER BY alert_dedup_cache.last_emitted_at DESC, "
+        "alert_dedup_cache.updated_at DESC, alert_dedup_cache.id DESC"
+    ) in compiled
+
+
+def test_alert_dedup_lookup_uses_stable_latest_row() -> None:
+    statement = alert_dedup_lookup_statement(
+        symbol=" rb ",
+        direction="bullish",
+        evaluator=" Momentum ",
+    )
+
+    compiled = str(statement.compile(compile_kwargs={"literal_binds": True}))
+
+    assert "alert_dedup_cache.symbol = 'RB'" in compiled
+    assert "alert_dedup_cache.direction = 'bullish'" in compiled
+    assert "alert_dedup_cache.evaluator = 'momentum'" in compiled
+    assert "ORDER BY alert_dedup_cache.updated_at DESC, alert_dedup_cache.id DESC" in compiled
+    assert "LIMIT 1" in compiled
+
+
+async def test_dedup_suppresses_recent_same_symbol_direction_without_upgrade() -> None:
+    now = datetime(2026, 5, 19, tzinfo=timezone.utc)
+    row = AlertDedupCache(
+        symbol="RB",
+        direction="bullish",
+        evaluator="momentum",
+        signal_combination_hash="combo-hash",
+        last_emitted_at=now - timedelta(hours=1),
+        last_severity="high",
+        last_score=80,
+        hit_count=1,
+        details={},
+    )
+    session = SequencedLookupSession([row])
+
+    decision = await check_alert_dedup(
+        session,  # type: ignore[arg-type]
+        signal={
+            "signal_type": "momentum",
+            "severity": "high",
+            "direction": "bullish",
+            "related_assets": ["RB"],
+        },
+        context={},
+        score={"combined": 82},
+        signal_combination_hash="combo-hash",
+        as_of=now,
+    )
+
+    assert decision.suppressed is True
+    assert decision.reason == "same_symbol_direction_evaluator"
+
+
+async def test_dedup_normalizes_primary_symbol_evaluator_and_severity() -> None:
+    decision = await check_alert_dedup(
+        None,
+        signal={
+            "signal_type": " Momentum ",
+            "severity": " HIGH ",
+            "direction": "bullish",
+            "related_assets": ["", " rb ", "RB"],
+        },
+        context={},
+        score={"combined": 82},
+    )
+
+    assert primary_symbol({"related_assets": ["", " rb "]}) == "RB"
+    assert decision.symbol == "RB"
+    assert decision.evaluator == "momentum"
+    assert decision.direction == "bullish"
+
+
+async def test_dedup_allows_recent_same_symbol_direction_when_score_breaks_out() -> None:
+    now = datetime(2026, 5, 19, tzinfo=timezone.utc)
+    row = AlertDedupCache(
+        symbol="RB",
+        direction="bullish",
+        evaluator="momentum",
+        signal_combination_hash="combo-hash",
+        last_emitted_at=now - timedelta(hours=1),
+        last_severity="high",
+        last_score=70,
+        hit_count=1,
+        details={},
+    )
+    session = SequencedLookupSession([row, None])
+
+    decision = await check_alert_dedup(
+        session,  # type: ignore[arg-type]
+        signal={
+            "signal_type": "momentum",
+            "severity": "high",
+            "direction": "bullish",
+            "related_assets": ["RB"],
+        },
+        context={},
+        score={"combined": 80},
+        signal_combination_hash="combo-hash",
+        as_of=now,
+    )
+
+    assert decision.suppressed is False
 
 
 def test_signal_direction_extracts_bullish_and_bearish_text() -> None:

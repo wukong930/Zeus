@@ -1,12 +1,18 @@
 from typing import Any
 
+from app.services.alert_agent.dedup import normalize_severity, normalize_symbol
+
 
 def classify_alert(signal: dict[str, Any], score: dict[str, Any] | Any | None = None) -> str:
     if signal.get("spread_info") is not None:
         return "L3"
 
-    related_assets = [str(asset) for asset in signal.get("related_assets", [])]
-    severity = str(signal.get("severity", "low"))
+    related_assets = {
+        symbol
+        for asset in signal.get("related_assets", [])
+        if (symbol := normalize_symbol(asset))
+    }
+    severity = normalize_severity(signal.get("severity", "low"))
     priority = score_value(score, "priority")
     combined = score_value(score, "combined")
 

@@ -3,6 +3,7 @@
 import { Card, CardHeader, CardTitle, CardSubtitle } from "@/components/Card";
 import { DataSourceBadge } from "@/components/DataSourceBadge";
 import type { DataSourceState } from "@/components/DataSourceBadge";
+import { MarketQuoteStrip } from "@/components/MarketQuoteStrip";
 import { SectorHeatmap } from "@/components/SectorHeatmap";
 import { Badge } from "@/components/Badge";
 import { MetricTile } from "@/components/MetricTile";
@@ -25,6 +26,10 @@ export default function SectorsPage() {
   );
   const avgConviction = useMemo(
     () => sectors.reduce((sum, sector) => sum + sector.conviction, 0) / Math.max(sectors.length, 1),
+    [sectors]
+  );
+  const quoteSymbols = useMemo(
+    () => (sectors.length > 0 ? sectors : SECTORS).flatMap((sector) => sector.symbols.map((symbol) => symbol.code)),
     [sectors]
   );
 
@@ -66,6 +71,8 @@ export default function SectorsPage() {
         <MetricTile label={text("平均 conviction")} value={`${avgConviction >= 0 ? "+" : ""}${avgConviction.toFixed(2)}`} caption="cross-sector" icon={Gauge} tone={avgConviction >= 0 ? "up" : "down"} />
         <MetricTile label={text("方向状态")} value={text(avgConviction >= 0 ? "Risk-on" : "Defensive")} caption="sector bias" icon={Activity} tone={avgConviction >= 0 ? "up" : "warning"} />
       </div>
+
+      <MarketQuoteStrip symbols={quoteSymbols} maxItems={24} />
 
       <Card variant="data">
         <CardHeader>

@@ -1,7 +1,8 @@
+from datetime import datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -12,18 +13,63 @@ from app.schemas.common import HumanDecisionCreate, HumanDecisionRead
 from app.services.alert_agent.human_decision import record_human_decision
 
 router = APIRouter(prefix="/api/arbitration", tags=["arbitration"])
+HUMAN_DECISION_PATTERN = "^(approve|reject|defer|override)$"
 
 
 @router.get("/decisions", response_model=list[HumanDecisionRead])
 async def list_human_decisions(
     alert_id: UUID | None = None,
+    signal_track_id: UUID | None = None,
+    decision: str | None = Query(default=None, pattern=HUMAN_DECISION_PATTERN),
+    before: datetime | None = Query(default=None),
+    before_id: UUID | None = Query(default=None),
     limit: int = Query(default=100, ge=1, le=500),
     session: AsyncSession = Depends(get_db),
 ) -> list[HumanDecision]:
-    statement = select(HumanDecision).order_by(HumanDecision.created_at.desc())
+    statement = _human_decisions_statement(
+        alert_id=alert_id,
+        signal_track_id=signal_track_id,
+        decision=decision,
+        before=before,
+        before_id=before_id,
+        limit=limit,
+    )
+    return list((await session.scalars(statement)).all())
+
+
+def _human_decisions_statement(
+    *,
+    alert_id: UUID | None,
+    signal_track_id: UUID | None,
+    decision: str | None,
+    before: datetime | None,
+    limit: int,
+    before_id: UUID | None = None,
+):
+    statement = select(HumanDecision).order_by(
+        HumanDecision.created_at.desc(),
+        HumanDecision.id.desc(),
+    )
     if alert_id is not None:
         statement = statement.where(HumanDecision.alert_id == alert_id)
-    return list((await session.scalars(statement.limit(limit))).all())
+    if signal_track_id is not None:
+        statement = statement.where(HumanDecision.signal_track_id == signal_track_id)
+    if decision is not None:
+        statement = statement.where(HumanDecision.decision == decision)
+    if before is not None:
+        if before_id is not None:
+            statement = statement.where(
+                or_(
+                    HumanDecision.created_at < before,
+                    and_(
+                        HumanDecision.created_at == before,
+                        HumanDecision.id < before_id,
+                    ),
+                )
+            )
+        else:
+            statement = statement.where(HumanDecision.created_at < before)
+    return statement.limit(limit)
 
 
 @router.post("/decisions", response_model=HumanDecisionRead)

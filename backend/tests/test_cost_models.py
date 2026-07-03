@@ -3,7 +3,9 @@ from datetime import date, datetime, timezone
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
+from sqlalchemy.dialects import postgresql
 
+from app.api.cost_models import _cost_model_history_statement
 from app.core.database import get_db
 from app.main import create_app
 from app.models.cost_snapshot import CostSnapshot
@@ -29,6 +31,7 @@ from app.services.cost_models.rubber_sources import (
     rubber_seasonal_factor,
 )
 from app.services.cost_models.snapshots import (
+    _cost_history_ranked_ids,
     build_cost_signal_context,
     cost_histories_for_symbols,
     cost_signal_contexts,
@@ -263,6 +266,27 @@ async def test_cost_histories_for_symbols_uses_single_batch_query() -> None:
     assert session.scalars_count == 1
 
 
+def test_cost_history_ranked_ids_uses_date_cursor_and_stable_order() -> None:
+    cursor_id = uuid4()
+    sql = _compile_postgres(
+        _cost_history_ranked_ids(
+            ("RB", "HC"),
+            before=date(2026, 5, 3),
+            before_created_at=datetime(2026, 5, 3, 12, tzinfo=timezone.utc),
+            before_id=cursor_id,
+        )
+    )
+
+    assert "cost_snapshots.symbol IN" in sql
+    assert "cost_snapshots.snapshot_date <" in sql
+    assert "cost_snapshots.created_at <" in sql
+    assert "cost_snapshots.id <" in sql
+    assert (
+        "ORDER BY cost_snapshots.snapshot_date DESC, "
+        "cost_snapshots.created_at DESC, cost_snapshots.id DESC"
+    ) in sql
+
+
 async def test_cost_signal_contexts_uses_single_batch_query() -> None:
     rows = [
         cost_snapshot_row("RB", date(2026, 5, 4)),
@@ -337,17 +361,30 @@ def test_build_cost_signal_context_serializes_snapshot_history() -> None:
     assert len(context["cost_snapshots"]) == 2
 
 
-def test_cost_histories_api_batches_requested_symbols(monkeypatch) -> None:
+def test_cost_histories_api_batches_requested_symbols_and_cursor(monkeypatch) -> None:
     captured: dict[str, object] = {}
     session = object()
+    cursor_id = uuid4()
+    cursor_created_at = datetime(2026, 5, 3, 12, tzinfo=timezone.utc)
 
     async def fake_db():
         yield session
 
-    async def fake_cost_histories_for_symbols(db_session, *, symbols, limit_per_symbol):
+    async def fake_cost_histories_for_symbols(
+        db_session,
+        *,
+        symbols,
+        limit_per_symbol,
+        before=None,
+        before_created_at=None,
+        before_id=None,
+    ):
         captured["session"] = db_session
         captured["symbols"] = symbols
         captured["limit"] = limit_per_symbol
+        captured["before"] = before
+        captured["before_created_at"] = before_created_at
+        captured["before_id"] = before_id
         return {
             "RB": [cost_snapshot_row("RB", date(2026, 5, 4))],
             "HC": [cost_snapshot_row("HC", date(2026, 5, 4))],
@@ -361,11 +398,82 @@ def test_cost_histories_api_batches_requested_symbols(monkeypatch) -> None:
     app.dependency_overrides[get_db] = fake_db
     client = TestClient(app)
 
-    response = client.get("/api/cost-models/histories?symbols=rb,hc,rb&limit=3")
+    response = client.get(
+        "/api/cost-models/histories",
+        params={
+            "symbols": "rb,hc,rb",
+            "limit": "3",
+            "before": "2026-05-03",
+            "before_created_at": cursor_created_at.isoformat(),
+            "before_id": str(cursor_id),
+        },
+    )
 
     assert response.status_code == 200
-    assert captured == {"session": session, "symbols": ("RB", "HC"), "limit": 3}
+    assert captured == {
+        "session": session,
+        "symbols": ("RB", "HC"),
+        "limit": 3,
+        "before": date(2026, 5, 3),
+        "before_created_at": cursor_created_at,
+        "before_id": cursor_id,
+    }
     assert set(response.json()) == {"RB", "HC"}
+
+
+def test_cost_histories_api_rejects_invalid_cursor() -> None:
+    app = create_app()
+    client = TestClient(app)
+
+    response = client.get("/api/cost-models/histories?symbols=RB&before=not-a-date")
+
+    assert response.status_code == 422
+
+    response = client.get(
+        f"/api/cost-models/histories?symbols=RB&before=2026-05-03"
+        f"&before_created_at=not-a-time&before_id={uuid4()}"
+    )
+
+    assert response.status_code == 422
+
+
+def test_cost_model_history_api_rejects_invalid_cursor() -> None:
+    app = create_app()
+    client = TestClient(app)
+
+    response = client.get("/api/cost-models/RB/history?before=not-a-date")
+
+    assert response.status_code == 422
+
+    response = client.get(
+        f"/api/cost-models/RB/history?before=2026-05-03"
+        f"&before_created_at=not-a-time&before_id={uuid4()}"
+    )
+
+    assert response.status_code == 422
+
+
+def test_cost_model_history_statement_uses_date_cursor_and_stable_order() -> None:
+    cursor_id = uuid4()
+    sql = _compile_postgres(
+        _cost_model_history_statement(
+            symbol="RB",
+            before=date(2026, 5, 3),
+            before_created_at=datetime(2026, 5, 3, 12, tzinfo=timezone.utc),
+            before_id=cursor_id,
+            limit=20,
+        )
+    )
+
+    assert "cost_snapshots.symbol =" in sql
+    assert "cost_snapshots.snapshot_date <" in sql
+    assert "cost_snapshots.created_at <" in sql
+    assert "cost_snapshots.id <" in sql
+    assert (
+        "ORDER BY cost_snapshots.snapshot_date DESC, "
+        "cost_snapshots.created_at DESC, cost_snapshots.id DESC"
+    ) in sql
+    assert "LIMIT" in sql
 
 
 def test_parse_cost_symbols_rejects_empty_after_normalization() -> None:
@@ -463,6 +571,10 @@ def trigger_result(signal_type: str) -> TriggerResult:
         title=signal_type,
         summary=signal_type,
     )
+
+
+def _compile_postgres(statement) -> str:
+    return str(statement.compile(dialect=postgresql.dialect()))
 
 
 async def test_rubber_cost_context_triggers_profit_margin_signals() -> None:
@@ -629,7 +741,9 @@ async def test_quality_report_recommends_deferring_paid_feed_when_checks_pass() 
 
 
 async def test_rubber_quality_report_validates_public_breakevens() -> None:
-    chain = calculate_cost_chain(symbols=("NR", "RU"))
+    # Seasonality is now deterministic and as-of driven: use the same reference
+    # month as the snapshot_date and the May-3 public benchmarks (no wall clock).
+    chain = calculate_cost_chain(symbols=("NR", "RU"), as_of=date(2026, 5, 3))
     snapshots = {
         symbol: CostSnapshot(
             snapshot_date=date(2026, 5, 3),
@@ -650,6 +764,24 @@ async def test_rubber_quality_report_validates_public_breakevens() -> None:
     assert report.benchmark_error_avg_pct < 2
     assert report.signal_case_hit_rate == 1.0
     assert report.paid_data_recommendation == "defer_paid_purchase_monitor_weekly"
+
+
+def test_cost_chain_is_deterministic_and_as_of_driven() -> None:
+    # Same as-of month -> identical output: no wall-clock leak in the calculation.
+    may_early = calculate_cost_chain(symbols=("NR", "RU"), as_of=date(2026, 5, 3))
+    may_late = calculate_cost_chain(symbols=("NR", "RU"), as_of=date(2026, 5, 28))
+    assert may_early.results["NR"].breakevens == may_late.results["NR"].breakevens
+
+    # A different season (winter tapping premium) shifts the rubber cost, so
+    # seasonality is genuinely applied from the as-of date, not ignored.
+    winter = calculate_cost_chain(symbols=("NR", "RU"), as_of=date(2026, 1, 15))
+    assert winter.results["NR"].unit_cost != may_early.results["NR"].unit_cost
+
+    # No as_of -> still deterministic (no seasonal claim), never the wall clock.
+    assert (
+        calculate_cost_chain(symbols=("NR", "RU")).results["NR"].breakevens
+        == calculate_cost_chain(symbols=("NR", "RU")).results["NR"].breakevens
+    )
 
 
 def test_news_extractor_finds_cost_data_points() -> None:

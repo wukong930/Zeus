@@ -13,6 +13,7 @@ class VectorEvalCase(Base):
     __table_args__ = (
         Index("ix_vector_eval_set_status", "status"),
         Index("ix_vector_eval_set_created_at", "created_at"),
+        Index("ix_vector_eval_set_status_created_at_id", "status", "created_at", "id"),
     )
 
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)

@@ -33,15 +33,21 @@ class UniverseValidation:
 async def pit_commodity_universe(session: AsyncSession, *, as_of: date) -> list[str]:
     rows = (
         await session.scalars(
-            select(CommodityHistory)
-            .where(
-                CommodityHistory.active_from <= as_of,
-                or_(CommodityHistory.active_to.is_(None), CommodityHistory.active_to >= as_of),
-            )
-            .order_by(CommodityHistory.symbol.asc())
+            _pit_commodity_universe_statement(as_of=as_of)
         )
     ).all()
     return [row.symbol for row in rows]
+
+
+def _pit_commodity_universe_statement(*, as_of: date):
+    return (
+        select(CommodityHistory)
+        .where(
+            CommodityHistory.active_from <= as_of,
+            or_(CommodityHistory.active_to.is_(None), CommodityHistory.active_to >= as_of),
+        )
+        .order_by(CommodityHistory.symbol.asc(), CommodityHistory.id.asc())
+    )
 
 
 async def validate_backtest_universe(

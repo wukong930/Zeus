@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import {
+  Activity,
   AlertTriangle,
   ArrowRight,
   CheckCircle2,
@@ -30,6 +31,7 @@ import { useI18n } from "@/lib/i18n";
 import { cn, timeAgo } from "@/lib/utils";
 
 type StatusFilter = "all" | GovernanceReviewStatus;
+type TriageFilter = "all" | "must_review" | "shadow_review" | "evidence_only";
 
 interface ImpactLinkSummary {
   symbol: string;
@@ -46,6 +48,13 @@ const STATUS_FILTERS: { id: StatusFilter; label: string }[] = [
   { id: "rejected", label: "已驳回" },
   { id: "reviewed", label: "已审查" },
   { id: "shadow_review", label: "影子复核" },
+];
+
+const TRIAGE_FILTERS: { id: TriageFilter; label: string }[] = [
+  { id: "all", label: "全部分流" },
+  { id: "must_review", label: "必须复核" },
+  { id: "shadow_review", label: "影子观察" },
+  { id: "evidence_only", label: "证据归档" },
 ];
 
 const ACTIONS: {
@@ -66,6 +75,7 @@ export default function GovernancePage() {
   const [source, setSource] = useState<DataSourceState>("loading");
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("pending");
+  const [triageFilter, setTriageFilter] = useState<TriageFilter>("all");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [decisionPending, setDecisionPending] = useState<GovernanceReviewDecision | null>(null);
 
@@ -91,9 +101,19 @@ export default function GovernancePage() {
 
   const stats = useMemo(() => {
     const counts = new Map<string, number>();
+    const triageCounts = new Map<string, number>();
     const sources = new Set<string>();
+    let attentionTotal = 0;
+    let attentionRows = 0;
     for (const review of reviews) {
       counts.set(review.status, (counts.get(review.status) ?? 0) + 1);
+      if (review.triageTier) {
+        triageCounts.set(review.triageTier, (triageCounts.get(review.triageTier) ?? 0) + 1);
+      }
+      if (typeof review.triageAttentionScore === "number") {
+        attentionTotal += review.triageAttentionScore;
+        attentionRows += 1;
+      }
       sources.add(review.source);
     }
     return {
@@ -102,6 +122,10 @@ export default function GovernancePage() {
       approved: counts.get("approved") ?? 0,
       rejected: counts.get("rejected") ?? 0,
       reviewed: (counts.get("reviewed") ?? 0) + (counts.get("shadow_review") ?? 0),
+      mustReview: triageCounts.get("must_review") ?? 0,
+      shadowReview: triageCounts.get("shadow_review") ?? 0,
+      evidenceOnly: triageCounts.get("evidence_only") ?? 0,
+      averageAttention: attentionRows ? Math.round(attentionTotal / attentionRows) : 0,
       sources: sources.size,
     };
   }, [reviews]);
@@ -110,6 +134,7 @@ export default function GovernancePage() {
     const needle = query.trim().toLowerCase();
     return reviews.filter((review) => {
       if (statusFilter !== "all" && review.status !== statusFilter) return false;
+      if (triageFilter !== "all" && review.triageTier !== triageFilter) return false;
       if (!needle) return true;
       return (
         review.source.toLowerCase().includes(needle) ||
@@ -120,7 +145,7 @@ export default function GovernancePage() {
         JSON.stringify(review.proposedChange).toLowerCase().includes(needle)
       );
     });
-  }, [query, reviews, statusFilter]);
+  }, [query, reviews, statusFilter, triageFilter]);
 
   const selected = useMemo(
     () => filteredReviews.find((review) => review.id === selectedId) ?? filteredReviews[0] ?? null,
@@ -172,13 +197,15 @@ export default function GovernancePage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-8">
         <GovernanceStat label="全部" value={stats.total} tone="cyan" />
         <GovernanceStat label="待复核" value={stats.pending} tone="orange" />
+        <GovernanceStat label="必须复核" value={stats.mustReview} tone="orange" />
+        <GovernanceStat label="影子观察" value={stats.shadowReview} tone="blue" />
+        <GovernanceStat label="证据归档" value={stats.evidenceOnly} tone="neutral" />
+        <GovernanceStat label="平均注意力" value={stats.averageAttention} tone="emerald" />
         <GovernanceStat label="已批准" value={stats.approved} tone="emerald" />
         <GovernanceStat label="已驳回" value={stats.rejected} tone="red" />
-        <GovernanceStat label="已处理" value={stats.reviewed} tone="blue" />
-        <GovernanceStat label="来源" value={stats.sources} tone="neutral" />
       </div>
 
       <div className="grid min-h-[calc(100vh-260px)] grid-cols-1 gap-5 xl:grid-cols-[minmax(360px,0.9fr)_minmax(0,1.5fr)]">
@@ -210,6 +237,22 @@ export default function GovernancePage() {
                     "h-8 rounded-sm border px-3 text-xs font-medium transition-colors",
                     statusFilter === filter.id
                       ? "border-brand-emerald/45 bg-brand-emerald/16 text-text-primary"
+                      : "border-border-subtle bg-black/28 text-text-secondary hover:border-border-strong hover:text-text-primary"
+                  )}
+                >
+                  {text(filter.label)}
+                </button>
+              ))}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {TRIAGE_FILTERS.map((filter) => (
+                <button
+                  key={filter.id}
+                  onClick={() => setTriageFilter(filter.id)}
+                  className={cn(
+                    "h-8 rounded-sm border px-3 text-xs font-medium transition-colors",
+                    triageFilter === filter.id
+                      ? "border-brand-cyan/45 bg-brand-cyan/14 text-text-primary"
                       : "border-border-subtle bg-black/28 text-text-secondary hover:border-border-strong hover:text-text-primary"
                   )}
                 >
@@ -296,6 +339,7 @@ function ReviewListItem({
 }) {
   const { text } = useI18n();
   const meta = statusMeta(review.status);
+  const triage = triageMeta(review);
   return (
     <button
       onClick={onClick}
@@ -315,10 +359,17 @@ function ReviewListItem({
             <span className="truncate">{text(targetLabel(review.targetTable))}</span>
           </div>
         </div>
-        <Badge variant={meta.variant}>{text(meta.label)}</Badge>
+        <div className="flex shrink-0 flex-col items-end gap-1">
+          <Badge variant={meta.variant}>{text(meta.label)}</Badge>
+          {review.triageTier && (
+            <span className={cn("rounded-sm border px-1.5 py-0.5 font-mono text-[10px]", triage.className)}>
+              {formatAttention(review.triageAttentionScore)}
+            </span>
+          )}
+        </div>
       </div>
       <div className="mt-3 flex items-center justify-between gap-2 text-caption text-text-muted">
-        <span className="truncate">{review.targetKey}</span>
+        <span className="truncate">{triage.label ? `${text(triage.label)} · ${review.targetKey}` : review.targetKey}</span>
         <span className="shrink-0">{timeAgo(review.createdAt)}</span>
       </div>
     </button>
@@ -341,6 +392,7 @@ function ReviewDetail({
   const eventId = stringValue(review.proposedChange.event_item_id);
   const productionEffect = stringValue(review.proposedChange.production_effect) ?? "none";
   const canDecide = review.status === "pending" && !busyDecision;
+  const triage = triageMeta(review);
 
   return (
     <div className="space-y-5">
@@ -364,6 +416,32 @@ function ReviewDetail({
         <InfoBlock label="目标" value={text(targetLabel(review.targetTable))} />
         <InfoBlock label="创建时间" value={new Date(review.createdAt).toLocaleString()} />
       </div>
+
+      {review.triageTier && (
+        <div className="rounded-sm border border-border-subtle bg-black/32 p-4">
+          <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-text-primary">
+            <Activity className="h-4 w-4 text-brand-cyan" />
+            {text("注意力分流")}
+          </div>
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+            <InfoBlock label="分流层级" value={text(triage.label)} />
+            <InfoBlock label="注意力分" value={formatAttention(review.triageAttentionScore)} />
+            <InfoBlock
+              label="人工处理"
+              value={text(review.triageRequiresHumanAttention ? "需要人工" : "不打扰人工")}
+            />
+          </div>
+          {review.triageReasons.length > 0 && (
+            <div className="mt-3 flex flex-wrap gap-2">
+              {review.triageReasons.map((reason) => (
+                <Badge key={reason} variant="neutral">
+                  {reviewReasonLabel(reason)}
+                </Badge>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {review.reason && (
         <div className="rounded-sm border border-border-subtle bg-black/32 p-4">
@@ -556,6 +634,38 @@ function PillGroup({ label, values }: { label: string; values: string[] }) {
   );
 }
 
+function triageMeta(review: GovernanceReview): {
+  label: string;
+  className: string;
+} {
+  if (review.triageTier === "must_review") {
+    return {
+      label: "必须复核",
+      className: "border-brand-orange/35 bg-brand-orange/12 text-brand-orange",
+    };
+  }
+  if (review.triageTier === "shadow_review") {
+    return {
+      label: "影子观察",
+      className: "border-brand-cyan/35 bg-brand-cyan/10 text-brand-cyan",
+    };
+  }
+  if (review.triageTier === "evidence_only") {
+    return {
+      label: "证据归档",
+      className: "border-border-subtle bg-black/32 text-text-muted",
+    };
+  }
+  return {
+    label: "未分流",
+    className: "border-border-subtle bg-black/32 text-text-muted",
+  };
+}
+
+function formatAttention(score: number | null): string {
+  return typeof score === "number" ? `${Math.round(score)}/100` : "--";
+}
+
 function reviewTitle(review: GovernanceReview): string {
   const payload = review.proposedChange;
   return (
@@ -603,6 +713,9 @@ function targetLabel(targetTable: string): string {
 function reviewReasonLabel(reason: string): string {
   const labels: Record<string, string> = {
     manual_confirmation_required: "需要人工确认",
+    manual_operator_action: "人工修改触发",
+    production_or_model_change: "生产 / 模型变更",
+    high_trust_extreme_event: "高可信极端事件",
     single_source: "单一来源",
     low_confidence: "低置信",
     low_source_reliability: "低来源可信度",

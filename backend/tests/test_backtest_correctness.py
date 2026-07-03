@@ -4,8 +4,9 @@ from datetime import date, datetime, timezone
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
+from sqlalchemy.dialects import postgresql
 
-from app.api.strategies import recommendation_outcome
+from app.api.strategies import _runtime_recommendation_outcomes_statement, recommendation_outcome
 from app.core.database import get_db
 from app.main import create_app
 from app.models.change_review_queue import ChangeReviewQueue
@@ -30,7 +31,10 @@ from app.services.backtest.path_metrics import calculate_path_metrics
 from app.services.backtest.regime_profile import RegimeObservation, build_regime_profile
 from app.services.backtest.slippage import calculate_slippage
 from app.services.backtest.strategy_registry import build_strategy_run, stable_strategy_hash
-from app.services.backtest.universe import validate_backtest_universe_from_symbols
+from app.services.backtest.universe import (
+    _pit_commodity_universe_statement,
+    validate_backtest_universe_from_symbols,
+)
 from app.services.backtest.walk_forward import (
     generate_walk_forward_windows,
     walk_forward_defaults,
@@ -253,6 +257,15 @@ def test_pit_universe_validation_rejects_missing_symbol() -> None:
     assert validation.missing_symbols == ("ZZ",)
 
 
+def test_pit_commodity_universe_statement_uses_stable_ordering() -> None:
+    sql = _compile_postgres(_pit_commodity_universe_statement(as_of=date(2026, 5, 4)))
+
+    assert "commodity_history.active_from <= '2026-05-04'" in sql
+    assert "commodity_history.active_to IS NULL" in sql
+    assert "commodity_history.active_to >= '2026-05-04'" in sql
+    assert "ORDER BY commodity_history.symbol ASC, commodity_history.id ASC" in sql
+
+
 async def test_record_live_divergence_queues_review_for_red_metric() -> None:
     session = FakeSession()
     result = sharpe_divergence(
@@ -323,6 +336,16 @@ def test_recommendation_outcome_uses_directional_realized_return() -> None:
 
     assert recommendation_outcome(long)["return_pct"] == 0.08
     assert recommendation_outcome(short)["return_pct"] == 0.08
+
+
+def test_runtime_recommendation_outcomes_statement_uses_stable_ordering() -> None:
+    sql = _compile_postgres(_runtime_recommendation_outcomes_statement(limit=500))
+
+    assert "recommendations.status =" in sql
+    assert "recommendations.pnl_realized IS NOT NULL" in sql
+    assert "recommendations.actual_exit IS NOT NULL" in sql
+    assert "ORDER BY recommendations.created_at DESC, recommendations.id DESC" in sql
+    assert "LIMIT" in sql
 
 
 def test_backtest_quality_api_marks_missing_outcomes_as_degraded(monkeypatch) -> None:
@@ -408,4 +431,13 @@ def _completed_recommendation(
         actual_entry=actual_entry,
         actual_exit=actual_exit,
         backtest_summary={"regime": "range"},
+    )
+
+
+def _compile_postgres(statement) -> str:
+    return str(
+        statement.compile(
+            dialect=postgresql.dialect(),
+            compile_kwargs={"literal_binds": True},
+        )
     )

@@ -59,6 +59,16 @@ export interface SectorSnapshot {
   unavailableSections: string[];
 }
 
+export interface MarketQuote {
+  symbol: string;
+  price: number | null;
+  changePct: number | null;
+  timestamp: string | null;
+  vintageAt?: string | null;
+  ingestedAt?: string | null;
+  status: "runtime" | "missing";
+}
+
 export interface AttributionSlice {
   label: string;
   samples: number;
@@ -195,6 +205,33 @@ export interface CausalWebGraph {
   nodes: CausalNode[];
   edges: CausalEdge[];
   source_counts: Record<string, number>;
+}
+
+export interface RuntimeHeartbeatSnapshot {
+  generated_at: string;
+  latest_at: string | null;
+  active_signals: number;
+  drift: {
+    status: string;
+    latest_at: string | null;
+    notification: {
+      level: string;
+      title: string;
+      should_notify: boolean;
+    };
+  };
+  calibration: {
+    samples: number;
+    lookback_days: number;
+  };
+  scheduler: {
+    degraded_jobs: string[];
+    warning_jobs: string[];
+    unconfigured_jobs: string[];
+    last_activity: string | null;
+    handler_coverage: Record<string, number>;
+  };
+  status: "running" | "scheduler_degraded";
 }
 
 export type WorldRiskLevel = "low" | "watch" | "elevated" | "high" | "critical";
@@ -486,6 +523,7 @@ export interface SchedulerJobStatus {
   last_error: string | null;
   consecutive_failures: number;
   status: string;
+  handler_registered?: boolean;
 }
 
 export interface SchedulerHealth {
@@ -494,8 +532,16 @@ export interface SchedulerHealth {
   degraded_jobs: string[];
   warning_jobs: string[];
   unconfigured_jobs: string[];
+  planned_unconfigured_jobs?: string[];
+  handler_coverage?: {
+    total: number;
+    registered: number;
+    missing: number;
+    unconfigured: number;
+    planned: number;
+  };
   last_activity: string | null;
-  jobs: Pick<SchedulerJobStatus, "id" | "name" | "status" | "last_run" | "last_error">[];
+  jobs: Pick<SchedulerJobStatus, "id" | "name" | "status" | "handler_registered" | "last_run" | "last_error">[];
 }
 
 export interface SchedulerSnapshot {
@@ -547,6 +593,17 @@ export interface AdversarialRuntimeSettings {
   historical_combo_mode: "informational" | "sample_based_enforcing" | string;
   production_effect: "observe_only" | "may_suppress_signals" | string;
   source: string;
+}
+
+export interface SettingsSnapshot {
+  generated_at: string;
+  data_sources: DataSourceStatus[];
+  scheduler: SchedulerSnapshot;
+  llm_usage: LLMUsageSummary;
+  llm_providers: LLMProviderSettings[];
+  alert_dedup: AlertDedupSettings;
+  notifications: NotificationSettings;
+  adversarial_runtime: AdversarialRuntimeSettings;
 }
 
 export type NotificationSettingsUpdate = Partial<
@@ -996,6 +1053,17 @@ export interface EventIntelligenceQualitySummary {
   reports: EventIntelligenceQualityReport[];
 }
 
+export interface EventIntelligenceSnapshot {
+  items: EventIntelligenceItem[];
+  impactLinks: EventImpactLink[];
+  quality: EventIntelligenceQualitySummary;
+}
+
+export interface EventIntelligenceSourceLookup {
+  items: EventIntelligenceItem[];
+  impactLinks: EventImpactLink[];
+}
+
 export interface GovernanceReview {
   id: string;
   source: string;
@@ -1007,6 +1075,10 @@ export interface GovernanceReview {
   reviewedBy: string | null;
   reviewedAt: string | null;
   createdAt: string;
+  triageAttentionScore: number | null;
+  triageTier: string | null;
+  triageRequiresHumanAttention: boolean | null;
+  triageReasons: string[];
 }
 
 interface BackendAlert {
@@ -1173,6 +1245,17 @@ interface BackendEventIntelligenceQualitySummary {
   reports: BackendEventIntelligenceQualityReport[];
 }
 
+interface BackendEventIntelligenceSnapshot {
+  items: BackendEventIntelligenceItem[];
+  impact_links: BackendEventImpactLink[];
+  quality: BackendEventIntelligenceQualitySummary;
+}
+
+interface BackendEventIntelligenceSourceLookupResponse {
+  items: BackendEventIntelligenceItem[];
+  impact_links: BackendEventImpactLink[];
+}
+
 interface BackendGovernanceReview {
   id: string;
   source: string;
@@ -1184,6 +1267,10 @@ interface BackendGovernanceReview {
   reviewed_by: string | null;
   reviewed_at: string | null;
   created_at: string;
+  triage_attention_score?: number | null;
+  triage_tier?: string | null;
+  triage_requires_human_attention?: boolean | null;
+  triage_reasons?: string[];
 }
 
 interface BackendNotebookEntry {
@@ -1278,46 +1365,57 @@ interface ApiEnvelope<T> {
   unavailable_sections?: string[];
 }
 
-export async function fetchAlertsFromApi(): Promise<Alert[]> {
-  const alerts = await fetchJson<BackendAlert[]>("/api/alerts?limit=100");
+interface BackendPortfolioRiskSnapshot {
+  positions: BackendPosition[];
+  var: RiskVarResult;
+  stress: StressTestResult[];
+  correlation: CorrelationMatrix | null;
+  latest_market_rows: BackendMarketData[];
+}
+
+export async function fetchAlertsFromApi(params: {
+  query?: string;
+  severities?: readonly Severity[];
+  category?: string;
+  symbol?: string;
+  humanActionRequired?: boolean;
+  adversarialPassed?: boolean;
+  limit?: number;
+} = {}): Promise<Alert[]> {
+  const query = new URLSearchParams();
+  query.set("limit", String(params.limit ?? 100));
+  if (params.query) query.set("q", params.query);
+  if (params.category) query.set("category", params.category);
+  if (params.symbol) query.set("symbol", params.symbol);
+  if (params.severities && params.severities.length > 0 && params.severities.length < SEVERITIES.size) {
+    query.set("severity", [...params.severities].sort().join(","));
+  }
+  if (params.humanActionRequired !== undefined) {
+    query.set("human_action_required", String(params.humanActionRequired));
+  }
+  if (params.adversarialPassed !== undefined) {
+    query.set("adversarial_passed", String(params.adversarialPassed));
+  }
+  const alerts = await fetchJson<BackendAlert[]>(`/api/alerts?${query.toString()}`);
   return alerts.map(mapAlert);
 }
 
 export async function fetchPortfolioSnapshot(): Promise<PortfolioSnapshot> {
   const unavailableSections: string[] = [];
-  const [positionsResult, varResult, stressResult] = await Promise.allSettled([
-    fetchJson<BackendPosition[]>("/api/positions?status_filter=open&limit=500"),
-    fetchJson<ApiEnvelope<RiskVarResult>>("/api/risk/var"),
-    fetchJson<ApiEnvelope<StressTestResult[]>>("/api/risk/stress"),
-  ]);
-  if (positionsResult.status === "rejected") {
-    throw positionsResult.reason;
-  }
-
-  const positions = positionsResult.value;
-  const varEnvelope = optionalSettledValue(varResult, null, "var", unavailableSections);
-  const stressEnvelope = optionalSettledValue(stressResult, null, "stress", unavailableSections);
-  appendEnvelopeSections(varEnvelope, "var", unavailableSections);
-  appendEnvelopeSections(stressEnvelope, "stress", unavailableSections);
-  const symbols = uniqueSymbols(positions);
-  const latestRows = await fetchLatestMarketRows(symbols);
-  const mappedPositions = positions.map((position) => mapPosition(position, latestRows));
-
-  const correlation =
-    symbols.length > 0
-      ? await fetchOptionalEnvelope<CorrelationMatrix>(
-          `/api/risk/correlation?symbols=${encodeURIComponent(symbols.join(","))}&window=60`,
-          "correlation",
-          unavailableSections
-        )
-      : null;
+  const envelope = await fetchJson<ApiEnvelope<BackendPortfolioRiskSnapshot>>(
+    "/api/risk/portfolio-snapshot"
+  );
+  appendEnvelopeSections(envelope, "portfolio", unavailableSections);
+  const data = envelope.data;
+  const latestRows = marketRowsBySymbol(data.latest_market_rows);
+  const mappedPositions = data.positions.map((position) => mapPosition(position, latestRows));
 
   return {
     positions: mappedPositions,
-    varResult: varEnvelope?.data ?? null,
-    stressResults: stressEnvelope?.data ?? [],
-    correlation,
-    degraded: unavailableSections.length > 0,
+    varResult: data.var,
+    stressResults: data.stress,
+    correlation: data.correlation,
+    degraded: Boolean(envelope.degraded) || unavailableSections.length > 0,
     unavailableSections,
   };
 }
@@ -1368,8 +1466,53 @@ export async function fetchSectorSnapshot(baseSectors: SectorData[]): Promise<Se
   };
 }
 
-export async function fetchNewsEventsFromApi(): Promise<NewsEvent[]> {
-  const rows = await fetchJson<BackendNewsEvent[]>("/api/news-events?limit=200");
+export async function fetchMarketQuotes(
+  symbols: readonly string[],
+  limit = 5
+): Promise<MarketQuote[]> {
+  const uniqueSymbols = normalizedUniqueSymbols(symbols);
+  if (uniqueSymbols.length === 0) {
+    return [];
+  }
+
+  try {
+    const rows = await fetchJson<BackendMarketData[]>(
+      `/api/market-data/recent?symbols=${encodeURIComponent(uniqueSymbols.join(","))}&limit=${limit}`
+    );
+    return marketQuotesFromRows(uniqueSymbols, rows);
+  } catch {
+    // Fall back to the legacy per-symbol endpoint when batch recent data is unavailable.
+  }
+
+  const entries = await Promise.all(
+    uniqueSymbols.map(async (symbol) => {
+      try {
+        const rows = await fetchJson<BackendMarketData[]>(
+          `/api/market-data?symbol=${encodeURIComponent(symbol)}&limit=${limit}`
+        );
+        return marketQuoteFromRows(symbol, rows);
+      } catch {
+        return missingMarketQuote(symbol);
+      }
+    })
+  );
+  return entries;
+}
+
+export async function fetchNewsEventsFromApi(params: {
+  query?: string;
+  symbol?: string;
+  eventType?: string;
+  direction?: string;
+  limit?: number;
+} = {}): Promise<NewsEvent[]> {
+  const query = new URLSearchParams();
+  query.set("limit", String(params.limit ?? 100));
+  if (params.query) query.set("q", params.query);
+  if (params.symbol) query.set("symbol", params.symbol);
+  if (params.eventType && params.eventType !== "all") query.set("event_type", params.eventType);
+  if (params.direction && params.direction !== "all") query.set("direction", params.direction);
+  const rows = await fetchJson<BackendNewsEvent[]>(`/api/news-events?${query.toString()}`);
   return rows.map(mapNewsEvent);
 }
 
@@ -1406,6 +1549,56 @@ export async function fetchEventIntelligenceQualitySummary(limit = 200): Promise
   return mapEventIntelligenceQualitySummary(row);
 }
 
+export async function fetchEventIntelligenceSnapshot(params: {
+  symbol?: string;
+  regionId?: string;
+  mechanism?: string;
+  status?: EventIntelligenceStatus;
+  limit?: number;
+} = {}): Promise<EventIntelligenceSnapshot> {
+  const query = new URLSearchParams();
+  query.set("limit", String(params.limit ?? 200));
+  if (params.symbol) query.set("symbol", params.symbol);
+  if (params.regionId) query.set("region_id", params.regionId);
+  if (params.mechanism) query.set("mechanism", params.mechanism);
+  if (params.status) query.set("status", params.status);
+  const row = await fetchJson<BackendEventIntelligenceSnapshot>(
+    `/api/event-intelligence/snapshot?${query.toString()}`
+  );
+  return {
+    items: row.items.map(mapEventIntelligenceItem),
+    impactLinks: row.impact_links.map(mapEventImpactLink),
+    quality: mapEventIntelligenceQualitySummary(row.quality),
+  };
+}
+
+export async function fetchEventIntelligenceBySources(
+  sourceType: string,
+  sourceIds: readonly string[]
+): Promise<EventIntelligenceSourceLookup> {
+  const uniqueSourceIds = Array.from(
+    new Set(sourceIds.map((id) => id.trim()).filter((id) => id.length > 0))
+  );
+  if (uniqueSourceIds.length === 0) {
+    return { items: [], impactLinks: [] };
+  }
+  const row = await fetchJson<BackendEventIntelligenceSourceLookupResponse>(
+    "/api/event-intelligence/source-lookup",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        source_type: sourceType,
+        source_ids: uniqueSourceIds.slice(0, 500),
+      }),
+    }
+  );
+  return {
+    items: row.items.map(mapEventIntelligenceItem),
+    impactLinks: row.impact_links.map(mapEventImpactLink),
+  };
+}
+
 export async function fetchEventIntelligenceAuditLogs(params: {
   eventItemId?: string;
   action?: string;
@@ -1425,6 +1618,9 @@ export async function fetchGovernanceReviews(params: {
   status?: GovernanceReviewStatus | "all";
   source?: string;
   targetTable?: string;
+  triageTier?: string | "all";
+  minAttentionScore?: number;
+  requiresHumanAttention?: boolean;
   limit?: number;
 } = {}): Promise<GovernanceReview[]> {
   const query = new URLSearchParams();
@@ -1432,6 +1628,13 @@ export async function fetchGovernanceReviews(params: {
   if (params.status && params.status !== "all") query.set("status", params.status);
   if (params.source) query.set("source", params.source);
   if (params.targetTable) query.set("target_table", params.targetTable);
+  if (params.triageTier && params.triageTier !== "all") query.set("triage_tier", params.triageTier);
+  if (params.minAttentionScore !== undefined) {
+    query.set("min_attention_score", String(params.minAttentionScore));
+  }
+  if (params.requiresHumanAttention !== undefined) {
+    query.set("requires_human_attention", String(params.requiresHumanAttention));
+  }
   const rows = await fetchJson<BackendGovernanceReview[]>(
     `/api/governance/reviews?${query.toString()}`
   );
@@ -1456,6 +1659,148 @@ export async function decideGovernanceReview(
     }
   );
   return mapGovernanceReview(row);
+}
+
+export interface ForecastRecordView {
+  id: string;
+  asOf: string;
+  signal: string;
+  modelVersion: string;
+  featureHash: string;
+  decisionGrade: boolean;
+  horizonDays: number;
+  universeSize: number;
+  long: string[];
+  short: string[];
+  targetWeights: Record<string, number>;
+  realizedReturn: number | null;
+  resolvedAt: string | null;
+  createdAt: string | null;
+}
+
+export interface ForecastDeflated {
+  deflated_sharpe: number;
+  deflated_pvalue: number;
+  passed_gate: boolean;
+}
+
+export interface ForecastShadowPerformance {
+  resolved: number;
+  meanReturn: number | null;
+  winRate: number | null;
+  sharpe: number | null;
+  deflated: ForecastDeflated | null;
+}
+
+export interface ForecastLive {
+  periods: number;
+  meanReturn: number;
+  sharpe: number;
+  maxDrawdown: number;
+  breached: boolean;
+  reason: string | null;
+}
+
+export interface ForecastOverview {
+  signal: string;
+  modelVersion: string;
+  promoted: boolean;
+  status: "authoritative" | "shadow";
+  latest: ForecastRecordView | null;
+  shadowPerformance: ForecastShadowPerformance;
+  live: ForecastLive;
+}
+
+interface BackendForecastRecord {
+  id: string;
+  as_of: string;
+  signal: string;
+  model_version: string;
+  feature_hash: string;
+  decision_grade: boolean;
+  horizon_days: number;
+  universe_size: number;
+  long: string[];
+  short: string[];
+  target_weights: Record<string, number>;
+  realized_return: number | null;
+  resolved_at: string | null;
+  created_at: string | null;
+}
+
+interface BackendForecastOverview {
+  signal: string;
+  model_version: string;
+  promoted: boolean;
+  status: "authoritative" | "shadow";
+  latest: BackendForecastRecord | null;
+  shadow_performance: {
+    resolved: number;
+    mean_return: number | null;
+    win_rate: number | null;
+    sharpe: number | null;
+    deflated: ForecastDeflated | null;
+  };
+  live: {
+    periods: number;
+    mean_return: number;
+    sharpe: number;
+    max_drawdown: number;
+    breached: boolean;
+    reason: string | null;
+  };
+}
+
+function mapForecastRecord(row: BackendForecastRecord): ForecastRecordView {
+  return {
+    id: row.id,
+    asOf: row.as_of,
+    signal: row.signal,
+    modelVersion: row.model_version,
+    featureHash: row.feature_hash,
+    decisionGrade: row.decision_grade,
+    horizonDays: row.horizon_days,
+    universeSize: row.universe_size,
+    long: row.long,
+    short: row.short,
+    targetWeights: row.target_weights,
+    realizedReturn: row.realized_return,
+    resolvedAt: row.resolved_at,
+    createdAt: row.created_at,
+  };
+}
+
+export async function fetchForecastOverview(): Promise<ForecastOverview> {
+  const row = await fetchJson<BackendForecastOverview>("/api/forecast/overview");
+  return {
+    signal: row.signal,
+    modelVersion: row.model_version,
+    promoted: row.promoted,
+    status: row.status,
+    latest: row.latest ? mapForecastRecord(row.latest) : null,
+    shadowPerformance: {
+      resolved: row.shadow_performance.resolved,
+      meanReturn: row.shadow_performance.mean_return,
+      winRate: row.shadow_performance.win_rate,
+      sharpe: row.shadow_performance.sharpe,
+      deflated: row.shadow_performance.deflated,
+    },
+    live: {
+      periods: row.live.periods,
+      meanReturn: row.live.mean_return,
+      sharpe: row.live.sharpe,
+      maxDrawdown: row.live.max_drawdown,
+      breached: row.live.breached,
+      reason: row.live.reason,
+    },
+  };
+}
+
+export async function fetchForecastHistory(limit = 30): Promise<ForecastRecordView[]> {
+  const row = await fetchJson<{ signal: string; records: BackendForecastRecord[] }>(
+    `/api/forecast/history?limit=${limit}`
+  );
+  return row.records.map(mapForecastRecord);
 }
 
 export async function createEventIntelligenceFromNews(
@@ -1541,7 +1886,12 @@ export async function updateEventImpactLink(
 }
 
 export async function fetchTradePlansFromApi(): Promise<TradePlan[]> {
-  const rows = await fetchJson<BackendRecommendation[]>("/api/recommendations?limit=200");
+  const rows = (
+    await Promise.all([
+      fetchJson<BackendRecommendation[]>("/api/recommendations?status_filter=pending&limit=200"),
+      fetchJson<BackendRecommendation[]>("/api/recommendations?status_filter=pending_review&limit=200"),
+    ])
+  ).flat();
   const visibleRows = rows.filter(
     (row) => isVisibleTradePlanStatus(row.status) && isUnexpiredRecommendation(row)
   );
@@ -1558,16 +1908,51 @@ export async function fetchTradePlansFromApi(): Promise<TradePlan[]> {
     .filter((plan): plan is TradePlan => plan !== null);
 }
 
+export async function reviewTradePlan(
+  recommendationId: string,
+  decision: "approve" | "reject",
+  reason?: string
+): Promise<TradePlan | null> {
+  const row = await fetchJson<BackendRecommendation>(
+    `/api/recommendations/${encodeURIComponent(recommendationId)}/review`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        decision,
+        reviewed_by: "zeus-ui",
+        reason,
+      }),
+    }
+  );
+  const symbol = recommendationSymbol(row);
+  const latestRows = await fetchLatestMarketRows(symbol ? [symbol] : []);
+  return mapTradePlan(row, latestRows);
+}
+
+export async function adoptTradePlan(plan: TradePlan): Promise<void> {
+  await fetchJson(`/api/recommendations/${encodeURIComponent(plan.id)}/adopt`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      actual_entry: plan.currentPrice > 0 ? plan.currentPrice : plan.entryPrice,
+      lots: plan.size,
+    }),
+  });
+}
+
 export async function fetchCausalWebGraph(params?: {
   limit?: number;
   symbol?: string | null;
   region?: string | null;
   event?: string | null;
+  refresh?: boolean;
 }): Promise<CausalWebGraph> {
   const query = new URLSearchParams({ limit: String(params?.limit ?? 10) });
   if (params?.symbol) query.set("symbol", params.symbol);
   if (params?.region) query.set("region", params.region);
   if (params?.event) query.set("event", params.event);
+  if (params?.refresh) query.set("refresh", "true");
   return fetchJson<CausalWebGraph>(`/api/causal-web?${query.toString()}`);
 }
 
@@ -1576,6 +1961,7 @@ export interface WorldMapFilterParams {
   mechanism?: string;
   source?: string;
   viewport?: WorldMapViewport;
+  refresh?: boolean;
 }
 
 export interface WorldMapViewport {
@@ -1590,6 +1976,7 @@ function worldMapQuery(params?: WorldMapFilterParams): string {
   if (params?.symbol) query.set("symbol", params.symbol);
   if (params?.mechanism) query.set("mechanism", params.mechanism);
   if (params?.source) query.set("source", params.source);
+  if (params?.refresh) query.set("refresh", "true");
   if (params?.viewport) {
     query.set("min_lat", params.viewport.minLat.toFixed(4));
     query.set("max_lat", params.viewport.maxLat.toFixed(4));
@@ -1613,6 +2000,7 @@ export async function fetchWorldMapTiles(
   if (filters?.symbol) query.set("symbol", filters.symbol);
   if (filters?.mechanism) query.set("mechanism", filters.mechanism);
   if (filters?.source) query.set("source", filters.source);
+  if (filters?.refresh) query.set("refresh", "true");
   if (filters?.viewport) {
     query.set("min_lat", filters.viewport.minLat.toFixed(4));
     query.set("max_lat", filters.viewport.maxLat.toFixed(4));
@@ -1637,6 +2025,11 @@ export async function fetchSchedulerSnapshot(): Promise<SchedulerSnapshot> {
 export async function fetchLLMUsageSummary(module = "alert_agent"): Promise<LLMUsageSummary> {
   const params = new URLSearchParams({ module });
   return fetchJson<LLMUsageSummary>(`/api/llm/usage?${params.toString()}`);
+}
+
+export async function fetchSettingsSnapshot(module = "alert_agent"): Promise<SettingsSnapshot> {
+  const params = new URLSearchParams({ module });
+  return fetchJson<SettingsSnapshot>(`/api/settings/snapshot?${params.toString()}`);
 }
 
 export async function fetchLLMProviderSettings(): Promise<LLMProviderSettings[]> {
@@ -1737,6 +2130,19 @@ export async function fetchBacktestQualitySummary(): Promise<BacktestQualitySumm
 
 export async function fetchThresholdCalibrationReport(): Promise<ThresholdCalibrationReport> {
   return fetchJson<ThresholdCalibrationReport>("/api/shadow/calibration");
+}
+
+export async function fetchRuntimeHeartbeatSnapshot(params?: {
+  calibrationLookbackDays?: number;
+  refresh?: boolean;
+}): Promise<RuntimeHeartbeatSnapshot> {
+  const query = new URLSearchParams();
+  if (params?.calibrationLookbackDays) {
+    query.set("calibration_lookback_days", String(params.calibrationLookbackDays));
+  }
+  if (params?.refresh) query.set("refresh", "true");
+  const suffix = query.size > 0 ? `?${query.toString()}` : "";
+  return fetchJson<RuntimeHeartbeatSnapshot>(`/api/runtime/heartbeat${suffix}`);
 }
 
 export async function fetchSignalCalibrationDashboard(): Promise<SignalCalibrationDashboard> {
@@ -1859,21 +2265,6 @@ function optionalSettledValue<T>(
   return fallback;
 }
 
-async function fetchOptionalEnvelope<T>(
-  path: string,
-  section: string,
-  unavailableSections: string[]
-): Promise<T | null> {
-  try {
-    const envelope = await fetchJson<ApiEnvelope<T>>(path);
-    appendEnvelopeSections(envelope, section, unavailableSections);
-    return envelope.data;
-  } catch {
-    unavailableSections.push(section);
-    return null;
-  }
-}
-
 function appendEnvelopeSections<T>(
   envelope: ApiEnvelope<T> | null,
   section: string,
@@ -1889,9 +2280,7 @@ function appendEnvelopeSections<T>(
 }
 
 async function fetchLatestMarketRows(symbols: string[]): Promise<Map<string, BackendMarketData>> {
-  const uniqueSymbols = Array.from(
-    new Set(symbols.map((symbol) => symbol.trim()).filter((symbol) => symbol.length > 0))
-  ).sort();
+  const uniqueSymbols = normalizedUniqueSymbols(symbols);
   if (uniqueSymbols.length === 0) {
     return new Map();
   }
@@ -1919,6 +2308,10 @@ async function fetchLatestMarketRows(symbols: string[]): Promise<Map<string, Bac
   );
 
   return new Map(entries.filter((entry): entry is readonly [string, BackendMarketData] => entry[1] !== null));
+}
+
+function marketRowsBySymbol(rows: BackendMarketData[]): Map<string, BackendMarketData> {
+  return new Map(rows.map((row) => [row.symbol.trim().toUpperCase(), row]));
 }
 
 async function fetchSectorMarketChanges(baseSectors: SectorData[]): Promise<{
@@ -1990,13 +2383,71 @@ function changesFromMarketRows(
 }
 
 function marketChangePct(rows: BackendMarketData[]): number | null {
-  const latest = rows[0];
+  const sortedRows = sortedMarketRows(rows);
+  const latest = sortedRows[0];
   if (!latest) return null;
   const previous =
-    rows.find((row) => row.timestamp !== latest.timestamp && row.close > 0) ??
-    rows.find((row) => row.close > 0 && row.close !== latest.close);
+    sortedRows.find((row) => row.timestamp !== latest.timestamp && row.close > 0) ??
+    sortedRows.find((row) => row.close > 0 && row.close !== latest.close);
   if (!previous || previous.close === 0) return null;
   return ((latest.close - previous.close) / previous.close) * 100;
+}
+
+function normalizedUniqueSymbols(symbols: readonly string[]): string[] {
+  return Array.from(
+    new Set(
+      symbols
+        .map((symbol) => symbol.trim().toUpperCase())
+        .filter((symbol) => symbol.length > 0)
+    )
+  ).sort();
+}
+
+function sortedMarketRows(rows: BackendMarketData[]): BackendMarketData[] {
+  return [...rows].sort((left, right) => {
+    const byTime = new Date(right.timestamp).getTime() - new Date(left.timestamp).getTime();
+    if (byTime !== 0) return byTime;
+    return new Date(right.ingested_at ?? right.vintage_at ?? 0).getTime() -
+      new Date(left.ingested_at ?? left.vintage_at ?? 0).getTime();
+  });
+}
+
+function marketQuotesFromRows(symbols: string[], rows: BackendMarketData[]): MarketQuote[] {
+  const rowsBySymbol = new Map<string, BackendMarketData[]>();
+  rows.forEach((row) => {
+    const symbol = row.symbol.trim().toUpperCase();
+    const symbolRows = rowsBySymbol.get(symbol) ?? [];
+    symbolRows.push({ ...row, symbol });
+    rowsBySymbol.set(symbol, symbolRows);
+  });
+  return symbols.map((symbol) => marketQuoteFromRows(symbol, rowsBySymbol.get(symbol) ?? []));
+}
+
+function marketQuoteFromRows(symbol: string, rows: BackendMarketData[]): MarketQuote {
+  const sortedRows = sortedMarketRows(rows);
+  const latest = sortedRows[0];
+  if (!latest) {
+    return missingMarketQuote(symbol);
+  }
+  return {
+    symbol,
+    price: Number.isFinite(latest.close) ? latest.close : null,
+    changePct: marketChangePct(sortedRows),
+    timestamp: latest.timestamp,
+    vintageAt: latest.vintage_at ?? null,
+    ingestedAt: latest.ingested_at ?? null,
+    status: "runtime",
+  };
+}
+
+function missingMarketQuote(symbol: string): MarketQuote {
+  return {
+    symbol,
+    price: null,
+    changePct: null,
+    timestamp: null,
+    status: "missing",
+  };
 }
 
 function mapNewsEvent(event: BackendNewsEvent): NewsEvent {
@@ -2107,7 +2558,40 @@ function mapGovernanceReview(review: BackendGovernanceReview): GovernanceReview 
     reviewedBy: review.reviewed_by,
     reviewedAt: review.reviewed_at,
     createdAt: review.created_at,
+    triageAttentionScore: review.triage_attention_score ?? triageAttentionScore(review.proposed_change),
+    triageTier: review.triage_tier ?? triageTier(review.proposed_change),
+    triageRequiresHumanAttention:
+      review.triage_requires_human_attention ?? triageRequiresHumanAttention(review.proposed_change),
+    triageReasons: review.triage_reasons ?? triageReasons(review.proposed_change),
   };
+}
+
+function triagePayload(payload: Record<string, unknown>): Record<string, unknown> | null {
+  const raw = payload.review_triage;
+  return typeof raw === "object" && raw !== null && !Array.isArray(raw)
+    ? (raw as Record<string, unknown>)
+    : null;
+}
+
+function triageAttentionScore(payload: Record<string, unknown>): number | null {
+  const raw = triagePayload(payload)?.attention_score;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function triageTier(payload: Record<string, unknown>): string | null {
+  const raw = triagePayload(payload)?.tier;
+  return typeof raw === "string" && raw.trim() ? raw.trim() : null;
+}
+
+function triageRequiresHumanAttention(payload: Record<string, unknown>): boolean | null {
+  const raw = triagePayload(payload)?.requires_human_attention;
+  return typeof raw === "boolean" ? raw : null;
+}
+
+function triageReasons(payload: Record<string, unknown>): string[] {
+  const raw = triagePayload(payload)?.reasons;
+  return Array.isArray(raw) ? raw.map((item) => String(item)).filter(Boolean) : [];
 }
 
 function mapEventIntelligenceQualitySummary(
@@ -2184,6 +2668,8 @@ function mapTradePlan(
     alertId: recommendation.alert_id ?? recommendation.id,
     status: recommendation.status,
     reviewRequired: recommendation.status !== "pending",
+    reviewReasons: reviewReasonsFromBacktestSummary(recommendation.backtest_summary),
+    evidenceSummary: evidenceSummaryFromRecommendation(recommendation),
     symbol,
     symbolName: symbol,
     direction,
@@ -2208,6 +2694,105 @@ function mapTradePlan(
   };
 }
 
+function evidenceSummaryFromRecommendation(recommendation: BackendRecommendation) {
+  const summary = recommendation.backtest_summary ?? {};
+  const supportingTypes = stringArrayFromSummaryValue(summary.evidence_signal_types);
+  const contextEvidence = contextEvidenceFromBacktestSummary(summary);
+  const contextTypes = Array.from(
+    new Set([
+      ...stringArrayFromSummaryValue(summary.context_signal_types),
+      ...contextEvidence.map((item) => item.signalType),
+    ])
+  );
+  const supportItems = recommendation.risk_items
+    .filter((item) => !isReviewOrCounterEvidence(item))
+    .slice(0, 3);
+  const counterItems = [
+    ...reviewReasonsFromBacktestSummary(summary),
+    ...recommendation.risk_items.filter(isReviewOrCounterEvidence),
+  ].slice(0, 4);
+  const gates = [
+    labeledSummaryValue("计划类型", recommendation.recommended_action),
+    labeledSummaryValue("信号类型", summary.signal_type),
+    labeledSummaryValue("预警状态", summary.alert_status),
+    labeledSummaryValue("置信档", summary.confidence_tier),
+    labeledSummaryValue("对抗运行态", summary.adversarial_runtime_mode),
+    labeledSummaryValue("历史样本", sampleSizeFromBacktestSummary(summary)),
+    labeledSummaryValue("支持信号", supportingTypes.length),
+    labeledSummaryValue("上下文证据", Number(summary.context_evidence_count ?? contextEvidence.length)),
+  ].filter((item): item is string => Boolean(item));
+
+  return {
+    supports: supportItems.length > 0 ? supportItems : [recommendation.reasoning],
+    counterEvidence: Array.from(new Set(counterItems)),
+    decisionGates: Array.from(new Set(gates)),
+    supportingTypes,
+    contextTypes,
+    contextEvidence,
+  };
+}
+
+function contextEvidenceFromBacktestSummary(
+  summary: Record<string, unknown>
+): { signalType: string; title: string; skipReason?: string; confidenceTier?: string }[] {
+  const raw = summary.linked_context_alerts;
+  if (!Array.isArray(raw)) return [];
+  const items: { signalType: string; title: string; skipReason?: string; confidenceTier?: string }[] = [];
+  const seen = new Set<string>();
+  for (const item of raw) {
+    if (!isRecord(item)) continue;
+    const signalType = stringValue(item.signal_type) ?? "context";
+    const title = stringValue(item.title) ?? signalType;
+    const skipReason = stringValue(item.skip_reason);
+    const confidenceTier = stringValue(item.confidence_tier);
+    const key = `${signalType}:${title}:${skipReason ?? ""}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    items.push({ signalType, title, skipReason, confidenceTier });
+  }
+  return items.slice(0, 6);
+}
+
+function stringArrayFromSummaryValue(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return Array.from(
+    new Set(
+      value
+        .map((item) => String(item).trim())
+        .filter((item) => item.length > 0)
+    )
+  );
+}
+
+function stringValue(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const normalized = value.trim();
+  return normalized.length > 0 ? normalized : undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isReviewOrCounterEvidence(item: string): boolean {
+  const normalized = item.toLowerCase();
+  return (
+    normalized.includes("复核") ||
+    normalized.includes("确认") ||
+    normalized.includes("check") ||
+    normalized.includes("confirm") ||
+    normalized.includes("validate") ||
+    normalized.includes("adversarial")
+  );
+}
+
+function labeledSummaryValue(label: string, value: unknown): string | null {
+  if (value === null || value === undefined || value === "") return null;
+  const formatted = typeof value === "number" ? String(value) : String(value);
+  if (!formatted || formatted === "0") return null;
+  return `${label}：${formatted}`;
+}
+
 function isVisibleTradePlanStatus(status: string): boolean {
   return status === "pending" || status === "pending_review";
 }
@@ -2230,6 +2815,13 @@ function sampleSizeFromBacktestSummary(summary: Record<string, unknown> | null |
     if (Number.isFinite(parsed) && parsed >= 0) return Math.floor(parsed);
   }
   return 0;
+}
+
+function reviewReasonsFromBacktestSummary(
+  summary: Record<string, unknown> | null | undefined
+): string[] {
+  const raw = Array.isArray(summary?.review_reasons) ? summary.review_reasons : [];
+  return raw.map((item) => String(item).trim()).filter((item) => item.length > 0);
 }
 
 function mapAlert(alert: BackendAlert): Alert {

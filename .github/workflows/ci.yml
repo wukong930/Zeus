@@ -11,6 +11,27 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  lint:
+    name: Backend Lint (ruff)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install ruff
+        run: pip install "ruff>=0.8.4,<0.9.0"
+
+      - name: Ruff lint
+        run: ruff check app tests
+
   backend:
     name: Backend Tests
     runs-on: ubuntu-latest
@@ -23,6 +44,9 @@ jobs:
 
       - name: Run backend tests
         run: docker compose run --rm backend-test
+
+      - name: Type check (mypy)
+        run: docker compose run --rm --no-deps backend-test mypy app
 
   frontend:
     name: Frontend Build
@@ -45,6 +69,9 @@ jobs:
         run: npm ci
 
       - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
         run: npm run lint
 
       - name: Build

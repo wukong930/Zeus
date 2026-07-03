@@ -104,6 +104,7 @@ class MomentumEvaluator:
                 f"{context.symbol1} generated a {direction} MA5/MA20 crossover; "
                 f"volume changed {volume_delta:.1f}%."
             ),
+            direction=direction,
         )
 
     def evaluate_outcome(

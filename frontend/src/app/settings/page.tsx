@@ -17,6 +17,7 @@ import {
   fetchLLMUsageSummary,
   fetchNotificationSettings,
   fetchSchedulerSnapshot,
+  fetchSettingsSnapshot,
   updateAdversarialRuntimeSettings,
   updateNotificationSettings,
   type AdversarialRuntimeSettings,
@@ -51,68 +52,86 @@ export default function SettingsPage() {
   const degradedJobs = scheduler?.health.degraded_jobs.length ?? 0;
   const warningJobs = scheduler?.health.warning_jobs.length ?? 0;
   const unconfiguredJobs = scheduler?.health.unconfigured_jobs.length ?? 0;
+  const plannedUnconfiguredJobs = scheduler?.health.planned_unconfigured_jobs?.length ?? 0;
   const schedulerIssues = degradedJobs + warningJobs + unconfiguredJobs;
   const enabledJobs = scheduler?.health.enabled_jobs ?? 0;
+  const handlerCoverage = scheduler?.health.handler_coverage;
   const llmUsageCaption = llmUsage
     ? `${llmUsage.calls} ${text("本月调用")}`
     : text(llmUsageSource === "loading" ? "同步中" : "暂无用量数据");
 
   useEffect(() => {
     let mounted = true;
-    fetchDataSourceStatuses()
-      .then((rows) => {
-        if (mounted) setDataSources(rows);
-      })
-      .catch(() => undefined);
-    fetchSchedulerSnapshot()
+    fetchSettingsSnapshot()
       .then((snapshot) => {
-        if (mounted) setScheduler(snapshot);
-      })
-      .catch(() => undefined);
-    fetchLLMUsageSummary()
-      .then((summary) => {
         if (!mounted) return;
-        setLlmUsage(summary);
+        setDataSources(snapshot.data_sources);
+        setScheduler(snapshot.scheduler);
+        setLlmUsage(snapshot.llm_usage);
         setLlmUsageSource("api");
-      })
-      .catch(() => {
-        if (mounted) setLlmUsageSource("fallback");
-      });
-    fetchLLMProviderSettings()
-      .then((providers) => {
-        if (!mounted) return;
-        setLlmProviders(providers);
+        setLlmProviders(snapshot.llm_providers);
         setLlmProviderSource("api");
-      })
-      .catch(() => {
-        if (mounted) setLlmProviderSource("fallback");
-      });
-    fetchAlertDedupSettings()
-      .then((settings) => {
-        if (!mounted) return;
-        setAlertDedupSettings(settings);
+        setAlertDedupSettings(snapshot.alert_dedup);
         setAlertDedupSource("api");
-      })
-      .catch(() => {
-        if (mounted) setAlertDedupSource("fallback");
-      });
-    fetchNotificationSettings()
-      .then((settings) => {
-        if (!mounted) return;
-        setNotificationSettings(settings);
+        setNotificationSettings(snapshot.notifications);
         setNotificationSource("api");
-      })
-      .catch(() => {
-        if (mounted) setNotificationSource("fallback");
-      });
-    fetchAdversarialRuntimeSettings()
-      .then((settings) => {
-        if (!mounted) return;
-        setAdversarialSettings(settings);
+        setAdversarialSettings(snapshot.adversarial_runtime);
         setAdversarialSource("api");
       })
       .catch(() => {
-        if (mounted) setAdversarialSource("fallback");
+        if (!mounted) return;
+        Promise.allSettled([
+          fetchDataSourceStatuses(),
+          fetchSchedulerSnapshot(),
+          fetchLLMUsageSummary(),
+          fetchLLMProviderSettings(),
+          fetchAlertDedupSettings(),
+          fetchNotificationSettings(),
+          fetchAdversarialRuntimeSettings(),
+        ]).then((results) => {
+          if (!mounted) return;
+          const [
+            dataSourcesResult,
+            schedulerResult,
+            llmUsageResult,
+            providersResult,
+            alertDedupResult,
+            notificationResult,
+            adversarialResult,
+          ] = results;
+          if (dataSourcesResult.status === "fulfilled") setDataSources(dataSourcesResult.value);
+          if (schedulerResult.status === "fulfilled") setScheduler(schedulerResult.value);
+          if (llmUsageResult.status === "fulfilled") {
+            setLlmUsage(llmUsageResult.value);
+            setLlmUsageSource("api");
+          } else {
+            setLlmUsageSource("fallback");
+          }
+          if (providersResult.status === "fulfilled") {
+            setLlmProviders(providersResult.value);
+            setLlmProviderSource("api");
+          } else {
+            setLlmProviderSource("fallback");
+          }
+          if (alertDedupResult.status === "fulfilled") {
+            setAlertDedupSettings(alertDedupResult.value);
+            setAlertDedupSource("api");
+          } else {
+            setAlertDedupSource("fallback");
+          }
+          if (notificationResult.status === "fulfilled") {
+            setNotificationSettings(notificationResult.value);
+            setNotificationSource("api");
+          } else {
+            setNotificationSource("fallback");
+          }
+          if (adversarialResult.status === "fulfilled") {
+            setAdversarialSettings(adversarialResult.value);
+            setAdversarialSource("api");
+          } else {
+            setAdversarialSource("fallback");
+          }
+        });
       });
     return () => {
       mounted = false;
@@ -227,17 +246,34 @@ export default function SettingsPage() {
             </div>
           </CardHeader>
           <div className="space-y-2">
+            {handlerCoverage && (
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <SettingRow
+                  label="Handler 覆盖"
+                  value={`${handlerCoverage.registered}/${handlerCoverage.total}`}
+                />
+                <SettingRow
+                  label="规划中任务"
+                  value={`${handlerCoverage.planned}`}
+                />
+              </div>
+            )}
             {scheduler?.jobs.slice(0, 6).map((job) => (
               <HealthRow
                 key={job.id}
                 label={job.name}
-                value={statusLabel(job.last_result ?? job.status)}
-                ok={job.status === "ok" && job.last_error === null}
+                value={schedulerJobLabel(job.last_result ?? job.status, job.handler_registered)}
+                ok={job.status === "ok" && job.last_error === null && job.handler_registered !== false}
               />
             ))}
             {scheduler && scheduler.health.unconfigured_jobs.length > 0 && (
               <div className="rounded-sm border border-border-subtle bg-bg-base px-3 py-2 text-caption text-text-muted shadow-inner-panel">
                 {text("未配置")}：{scheduler.health.unconfigured_jobs.join(", ")}
+              </div>
+            )}
+            {scheduler && plannedUnconfiguredJobs > 0 && (
+              <div className="rounded-sm border border-border-subtle bg-bg-base px-3 py-2 text-caption text-text-muted shadow-inner-panel">
+                {text("规划中")}：{scheduler.health.planned_unconfigured_jobs?.join(", ")}
               </div>
             )}
           </div>
@@ -597,6 +633,11 @@ function HealthRow({ label, value, ok }: { label: string; value: string; ok: boo
   );
 }
 
+function schedulerJobLabel(value: string, handlerRegistered?: boolean): string {
+  if (handlerRegistered === false) return "未接 Handler";
+  return statusLabel(value);
+}
+
 function statusLabel(value: string) {
   const labels: Record<string, string> = {
     ready: "就绪",
@@ -609,6 +650,7 @@ function statusLabel(value: string) {
     missing_key: "缺少 Key",
     missing_dependency: "缺少依赖",
     unconfigured: "未配置",
+    planned: "规划中",
     failed: "失败",
   };
   return labels[value] ?? value;

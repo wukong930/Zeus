@@ -87,6 +87,8 @@ interface CausalFlowNodeData extends Record<string, unknown> {
   variant: "full" | "preview";
   density: Density;
   aggregateCount?: number;
+  onHover?: (id: string | null) => void;
+  onSelect?: (id: string, type: CausalNode["type"]) => void;
 }
 
 interface CausalFlowEdgeData extends Record<string, unknown> {
@@ -305,6 +307,7 @@ function CausalWebCanvas({
   const [pathFocusNode, setPathFocusNode] = useState<string | null>(null);
   const [selectedEventIds, setSelectedEventIds] = useState<Set<string>>(new Set());
   const appliedFocusedEventRef = useRef<string | null>(null);
+  const hoverLeaveTimerRef = useRef<number | null>(null);
   const isFull = variant === "full";
   const rawGraphNodes = runtimeNodes ?? [];
   const rawGraphEdges = runtimeEdges ?? [];
@@ -499,6 +502,52 @@ function CausalWebCanvas({
     );
   }, [activeFocusId, displayGraph.edges, highlightedNodeIds]);
 
+  const clearHoverLeaveTimer = useCallback(() => {
+    if (hoverLeaveTimerRef.current === null) return;
+    window.clearTimeout(hoverLeaveTimerRef.current);
+    hoverLeaveTimerRef.current = null;
+  }, []);
+
+  useEffect(() => clearHoverLeaveTimer, [clearHoverLeaveTimer]);
+
+  const requestHoverNode = useCallback(
+    (nodeId: string | null) => {
+      if (!isFull) return;
+      clearHoverLeaveTimer();
+      if (nodeId === null) {
+        hoverLeaveTimerRef.current = window.setTimeout(() => {
+          setHoveredNode(null);
+          hoverLeaveTimerRef.current = null;
+        }, 90);
+        return;
+      }
+      if (!viewNodeIds.has(nodeId)) return;
+      setHoveredNode((current) => (current === nodeId ? current : nodeId));
+    },
+    [clearHoverLeaveTimer, isFull, viewNodeIds]
+  );
+
+  const requestSelectNode = useCallback(
+    (nodeId: string, nodeType: CausalNode["type"]) => {
+      if (!isFull) return;
+      clearHoverLeaveTimer();
+      if (nodeType === "cluster") {
+        setDensity("expanded");
+        setSelectedNode(null);
+        setHoveredNode(null);
+        setPathFocusNode(null);
+        window.setTimeout(() => {
+          void flow.fitView(fitViewOptions);
+        }, 0);
+        return;
+      }
+      if (!viewNodeIds.has(nodeId)) return;
+      setSelectedNode((current) => (current === nodeId ? null : nodeId));
+      setHoveredNode(null);
+    },
+    [clearHoverLeaveTimer, flow, isFull, viewNodeIds]
+  );
+
   const nodes = useMemo<CausalFlowNode[]>(
     () => {
       const visibleNodes: CausalFlowNode[] = displayGraph.nodes.map((node): CausalFlowNode => {
@@ -521,6 +570,8 @@ function CausalWebCanvas({
             variant,
             density: isFull ? density : "curated",
             aggregateCount: node.aggregateCount,
+            onHover: requestHoverNode,
+            onSelect: requestSelectNode,
           },
           draggable: isFull && mode === "explorer" && node.type !== "cluster",
           selectable: isFull,
@@ -532,7 +583,7 @@ function CausalWebCanvas({
         ...fitAnchorNodes(displayGraph.height, variant),
       ];
     },
-    [activeFocusId, density, displayGraph.height, displayGraph.nodes, highlightedNodeIds, isFull, metaByNodeId, mode, relationCounts, selectedNode, variant, viewNodeIds]
+    [activeFocusId, density, displayGraph.height, displayGraph.nodes, highlightedNodeIds, isFull, metaByNodeId, mode, relationCounts, requestHoverNode, requestSelectNode, selectedNode, variant, viewNodeIds]
   );
 
   const edges = useMemo<CausalFlowEdge[]>(
@@ -705,17 +756,8 @@ function CausalWebCanvas({
             nodeTypes={flowNodeTypes}
             edgeTypes={flowEdgeTypes}
             onInit={onInit}
-            onNodeMouseEnter={
-              isFull
-                ? (_, node) => {
-                    if (viewNodeIds.has(node.id) && node.data.causal.type !== "cluster") {
-                      setHoveredNode(node.id);
-                    }
-                  }
-                : undefined
-            }
-            onNodeMouseLeave={isFull ? () => setHoveredNode(null) : undefined}
-            onNodeClick={(_, node) => {
+            onNodeClick={(event, node) => {
+              event.stopPropagation();
               if (isFull && node.data.causal.type === "cluster") {
                 changeDensity("expanded");
                 return;
@@ -725,11 +767,10 @@ function CausalWebCanvas({
               }
             }}
             onPaneClick={() => {
+              clearHoverLeaveTimer();
               setSelectedNode(null);
               setHoveredNode(null);
             }}
-            fitView
-            fitViewOptions={isFull ? fitViewOptions : previewFitViewOptions}
             minZoom={0.28}
             maxZoom={1.55}
             nodesDraggable={isFull && mode === "explorer"}
@@ -1317,8 +1358,25 @@ function CausalNodeCard({ data, selected }: NodeProps<CausalFlowNode>) {
 
   return (
     <div
+      role={data.variant === "full" ? "button" : undefined}
+      tabIndex={data.variant === "full" ? 0 : -1}
+      onPointerEnter={() => {
+        if (node.type !== "cluster") data.onHover?.(node.id);
+      }}
+      onPointerLeave={() => data.onHover?.(null)}
+      onClick={(event) => {
+        event.stopPropagation();
+        data.onSelect?.(node.id, node.type);
+      }}
+      onKeyDown={(event) => {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        event.preventDefault();
+        event.stopPropagation();
+        data.onSelect?.(node.id, node.type);
+      }}
       className={cn(
-        "group relative rounded-sm border bg-[linear-gradient(180deg,rgba(31,31,31,0.94),rgba(8,10,9,0.98))] shadow-data-panel transition duration-200",
+        "group relative rounded-sm border bg-[linear-gradient(180deg,rgba(31,31,31,0.94),rgba(8,10,9,0.98))] shadow-data-panel outline-none transition duration-200 focus-visible:ring-1 focus-visible:ring-brand-cyan/70",
+        data.variant === "full" && "cursor-pointer",
         data.variant === "preview" ? "w-[148px] px-3 py-2" : compact ? "w-[176px] px-3 py-2.5" : "w-[196px] px-3.5 py-3",
         data.viewDimmed ? "scale-[0.96] opacity-20 grayscale" : data.dimmed && "scale-[0.98] opacity-35",
         data.focused && "shadow-lg",
@@ -1458,8 +1516,20 @@ function ClusterNodeCard({
 
   return (
     <div
+      role={data.variant === "full" ? "button" : undefined}
+      tabIndex={data.variant === "full" ? 0 : -1}
+      onClick={(event) => {
+        event.stopPropagation();
+        data.onSelect?.(data.causal.id, data.causal.type);
+      }}
+      onKeyDown={(event) => {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        event.preventDefault();
+        event.stopPropagation();
+        data.onSelect?.(data.causal.id, data.causal.type);
+      }}
       className={cn(
-        "group relative w-[176px] rounded-sm border border-dashed bg-[linear-gradient(180deg,rgba(25,25,25,0.86),rgba(5,7,6,0.94))] px-3 py-2.5 shadow-inner-panel transition duration-200 hover:border-brand-cyan/55 hover:bg-bg-surface-raised",
+        "group relative w-[176px] cursor-pointer rounded-sm border border-dashed bg-[linear-gradient(180deg,rgba(25,25,25,0.86),rgba(5,7,6,0.94))] px-3 py-2.5 shadow-inner-panel outline-none transition duration-200 hover:border-brand-cyan/55 hover:bg-bg-surface-raised focus-visible:ring-1 focus-visible:ring-brand-cyan/70",
         data.dimmed && "opacity-40",
         selected && "ring-1 ring-brand-cyan"
       )}
@@ -1546,7 +1616,7 @@ function CausalEdgeLine({
       {data.showLabel && !data.dimmed && (
         <EdgeLabelRenderer>
           <div
-            className="nodrag nopan absolute rounded-xs border border-border-default bg-bg-surface-overlay/95 px-2 py-1 text-caption text-text-secondary shadow-data-panel backdrop-blur-sm"
+            className="nodrag nopan pointer-events-none absolute rounded-xs border border-border-default bg-bg-surface-overlay/95 px-2 py-1 text-caption text-text-secondary shadow-data-panel backdrop-blur-sm"
             style={{
               transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`,
               borderColor: `${color}55`,

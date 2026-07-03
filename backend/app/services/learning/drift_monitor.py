@@ -1,14 +1,19 @@
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from math import log, sqrt
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.drift_metrics import DriftMetric
 from app.models.regime_state import RegimeState
 from app.models.signal import SignalTrack
-from app.services.calibration.hit_rate import HIT_OUTCOMES, MISS_OUTCOMES, summarize_outcomes
+from app.services.calibration.hit_rate import (
+    HIT_OUTCOMES,
+    MISS_OUTCOMES,
+    summarize_outcomes,
+    summarize_outcomes_by_semantics,
+)
 from app.services.market_data.pit import get_market_data_pit
 from app.services.signals.watchlist import WatchlistEntry, get_enabled_watchlist
 
@@ -273,6 +278,15 @@ async def record_signal_hit_rate_drift(
     baseline_days: int = 90,
     min_samples: int = 1,
 ) -> DriftMetric | None:
+    """Category-level hit-rate drift, baseline window vs current window.
+
+    The headline drift pools every signal type in the category, so it blends
+    directional / mean-reversion / volatility outcomes — a shift can reflect a
+    change in the signal-type MIX rather than in predictive accuracy. To keep the
+    record honest, ``details["by_semantics"]`` carries the same baseline/current
+    counts split per semantic class so a consumer can see where the drift lives.
+    """
+
     effective_as_of = as_of or datetime.now(timezone.utc)
     current_start = effective_as_of - timedelta(days=current_days)
     baseline_start = current_start - timedelta(days=baseline_days)
@@ -294,6 +308,18 @@ async def record_signal_hit_rate_drift(
     if baseline.total < min_samples or current.total < min_samples:
         return None
 
+    baseline_by_sem = summarize_outcomes_by_semantics(baseline_rows)
+    current_by_sem = summarize_outcomes_by_semantics(current_rows)
+    by_semantics = {
+        semantics: {
+            "baseline_hits": baseline_by_sem[semantics].hits if semantics in baseline_by_sem else 0,
+            "baseline_total": baseline_by_sem[semantics].total if semantics in baseline_by_sem else 0,
+            "current_hits": current_by_sem[semantics].hits if semantics in current_by_sem else 0,
+            "current_total": current_by_sem[semantics].total if semantics in current_by_sem else 0,
+        }
+        for semantics in sorted(set(baseline_by_sem) | set(current_by_sem))
+    }
+
     measurement = signal_hit_rate_drift(
         baseline_hits=baseline.hits,
         baseline_total=baseline.total,
@@ -311,6 +337,7 @@ async def record_signal_hit_rate_drift(
             "current_hits": current.hits,
             "current_days": current_days,
             "baseline_days": baseline_days,
+            "by_semantics": by_semantics,
         },
     )
 
@@ -327,13 +354,11 @@ async def record_regime_switching_drift(
     since = (effective_as_of - timedelta(days=window_days)).date()
     rows = (
         await session.scalars(
-            select(RegimeState)
-            .where(
-                RegimeState.category == category,
-                RegimeState.as_of_date >= since,
-                RegimeState.as_of_date <= effective_as_of.date(),
+            _regime_state_window_statement(
+                category=category,
+                since=since,
+                through=effective_as_of.date(),
             )
-            .order_by(RegimeState.as_of_date.asc())
         )
     ).all()
     if len(rows) < 2:
@@ -354,6 +379,32 @@ async def record_regime_switching_drift(
                 for row in rows
             ],
         },
+    )
+
+
+def _regime_state_window_statement(*, category: str, since: date, through: date):
+    ranked = (
+        select(
+            RegimeState.id.label("id"),
+            func.row_number()
+            .over(
+                partition_by=(RegimeState.category, RegimeState.as_of_date),
+                order_by=(RegimeState.computed_at.desc(), RegimeState.id.desc()),
+            )
+            .label("rn"),
+        )
+        .where(
+            RegimeState.category == category,
+            RegimeState.as_of_date >= since,
+            RegimeState.as_of_date <= through,
+        )
+        .subquery()
+    )
+    return (
+        select(RegimeState)
+        .join(ranked, RegimeState.id == ranked.c.id)
+        .where(ranked.c.rn == 1)
+        .order_by(RegimeState.as_of_date.asc(), RegimeState.id.asc())
     )
 
 
@@ -625,17 +676,21 @@ async def _load_signal_track_window(
 ) -> list[SignalTrack]:
     return list(
         (
-            await session.scalars(
-                select(SignalTrack)
-                .where(
-                    SignalTrack.category == category,
-                    SignalTrack.created_at >= start,
-                    SignalTrack.created_at < end,
-                    SignalTrack.outcome.in_(RESOLVED_OUTCOMES),
-                )
-                .order_by(SignalTrack.created_at.asc())
-            )
+            await session.scalars(_signal_track_window_statement(category=category, start=start, end=end))
         ).all()
+    )
+
+
+def _signal_track_window_statement(*, category: str, start: datetime, end: datetime):
+    return (
+        select(SignalTrack)
+        .where(
+            SignalTrack.category == category,
+            SignalTrack.created_at >= start,
+            SignalTrack.created_at < end,
+            SignalTrack.outcome.in_(RESOLVED_OUTCOMES),
+        )
+        .order_by(SignalTrack.created_at.asc(), SignalTrack.id.asc())
     )
 
 

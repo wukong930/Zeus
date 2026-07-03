@@ -88,6 +88,7 @@ class NewsEventEvaluator:
                 f"对 {', '.join(event.affected_symbols or [context.symbol1])} {direction_zh}："
                 f"{display_summary}"
             ),
+            direction=event.direction if event.direction in {"bullish", "bearish", "mixed"} else None,
         )
 
     def evaluate_outcome(

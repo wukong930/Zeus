@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, cast
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -7,8 +7,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.position import Position
 from app.services.risk.correlation import build_correlation_matrix
 from app.services.risk.market_data import load_risk_market_data
-from app.services.risk.types import RiskLeg, RiskPosition
+from app.services.risk.types import Direction, RiskLeg, RiskPosition
 from app.services.risk.var import calculate_var
+from app.services.symbols import normalize_root_symbol
 
 CONCENTRATION_LIMIT = 0.55
 
@@ -43,9 +44,7 @@ class PositionRiskSnapshot:
 
 async def recalculate_position_risk(session: AsyncSession) -> PositionRiskSnapshot:
     rows = (
-        await session.scalars(
-            select(Position).where(Position.status == "open").order_by(Position.opened_at.desc())
-        )
+        await session.scalars(_position_risk_rows_statement())
     ).all()
     margin_by_symbol: dict[str, float] = {}
     total_margin = 0.0
@@ -69,10 +68,10 @@ async def recalculate_position_risk(session: AsyncSession) -> PositionRiskSnapsh
         warnings.append(f"{largest_symbol} concentration {concentration:.0%} exceeds limit")
 
     risk_positions = [_position_to_risk_position(row) for row in rows]
-    symbols = sorted({leg.asset for position in risk_positions for leg in position.legs if leg.asset})
-    market_data = await load_risk_market_data(session, symbols, limit=252)
+    risk_symbols = _risk_symbols(risk_positions)
+    market_data = await load_risk_market_data(session, risk_symbols, limit=252)
     var_result = calculate_var(risk_positions, market_data)
-    correlation = build_correlation_matrix(market_data, symbols, window=60)
+    correlation = build_correlation_matrix(market_data, risk_symbols, window=60)
 
     return PositionRiskSnapshot(
         open_positions=len(rows),
@@ -88,14 +87,33 @@ async def recalculate_position_risk(session: AsyncSession) -> PositionRiskSnapsh
     )
 
 
+def _position_risk_rows_statement():
+    return (
+        select(Position)
+        .where(Position.status == "open")
+        .order_by(Position.opened_at.desc(), Position.id.desc())
+    )
+
+
 def position_symbols(position: Position) -> set[str]:
     symbols: set[str] = set()
     for leg in position.legs or []:
         if isinstance(leg, dict):
-            value = str(leg.get("asset") or leg.get("symbol") or "").strip().upper()
-            if value:
+            value = normalize_root_symbol(leg.get("asset") or leg.get("symbol"))
+            if value is not None:
                 symbols.add(value)
     return symbols
+
+
+def _risk_symbols(positions: list[RiskPosition]) -> list[str]:
+    return sorted(
+        {
+            symbol
+            for position in positions
+            for leg in position.legs
+            if (symbol := normalize_root_symbol(leg.asset)) is not None
+        }
+    )
 
 
 def _position_to_risk_position(position: Position) -> RiskPosition:
@@ -112,7 +130,7 @@ def _leg_from_payload(payload: dict) -> RiskLeg:
     direction = "short" if str(payload.get("direction", "long")).lower() == "short" else "long"
     return RiskLeg(
         asset=asset,
-        direction=direction,
+        direction=cast("Direction", direction),
         size=float(payload.get("size") or payload.get("quantity") or payload.get("lots") or 0),
         current_price=float(
             payload.get("currentPrice")

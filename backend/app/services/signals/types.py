@@ -123,6 +123,7 @@ class TriggerResult:
     title: str
     summary: str
     spread_info: SpreadInfo | None = None
+    direction: str | None = None
 
 
 @dataclass(frozen=True)

@@ -14,7 +14,23 @@ class MarketData(Base):
         Index("ix_market_data_symbol", "symbol"),
         Index("ix_market_data_timestamp", "timestamp"),
         Index("ix_market_data_symbol_timestamp", "symbol", "timestamp"),
+        Index(
+            "ix_market_data_symbol_timestamp_vintage_id",
+            "symbol",
+            "timestamp",
+            "vintage_at",
+            "id",
+        ),
+        Index("ix_market_data_symbol_ingested_at", "symbol", "ingested_at"),
         Index("ix_market_data_pit", "symbol", "timestamp", "vintage_at"),
+        Index(
+            "ix_market_data_pit_stable",
+            "symbol",
+            "contract_month",
+            "timestamp",
+            "vintage_at",
+            "id",
+        ),
         Index("ix_market_data_contract_id", "contract_id"),
     )
 

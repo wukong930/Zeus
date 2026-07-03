@@ -1,9 +1,10 @@
 import asyncio
 import logging
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable, Coroutine
+from typing import Any
 
 from app.core.database import AsyncSessionLocal
-from app.core.events import EventHandler, relay_pending_events, replay_unhandled_events, subscribe
+from app.core.events import relay_pending_events, replay_unhandled_events, subscribe
 from app.services.pipeline.handlers import (
     handle_market_update,
     handle_news_event,
@@ -29,7 +30,7 @@ async def handle_news_event_with_shadow(event, session=None):
     return result
 
 
-PIPELINE_SUBSCRIPTIONS: tuple[tuple[str, EventHandler], ...] = (
+PIPELINE_SUBSCRIPTIONS: tuple[tuple[str, Callable[..., Awaitable[Any] | None]], ...] = (
     ("market.update", handle_market_update_with_shadow),
     ("news.event", handle_news_event_with_shadow),
     ("signal.detected", handle_signal_detected),
@@ -42,8 +43,8 @@ PIPELINE_SUBSCRIPTIONS: tuple[tuple[str, EventHandler], ...] = (
 class EventPipelineRuntime:
     def __init__(
         self,
-        subscriptions: tuple[tuple[str, EventHandler], ...] = PIPELINE_SUBSCRIPTIONS,
-        subscriber: Callable[..., asyncio.Future | asyncio.Task | object] = subscribe,
+        subscriptions: tuple[tuple[str, Callable[..., Awaitable[Any] | None]], ...] = PIPELINE_SUBSCRIPTIONS,
+        subscriber: Callable[..., Coroutine[Any, Any, Any]] = subscribe,
     ) -> None:
         self._subscriptions = subscriptions
         self._subscriber = subscriber

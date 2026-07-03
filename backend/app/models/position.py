@@ -12,10 +12,19 @@ class Position(Base):
     __tablename__ = "positions"
     __table_args__ = (
         Index("ix_positions_status", "status"),
+        Index("ix_positions_status_opened_at", "status", "opened_at"),
+        Index("ix_positions_status_opened_id", "status", "opened_at", "id"),
         Index("ix_positions_strategy_id", "strategy_id"),
         Index("ix_positions_recommendation_id", "recommendation_id"),
         Index("ix_positions_opened_at", "opened_at"),
         Index("ix_positions_monitoring_priority", "monitoring_priority"),
+        Index(
+            "ix_positions_status_data_mode_priority_id",
+            "status",
+            "data_mode",
+            "monitoring_priority",
+            "id",
+        ),
         Index("ix_positions_data_mode", "data_mode"),
     )
 

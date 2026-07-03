@@ -13,6 +13,7 @@ from app.schemas.common import (
 
 GOVERNANCE_REVIEW_STATUS_PATTERN = "^(pending|approved|rejected|reviewed|shadow_review)$"
 GOVERNANCE_REVIEW_DECISION_PATTERN = "^(approve|reject|mark_reviewed|shadow_review)$"
+GOVERNANCE_REVIEW_TRIAGE_TIER_PATTERN = "^(must_review|shadow_review|evidence_only)$"
 
 
 class ChangeReviewRead(ORMModel):
@@ -26,6 +27,10 @@ class ChangeReviewRead(ORMModel):
     reviewed_by: str | None = None
     reviewed_at: datetime | None = None
     created_at: datetime
+    triage_attention_score: float | None = None
+    triage_tier: str | None = None
+    triage_requires_human_attention: bool | None = None
+    triage_reasons: list[str] = Field(default_factory=list)
 
 
 class ChangeReviewDecisionCreate(StrictInputModel):

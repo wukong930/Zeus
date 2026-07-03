@@ -12,6 +12,14 @@ from app.services.calibration.regime_batch import detect_and_record_all_regimes
 from app.services.calibration.shadow_tracker import evaluate_pending_signals
 from app.services.calibration.updater import generate_calibration_reviews
 from app.services.contracts.main_contract_batch import detect_and_apply_main_contracts
+from app.services.prediction.cross_sectional import (
+    DEFAULT_LOOKBACK,
+    MODEL_VERSION,
+    generate_cross_sectional_forecast,
+)
+from app.services.prediction.divergence import evaluate_and_demote
+from app.services.prediction.governance import is_signal_promoted
+from app.services.prediction.shadow import score_due_forecasts
 from app.services.cost_models.snapshots import (
     RUBBER_SYMBOLS,
     cost_signal_contexts,
@@ -25,6 +33,7 @@ from app.services.data_sources.free_ingest import run_free_data_ingest
 from app.services.data_sources.nasa_power import collect_nasa_power_weather_baselines
 from app.services.etl.writers import append_industry_data
 from app.services.event_intelligence.ingress import sync_event_intelligence_inputs
+from app.services.governance.cleanup import run_review_load_cleanup
 from app.services.news.collectors import (
     CailiansheCollector,
     ExchangeAnnouncementsCollector,
@@ -62,7 +71,7 @@ DEFAULT_JOB_DEFINITIONS: tuple[JobDefinition, ...] = (
     JobDefinition("calibration", "校准更新", "0 2 * * *"),
     JobDefinition("regime-detect", "Regime 检测", "20 16 * * 1-5"),
     JobDefinition("drift-monitor", "漂移监控", "40 16 * * 1-5"),
-    JobDefinition("cleanup", "数据清理", "0 3 * * *", enabled=False),
+    JobDefinition("cleanup", "数据清理", "0 3 * * *"),
     JobDefinition("main-contract", "主力合约日检", "10 16 * * 1-5"),
     JobDefinition("adversarial-cache", "对抗零分布", "25 16 * * 1-5"),
     JobDefinition("news-ingest", "新闻事件采集", "*/30 * * * *"),
@@ -75,6 +84,9 @@ DEFAULT_JOB_DEFINITIONS: tuple[JobDefinition, ...] = (
     JobDefinition("event-intelligence-sync", "事件智能入口同步", "10 */2 * * *"),
     JobDefinition("trade-plan-activation", "交易计划激活", "20 */1 * * *"),
     JobDefinition("translation-backfill", "新闻预警翻译回填", "35 */4 * * *"),
+    JobDefinition("forecast-emit", "横截面预测产出", "55 16 * * 1-5"),
+    JobDefinition("forecast-score", "预测影子评分", "0 17 * * 1-5"),
+    JobDefinition("forecast-divergence", "预测背离降级", "5 17 * * 1-5"),
 )
 
 
@@ -487,12 +499,70 @@ async def translation_backfill_job() -> dict[str, Any]:
     }
 
 
+async def cleanup_job() -> dict[str, Any]:
+    async with AsyncSessionLocal() as session:
+        result = await run_review_load_cleanup(session)
+        await session.commit()
+    return {
+        **result.to_dict(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+async def forecast_emit_job() -> dict[str, Any]:
+    signal = f"xs_reversal_mom{DEFAULT_LOOKBACK}"
+    async with AsyncSessionLocal() as session:
+        promoted = await is_signal_promoted(session, signal=signal, model_version=MODEL_VERSION)
+        row = await generate_cross_sectional_forecast(
+            session, as_of=datetime.now(timezone.utc), decision_grade=promoted
+        )
+        await session.commit()
+    return {
+        "status": "completed",
+        "signal": row.signal,
+        "as_of": row.as_of.isoformat(),
+        "universe": row.universe_size,
+        "decision_grade": row.decision_grade,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+async def forecast_score_job() -> dict[str, Any]:
+    async with AsyncSessionLocal() as session:
+        result = await score_due_forecasts(session, now=datetime.now(timezone.utc))
+        await session.commit()
+    return {
+        "status": "completed",
+        "scanned": result.scanned,
+        "resolved": result.resolved,
+        "pending": result.pending,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+async def forecast_divergence_job() -> dict[str, Any]:
+    signal = f"xs_reversal_mom{DEFAULT_LOOKBACK}"
+    async with AsyncSessionLocal() as session:
+        result = await evaluate_and_demote(session, signal=signal, model_version=MODEL_VERSION)
+        await session.commit()
+    return {
+        "status": "completed",
+        "live_periods": result.performance.periods,
+        "live_sharpe": round(result.performance.sharpe, 4),
+        "breached": result.breached,
+        "demoted": result.demoted,
+        "reason": result.reason,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+
 DEFAULT_JOB_HANDLERS: dict[str, JobHandler] = {
     "ingest": ingest_job,
     "track-outcomes": track_outcomes_job,
     "calibration": calibration_job,
     "regime-detect": regime_detection_job,
     "drift-monitor": drift_monitor_job,
+    "cleanup": cleanup_job,
     "main-contract": main_contract_job,
     "adversarial-cache": adversarial_cache_job,
     "news-ingest": news_ingest_job,
@@ -505,4 +575,7 @@ DEFAULT_JOB_HANDLERS: dict[str, JobHandler] = {
     "event-intelligence-sync": event_intelligence_sync_job,
     "trade-plan-activation": trade_plan_activation_job,
     "translation-backfill": translation_backfill_job,
+    "forecast-emit": forecast_emit_job,
+    "forecast-score": forecast_score_job,
+    "forecast-divergence": forecast_divergence_job,
 }

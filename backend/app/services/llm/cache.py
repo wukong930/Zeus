@@ -8,6 +8,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import rollback_if_possible
 from app.models.llm_cache import LLMCache
+from app.services.llm.cost_tracker import (
+    normalize_llm_model,
+    normalize_llm_module,
+    normalize_llm_provider,
+)
 from app.services.llm.types import LLMCompletionResult, LLMUsage
 
 
@@ -24,8 +29,8 @@ def llm_cache_key(
 ) -> str:
     payload = {
         "version": 2,
-        "provider": provider,
-        "model": model,
+        "provider": normalize_llm_provider(provider),
+        "model": normalize_llm_model(model),
         "system": system,
         "user": user,
         "temperature": temperature,
@@ -153,9 +158,9 @@ def _apply_cached_completion(
     expires_at: datetime,
     updated_at: datetime,
 ) -> None:
-    row.module = module
-    row.provider = provider
-    row.model = model
+    row.module = normalize_llm_module(module)
+    row.provider = normalize_llm_provider(provider)
+    row.model = normalize_llm_model(model)
     row.system_hash = prompt_hash(system)
     row.user_hash = prompt_hash(user)
     row.response = {

@@ -14,7 +14,8 @@ from app.models.event_intelligence import (
     EventIntelligenceItem,
 )
 from app.models.vector_chunks import VectorChunk
-from app.services.governance.review_queue import enqueue_review
+from app.services.governance.review_queue import _active_review_lookup_statement, enqueue_review
+from app.services.governance.triage import triage_event_intelligence
 
 DECISION_STATUS: dict[str, str] = {
     "confirm": "confirmed",
@@ -107,7 +108,43 @@ async def enqueue_event_intelligence_review(
     if not reasons:
         return None
 
-    existing = await _pending_review_for_event(session, event_item.id)
+    manual_operator_action = actor not in {
+        "event_intelligence",
+        "ingress",
+        "llm",
+        "rules",
+        "scheduler",
+        "system",
+    }
+    triage = triage_event_intelligence(
+        source_type=event_item.source_type,
+        impact_score=event_item.impact_score,
+        confidence=event_item.confidence,
+        source_reliability=event_item.source_reliability,
+        freshness_score=event_item.freshness_score,
+        review_reasons=reasons,
+        link_count=len(links),
+        max_link_impact=max((link.impact_score for link in links), default=0.0),
+        manual_operator_action=manual_operator_action,
+    )
+    if triage.queue_status is None:
+        await record_event_intelligence_audit(
+            session,
+            event_item_id=event_item.id,
+            action="review.triaged_evidence_only",
+            actor=actor,
+            before_status=event_item.status,
+            after_status=event_item.status,
+            note="Kept as evidence-only material; it will not consume human review queue attention.",
+            payload={
+                "review_reasons": reasons,
+                "review_triage": triage.to_payload(),
+                "production_effect": "none",
+            },
+        )
+        return None
+
+    existing = await _open_review_for_event(session, event_item.id)
     if existing is not None:
         return existing
 
@@ -116,20 +153,30 @@ async def enqueue_event_intelligence_review(
         source=EVENT_INTELLIGENCE_REVIEW_SOURCE,
         target_table=EVENT_INTELLIGENCE_REVIEW_TABLE,
         target_key=str(event_item.id),
-        proposed_change=_review_payload(event_item, links, reasons),
+        proposed_change={
+            **_review_payload(event_item, links, reasons),
+            "review_triage": triage.to_payload(),
+        },
         reason="Event intelligence result requires human governance before decision-grade use.",
+        status=triage.queue_status,
+        active_statuses=("pending", "shadow_review"),
     )
     await record_event_intelligence_audit(
         session,
         event_item_id=event_item.id,
-        action="review.queued",
+        action="review.queued" if review.status == "pending" else "review.deferred_to_shadow",
         actor=actor,
         before_status=event_item.status,
         after_status=event_item.status,
-        note="Queued for human review; result remains shadow/review scoped.",
+        note=(
+            "Queued for human review; result remains shadow/review scoped."
+            if review.status == "pending"
+            else "Deferred from human queue; retained as shadow evidence for downstream summaries."
+        ),
         payload={
             "review_queue_id": str(review.id),
             "review_reasons": reasons,
+            "review_triage": triage.to_payload(),
             "production_effect": "none",
         },
     )
@@ -329,17 +376,32 @@ async def _pending_review_for_event(
     session: AsyncSession,
     event_item_id: UUID,
 ) -> ChangeReviewQueue | None:
+    return await _open_review_for_event(session, event_item_id, statuses=("pending",))
+
+
+async def _open_review_for_event(
+    session: AsyncSession,
+    event_item_id: UUID,
+    *,
+    statuses: tuple[str, ...] = ("pending", "shadow_review"),
+) -> ChangeReviewQueue | None:
     rows = await session.scalars(
-        select(ChangeReviewQueue)
-        .where(
-            ChangeReviewQueue.source == EVENT_INTELLIGENCE_REVIEW_SOURCE,
-            ChangeReviewQueue.target_table == EVENT_INTELLIGENCE_REVIEW_TABLE,
-            ChangeReviewQueue.target_key == str(event_item_id),
-            ChangeReviewQueue.status == "pending",
-        )
-        .limit(1)
+        _event_intelligence_review_lookup_statement(event_item_id=event_item_id, statuses=statuses)
     )
     return rows.first()
+
+
+def _event_intelligence_review_lookup_statement(
+    *,
+    event_item_id: UUID,
+    statuses: tuple[str, ...] = ("pending", "shadow_review"),
+):
+    return _active_review_lookup_statement(
+        source=EVENT_INTELLIGENCE_REVIEW_SOURCE,
+        target_table=EVENT_INTELLIGENCE_REVIEW_TABLE,
+        target_key=str(event_item_id),
+        statuses=statuses,
+    )
 
 
 def _review_payload(
@@ -387,7 +449,11 @@ async def _event_links(session: AsyncSession, event_item_id: UUID) -> list[Event
     rows = await session.scalars(
         select(EventImpactLink)
         .where(EventImpactLink.event_item_id == event_item_id)
-        .order_by(EventImpactLink.impact_score.desc(), EventImpactLink.confidence.desc())
+        .order_by(
+            EventImpactLink.impact_score.desc(),
+            EventImpactLink.confidence.desc(),
+            EventImpactLink.id.desc(),
+        )
     )
     return list(rows.all())
 

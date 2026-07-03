@@ -98,15 +98,21 @@ async def active_shadow_runs(
     return list(
         (
             await session.scalars(
-                select(ShadowRun)
-                .where(
-                    ShadowRun.status == "active",
-                    ShadowRun.started_at <= effective_at,
-                    or_(ShadowRun.ended_at.is_(None), ShadowRun.ended_at > effective_at),
-                )
-                .order_by(ShadowRun.started_at.asc())
+                _active_shadow_runs_statement(as_of=effective_at)
             )
         ).all()
+    )
+
+
+def _active_shadow_runs_statement(*, as_of: datetime):
+    return (
+        select(ShadowRun)
+        .where(
+            ShadowRun.status == "active",
+            ShadowRun.started_at <= as_of,
+            or_(ShadowRun.ended_at.is_(None), ShadowRun.ended_at > as_of),
+        )
+        .order_by(ShadowRun.started_at.asc(), ShadowRun.id.asc())
     )
 
 
@@ -136,7 +142,9 @@ async def run_shadow_for_event(
     written = 0
     would_emit = 0
     for signal, context, score_payload in candidates:
-        score = score_payload or await _score_signal(session, run, signal=signal, context=context)
+        score = score_payload or await _score_signal(
+            session, run, signal=signal, context=context, as_of=event.timestamp
+        )
         row = await record_shadow_signal(
             session,
             run=run,
@@ -300,6 +308,7 @@ async def _score_signal(
     *,
     signal: dict[str, Any],
     context: dict[str, Any],
+    as_of: datetime,
 ) -> dict[str, Any]:
     category = str(context.get("category") or signal.get("category") or "unknown")
     regime = str(context.get("regime") or context.get("regime_at_emission") or "unknown")
@@ -308,6 +317,7 @@ async def _score_signal(
         signal_type=str(signal.get("signal_type") or "unknown"),
         category=category,
         regime=regime,
+        as_of=as_of,
     )
     calibration_weight = await _shadow_calibration_weight(
         session,

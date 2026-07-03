@@ -166,6 +166,34 @@ class EventIntelligenceResolveResponse(BaseModel):
     created: bool
 
 
+class EventIntelligenceSourceLookupRequest(StrictInputModel):
+    source_type: str = Field(pattern=EVENT_INTELLIGENCE_SOURCE_PATTERN)
+    source_ids: list[str] = Field(min_length=1, max_length=500)
+
+    @field_validator("source_ids")
+    @classmethod
+    def normalize_source_ids(cls, value: list[str]) -> list[str]:
+        normalized: list[str] = []
+        seen: set[str] = set()
+        for item in value:
+            text = item.strip()
+            if not text:
+                continue
+            if len(text) > 80:
+                raise ValueError("source_ids entries can be at most 80 characters")
+            if text not in seen:
+                normalized.append(text)
+                seen.add(text)
+        if not normalized:
+            raise ValueError("source_ids must include at least one non-empty entry")
+        return normalized
+
+
+class EventIntelligenceSourceLookupResponse(BaseModel):
+    items: list[EventIntelligenceRead]
+    impact_links: list[EventImpactLinkRead]
+
+
 class EventIntelligenceAuditLogRead(ORMModel):
     id: UUID
     event_item_id: UUID
@@ -250,6 +278,12 @@ class EventIntelligenceQualitySummary(BaseModel):
     shadow_ready: int
     decision_grade: int
     reports: list[EventIntelligenceQualityRead]
+
+
+class EventIntelligenceSnapshot(BaseModel):
+    items: list[EventIntelligenceRead]
+    impact_links: list[EventImpactLinkRead]
+    quality: EventIntelligenceQualitySummary
 
 
 def _normalize_text_list(

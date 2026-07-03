@@ -1,10 +1,11 @@
 from collections.abc import Sequence
 
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.market_data import MarketData
 from app.services.risk.types import RiskMarketPoint
+from app.services.symbols import normalize_root_symbol
 
 
 async def load_risk_market_data(
@@ -13,7 +14,13 @@ async def load_risk_market_data(
     *,
     limit: int,
 ) -> dict[str, list[RiskMarketPoint]]:
-    requested_symbols = tuple(dict.fromkeys(symbol for symbol in symbols if symbol))
+    requested_symbols = tuple(
+        dict.fromkeys(
+            normalized
+            for symbol in symbols
+            if (normalized := normalize_root_symbol(symbol)) is not None
+        )
+    )
     market_data: dict[str, list[RiskMarketPoint]] = {symbol: [] for symbol in requested_symbols}
     if not requested_symbols:
         return market_data
@@ -26,7 +33,8 @@ async def load_risk_market_data(
         ).all()
     )
     for row in rows:
-        market_data.setdefault(row.symbol, []).append(_risk_market_point(row))
+        key = normalize_root_symbol(row.symbol) or row.symbol
+        market_data.setdefault(key, []).append(_risk_market_point(row))
     return market_data
 
 
@@ -38,10 +46,14 @@ def _risk_market_data_statement(*, requested_symbols: tuple[str, ...], limit: in
             .over(
                 partition_by=(
                     MarketData.symbol,
-                    MarketData.contract_month,
                     MarketData.timestamp,
                 ),
-                order_by=MarketData.vintage_at.desc(),
+                order_by=(
+                    MarketData.vintage_at.desc(),
+                    case((MarketData.contract_month == "main", 0), else_=1),
+                    MarketData.ingested_at.desc(),
+                    MarketData.id.desc(),
+                ),
             )
             .label("pit_rn"),
         )
@@ -57,8 +69,7 @@ def _risk_market_data_statement(*, requested_symbols: tuple[str, ...], limit: in
                 partition_by=MarketData.symbol,
                 order_by=(
                     MarketData.timestamp.desc(),
-                    MarketData.contract_month.asc(),
-                    MarketData.vintage_at.desc(),
+                    MarketData.id.desc(),
                 ),
             )
             .label("symbol_rn"),
@@ -71,13 +82,17 @@ def _risk_market_data_statement(*, requested_symbols: tuple[str, ...], limit: in
         select(MarketData)
         .join(symbol_ranked, MarketData.id == symbol_ranked.c.id)
         .where(symbol_ranked.c.symbol_rn <= limit)
-        .order_by(MarketData.symbol.asc(), MarketData.timestamp.desc(), MarketData.contract_month.asc())
+        .order_by(
+            MarketData.symbol.asc(),
+            MarketData.timestamp.desc(),
+            MarketData.id.desc(),
+        )
     )
 
 
 def _risk_market_point(row: MarketData) -> RiskMarketPoint:
     return RiskMarketPoint(
-        symbol=row.symbol,
+        symbol=normalize_root_symbol(row.symbol) or row.symbol,
         timestamp=row.timestamp,
         open=row.open,
         high=row.high,

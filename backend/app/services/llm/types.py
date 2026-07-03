@@ -66,7 +66,9 @@ class LLMProviderConfig:
 
 
 class LLMProvider(Protocol):
-    name: LLMProviderName
+    # str (not LLMProviderName): concrete providers hardcode a valid name; the
+    # Literal stays the source of truth for config.provider and DEFAULT_MODELS keys.
+    name: str
 
     async def complete(self, options: LLMCompletionOptions) -> LLMCompletionResult:
         """Generate one completion using this provider."""

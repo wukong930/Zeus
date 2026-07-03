@@ -34,6 +34,8 @@ export interface TradePlan {
   alertId: string;
   status: string;
   reviewRequired: boolean;
+  reviewReasons: string[];
+  evidenceSummary: TradePlanEvidenceSummary;
   symbol: string;
   symbolName: string;
   direction: Direction;
@@ -51,6 +53,22 @@ export interface TradePlan {
   confidence: number;
   sampleSize: number;
   createdAt: string;
+}
+
+export interface TradePlanEvidenceSummary {
+  supports: string[];
+  counterEvidence: string[];
+  decisionGates: string[];
+  supportingTypes: string[];
+  contextTypes: string[];
+  contextEvidence: TradePlanContextEvidence[];
+}
+
+export interface TradePlanContextEvidence {
+  signalType: string;
+  title: string;
+  skipReason?: string;
+  confidenceTier?: string;
 }
 
 export interface Position {

@@ -1,13 +1,27 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from uuid import uuid4
+
+from sqlalchemy.dialects import postgresql
 
 from app.core.events import ZeusEvent
 from app.models.alert import Alert
 from app.models.recommendation import Recommendation
 from app.services.pipeline.handlers import (
+    attach_trade_plan_context_evidence,
+    build_trade_plan_recommendation,
+    compact_trade_plan_risk_items,
+    evaluate_trade_plan_candidate,
     handle_market_update,
     handle_news_event,
     handle_signal_detected,
     handle_signal_scored,
+    _open_trade_plans_statement,
+    merge_trade_plan_evidence,
+    open_trade_plan_for_candidate,
+    open_trade_plan_for_context_signal,
+    recommended_action,
+    trade_plan_match_key,
+    trade_plan_matches,
 )
 
 
@@ -44,6 +58,162 @@ class FakeSession:
 class FakeScalars:
     def first(self):
         return None
+
+
+class FakeRows:
+    def __init__(self, rows) -> None:
+        self.rows = rows
+
+    def all(self):
+        return self.rows
+
+
+class FakeOpenPlanSession:
+    def __init__(self, rows) -> None:
+        self.rows = rows
+
+    async def scalars(self, _):
+        return FakeRows(self.rows)
+
+
+class FakeFallbackOpenPlanSession:
+    def __init__(self, *, first_rows, fallback_rows) -> None:
+        self.first_rows = first_rows
+        self.fallback_rows = fallback_rows
+        self.scalars_calls = 0
+
+    async def scalars(self, _):
+        self.scalars_calls += 1
+        return FakeRows(self.first_rows if self.scalars_calls == 1 else self.fallback_rows)
+
+
+def test_open_trade_plans_statement_uses_stable_tie_breakers() -> None:
+    sql = _compile_postgres(
+        _open_trade_plans_statement(as_of=datetime(2026, 5, 18, tzinfo=timezone.utc))
+    )
+
+    assert "recommendations.status IN" in sql
+    assert "recommendations.expires_at >" in sql
+    assert "ORDER BY recommendations.created_at ASC, recommendations.id ASC" in sql
+    assert "LIMIT" in sql
+
+
+def test_open_trade_plans_statement_can_push_match_filters_to_database() -> None:
+    candidate_sql = _compile_postgres(
+        _open_trade_plans_statement(
+            as_of=datetime(2026, 5, 18, tzinfo=timezone.utc),
+            match_key=("open_directional", (("RB", "short"),)),
+            limit=None,
+        )
+    )
+    context_sql = _compile_postgres(
+        _open_trade_plans_statement(
+            as_of=datetime(2026, 5, 18, tzinfo=timezone.utc),
+            symbol="I",
+            direction="long",
+            limit=None,
+        )
+    )
+
+    assert "recommendations.recommended_action =" in candidate_sql
+    assert "recommendations.legs @>" in candidate_sql
+    assert "LIMIT" not in candidate_sql
+    assert "recommendations.legs @>" in context_sql
+    assert "LIMIT" not in context_sql
+
+
+async def test_open_trade_plan_for_candidate_reuses_first_canonical_match() -> None:
+    now = datetime(2026, 5, 18, tzinfo=timezone.utc)
+    primary = Recommendation(
+        id=uuid4(),
+        alert_id=uuid4(),
+        status="pending_review",
+        recommended_action="open_directional",
+        legs=[{"asset": "RB", "direction": "short", "lots": 1.0}],
+        priority_score=66,
+        portfolio_fit_score=75,
+        margin_efficiency_score=80,
+        margin_required=100000,
+        reasoning="Primary RB short thesis.",
+        risk_items=[],
+        created_at=now - timedelta(hours=2),
+        expires_at=now + timedelta(hours=8),
+    )
+    duplicate = Recommendation(
+        id=uuid4(),
+        alert_id=uuid4(),
+        status="pending_review",
+        recommended_action="open_directional",
+        legs=[{"asset": "RB", "direction": "short", "lots": 1.0}],
+        priority_score=70,
+        portfolio_fit_score=77,
+        margin_efficiency_score=81,
+        margin_required=100000,
+        reasoning="Duplicate RB short thesis.",
+        risk_items=[],
+        created_at=now - timedelta(hours=1),
+        expires_at=now + timedelta(hours=8),
+    )
+    candidate = Recommendation(
+        id=uuid4(),
+        alert_id=uuid4(),
+        status="pending_review",
+        recommended_action="open_directional",
+        legs=[{"asset": "RB", "direction": "short", "lots": 1.0}],
+        priority_score=72,
+        portfolio_fit_score=79,
+        margin_efficiency_score=82,
+        margin_required=100000,
+        reasoning="Incoming RB short thesis.",
+        risk_items=[],
+        expires_at=now + timedelta(hours=8),
+    )
+
+    match = await open_trade_plan_for_candidate(
+        FakeOpenPlanSession([primary, duplicate]),
+        candidate,
+        as_of=now,
+    )
+
+    assert match is primary
+
+
+async def test_open_trade_plan_for_candidate_falls_back_to_legacy_contract_plan() -> None:
+    now = datetime(2026, 5, 18, tzinfo=timezone.utc)
+    legacy = Recommendation(
+        id=uuid4(),
+        alert_id=uuid4(),
+        status="pending_review",
+        recommended_action="open_directional",
+        legs=[{"asset": "RU2509", "direction": "long", "lots": 1.0}],
+        priority_score=66,
+        portfolio_fit_score=75,
+        margin_efficiency_score=80,
+        margin_required=100000,
+        reasoning="Legacy RU contract long thesis.",
+        risk_items=[],
+        expires_at=now + timedelta(hours=8),
+    )
+    candidate = Recommendation(
+        id=uuid4(),
+        alert_id=uuid4(),
+        status="pending_review",
+        recommended_action="open_directional",
+        legs=[{"asset": "RU", "direction": "long", "lots": 1.0}],
+        priority_score=72,
+        portfolio_fit_score=79,
+        margin_efficiency_score=82,
+        margin_required=100000,
+        reasoning="Incoming RU root thesis.",
+        risk_items=[],
+        expires_at=now + timedelta(hours=8),
+    )
+    session = FakeFallbackOpenPlanSession(first_rows=[], fallback_rows=[legacy])
+
+    match = await open_trade_plan_for_candidate(session, candidate, as_of=now)
+
+    assert match is legacy
+    assert session.scalars_calls == 2
 
 
 def _market_update_event() -> ZeusEvent:
@@ -259,6 +429,891 @@ async def test_signal_detected_handler_publishes_score() -> None:
     assert scored.payload["legs"][0]["asset"] == "RB"
 
 
+def test_directional_signal_can_generate_review_trade_plan_from_legacy_watchlist_payload() -> None:
+    now = datetime.now(timezone.utc)
+    signal = {
+        "signal_type": "capacity_contraction",
+        "severity": "high",
+        "confidence": 0.95,
+        "title": "I capacity contraction risk",
+        "summary": "I margins stayed below -5%; bearish supply contraction pressure is building.",
+        "related_assets": ["I"],
+        "risk_items": ["Bearish capacity contraction risk."],
+        "manual_check_items": ["Validate operating-rate and inventory changes."],
+    }
+    alert = Alert(
+        id=uuid4(),
+        title="I capacity contraction risk",
+        summary="Bearish cost signal",
+        severity="high",
+        category="ferrous",
+        type="capacity_contraction",
+        status="pending",
+        triggered_at=now,
+        expires_at=now + timedelta(days=1),
+        confidence=0.95,
+        adversarial_passed=True,
+        llm_involved=False,
+        confidence_tier="auto",
+        human_action_required=True,
+        dedup_suppressed=False,
+        related_assets=["I"],
+        trigger_chain=[],
+        risk_items=[],
+        manual_check_items=[],
+    )
+
+    recommendation = build_trade_plan_recommendation(
+        alert=alert,
+        signal=signal,
+        context={"category": "ferrous", "market_data": [{"close": 797.0}]},
+        score={"combined": 64, "priority": 44, "portfolio_fit": 75, "margin_efficiency": 80},
+        event_payload={
+            "recommended_action": "watchlist_only",
+            "adversarial_result": {"passed": True},
+            "legs": [{"asset": "I", "direction": "watch"}],
+        },
+        triggered_at=now,
+    )
+
+    assert recommended_action(signal) == "open_directional"
+    assert recommendation is not None
+    assert recommendation.recommended_action == "open_directional"
+    assert recommendation.status == "pending_review"
+    assert recommendation.legs == [{"asset": "I", "direction": "short", "lots": 1.0}]
+    assert recommendation.entry_price == 797.0
+    assert recommendation.backtest_summary is not None
+    assert recommendation.backtest_summary["recommended_action"] == "open_directional"
+    assert recommendation.backtest_summary["review_required"] is True
+    assert "Alert Agent 标记需要人工复核" in recommendation.backtest_summary["review_reasons"]
+    assert any("复核原因" in item for item in recommendation.risk_items)
+
+
+def test_trade_plan_candidate_evaluation_reports_score_gate_reason() -> None:
+    now = datetime.now(timezone.utc)
+    alert = Alert(
+        id=uuid4(),
+        title="RB weak momentum",
+        summary="Below gate.",
+        severity="high",
+        category="ferrous",
+        type="momentum",
+        status="active",
+        triggered_at=now,
+        expires_at=now + timedelta(days=1),
+        confidence=0.9,
+        adversarial_passed=True,
+        llm_involved=False,
+        confidence_tier="auto",
+        human_action_required=False,
+        dedup_suppressed=False,
+        related_assets=["RB"],
+        trigger_chain=[],
+        risk_items=[],
+        manual_check_items=[],
+    )
+
+    evaluation = evaluate_trade_plan_candidate(
+        alert=alert,
+        signal={
+            "signal_type": "momentum",
+            "severity": "high",
+            "confidence": 0.9,
+            "title": "RB bullish momentum",
+            "summary": "Bullish momentum signal.",
+            "related_assets": ["RB"],
+        },
+        context={"category": "ferrous", "market_data": [{"close": 3250.0}]},
+        score={"combined": 55, "priority": 55},
+        event_payload={"recommended_action": "watchlist_only", "adversarial_result": {"passed": True}},
+        triggered_at=now,
+    )
+
+    assert evaluation.passed is False
+    assert evaluation.recommendation is None
+    assert evaluation.skip_reason == "score_below_gate"
+
+
+def test_trade_plan_candidate_evaluation_uses_supplied_as_of_for_replay() -> None:
+    triggered_at = datetime(2026, 5, 18, 9, tzinfo=timezone.utc)
+    alert = Alert(
+        id=uuid4(),
+        title="RB bullish momentum",
+        summary="Historical signal should replay as live at the requested as-of time.",
+        severity="high",
+        category="rubber",
+        type="momentum",
+        status="active",
+        triggered_at=triggered_at,
+        expires_at=triggered_at + timedelta(days=1),
+        confidence=0.9,
+        adversarial_passed=True,
+        llm_involved=False,
+        confidence_tier="auto",
+        human_action_required=False,
+        dedup_suppressed=False,
+        related_assets=["RB"],
+        trigger_chain=[],
+        risk_items=[],
+        manual_check_items=[],
+    )
+    common_payload = {
+        "alert": alert,
+        "signal": {
+            "signal_type": "momentum",
+            "severity": "high",
+            "confidence": 0.9,
+            "direction": "bullish",
+            "title": "RB bullish momentum",
+            "summary": "Bullish momentum signal.",
+            "related_assets": ["RB"],
+        },
+        "context": {"category": "rubber", "market_data": [{"close": 13250.0}]},
+        "score": {"combined": 85, "priority": 85, "portfolio_fit": 75, "margin_efficiency": 80},
+        "event_payload": {"recommended_action": "watchlist_only", "adversarial_result": {"passed": True}},
+        "triggered_at": triggered_at,
+    }
+
+    live_at_replay_time = evaluate_trade_plan_candidate(
+        **common_payload,
+        as_of=triggered_at + timedelta(hours=6),
+    )
+    stale_after_window = evaluate_trade_plan_candidate(
+        **common_payload,
+        as_of=triggered_at + timedelta(days=2),
+    )
+
+    assert live_at_replay_time.passed is True
+    assert live_at_replay_time.recommendation is not None
+    assert live_at_replay_time.recommendation.expires_at == triggered_at + timedelta(days=1)
+    assert stale_after_window.passed is False
+    assert stale_after_window.skip_reason == "stale_signal"
+
+
+def test_trade_plan_candidate_evaluation_reports_missing_price_reason() -> None:
+    now = datetime.now(timezone.utc)
+    alert = Alert(
+        id=uuid4(),
+        title="RB strong momentum",
+        summary="No price.",
+        severity="high",
+        category="ferrous",
+        type="momentum",
+        status="active",
+        triggered_at=now,
+        expires_at=now + timedelta(days=1),
+        confidence=0.9,
+        adversarial_passed=True,
+        llm_involved=False,
+        confidence_tier="auto",
+        human_action_required=False,
+        dedup_suppressed=False,
+        related_assets=["RB"],
+        trigger_chain=[],
+        risk_items=[],
+        manual_check_items=[],
+    )
+
+    evaluation = evaluate_trade_plan_candidate(
+        alert=alert,
+        signal={
+            "signal_type": "momentum",
+            "severity": "high",
+            "confidence": 0.9,
+            "title": "RB bullish momentum",
+            "summary": "Bullish momentum signal.",
+            "related_assets": ["RB"],
+        },
+        context={"category": "ferrous", "market_data": []},
+        score={"combined": 85, "priority": 85},
+        event_payload={"recommended_action": "watchlist_only", "adversarial_result": {"passed": True}},
+        triggered_at=now,
+    )
+
+    assert evaluation.passed is False
+    assert evaluation.skip_reason == "missing_entry_price"
+
+
+def test_directional_candidate_below_confidence_reports_score_gate_reason() -> None:
+    now = datetime.now(timezone.utc)
+    alert = Alert(
+        id=uuid4(),
+        title="MA bullish momentum",
+        summary="Below directional confidence gate.",
+        severity="high",
+        category="chemical",
+        type="momentum",
+        status="active",
+        triggered_at=now,
+        expires_at=now + timedelta(days=1),
+        confidence=0.6,
+        adversarial_passed=True,
+        llm_involved=False,
+        confidence_tier="auto",
+        human_action_required=False,
+        dedup_suppressed=False,
+        related_assets=["MA"],
+        trigger_chain=[],
+        risk_items=[],
+        manual_check_items=[],
+    )
+
+    evaluation = evaluate_trade_plan_candidate(
+        alert=alert,
+        signal={
+            "signal_type": "momentum",
+            "severity": "high",
+            "confidence": 0.6,
+            "title": "MA bullish momentum",
+            "summary": "Bullish moving-average crossover.",
+            "related_assets": ["MA"],
+        },
+        context={"category": "chemical", "market_data": [{"close": 5116.0}]},
+        score={"combined": 85, "priority": 85},
+        event_payload={"recommended_action": "watchlist_only", "adversarial_result": {"passed": True}},
+        triggered_at=now,
+    )
+
+    assert recommended_action(
+        {
+            "signal_type": "momentum",
+            "confidence": 0.6,
+            "title": "MA bullish momentum",
+            "summary": "Bullish moving-average crossover.",
+            "related_assets": ["MA"],
+        }
+    ) == "open_directional"
+    assert evaluation.passed is False
+    assert evaluation.skip_reason == "score_below_gate"
+
+
+def test_warmup_adversarial_result_allows_trade_plan_candidate() -> None:
+    now = datetime.now(timezone.utc)
+    alert = Alert(
+        id=uuid4(),
+        title="MA bullish momentum",
+        summary="Warmup adversarial result should not block production flow.",
+        severity="high",
+        category="chemical",
+        type="momentum",
+        status="active",
+        triggered_at=now,
+        expires_at=now + timedelta(days=1),
+        confidence=0.9,
+        adversarial_passed=False,
+        llm_involved=False,
+        confidence_tier="auto",
+        human_action_required=False,
+        dedup_suppressed=False,
+        related_assets=["MA"],
+        trigger_chain=[],
+        risk_items=[],
+        manual_check_items=[],
+    )
+
+    evaluation = evaluate_trade_plan_candidate(
+        alert=alert,
+        signal={
+            "signal_type": "momentum",
+            "severity": "high",
+            "confidence": 0.9,
+            "direction": "bullish",
+            "title": "MA bullish momentum",
+            "summary": "Bullish moving-average crossover.",
+            "related_assets": ["MA"],
+        },
+        context={"category": "chemical", "market_data": [{"close": 5116.0}]},
+        score={"combined": 85, "priority": 85, "portfolio_fit": 75, "margin_efficiency": 80},
+        event_payload={
+            "recommended_action": "watchlist_only",
+            "adversarial_result": {
+                "passed": False,
+                "suppressed": False,
+                "warmup_enabled": True,
+                "runtime_mode": "warmup",
+            },
+        },
+        triggered_at=now,
+    )
+
+    assert evaluation.passed is True
+    assert evaluation.recommendation is not None
+    assert evaluation.recommendation.recommended_action == "open_directional"
+    assert any("Adversarial engine warmup" in item for item in evaluation.recommendation.risk_items)
+
+
+def test_warmup_confidence_penalty_is_restored_for_trade_plan_gate() -> None:
+    now = datetime.now(timezone.utc)
+    alert = Alert(
+        id=uuid4(),
+        title="I capacity contraction risk",
+        summary="Legacy warmup payload carried a confidence penalty.",
+        severity="high",
+        category="ferrous",
+        type="capacity_contraction",
+        status="active",
+        triggered_at=now,
+        expires_at=now + timedelta(days=1),
+        confidence=0.6,
+        adversarial_passed=False,
+        llm_involved=False,
+        confidence_tier="auto",
+        human_action_required=False,
+        dedup_suppressed=False,
+        related_assets=["I"],
+        trigger_chain=[],
+        risk_items=[],
+        manual_check_items=[],
+    )
+
+    evaluation = evaluate_trade_plan_candidate(
+        alert=alert,
+        signal={
+            "signal_type": "capacity_contraction",
+            "severity": "high",
+            "confidence": 0.6,
+            "direction": "bearish",
+            "title": "I capacity contraction risk",
+            "summary": "Bearish cost-model signal.",
+            "related_assets": ["I"],
+        },
+        context={"category": "ferrous", "market_data": [{"close": 797.0}]},
+        score={"combined": 62, "priority": 40, "portfolio_fit": 75, "margin_efficiency": 80},
+        event_payload={
+            "recommended_action": "watchlist_only",
+            "adversarial_result": {
+                "passed": False,
+                "suppressed": False,
+                "warmup_enabled": True,
+                "runtime_mode": "warmup",
+                "confidence_multiplier": 0.7,
+            },
+        },
+        triggered_at=now,
+    )
+
+    assert evaluation.passed is True
+    assert evaluation.recommendation is not None
+    assert evaluation.recommendation.recommended_action == "open_directional"
+    assert evaluation.recommendation.backtest_summary is not None
+    assert round(evaluation.recommendation.backtest_summary["effective_confidence"], 4) == 0.8571
+    assert any(
+        "Warmup confidence restored for trade-plan gating" in item
+        for item in evaluation.recommendation.risk_items
+    )
+
+
+def test_trade_plan_match_and_merge_combines_same_symbol_direction_evidence() -> None:
+    now = datetime.now(timezone.utc)
+    primary_alert_id = uuid4()
+    target = Recommendation(
+        id=uuid4(),
+        alert_id=primary_alert_id,
+        status="pending_review",
+        recommended_action="open_directional",
+        legs=[{"asset": "I", "direction": "short", "lots": 1.0}],
+        priority_score=39,
+        portfolio_fit_score=70,
+        margin_efficiency_score=80,
+        margin_required=100000,
+        reasoning="Primary I short thesis.",
+        risk_items=["Primary evidence."],
+        expires_at=now + timedelta(hours=8),
+        backtest_summary={"signal_type": "median_pressure"},
+    )
+    incoming = Recommendation(
+        id=uuid4(),
+        alert_id=uuid4(),
+        status="pending_review",
+        recommended_action="open_directional",
+        legs=[{"asset": "I", "direction": "short", "lots": 1.0}],
+        priority_score=44,
+        portfolio_fit_score=75,
+        margin_efficiency_score=81,
+        margin_required=120000,
+        reasoning="Supporting I short thesis.",
+        risk_items=["Supporting evidence."],
+        expires_at=now + timedelta(hours=12),
+        backtest_summary={"signal_type": "capacity_contraction"},
+    )
+    alert = Alert(
+        id=incoming.alert_id,
+        title="I capacity contraction risk",
+        summary="Supporting cost-model signal.",
+        severity="high",
+        category="ferrous",
+        type="capacity_contraction",
+        status="pending",
+        triggered_at=now,
+        expires_at=now + timedelta(days=1),
+        confidence=0.9,
+        adversarial_passed=True,
+        llm_involved=True,
+        confidence_tier="notify",
+        human_action_required=True,
+        dedup_suppressed=False,
+        related_assets=["I"],
+        trigger_chain=[],
+        risk_items=[],
+        manual_check_items=[],
+    )
+
+    assert trade_plan_matches(target, incoming) is True
+
+    merge_trade_plan_evidence(target, incoming, alert=alert)
+
+    assert target.priority_score == 44
+    assert target.portfolio_fit_score == 75
+    assert target.margin_efficiency_score == 81
+    assert target.margin_required == 120000
+    assert target.expires_at == incoming.expires_at
+    assert target.risk_items == ["Primary evidence.", "Supporting evidence."]
+    assert target.backtest_summary is not None
+    assert target.backtest_summary["merged_evidence"] is True
+    assert target.backtest_summary["evidence_count"] == 2
+    assert target.backtest_summary["evidence_signal_types"] == [
+        "capacity_contraction",
+        "median_pressure",
+    ]
+    assert target.backtest_summary["linked_supporting_alerts"][0]["alert_id"] == str(alert.id)
+
+
+def test_trade_plan_match_key_ignores_leg_order() -> None:
+    now = datetime.now(timezone.utc)
+    first = Recommendation(
+        id=uuid4(),
+        alert_id=uuid4(),
+        status="pending_review",
+        recommended_action="open_spread",
+        legs=[
+            {"asset": "RB2506", "direction": "short", "lots": 1.0},
+            {"asset": "HC", "direction": "long", "lots": 1.0},
+        ],
+        priority_score=42,
+        portfolio_fit_score=72,
+        margin_efficiency_score=81,
+        margin_required=100000,
+        reasoning="Ferrous spread.",
+        risk_items=[],
+        expires_at=now + timedelta(hours=8),
+    )
+    second = Recommendation(
+        id=uuid4(),
+        alert_id=uuid4(),
+        status="pending_review",
+        recommended_action="open_spread",
+        legs=[
+            {"asset": "HC", "direction": "long", "lots": 1.0},
+            {"asset": "RB", "direction": "short", "lots": 1.0},
+        ],
+        priority_score=45,
+        portfolio_fit_score=75,
+        margin_efficiency_score=82,
+        margin_required=120000,
+        reasoning="Same ferrous spread with reversed legs.",
+        risk_items=[],
+        expires_at=now + timedelta(hours=10),
+    )
+
+    assert trade_plan_match_key(first) == trade_plan_match_key(second)
+    assert trade_plan_matches(first, second) is True
+
+
+def test_compact_trade_plan_risk_items_preserves_order_and_caps_response_limit() -> None:
+    items = compact_trade_plan_risk_items(
+        ["primary", "duplicate", "duplicate"],
+        [f"context-{index}" for index in range(30)],
+    )
+
+    assert items[:3] == ["primary", "duplicate", "context-0"]
+    assert len(items) == 20
+
+
+async def test_context_signal_links_to_single_open_symbol_plan_without_changing_scores() -> None:
+    now = datetime.now(timezone.utc)
+    plan = Recommendation(
+        id=uuid4(),
+        alert_id=uuid4(),
+        status="pending_review",
+        recommended_action="open_directional",
+        legs=[{"asset": "I2601", "direction": "short", "lots": 1.0}],
+        priority_score=44,
+        portfolio_fit_score=75,
+        margin_efficiency_score=80,
+        margin_required=100000,
+        reasoning="I short thesis.",
+        risk_items=["Primary cost evidence."],
+        expires_at=now + timedelta(hours=8),
+        backtest_summary={"signal_type": "capacity_contraction"},
+    )
+    session = FakeOpenPlanSession([plan])
+    signal = {
+        "signal_type": "regime_shift",
+        "severity": "medium",
+        "confidence": 0.58,
+        "title": "I regime shift",
+        "summary": "I regime changed.",
+        "related_assets": ["I2509"],
+        "risk_items": ["Mean-reversion assumptions may need review."],
+    }
+    alert = Alert(
+        id=uuid4(),
+        title="I regime shift",
+        summary="I regime changed.",
+        severity="medium",
+        category="ferrous",
+        type="regime_shift",
+        status="active",
+        triggered_at=now,
+        expires_at=now + timedelta(days=1),
+        confidence=0.58,
+        adversarial_passed=True,
+        llm_involved=False,
+        confidence_tier="notify",
+        human_action_required=False,
+        dedup_suppressed=False,
+        related_assets=["I"],
+        trigger_chain=[],
+        risk_items=[],
+        manual_check_items=[],
+    )
+
+    linked_plan = await open_trade_plan_for_context_signal(session, signal, as_of=now)
+
+    assert linked_plan is plan
+    attach_trade_plan_context_evidence(
+        plan,
+        alert=alert,
+        signal=signal,
+        skip_reason="unsupported_action",
+    )
+
+    assert plan.priority_score == 44
+    assert plan.backtest_summary["context_enriched"] is True
+    assert plan.backtest_summary["context_evidence_count"] == 1
+    assert plan.backtest_summary["context_signal_types"] == ["regime_shift"]
+    assert plan.backtest_summary["linked_context_alerts"][0]["skip_reason"] == "unsupported_action"
+    assert "Mean-reversion assumptions may need review." in plan.risk_items
+
+
+async def test_context_signal_falls_back_to_legacy_contract_plan() -> None:
+    now = datetime.now(timezone.utc)
+    legacy_plan = Recommendation(
+        id=uuid4(),
+        alert_id=uuid4(),
+        status="pending_review",
+        recommended_action="open_directional",
+        legs=[{"asset": "I2601", "direction": "short", "lots": 1.0}],
+        priority_score=44,
+        portfolio_fit_score=75,
+        margin_efficiency_score=80,
+        margin_required=100000,
+        reasoning="Legacy I contract short thesis.",
+        risk_items=[],
+        expires_at=now + timedelta(hours=8),
+    )
+    session = FakeFallbackOpenPlanSession(first_rows=[], fallback_rows=[legacy_plan])
+
+    linked_plan = await open_trade_plan_for_context_signal(
+        session,
+        {
+            "signal_type": "regime_shift",
+            "confidence": 0.58,
+            "title": "I regime shift",
+            "summary": "I regime changed.",
+            "related_assets": ["I2509"],
+        },
+        as_of=now,
+    )
+
+    assert linked_plan is legacy_plan
+    assert session.scalars_calls == 2
+
+
+async def test_context_signal_fallback_preserves_conflicting_direction_guard() -> None:
+    now = datetime.now(timezone.utc)
+    root_long = Recommendation(
+        id=uuid4(),
+        alert_id=uuid4(),
+        status="pending_review",
+        recommended_action="open_directional",
+        legs=[{"asset": "I", "direction": "long", "lots": 1.0}],
+        priority_score=44,
+        portfolio_fit_score=75,
+        margin_efficiency_score=80,
+        margin_required=100000,
+        reasoning="I long thesis.",
+        risk_items=[],
+        expires_at=now + timedelta(hours=8),
+    )
+    legacy_short = Recommendation(
+        id=uuid4(),
+        alert_id=uuid4(),
+        status="pending_review",
+        recommended_action="open_directional",
+        legs=[{"asset": "I2601", "direction": "short", "lots": 1.0}],
+        priority_score=44,
+        portfolio_fit_score=75,
+        margin_efficiency_score=80,
+        margin_required=100000,
+        reasoning="Legacy I short thesis.",
+        risk_items=[],
+        expires_at=now + timedelta(hours=8),
+    )
+
+    linked_plan = await open_trade_plan_for_context_signal(
+        FakeFallbackOpenPlanSession(first_rows=[root_long], fallback_rows=[root_long, legacy_short]),
+        {
+            "signal_type": "regime_shift",
+            "confidence": 0.58,
+            "title": "I regime shift",
+            "summary": "I regime changed.",
+            "related_assets": ["I2509"],
+        },
+        as_of=now,
+    )
+
+    assert linked_plan is None
+
+
+async def test_context_signal_does_not_link_when_symbol_has_conflicting_open_directions() -> None:
+    now = datetime.now(timezone.utc)
+    long_plan = Recommendation(
+        id=uuid4(),
+        alert_id=uuid4(),
+        status="pending_review",
+        recommended_action="open_directional",
+        legs=[{"asset": "I", "direction": "long", "lots": 1.0}],
+        priority_score=44,
+        portfolio_fit_score=75,
+        margin_efficiency_score=80,
+        margin_required=100000,
+        reasoning="I long thesis.",
+        risk_items=[],
+        expires_at=now + timedelta(hours=8),
+    )
+    short_plan = Recommendation(
+        id=uuid4(),
+        alert_id=uuid4(),
+        status="pending_review",
+        recommended_action="open_directional",
+        legs=[{"asset": "I", "direction": "short", "lots": 1.0}],
+        priority_score=44,
+        portfolio_fit_score=75,
+        margin_efficiency_score=80,
+        margin_required=100000,
+        reasoning="I short thesis.",
+        risk_items=[],
+        expires_at=now + timedelta(hours=8),
+    )
+
+    linked_plan = await open_trade_plan_for_context_signal(
+        FakeOpenPlanSession([long_plan, short_plan]),
+        {
+            "signal_type": "regime_shift",
+            "confidence": 0.58,
+            "title": "I regime shift",
+            "summary": "I regime changed.",
+            "related_assets": ["I"],
+        },
+        as_of=now,
+    )
+
+    assert linked_plan is None
+
+
+async def test_score_below_gate_directional_signal_links_as_weak_context_only() -> None:
+    now = datetime.now(timezone.utc)
+    plan = Recommendation(
+        id=uuid4(),
+        alert_id=uuid4(),
+        status="pending_review",
+        recommended_action="open_directional",
+        legs=[{"asset": "RB", "direction": "short", "lots": 1.0}],
+        priority_score=66,
+        portfolio_fit_score=75,
+        margin_efficiency_score=80,
+        margin_required=100000,
+        reasoning="RB short thesis.",
+        risk_items=[],
+        expires_at=now + timedelta(hours=8),
+    )
+    signal = {
+        "signal_type": "marginal_capacity_squeeze",
+        "confidence": 0.79,
+        "direction": "bearish",
+        "title": "RB marginal capacity squeeze",
+        "summary": "Capacity stress is building but confidence is below gate.",
+        "related_assets": ["RB"],
+    }
+
+    linked_plan = await open_trade_plan_for_context_signal(
+        FakeOpenPlanSession([plan]),
+        signal,
+        skip_reason="score_below_gate",
+        as_of=now,
+    )
+
+    assert linked_plan is plan
+
+
+async def test_score_below_gate_directional_signal_respects_existing_plan_direction() -> None:
+    now = datetime.now(timezone.utc)
+    long_plan = Recommendation(
+        id=uuid4(),
+        alert_id=uuid4(),
+        status="pending_review",
+        recommended_action="open_directional",
+        legs=[{"asset": "RB", "direction": "long", "lots": 1.0}],
+        priority_score=66,
+        portfolio_fit_score=75,
+        margin_efficiency_score=80,
+        margin_required=100000,
+        reasoning="RB long thesis.",
+        risk_items=[],
+        expires_at=now + timedelta(hours=8),
+    )
+    signal = {
+        "signal_type": "marginal_capacity_squeeze",
+        "confidence": 0.79,
+        "direction": "bearish",
+        "title": "RB marginal capacity squeeze",
+        "summary": "Capacity stress is building but confidence is below gate.",
+        "related_assets": ["RB"],
+    }
+
+    linked_plan = await open_trade_plan_for_context_signal(
+        FakeOpenPlanSession([long_plan]),
+        signal,
+        skip_reason="score_below_gate",
+        as_of=now,
+    )
+
+    assert linked_plan is None
+
+
+async def test_directional_non_context_signal_without_score_gate_skip_is_not_linked() -> None:
+    now = datetime.now(timezone.utc)
+    plan = Recommendation(
+        id=uuid4(),
+        alert_id=uuid4(),
+        status="pending_review",
+        recommended_action="open_directional",
+        legs=[{"asset": "RB", "direction": "short", "lots": 1.0}],
+        priority_score=66,
+        portfolio_fit_score=75,
+        margin_efficiency_score=80,
+        margin_required=100000,
+        reasoning="RB short thesis.",
+        risk_items=[],
+        expires_at=now + timedelta(hours=8),
+    )
+
+    linked_plan = await open_trade_plan_for_context_signal(
+        FakeOpenPlanSession([plan]),
+        {
+            "signal_type": "marginal_capacity_squeeze",
+            "confidence": 0.79,
+            "direction": "bearish",
+            "title": "RB marginal capacity squeeze",
+            "related_assets": ["RB"],
+        },
+        as_of=now,
+    )
+
+    assert linked_plan is None
+
+
+def test_structured_direction_drives_directional_candidate_without_text_markers() -> None:
+    now = datetime.now(timezone.utc)
+    alert = Alert(
+        id=uuid4(),
+        title="RB event impact",
+        summary="Structured event impact.",
+        severity="high",
+        category="ferrous",
+        type="news_event",
+        status="pending",
+        triggered_at=now,
+        expires_at=now + timedelta(days=1),
+        confidence=0.9,
+        adversarial_passed=True,
+        llm_involved=False,
+        confidence_tier="auto",
+        human_action_required=True,
+        dedup_suppressed=False,
+        related_assets=["RB"],
+        trigger_chain=[],
+        risk_items=[],
+        manual_check_items=[],
+    )
+
+    recommendation = build_trade_plan_recommendation(
+        alert=alert,
+        signal={
+            "signal_type": "news_event",
+            "severity": "high",
+            "confidence": 0.9,
+            "direction": "bearish",
+            "title": "RB event impact",
+            "summary": "Structured event impact.",
+            "related_assets": ["RB"],
+        },
+        context={"category": "ferrous", "market_data": [{"close": 3210.0}]},
+        score={"combined": 82, "priority": 82, "portfolio_fit": 75, "margin_efficiency": 80},
+        event_payload={"recommended_action": "watchlist_only", "adversarial_result": {"passed": True}},
+        triggered_at=now,
+    )
+
+    assert recommendation is not None
+    assert recommendation.recommended_action == "open_directional"
+    assert recommendation.legs == [{"asset": "RB", "direction": "short", "lots": 1.0}]
+
+
+def test_directional_candidate_without_direction_reports_missing_direction() -> None:
+    now = datetime.now(timezone.utc)
+    alert = Alert(
+        id=uuid4(),
+        title="AG inventory shock",
+        summary="Range and volatility expanded without a price direction.",
+        severity="high",
+        category="precious_metals",
+        type="inventory_shock",
+        status="active",
+        triggered_at=now,
+        expires_at=now + timedelta(days=1),
+        confidence=0.9,
+        adversarial_passed=True,
+        llm_involved=False,
+        confidence_tier="auto",
+        human_action_required=False,
+        dedup_suppressed=False,
+        related_assets=["AG"],
+        trigger_chain=[],
+        risk_items=[],
+        manual_check_items=[],
+    )
+
+    evaluation = evaluate_trade_plan_candidate(
+        alert=alert,
+        signal={
+            "signal_type": "inventory_shock",
+            "severity": "high",
+            "confidence": 0.9,
+            "title": "AG inventory shock",
+            "summary": "Range and volatility expanded.",
+            "related_assets": ["AG"],
+        },
+        context={"category": "precious_metals", "market_data": [{"close": 6494.0}]},
+        score={"combined": 85, "priority": 85},
+        event_payload={"recommended_action": "watchlist_only", "adversarial_result": {"passed": True}},
+        triggered_at=now,
+    )
+
+    assert evaluation.passed is False
+    assert evaluation.skip_reason == "missing_direction"
+
+
 async def test_signal_scored_handler_creates_alert_and_publishes_event() -> None:
     signal_publisher = CapturingPublisher()
     detected = (await handle_market_update(_market_update_event(), publisher=signal_publisher))[0]
@@ -337,6 +1392,32 @@ async def test_signal_scored_handler_skips_trade_plan_for_stale_spread_signal() 
     assert created is not None
     assert next((row for row in session.rows if isinstance(row, Recommendation)), None) is None
     assert created.payload["recommendation_id"] is None
+
+
+async def test_signal_scored_handler_uses_context_freshness_timestamp_for_daily_bars() -> None:
+    signal_publisher = CapturingPublisher()
+    event = _market_update_event()
+    event.payload["contexts"][0]["timestamp"] = datetime(2026, 5, 18, tzinfo=timezone.utc).isoformat()
+    event.payload["contexts"][0]["freshness_timestamp"] = datetime.now(timezone.utc).isoformat()
+    detected = (await handle_market_update(event, publisher=signal_publisher))[0]
+    score_publisher = CapturingPublisher()
+    scored = await handle_signal_detected(detected, publisher=score_publisher)
+    assert scored is not None
+
+    session = FakeSession()
+    alert_publisher = CapturingPublisher()
+    created = await handle_signal_scored(
+        scored,
+        session=session,  # type: ignore[arg-type]
+        publisher=alert_publisher,
+    )
+
+    assert created is not None
+    alert = next(row for row in session.rows if isinstance(row, Alert))
+    recommendation = next(row for row in session.rows if isinstance(row, Recommendation))
+    assert alert.triggered_at.isoformat() == event.payload["contexts"][0]["freshness_timestamp"]
+    assert recommendation.expires_at > datetime.now(timezone.utc)
+    assert created.payload["recommendation_id"] == str(recommendation.id)
 
 
 async def test_signal_scored_handler_requests_scenario_for_arbitration_route() -> None:
@@ -419,3 +1500,7 @@ async def test_signal_scored_handler_does_not_create_trade_plan_for_watchlist_si
     assert next((row for row in session.rows if isinstance(row, Recommendation)), None) is None
     assert all(call["event"].channel != "recommendation.created" for call in publisher.calls)
     assert created.payload["recommendation_id"] is None
+
+
+def _compile_postgres(statement) -> str:
+    return str(statement.compile(dialect=postgresql.dialect()))

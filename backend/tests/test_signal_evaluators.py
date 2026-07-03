@@ -80,6 +80,7 @@ async def test_momentum_triggers_on_ma_cross_with_volume_confirmation() -> None:
     assert result is not None
     assert result.severity == "high"
     assert result.signal_type == "momentum"
+    assert result.direction == "bullish"
 
 
 @pytest.mark.asyncio
@@ -258,6 +259,65 @@ async def test_inventory_shock_uses_inventory_and_volatility() -> None:
 
     assert result is not None
     assert result.signal_type == "inventory_shock"
+    assert result.direction == "bearish"
+
+
+@pytest.mark.asyncio
+async def test_inventory_shock_uses_price_impulse_direction_when_clear() -> None:
+    start = datetime(2026, 5, 1, tzinfo=timezone.utc)
+    closes = [100, 100.2, 99.9, 100.1, 100, 100.2, 100.1, 99.8, 100, 100.1, 99, 96, 93, 90, 88]
+    market_data = [
+        MarketBar(
+            timestamp=start + timedelta(days=idx),
+            open=close,
+            high=close + (1 if idx < 10 else 6),
+            low=close - (1 if idx < 10 else 6),
+            close=close,
+            volume=100,
+        )
+        for idx, close in enumerate(closes)
+    ]
+
+    result = await InventoryShockEvaluator().evaluate(
+        TriggerContext(
+            symbol1="AG",
+            category="precious_metals",
+            timestamp=datetime.now(timezone.utc),
+            market_data=market_data,
+        )
+    )
+
+    assert result is not None
+    assert result.direction == "bearish"
+    assert any("Price impulse" in item for item in result.risk_items)
+
+
+@pytest.mark.asyncio
+async def test_inventory_shock_stays_non_directional_without_clear_impulse() -> None:
+    start = datetime(2026, 5, 1, tzinfo=timezone.utc)
+    market_data = [
+        MarketBar(
+            timestamp=start + timedelta(days=idx),
+            open=100,
+            high=101 if idx < 10 else 106,
+            low=99 if idx < 10 else 94,
+            close=100,
+            volume=100,
+        )
+        for idx in range(15)
+    ]
+
+    result = await InventoryShockEvaluator().evaluate(
+        TriggerContext(
+            symbol1="RU",
+            category="rubber",
+            timestamp=datetime.now(timezone.utc),
+            market_data=market_data,
+        )
+    )
+
+    assert result is not None
+    assert result.direction is None
 
 
 @pytest.mark.asyncio
@@ -287,6 +347,7 @@ async def test_event_driven_triggers_on_gap_and_volume_spike() -> None:
 
     assert result is not None
     assert result.signal_type == "event_driven"
+    assert result.direction == "bullish"
 
 
 @pytest.mark.asyncio
@@ -316,6 +377,7 @@ async def test_price_gap_triggers_with_new_signal_type() -> None:
 
     assert result is not None
     assert result.signal_type == "price_gap"
+    assert result.direction == "bullish"
 
 
 @pytest.mark.asyncio
@@ -349,6 +411,7 @@ async def test_news_event_triggers_for_cross_verified_severe_event() -> None:
     assert result.signal_type == "news_event"
     assert result.severity == "critical"
     assert result.related_assets == ["SC"]
+    assert result.direction == "bullish"
 
 
 @pytest.mark.asyncio
@@ -413,7 +476,10 @@ async def test_rubber_supply_shock_triggers_for_origin_weather_event() -> None:
     assert result.signal_type == "rubber_supply_shock"
     assert result.severity == "high"
     assert result.related_assets == ["NR", "RU"]
-    assert "origin supply chain" in result.summary
+    assert result.direction == "bullish"
+    assert "经产区供应链" in result.summary
+    assert "RU/NR" in result.summary
+    assert "偏多" in result.summary
 
 
 @pytest.mark.asyncio
@@ -528,6 +594,7 @@ async def test_capacity_contraction_triggers_after_two_weeks_negative_margin() -
     assert result is not None
     assert result.signal_type == "capacity_contraction"
     assert result.severity == "high"
+    assert result.direction == "bearish"
 
 
 @pytest.mark.asyncio
@@ -548,6 +615,7 @@ async def test_restart_expectation_triggers_on_margin_cross() -> None:
     assert result is not None
     assert result.signal_type == "restart_expectation"
     assert result.severity == "medium"
+    assert result.direction == "bullish"
 
 
 @pytest.mark.asyncio
@@ -564,8 +632,10 @@ async def test_cost_curve_price_breaches_trigger_pressure_signals() -> None:
 
     assert median is not None
     assert median.signal_type == "median_pressure"
+    assert median.direction == "bearish"
     assert marginal is not None
     assert marginal.signal_type == "marginal_capacity_squeeze"
+    assert marginal.direction == "bearish"
 
 
 def test_trigger_context_parses_cost_snapshot_payload() -> None:

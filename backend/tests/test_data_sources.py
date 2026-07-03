@@ -1,9 +1,11 @@
 import json
+from uuid import UUID
 
 import httpx
 import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy.dialects import postgresql
 
 from app.core.config import Settings
 from app.main import create_app
@@ -19,6 +21,8 @@ from app.services.data_sources.accuweather import (
 from app.services.data_sources.eia import EiaSeries, collect_eia_indicators, row_from_eia_payload
 from app.services.data_sources.fred import FredSeries, collect_fred_indicators, row_from_fred_payload
 from app.services.data_sources.free_ingest import (
+    FreeDataIngestResult,
+    build_market_context_payloads,
     market_context_payloads,
     run_free_data_ingest,
     safe_error_message,
@@ -54,6 +58,7 @@ from app.services.data_sources.tushare_futures import (
     parse_csv_tuple,
     rows_from_tushare_payload,
 )
+from app.services.market_data.pit import _industry_data_pit_statement, _market_data_pit_statement
 
 
 def test_parse_akshare_symbols_uses_defaults_when_blank() -> None:
@@ -1032,20 +1037,92 @@ def test_market_context_payloads_group_rows_by_symbol() -> None:
     assert len(contexts[0]["market_data"]) == 2
 
 
+def test_market_context_payloads_drops_stale_realtime_contexts() -> None:
+    rows = _rows_from_frame(
+        pd.DataFrame(
+            [
+                {"date": "2026-05-01", "open": 1, "high": 2, "low": 1, "close": 2, "volume": 10},
+                {"date": "2026-05-02", "open": 2, "high": 3, "low": 2, "close": 3, "volume": 11},
+            ]
+        ),
+        query_symbol="SC0",
+        limit=10,
+    )
+
+    result = build_market_context_payloads(
+        rows,
+        as_of=pd.Timestamp("2026-05-06T00:00:00Z").to_pydatetime(),
+        max_age_hours=72,
+    )
+
+    assert result.contexts == []
+    assert result.stale_contexts == 1
+    assert result.stale_context_details[0]["symbol"] == "SC"
+    assert result.stale_context_details[0]["source"] == "akshare_sina"
+    ingest_result = FreeDataIngestResult(stale_market_contexts=result.stale_contexts)
+    assert ingest_result.status == "degraded"
+    assert ingest_result.to_dict()["degraded"] is True
+
+
+def test_market_context_payloads_uses_daily_bar_validity_window() -> None:
+    rows = _rows_from_frame(
+        pd.DataFrame(
+            [
+                {"date": "2026-05-02", "open": 2, "high": 3, "low": 2, "close": 3, "volume": 11},
+            ]
+        ),
+        query_symbol="SC0",
+        limit=10,
+    )
+
+    result = build_market_context_payloads(
+        rows,
+        as_of=pd.Timestamp("2026-05-03T01:00:00+08:00").to_pydatetime(),
+        max_age_hours=24,
+    )
+
+    assert len(result.contexts) == 1
+    assert result.contexts[0]["timestamp"] == "2026-05-02T00:00:00+08:00"
+    assert result.contexts[0]["freshness_timestamp"] == "2026-05-02T16:00:00+00:00"
+    assert result.stale_contexts == 0
+
+
+def test_market_context_payloads_keeps_recent_realtime_contexts() -> None:
+    rows = _rows_from_frame(
+        pd.DataFrame(
+            [
+                {"date": "2026-05-01", "open": 1, "high": 2, "low": 1, "close": 2, "volume": 10},
+                {"date": "2026-05-02", "open": 2, "high": 3, "low": 2, "close": 3, "volume": 11},
+            ]
+        ),
+        query_symbol="SC0",
+        limit=10,
+    )
+
+    result = build_market_context_payloads(
+        rows,
+        as_of=pd.Timestamp("2026-05-04T00:00:00Z").to_pydatetime(),
+        max_age_hours=72,
+    )
+
+    assert len(result.contexts) == 1
+    assert result.stale_contexts == 0
+
+
 async def test_free_data_ingest_reports_enabled_keyed_sources_without_keys() -> None:
     settings = Settings(
         data_source_noaa_cdo_enabled=True,
-        noaa_cdo_api_key="",
+        noaa_cdo_api_key="  ",
         data_source_accuweather_enabled=True,
-        accuweather_api_key="",
+        accuweather_api_key="\t",
         data_source_fred_enabled=True,
-        fred_api_key="",
+        fred_api_key=" ",
         data_source_eia_enabled=True,
-        eia_api_key="",
+        eia_api_key="\n",
         data_source_tushare_enabled=True,
-        tushare_token="",
+        tushare_token="  ",
         data_source_shipping_index_enabled=True,
-        shipping_index_url="",
+        shipping_index_url="  ",
         _env_file=None,
     )
 
@@ -1075,13 +1152,13 @@ async def test_free_data_ingest_reports_enabled_keyed_sources_without_keys() -> 
 def test_data_source_registry_marks_keyed_sources() -> None:
     settings = Settings(
         data_source_fred_enabled=True,
-        fred_api_key="fred-test",
+        fred_api_key=" fred-test ",
         data_source_eia_enabled=True,
-        eia_api_key="",
+        eia_api_key="  ",
         data_source_tushare_enabled=True,
-        tushare_token="tushare-test",
+        tushare_token="\ttushare-test\t",
         data_source_shipping_index_enabled=True,
-        shipping_index_url="",
+        shipping_index_url="  ",
         _env_file=None,
     )
 
@@ -1106,9 +1183,9 @@ def test_data_source_registry_marks_keyed_sources() -> None:
 def test_data_source_registry_marks_weather_keyed_sources() -> None:
     settings = Settings(
         data_source_noaa_cdo_enabled=True,
-        noaa_cdo_api_key="noaa-test",
+        noaa_cdo_api_key=" noaa-test ",
         data_source_accuweather_enabled=True,
-        accuweather_api_key="",
+        accuweather_api_key="  ",
         _env_file=None,
     )
 
@@ -1197,6 +1274,56 @@ def test_industry_data_api_rejects_unbounded_query_filters() -> None:
     oversized_type = "x" * 31
     response = client.get(f"/api/industry-data?symbol=SC&data_type={oversized_type}")
     assert response.status_code == 422
+
+    response = client.get("/api/industry-data?symbol=SC&before=not-a-date")
+    assert response.status_code == 422
+
+    response = client.get("/api/industry-data?symbol=SC&before_id=not-a-uuid")
+    assert response.status_code == 422
+
+
+def test_industry_data_pit_statement_uses_cursor_and_stable_order() -> None:
+    before_id = UUID("00000000-0000-0000-0000-000000000020")
+    compiled = str(
+        _industry_data_pit_statement(
+            symbol="RU",
+            data_type="rubber_spot_price_cny_t",
+            before=pd.Timestamp("2026-05-18T00:00:00Z").to_pydatetime(),
+            before_id=before_id,
+            limit=20,
+        ).compile(dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True})
+    )
+
+    assert "industry_data.symbol = 'RU'" in compiled
+    assert "industry_data.data_type = 'rubber_spot_price_cny_t'" in compiled
+    assert "industry_data.timestamp < '2026-05-18" in compiled
+    assert "industry_data.id < '00000000-0000-0000-0000-000000000020'" in compiled
+    assert "ORDER BY industry_data.vintage_at DESC, industry_data.id DESC" in compiled
+    assert "ORDER BY industry_data.timestamp DESC, industry_data.id DESC" in compiled
+    assert "LIMIT 20" in compiled
+
+
+def test_market_data_pit_statement_uses_stable_window_and_output_order() -> None:
+    compiled = str(
+        _market_data_pit_statement(
+            symbol="RB",
+            as_of=pd.Timestamp("2026-05-18T09:30:00Z").to_pydatetime(),
+            start=pd.Timestamp("2026-05-01T00:00:00Z").to_pydatetime(),
+            end=pd.Timestamp("2026-05-18T00:00:00Z").to_pydatetime(),
+            limit=30,
+        ).compile(dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True})
+    )
+
+    assert "market_data.symbol = 'RB'" in compiled
+    assert "market_data.vintage_at <= '2026-05-18" in compiled
+    assert "market_data.timestamp >= '2026-05-01" in compiled
+    assert "market_data.timestamp <= '2026-05-18" in compiled
+    assert "ORDER BY market_data.vintage_at DESC, market_data.id DESC" in compiled
+    assert (
+        "ORDER BY market_data.timestamp DESC, market_data.contract_month ASC, "
+        "market_data.id DESC"
+    ) in compiled
+    assert "LIMIT 30" in compiled
 
 
 def json_from_request(request: httpx.Request) -> dict[str, object]:

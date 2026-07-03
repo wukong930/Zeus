@@ -2,15 +2,16 @@ from collections import defaultdict
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import desc, or_, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.calibration import SignalCalibration
 from app.models.signal import SignalTrack
 from app.services.calibration.decay_detector import detect_decay
 from app.services.calibration.hit_rate import summarize_outcomes
+from app.services.calibration.tracker import _active_calibration_statement
 from app.services.calibration.weight_adjuster import calculate_bayesian_weight
-from app.services.governance.review_queue import ReviewRequiredError, enqueue_review, review_required
+from app.services.governance.review_queue import enqueue_review, review_required
 
 RESOLVED_OUTCOMES = {"hit", "miss", "success", "failure", "win", "loss"}
 
@@ -98,12 +99,10 @@ async def generate_calibration_reviews(
     since = effective_as_of - timedelta(days=lookback_days)
     rows = (
         await session.scalars(
-            select(SignalTrack)
-            .where(
-                SignalTrack.created_at >= since,
-                SignalTrack.outcome.in_(RESOLVED_OUTCOMES),
+            _review_source_tracks_statement(
+                since=since,
+                as_of=effective_as_of,
             )
-            .order_by(SignalTrack.created_at.asc())
         )
     ).all()
 
@@ -151,6 +150,18 @@ async def generate_calibration_reviews(
     return CalibrationReviewResult(groups=len(groups), queued=queued, skipped=skipped)
 
 
+def _review_source_tracks_statement(*, since: datetime, as_of: datetime):
+    return (
+        select(SignalTrack)
+        .where(
+            SignalTrack.created_at >= since,
+            SignalTrack.created_at <= as_of,
+            SignalTrack.outcome.in_(RESOLVED_OUTCOMES),
+        )
+        .order_by(SignalTrack.created_at.asc(), SignalTrack.id.asc())
+    )
+
+
 async def get_active_calibration(
     session: AsyncSession,
     *,
@@ -161,19 +172,12 @@ async def get_active_calibration(
 ) -> SignalCalibration | None:
     return (
         await session.scalars(
-            select(SignalCalibration)
-            .where(
-                SignalCalibration.signal_type == signal_type,
-                SignalCalibration.category == category,
-                SignalCalibration.regime == regime,
-                SignalCalibration.effective_from <= as_of,
-                or_(
-                    SignalCalibration.effective_to.is_(None),
-                    SignalCalibration.effective_to > as_of,
-                ),
+            _active_calibration_statement(
+                signal_type=signal_type,
+                category=category,
+                regime=regime,
+                as_of=as_of,
             )
-            .order_by(desc(SignalCalibration.effective_from))
-            .limit(1)
         )
     ).first()
 
@@ -215,19 +219,3 @@ async def apply_signal_calibration_change(
     session.add(row)
     await session.flush()
     return row
-
-
-async def try_apply_without_review(
-    session: AsyncSession,
-    proposal: CalibrationProposal,
-) -> None:
-    try:
-        await apply_signal_calibration_change(
-            session,
-            proposal,
-            proposed_change=proposal.to_change(),
-            review_source="calibration",
-            target_key=proposal.target_key,
-        )
-    except ReviewRequiredError:
-        return

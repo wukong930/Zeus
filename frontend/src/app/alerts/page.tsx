@@ -12,17 +12,45 @@ import { cn } from "@/lib/utils";
 import { AlertTriangle, RadioTower, Search, ShieldCheck } from "lucide-react";
 import { useI18n } from "@/lib/i18n";
 
+const ALL_SEVERITIES: Severity[] = ["critical", "high", "medium", "low"];
+
 export default function AlertsPage() {
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [source, setSource] = useState<DataSourceState>("loading");
+  const [query, setQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
   const [enabledSeverities, setEnabledSeverities] = useState<Set<Severity>>(
-    new Set(["critical", "high", "medium", "low"])
+    new Set(ALL_SEVERITIES)
   );
   const [enabledSectors, setEnabledSectors] = useState<Set<Sector> | null>(null);
+  const selectedSeverities = useMemo(
+    () => ALL_SEVERITIES.filter((severity) => enabledSeverities.has(severity)),
+    [enabledSeverities]
+  );
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setDebouncedQuery(query.trim());
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [query]);
 
   useEffect(() => {
     let ignore = false;
-    fetchAlertsFromApi()
+    setSource("loading");
+    if (selectedSeverities.length === 0) {
+      setAlerts([]);
+      setSource("api");
+      return () => {
+        ignore = true;
+      };
+    }
+
+    fetchAlertsFromApi({
+      query: debouncedQuery || undefined,
+      severities: selectedSeverities,
+      limit: 200,
+    })
       .then((rows) => {
         if (!ignore) {
           setAlerts(rows);
@@ -39,7 +67,7 @@ export default function AlertsPage() {
     return () => {
       ignore = true;
     };
-  }, []);
+  }, [debouncedQuery, selectedSeverities]);
 
   const alertStats = useMemo(() => {
     const severityCounts = new Map<Severity, number>();
@@ -65,7 +93,7 @@ export default function AlertsPage() {
 
   const severities = useMemo(
     () =>
-      (["critical", "high", "medium", "low"] as Severity[]).map((value) => ({
+      ALL_SEVERITIES.map((value) => ({
         value,
         label: value[0].toUpperCase() + value.slice(1),
         count: alertStats.severityCounts.get(value) ?? 0,
@@ -85,13 +113,18 @@ export default function AlertsPage() {
   );
 
   const filtered = useMemo(
-    () =>
-      alerts.filter(
-        (a) =>
-          enabledSeverities.has(a.severity) &&
-          (enabledSectors === null || enabledSectors.has(a.sector))
-      ),
-    [alerts, enabledSectors, enabledSeverities]
+    () => {
+      const needle = query.trim().toLowerCase();
+      return alerts.filter((alert) => {
+        const matchesQuery = alertMatchesQuery(alert, needle);
+        return (
+          matchesQuery &&
+          enabledSeverities.has(alert.severity) &&
+          (enabledSectors === null || enabledSectors.has(alert.sector))
+        );
+      });
+    },
+    [alerts, enabledSectors, enabledSeverities, query]
   );
   const { text } = useI18n();
 
@@ -147,6 +180,8 @@ export default function AlertsPage() {
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
           <input
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
             placeholder={text("搜索预警...")}
             className="w-full rounded-sm border border-border-default bg-bg-base pl-9 pr-3 h-9 text-sm focus:border-brand-emerald focus:outline-none focus:shadow-focus-ring"
           />
@@ -163,6 +198,7 @@ export default function AlertsPage() {
                   const next = new Set(enabledSeverities);
                   next.has(s.value) ? next.delete(s.value) : next.add(s.value);
                   setEnabledSeverities(next);
+                  setEnabledSectors(null);
                 }}
                 label={
                   <span className="flex items-center gap-2 flex-1">
@@ -229,6 +265,19 @@ function emptyAlertMessage(source: DataSourceState, totalAlerts: number): string
   if (source === "fallback") return "预警接口暂不可用";
   if (totalAlerts === 0) return "当前暂无预警";
   return "没有匹配的预警";
+}
+
+function alertMatchesQuery(alert: Alert, needle: string): boolean {
+  if (!needle) return true;
+  if (/^[a-z0-9]{1,2}$/i.test(needle)) {
+    return alert.symbol.toLowerCase() === needle;
+  }
+  return (
+    alert.title.toLowerCase().includes(needle) ||
+    alert.narrative.toLowerCase().includes(needle) ||
+    alert.symbol.toLowerCase().includes(needle) ||
+    alert.signalChain.some((item) => item.toLowerCase().includes(needle))
+  );
 }
 
 function FilterChip({

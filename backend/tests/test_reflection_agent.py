@@ -5,6 +5,7 @@ from uuid import uuid4
 import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
+from sqlalchemy.dialects import postgresql
 
 from app.api.learning import validate_learning_hypothesis, vector_shadow_candidate_config
 from app.core.database import get_db
@@ -22,14 +23,28 @@ from app.services.calibration.updater import CalibrationProposal, apply_signal_c
 from app.services.governance.review_queue import ReviewRequiredError
 from app.services.learning.reflection_agent import (
     LearningHypothesisCandidate,
+    _reflection_drift_rows_statement,
+    _reflection_feedback_rows_statement,
+    _reflection_recommendation_rows_statement,
+    _reflection_signal_rows_statement,
     parse_reflection_candidates,
     persist_learning_hypotheses,
     run_reflection_agent,
 )
+from app.services.learning.attribution_report import _attribution_recommendations_statement
+from app.services.learning.drift_monitor import _signal_track_window_statement
 from app.services.llm.types import LLMCompletionResult
-from app.services.vector_search.eval import compare_vector_search_candidate, evaluate_single_case
-from app.services.vector_search.eval_seed import seed_vector_eval_cases
-from app.services.vector_search.hybrid_search import VectorSearchResult, quality_weight
+from app.services.vector_search.eval import (
+    _active_eval_cases_statement,
+    compare_vector_search_candidate,
+    evaluate_single_case,
+)
+from app.services.vector_search.eval_seed import _seed_chunks_statement, seed_vector_eval_cases
+from app.services.vector_search.hybrid_search import (
+    VectorSearchResult,
+    _hybrid_search_statement,
+    quality_weight,
+)
 
 
 def test_learning_api_bounds_query_text_fields() -> None:
@@ -269,6 +284,38 @@ async def test_run_reflection_agent_sends_sanitized_relative_payload() -> None:
     assert any(isinstance(row, ChangeReviewQueue) for row in session.rows)
 
 
+def test_learning_runtime_statements_use_stable_tie_breakers() -> None:
+    period_end = datetime(2026, 5, 4, tzinfo=timezone.utc)
+    period_start = period_end - timedelta(days=30)
+
+    signal_sql = _compile_postgres(_reflection_signal_rows_statement(period_start, period_end, 50))
+    recommendation_sql = _compile_postgres(
+        _reflection_recommendation_rows_statement(period_start, period_end, 50)
+    )
+    feedback_sql = _compile_postgres(
+        _reflection_feedback_rows_statement(period_start, period_end, 50)
+    )
+    drift_sql = _compile_postgres(_reflection_drift_rows_statement(period_start, period_end, 50))
+    attribution_sql = _compile_postgres(
+        _attribution_recommendations_statement(period_start, period_end)
+    )
+    drift_window_sql = _compile_postgres(
+        _signal_track_window_statement(
+            category="rubber",
+            start=period_start,
+            end=period_end,
+        )
+    )
+
+    assert "ORDER BY signal_track.created_at DESC, signal_track.id DESC" in signal_sql
+    assert "ORDER BY recommendations.created_at DESC, recommendations.id DESC" in recommendation_sql
+    assert "ORDER BY user_feedback.recorded_at DESC, user_feedback.id DESC" in feedback_sql
+    assert "ORDER BY drift_metrics.computed_at DESC, drift_metrics.id DESC" in drift_sql
+    assert "ORDER BY recommendations.created_at DESC, recommendations.id DESC" in attribution_sql
+    assert "signal_track.outcome IN" in drift_window_sql
+    assert "ORDER BY signal_track.created_at ASC, signal_track.id ASC" in drift_window_sql
+
+
 async def test_proposed_hypothesis_cannot_modify_calibration_without_review() -> None:
     session = FakeSession()
     proposal = CalibrationProposal(
@@ -356,6 +403,35 @@ def test_vector_eval_metrics_and_quality_weights_are_active() -> None:
     assert quality_weight("validated") == 1.2
 
 
+def test_hybrid_search_statement_uses_stable_tie_breakers() -> None:
+    sql = str(
+        _hybrid_search_statement(
+            filters=["1 = 1"],
+            cosine_expr="0",
+            ordering_hint="",
+        )
+    )
+
+    assert "ORDER BY  created_at DESC, id DESC" in sql
+    assert "ORDER BY final_score DESC, created_at DESC, id DESC" in sql
+
+
+def test_hybrid_search_embedding_statement_keeps_ann_order_before_tie_breakers() -> None:
+    sql = str(
+        _hybrid_search_statement(
+            filters=["1 = 1"],
+            cosine_expr="COALESCE(1 - (embedding <=> CAST(:query_embedding AS vector)), 0)",
+            ordering_hint="embedding <=> CAST(:query_embedding AS vector),",
+        )
+    )
+
+    assert (
+        "ORDER BY embedding <=> CAST(:query_embedding AS vector), created_at DESC, id DESC"
+        in sql
+    )
+    assert "ORDER BY final_score DESC, created_at DESC, id DESC" in sql
+
+
 async def test_vector_eval_seed_creates_fifty_query_pairs() -> None:
     chunks = [
         VectorChunk(
@@ -405,6 +481,21 @@ async def test_vector_eval_seed_checks_only_candidate_query_texts() -> None:
     assert result.created == 0
     assert session.rows == []
     assert "vector_eval_set.query_text" in str(session.scalar_statements[1])
+
+
+def test_vector_eval_case_statement_uses_stable_index_order() -> None:
+    sql = _compile_postgres(_active_eval_cases_statement())
+
+    assert "vector_eval_set.status =" in sql
+    assert "ORDER BY vector_eval_set.created_at ASC, vector_eval_set.id ASC" in sql
+
+
+def test_vector_eval_seed_statement_uses_stable_index_order() -> None:
+    sql = _compile_postgres(_seed_chunks_statement(target_cases=25))
+
+    assert "vector_chunks.quality_status IN" in sql
+    assert "ORDER BY vector_chunks.created_at ASC, vector_chunks.id ASC" in sql
+    assert "LIMIT" in sql
 
 
 async def test_vector_shadow_comparison_reports_candidate_delta() -> None:
@@ -495,3 +586,7 @@ def _result(chunk_id, quality_status: str) -> VectorSearchResult:
         time_decay=1.0,
         created_at=datetime(2026, 5, 4, tzinfo=timezone.utc),
     )
+
+
+def _compile_postgres(statement) -> str:
+    return str(statement.compile(dialect=postgresql.dialect()))

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Literal
@@ -22,6 +23,7 @@ from app.schemas.event_intelligence import EventImpactLinkQualityRead, EventInte
 from app.services.data_sources.akshare_futures import COMMODITY_NAMES
 from app.services.data_sources.free_ingest import CATEGORY_BY_SYMBOL
 from app.services.event_intelligence import evaluate_event_intelligence_quality
+from app.services.symbols import normalize_root_symbol
 from app.services.translation.market import category_label, signal_type_label
 
 router = APIRouter(prefix="/api/causal-web", tags=["causal-web"])
@@ -59,6 +61,8 @@ STAGE_X: dict[Stage, int] = {
     "impact": 1210,
 }
 MAX_CAUSAL_EDGES = 24
+CAUSAL_WEB_CACHE_TTL_SECONDS = 12
+CAUSAL_WEB_CACHE_MAX_ENTRIES = 96
 TYPE_STAGE: dict[NodeType, Stage] = {
     "event": "source",
     "metric": "validation",
@@ -122,6 +126,10 @@ class CausalWebGraph(BaseModel):
     source_counts: dict[str, int]
 
 
+CausalWebCacheKey = tuple[int, str | None, str | None, str | None]
+_CAUSAL_WEB_CACHE: dict[CausalWebCacheKey, tuple[datetime, CausalWebGraph]] = {}
+
+
 @dataclass(frozen=True)
 class GraphNodeSeed:
     id: str
@@ -182,18 +190,53 @@ async def get_causal_web(
     symbol: str | None = Query(default=None, min_length=1, max_length=20),
     region: str | None = Query(default=None, min_length=1, max_length=80),
     event_id: UUID | None = Query(default=None, alias="event"),
+    refresh: bool = Query(default=False),
     session: AsyncSession = Depends(get_db),
 ) -> CausalWebGraph:
     symbol_filter = _normalize_symbol(symbol) if symbol else None
     pinned_event_item = await session.get(EventIntelligenceItem, event_id) if event_id else None
     if pinned_event_item is not None and pinned_event_item.status == "rejected":
         pinned_event_item = None
+    cache_key = _causal_web_cache_key(
+        limit=limit,
+        symbol=symbol_filter,
+        region=region,
+        event_id=pinned_event_item.id if pinned_event_item is not None else None,
+    )
+    if not refresh:
+        cached = _causal_web_cache_get(cache_key)
+        if cached is not None:
+            return cached
+
+    graph = await build_causal_web_graph(
+        session,
+        limit=limit,
+        symbol_filter=symbol_filter,
+        region=region,
+        pinned_event_item=pinned_event_item,
+    )
+    _causal_web_cache_set(cache_key, graph)
+    return graph
+
+
+async def build_causal_web_graph(
+    session: AsyncSession,
+    *,
+    limit: int,
+    symbol_filter: str | None,
+    region: str | None,
+    pinned_event_item: EventIntelligenceItem | None,
+) -> CausalWebGraph:
     news_limit = max(3, limit // 3)
+    scoped_symbols = _causal_scope_symbols(symbol_filter, pinned_event_item)
+    scoped_category = _category_from_symbols(scoped_symbols) if scoped_symbols else None
+    if scoped_category == "unknown":
+        scoped_category = None
     news = _unique_recent_news(
         list(
             (
                 await session.scalars(
-                    select(NewsEvent).order_by(NewsEvent.published_at.desc()).limit(news_limit * 4)
+                    _recent_news_statement(limit=news_limit * 4, symbols=scoped_symbols)
                 )
             ).all()
         ),
@@ -202,23 +245,20 @@ async def get_causal_web(
     signals = list(
         (
             await session.scalars(
-                select(SignalTrack).order_by(SignalTrack.created_at.desc()).limit(limit)
+                _recent_signals_statement(limit=limit, category=scoped_category)
             )
         ).all()
     )
     recent_alerts = list(
         (
             await session.scalars(
-                select(Alert)
-                .where(Alert.status != "suppressed")
-                .order_by(Alert.triggered_at.desc())
-                .limit(max(4, limit // 2))
+                _recent_alerts_statement(limit=max(4, limit // 2), symbols=scoped_symbols)
             )
         ).all()
     )
     linked_alert_ids = [row.alert_id for row in signals if row.alert_id is not None]
     linked_alerts = (
-        list((await session.scalars(select(Alert).where(Alert.id.in_(linked_alert_ids)))).all())
+        list((await session.scalars(_linked_alerts_statement(alert_ids=linked_alert_ids))).all())
         if linked_alert_ids
         else []
     )
@@ -226,14 +266,14 @@ async def get_causal_web(
     metrics = list(
         (
             await session.scalars(
-                select(IndustryData).order_by(IndustryData.ingested_at.desc()).limit(max(4, limit // 2))
+                _recent_industry_metrics_statement(limit=max(4, limit // 2), symbols=scoped_symbols)
             )
         ).all()
     )
     market_metrics = list(
         (
             await session.scalars(
-                _latest_market_metrics_statement(limit=max(6, limit))
+                _latest_market_metrics_statement(limit=max(6, limit), symbols=scoped_symbols)
             )
         ).all()
     )
@@ -340,6 +380,56 @@ async def get_causal_web(
             "event_intelligence": len(event_intelligence_items),
         },
     )
+
+
+def _causal_web_cache_key(
+    *,
+    limit: int,
+    symbol: str | None,
+    region: str | None,
+    event_id: UUID | None,
+) -> CausalWebCacheKey:
+    return (
+        limit,
+        _normalize_symbol(symbol) if symbol else None,
+        region,
+        str(event_id) if event_id else None,
+    )
+
+
+def _causal_web_cache_get(
+    key: CausalWebCacheKey,
+    *,
+    now: datetime | None = None,
+) -> CausalWebGraph | None:
+    current = now or datetime.now(timezone.utc)
+    cached = _CAUSAL_WEB_CACHE.get(key)
+    if cached is None:
+        return None
+    cached_at, graph = cached
+    if (current - cached_at).total_seconds() > CAUSAL_WEB_CACHE_TTL_SECONDS:
+        _CAUSAL_WEB_CACHE.pop(key, None)
+        return None
+    return graph.model_copy(deep=True)
+
+
+def _causal_web_cache_set(
+    key: CausalWebCacheKey,
+    graph: CausalWebGraph,
+    *,
+    now: datetime | None = None,
+) -> None:
+    if len(_CAUSAL_WEB_CACHE) >= CAUSAL_WEB_CACHE_MAX_ENTRIES and key not in _CAUSAL_WEB_CACHE:
+        oldest_key = min(_CAUSAL_WEB_CACHE, key=lambda item: _CAUSAL_WEB_CACHE[item][0])
+        _CAUSAL_WEB_CACHE.pop(oldest_key, None)
+    _CAUSAL_WEB_CACHE[key] = (
+        now or datetime.now(timezone.utc),
+        graph.model_copy(deep=True),
+    )
+
+
+def _clear_causal_web_cache() -> None:
+    _CAUSAL_WEB_CACHE.clear()
 
 
 def _seed_from_event_intelligence_item(
@@ -548,7 +638,7 @@ def _humanize_token(value: str | None) -> str:
 
 
 def _seed_from_news(row: NewsEvent) -> GraphNodeSeed:
-    symbols = [str(symbol).upper() for symbol in row.affected_symbols[:3]]
+    symbols = _normalize_symbols(row.affected_symbols, limit=3)
     category = _category_from_symbols(symbols)
     label = row.title_zh or row.title
     narrative = row.summary_zh or row.summary or label
@@ -636,7 +726,7 @@ def _seed_from_signal(row: SignalTrack) -> GraphNodeSeed:
 
 
 def _seed_from_alert(row: Alert) -> GraphNodeSeed:
-    assets = [str(asset).upper() for asset in row.related_assets[:3]]
+    assets = _normalize_symbols(row.related_assets, limit=3)
     label = row.title_zh or row.title
     narrative = row.summary_zh or row.one_liner or row.summary or label
     return GraphNodeSeed(
@@ -749,12 +839,12 @@ def _build_edges(
     edge_keys: set[tuple[str, str]] = set()
     news_contexts = []
     for item in news:
-        symbols = {str(symbol).upper() for symbol in item.affected_symbols}
+        symbols = set(_normalize_symbols(item.affected_symbols))
         news_contexts.append((item, symbols, _category_from_symbols(list(symbols))))
     signal_by_alert = _latest_signal_by_alert(signals)
     alerts_by_id = {row.id: row for row in alerts}
     alert_symbols_by_id = {
-        row.id: {str(asset).upper() for asset in row.related_assets}
+        row.id: set(_normalize_symbols(row.related_assets))
         for row in alerts
     }
     for context in event_intelligence_links or []:
@@ -812,14 +902,14 @@ def _build_edges(
                 break
 
     for counter in counters:
-        alert = alerts_by_id.get(counter.alert_id)
-        if alert is None:
+        counter_alert = alerts_by_id.get(counter.alert_id)
+        if counter_alert is None:
             continue
         _append_edge(
             edges,
-            f"edge-counter-alert-{counter.node_id}-{alert.id}",
+            f"edge-counter-alert-{counter.node_id}-{counter_alert.id}",
             counter.node_id,
-            f"alert-{alert.id}",
+            f"alert-{counter_alert.id}",
             counter.confidence,
             "review",
             counter.confidence,
@@ -830,12 +920,12 @@ def _build_edges(
         )
 
     for signal in signals[:8]:
-        for item in metrics:
-            if signal.category == item.category:
+        for metric in metrics:
+            if signal.category == metric.category:
                 _append_edge(
                     edges,
-                    f"edge-metric-signal-{item.node_id}-{signal.id}",
-                    item.node_id,
+                    f"edge-metric-signal-{metric.node_id}-{signal.id}",
+                    metric.node_id,
                     f"signal-{signal.id}",
                     min(0.88, max(0.35, signal.confidence)),
                     "same day",
@@ -940,7 +1030,7 @@ def _signal_sort_key(row: SignalTrack) -> tuple[datetime, float]:
 
 
 def _news_matches_metric(symbols: set[str], category: str, metric: MetricContext) -> bool:
-    if metric.symbol.upper() in symbols:
+    if _normalize_symbol(metric.symbol) in symbols:
         return True
     return category != "unknown" and category == metric.category
 
@@ -999,12 +1089,12 @@ def _merge_pinned_event_intelligence(
 
 
 def _news_display_key(row: NewsEvent) -> tuple[str, tuple[str, ...], str]:
-    symbols = tuple(sorted(str(symbol).upper() for symbol in row.affected_symbols[:5]))
+    symbols = tuple(_normalize_symbols(row.affected_symbols, limit=5))
     return (row.event_type.lower(), symbols, _normalize_news_title(row.title))
 
 
 def _event_intelligence_display_key(row: EventIntelligenceItem) -> tuple[str, tuple[str, ...], str]:
-    symbols = tuple(sorted(str(symbol).upper() for symbol in (row.symbols or [])[:5]))
+    symbols = tuple(_normalize_symbols(row.symbols or [], limit=5))
     return (row.event_type.lower(), symbols, _normalize_news_title(row.title))
 
 
@@ -1017,7 +1107,69 @@ def _normalize_news_title(value: str) -> str:
     return " ".join(normalized.split())
 
 
-def _latest_market_metrics_statement(*, limit: int):
+def _causal_scope_symbols(
+    symbol: str | None,
+    pinned_event_item: EventIntelligenceItem | None,
+) -> list[str]:
+    symbols: list[str] = []
+    if symbol:
+        symbols.append(_normalize_symbol(symbol))
+    if pinned_event_item is not None:
+        symbols.extend(_normalize_symbol(value) for value in (pinned_event_item.symbols or []))
+    return list(dict.fromkeys(value for value in symbols if value))
+
+
+def _recent_news_statement(*, limit: int, symbols: list[str]):
+    symbols = _normalize_symbols(symbols)
+    statement = select(NewsEvent).order_by(NewsEvent.published_at.desc(), NewsEvent.id.desc()).limit(limit)
+    if symbols:
+        statement = statement.where(or_(*(NewsEvent.affected_symbols.contains([symbol]) for symbol in symbols)))
+    return statement
+
+
+def _recent_signals_statement(*, limit: int, category: str | None):
+    statement = select(SignalTrack).order_by(SignalTrack.created_at.desc(), SignalTrack.id.desc()).limit(limit)
+    if category:
+        statement = statement.where(SignalTrack.category == category)
+    return statement
+
+
+def _recent_alerts_statement(*, limit: int, symbols: list[str]):
+    symbols = _normalize_symbols(symbols)
+    statement = (
+        select(Alert)
+        .where(Alert.status != "suppressed")
+        .order_by(Alert.triggered_at.desc(), Alert.id.desc())
+        .limit(limit)
+    )
+    if symbols:
+        statement = statement.where(or_(*(Alert.related_assets.contains([symbol]) for symbol in symbols)))
+    return statement
+
+
+def _linked_alerts_statement(*, alert_ids: list[UUID]):
+    unique_alert_ids = list(dict.fromkeys(alert_ids))
+    return (
+        select(Alert)
+        .where(Alert.id.in_(unique_alert_ids))
+        .order_by(Alert.triggered_at.desc(), Alert.id.desc())
+    )
+
+
+def _recent_industry_metrics_statement(*, limit: int, symbols: list[str]):
+    symbols = _normalize_symbols(symbols)
+    statement = (
+        select(IndustryData)
+        .order_by(IndustryData.ingested_at.desc(), IndustryData.id.desc())
+        .limit(limit)
+    )
+    if symbols:
+        statement = statement.where(IndustryData.symbol.in_(symbols))
+    return statement
+
+
+def _latest_market_metrics_statement(*, limit: int, symbols: list[str] | None = None):
+    symbols = _normalize_symbols(symbols or [])
     ranked = (
         select(
             MarketData.id.label("id"),
@@ -1028,19 +1180,22 @@ def _latest_market_metrics_statement(*, limit: int):
                     MarketData.ingested_at.desc(),
                     MarketData.timestamp.desc(),
                     MarketData.vintage_at.desc(),
+                    MarketData.id.desc(),
                 ),
             )
             .label("rn"),
         )
         .select_from(MarketData)
-        .subquery()
     )
+    if symbols:
+        ranked = ranked.where(MarketData.symbol.in_(symbols))
+    ranked_subquery = ranked.subquery()
 
     return (
         select(MarketData)
-        .join(ranked, MarketData.id == ranked.c.id)
-        .where(ranked.c.rn == 1)
-        .order_by(MarketData.ingested_at.desc(), MarketData.timestamp.desc())
+        .join(ranked_subquery, MarketData.id == ranked_subquery.c.id)
+        .where(ranked_subquery.c.rn == 1)
+        .order_by(MarketData.ingested_at.desc(), MarketData.timestamp.desc(), MarketData.id.desc())
         .limit(limit)
     )
 
@@ -1054,10 +1209,15 @@ def _event_intelligence_statement(
     statement = (
         select(EventIntelligenceItem)
         .where(EventIntelligenceItem.status != "rejected")
-        .order_by(EventIntelligenceItem.event_timestamp.desc(), EventIntelligenceItem.created_at.desc())
+        .order_by(
+            EventIntelligenceItem.event_timestamp.desc(),
+            EventIntelligenceItem.created_at.desc(),
+            EventIntelligenceItem.id.desc(),
+        )
         .limit(limit)
     )
     if symbol:
+        symbol = _normalize_symbol(symbol)
         statement = statement.where(EventIntelligenceItem.symbols.contains([symbol]))
     if region:
         statement = statement.where(EventIntelligenceItem.regions.contains([region]))
@@ -1077,10 +1237,15 @@ def _event_intelligence_link_statement(
             EventImpactLink.event_item_id.in_(event_item_ids),
             EventImpactLink.status != "rejected",
         )
-        .order_by(EventImpactLink.impact_score.desc(), EventImpactLink.confidence.desc())
+        .order_by(
+            EventImpactLink.impact_score.desc(),
+            EventImpactLink.confidence.desc(),
+            EventImpactLink.id.desc(),
+        )
         .limit(limit)
     )
     if symbol:
+        symbol = _normalize_symbol(symbol)
         statement = statement.where(EventImpactLink.symbol == symbol)
     if region:
         statement = statement.where(or_(EventImpactLink.region_id == region, EventImpactLink.region_id.is_(None)))
@@ -1088,7 +1253,7 @@ def _event_intelligence_link_statement(
 
 
 def _metric_context_from_industry(row: IndustryData) -> MetricContext:
-    symbol = str(row.symbol).upper()
+    symbol = _normalize_symbol(row.symbol)
     return MetricContext(
         node_id=f"metric-{row.id}",
         symbol=symbol,
@@ -1097,7 +1262,7 @@ def _metric_context_from_industry(row: IndustryData) -> MetricContext:
 
 
 def _metric_context_from_market(row: MarketData) -> MetricContext:
-    symbol = str(row.symbol).upper()
+    symbol = _normalize_symbol(row.symbol)
     return MetricContext(
         node_id=f"metric-market-{row.id}",
         symbol=symbol,
@@ -1266,8 +1431,13 @@ def _event_quality_label_en(status: EventQualityStatus | None) -> str:
     }[status]
 
 
-def _normalize_symbol(value: str) -> str:
-    return str(value).upper().strip()
+def _normalize_symbol(value: object) -> str:
+    return normalize_root_symbol(value) or ""
+
+
+def _normalize_symbols(values: Sequence[object], *, limit: int | None = None) -> list[str]:
+    normalized = sorted({symbol for value in values if (symbol := _normalize_symbol(value))})
+    return normalized if limit is None else normalized[:limit]
 
 
 def _direction_from_text(text: str) -> EdgeDirection:

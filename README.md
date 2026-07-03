@@ -4,7 +4,7 @@
 >
 > 商品期货研究与决策智能平台 · 下一代演进于 [Causa](https://github.com/wukong930/Causa)
 
-[![Frontend Prototype](https://img.shields.io/badge/Status-Frontend_Prototype-F97316)](#)
+[![Runtime Prototype](https://img.shields.io/badge/Status-Runtime_Prototype-059669)](#)
 [![Design System v1.0](https://img.shields.io/badge/Design-v1.0-059669)](docs/DESIGN_SYSTEM.md)
 [![Architecture v1.2](https://img.shields.io/badge/Architecture-v1.2-059669)](docs/ARCHITECTURE.md)
 
@@ -18,13 +18,13 @@ Zeus 是 Causa 的下一代演进，目标：从"硬编码线性管道"升级为
 
 ## 当前状态
 
-**✅ 设计完成**：4 份核心文档总计约 4500 行，定义了从架构到产品到执行到视觉的全套规范。
+**✅ 本地运行态已成型**：Docker Compose 可启动前后端、Postgres、Redis；`scripts/local_smoke.sh` 会检查服务健康、首页、商品报价条和 World Risk Map 路由。
 
-**🚧 前端原型完成**：全部 12 个页面 + 9 个领域组件 + 完整设计系统的可交互演示（当前仍使用 mock 数据）。
+**✅ 前端从原型进入运行态**：Command Center、Causal Web、World Risk Map、News Events、Event Intelligence、Sectors、Trade Plans 等核心页面已接入后端 API；接口失败时展示空态或降级态，不再渲染固定演示结果。
 
-**🚧 Phase 0 后端骨架完成**：FastAPI 入口、健康检查、配置管理、SQLAlchemy async engine、Redis 连接、Alembic 骨架、Docker Compose 已就位。
+**✅ 后端主链路已覆盖 Phase 1-10**：PIT 行情与产业数据、新闻事件、耐久事件总线、信号评分、预警、推荐、Shadow、治理、World Risk Map 和 Event Intelligence Engine 均有本地可运行实现。
 
-**🚧 Phase 1 数据层进行中**：Causa 核心表已迁移为 SQLAlchemy 模型，PIT 行情/产业数据结构、合约元数据、核心 API、首个 Alembic 迁移已落地。
+**🚧 生产化仍在推进**：免费/公开数据源接入、事件智能决策级治理、地图大数据量渲染、慢查询/缓存、调度真实 handler 覆盖率和全量浏览器回归仍属于后续强化项。
 
 ## 快速开始
 
@@ -52,6 +52,12 @@ scripts/local_smoke.sh --start
 ```
 
 `scripts/local_smoke.sh` 会检查 Compose 服务健康、后端 `/api/health`、前端首页和 World Risk Map 路由。端口冲突、`.next` 缓存和容器重建排查见 [`docs/LOCAL_DEPLOYMENT.md`](docs/LOCAL_DEPLOYMENT.md)。
+
+改动 API 契约或关键页面路由后可跑更深一层的回归 smoke：
+
+```bash
+scripts/local_smoke.sh --regression
+```
 
 后端测试容器（不会把 dev 依赖装进生产 backend 镜像）：
 
@@ -102,15 +108,15 @@ docker compose run --rm backend-test
 
 ## 技术栈
 
-**前端**（已实现原型）：
-- Next.js 15 + React 19 + TypeScript
+**前端**（运行态原型）：
+- Next.js 16 + React 19 + TypeScript
 - Tailwind CSS 3.4
 - Framer Motion + Lucide Icons
 - cmdk + Recharts + ReactFlow
 
-**后端**（Phase 0 骨架已实现）：
+**后端**（本地运行态）：
 - Python FastAPI + SQLAlchemy + Alembic
-- PostgreSQL 16 + pgvector + Redis Pub/Sub
+- PostgreSQL 16 + pgvector + Redis Streams
 - Weaviate 保留为可选 profile，默认向量检索方向为 pgvector
 - APScheduler + multi-LLM (Anthropic/OpenAI/DeepSeek)
 

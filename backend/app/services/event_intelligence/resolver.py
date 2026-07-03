@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import UUID
@@ -29,12 +30,12 @@ class EventIntelligenceDraft:
     summary: str
     event_type: str
     event_timestamp: datetime
-    entities: tuple[str, ...]
-    symbols: tuple[str, ...]
-    regions: tuple[str, ...]
-    mechanisms: tuple[str, ...]
-    evidence: tuple[str, ...]
-    counterevidence: tuple[str, ...]
+    entities: Sequence[str]
+    symbols: Sequence[str]
+    regions: Sequence[str]
+    mechanisms: Sequence[str]
+    evidence: Sequence[str]
+    counterevidence: Sequence[str]
     confidence: float
     impact_score: float
     status: str
@@ -221,21 +222,13 @@ async def resolve_news_event_impacts(
         raise ValueError("news event not found")
 
     existing = await session.scalar(
-        select(EventIntelligenceItem).where(
-            EventIntelligenceItem.source_type == "news_event",
-            EventIntelligenceItem.source_id == str(news_event.id),
+        _event_intelligence_source_item_statement(
+            source_type="news_event",
+            source_id=str(news_event.id),
         )
     )
     if existing is not None:
-        links = list(
-            (
-                await session.scalars(
-                    select(EventImpactLink)
-                    .where(EventImpactLink.event_item_id == existing.id)
-                    .order_by(EventImpactLink.impact_score.desc(), EventImpactLink.confidence.desc())
-                )
-            ).all()
-        )
+        links = await _event_intelligence_item_links(session, event_item_id=existing.id)
         return existing, links, False
 
     event_draft, link_drafts = build_event_intelligence_from_news(news_event)
@@ -279,21 +272,13 @@ async def create_event_intelligence_from_draft(
     existing = None
     if event_draft.source_id is not None:
         existing = await session.scalar(
-            select(EventIntelligenceItem).where(
-                EventIntelligenceItem.source_type == event_draft.source_type,
-                EventIntelligenceItem.source_id == event_draft.source_id,
+            _event_intelligence_source_item_statement(
+                source_type=event_draft.source_type,
+                source_id=event_draft.source_id,
             )
         )
     if existing is not None:
-        links = list(
-            (
-                await session.scalars(
-                    select(EventImpactLink)
-                    .where(EventImpactLink.event_item_id == existing.id)
-                    .order_by(EventImpactLink.impact_score.desc(), EventImpactLink.confidence.desc())
-                )
-            ).all()
-        )
+        links = await _event_intelligence_item_links(session, event_item_id=existing.id)
         return existing, links, False
 
     item = _event_item_from_draft(event_draft)
@@ -345,9 +330,9 @@ async def enhance_news_event_impacts_with_semantics(
         semantic=semantic,
     )
     existing = await session.scalar(
-        select(EventIntelligenceItem).where(
-            EventIntelligenceItem.source_type == "news_event",
-            EventIntelligenceItem.source_id == str(news_event.id),
+        _event_intelligence_source_item_statement(
+            source_type="news_event",
+            source_id=str(news_event.id),
         )
     )
     created = existing is None
@@ -383,6 +368,38 @@ async def enhance_news_event_impacts_with_semantics(
     )
     await enqueue_event_intelligence_review(session, item, links, actor="llm")
     return item, links, created
+
+
+def _event_intelligence_source_item_statement(*, source_type: str, source_id: str):
+    return (
+        select(EventIntelligenceItem)
+        .where(
+            EventIntelligenceItem.source_type == source_type,
+            EventIntelligenceItem.source_id == source_id,
+        )
+        .order_by(EventIntelligenceItem.created_at.asc(), EventIntelligenceItem.id.asc())
+        .limit(1)
+    )
+
+
+async def _event_intelligence_item_links(
+    session: AsyncSession,
+    *,
+    event_item_id: UUID,
+) -> list[EventImpactLink]:
+    return list((await session.scalars(_event_intelligence_item_links_statement(event_item_id=event_item_id))).all())
+
+
+def _event_intelligence_item_links_statement(*, event_item_id: UUID):
+    return (
+        select(EventImpactLink)
+        .where(EventImpactLink.event_item_id == event_item_id)
+        .order_by(
+            EventImpactLink.impact_score.desc(),
+            EventImpactLink.confidence.desc(),
+            EventImpactLink.id.desc(),
+        )
+    )
 
 
 def build_event_intelligence_from_news(

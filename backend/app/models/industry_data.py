@@ -14,7 +14,23 @@ class IndustryData(Base):
         Index("ix_industry_data_symbol", "symbol"),
         Index("ix_industry_data_type", "data_type"),
         Index("ix_industry_data_symbol_type", "symbol", "data_type"),
+        Index("ix_industry_data_symbol_ingested_at", "symbol", "ingested_at"),
         Index("ix_industry_data_pit", "symbol", "data_type", "timestamp", "vintage_at"),
+        Index(
+            "ix_industry_data_pit_stable",
+            "symbol",
+            "data_type",
+            "timestamp",
+            "vintage_at",
+            "id",
+        ),
+        Index(
+            "ix_industry_data_type_timestamp_ingested_id",
+            "data_type",
+            "timestamp",
+            "ingested_at",
+            "id",
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)

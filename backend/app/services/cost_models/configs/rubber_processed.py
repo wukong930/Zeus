@@ -18,7 +18,8 @@ class RubberProcessedCostFormula(CostFormula):
         upstream: dict[str, CostModelResult] | None = None,
         current_price: float | None = None,
     ) -> CostModelResult:
-        nr_cost = upstream.get("NR").unit_cost if upstream and upstream.get("NR") else 13000
+        nr = upstream.get("NR") if upstream else None
+        nr_cost = nr.unit_cost if nr else 13000
         raw_ratio = numeric_input(inputs, "raw_rubber_ratio", 1.03, unit="t/t")
         processing = numeric_input(inputs, "ru_processing_fee", 950)
         grade_premium = numeric_input(inputs, "grade_premium", 260)

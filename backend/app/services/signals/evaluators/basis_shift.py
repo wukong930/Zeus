@@ -7,6 +7,14 @@ from app.services.signals.types import MarketBar, OutcomeEvaluation, SpreadInfo,
 
 
 class BasisShiftEvaluator:
+    """DORMANT in production — see ``detector.DORMANT_SIGNAL_TYPES``.
+
+    Like ``SpreadAnomalyEvaluator`` it gates on ``context.spread_stats``, which no
+    production pipeline computes, so ``evaluate`` always returns None in the live
+    scan/shadow paths. Kept (unit-tested) for reactivation once a roll-adjusted
+    spread_stats producer exists upstream; see docs/PREDICTION_RESEARCH_FINDINGS.md.
+    """
+
     signal_type = "basis_shift"
 
     async def evaluate(self, context: TriggerContext) -> TriggerResult | None:

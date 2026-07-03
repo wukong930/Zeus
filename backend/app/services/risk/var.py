@@ -4,6 +4,7 @@ import math
 from statistics import mean
 
 from app.services.risk.types import RiskMarketPoint, RiskPosition, VaRResult
+from app.services.symbols import normalize_root_symbol
 
 
 def calculate_var(
@@ -57,8 +58,9 @@ def _daily_position_pnls(
         if position.status != "open":
             continue
         for leg in position.legs:
+            symbol = normalize_root_symbol(leg.asset)
             data = sorted(
-                market_data_by_symbol.get(leg.asset, []),
+                market_data_by_symbol.get(symbol or "", []) or market_data_by_symbol.get(leg.asset, []),
                 key=lambda point: point.timestamp,
             )[-504:]
             if len(data) < 2:

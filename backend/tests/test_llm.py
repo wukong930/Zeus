@@ -2,13 +2,19 @@ import json
 
 import httpx
 import pytest
+from sqlalchemy.dialects import postgresql
 
 from app.core.config import Settings
 from app.models.llm_config import LLMConfig as LLMConfigModel
 from app.services.llm.anthropic import AnthropicProvider
 from app.services.llm.deepseek import DeepSeekProvider
 from app.services.llm.openai import OpenAIProvider, XAIProvider
-from app.services.llm.registry import create_provider, get_active_llm_config, get_env_llm_config
+from app.services.llm.registry import (
+    _active_llm_config_statement,
+    create_provider,
+    get_active_llm_config,
+    get_env_llm_config,
+)
 from app.services.llm.types import (
     LLMCompletionOptions,
     LLMConfigurationError,
@@ -224,7 +230,7 @@ def test_registry_prefers_env_provider_order() -> None:
     settings = Settings(
         openai_api_key="sk-openai",
         anthropic_api_key="sk-ant",
-        llm_model="gpt-test",
+        llm_model=" gpt-test ",
         _env_file=None,
     )
 
@@ -270,7 +276,7 @@ async def test_registry_trims_database_config_secret_and_base_url() -> None:
     config = await get_active_llm_config(
         session=FakeSession(
             LLMConfigModel(
-                provider="xai",
+                provider=" XAI ",
                 api_key=" xai-test ",
                 model=" ",
                 base_url=" https://api.x.ai/v1/ ",
@@ -285,8 +291,25 @@ async def test_registry_trims_database_config_secret_and_base_url() -> None:
     assert config.base_url == "https://api.x.ai/v1/"
 
 
+def test_active_llm_config_statement_uses_stable_latest_ordering() -> None:
+    compiled = _compile_postgres(_active_llm_config_statement())
+
+    assert "llm_config.enabled IS true" in compiled
+    assert "ORDER BY llm_config.updated_at DESC, llm_config.id DESC" in compiled
+    assert "LIMIT 1" in compiled
+
+
 def test_registry_rejects_missing_api_key() -> None:
     with pytest.raises(LLMConfigurationError):
         create_provider(
             LLMProviderConfig(provider="openai", api_key="", model="gpt-test"),
         )
+
+
+def _compile_postgres(statement) -> str:
+    return str(
+        statement.compile(
+            dialect=postgresql.dialect(),
+            compile_kwargs={"literal_binds": True},
+        )
+    )

@@ -1,8 +1,14 @@
 from datetime import datetime, timezone
 
+from sqlalchemy.dialects import postgresql
+
 from app.models.alert import Alert
 from app.models.news_events import NewsEvent
-from app.services.translation.backfill import backfill_translations
+from app.services.translation.backfill import (
+    _alert_translation_backfill_statement,
+    _news_translation_backfill_statement,
+    backfill_translations,
+)
 from app.services.translation.market import (
     detect_language,
     translate_market_text_pair,
@@ -96,3 +102,27 @@ async def test_translation_backfill_updates_news_and_alert_rows(monkeypatch) -> 
     assert "天然橡胶" in (news.title_zh or "")
     assert "原油" in (alert.summary_zh or "")
     assert session.flush_count == 1
+
+
+def test_translation_backfill_statements_are_stable_and_match_null_glossary_version() -> None:
+    news_sql = str(
+        _news_translation_backfill_statement(25).compile(
+            dialect=postgresql.dialect(),
+            compile_kwargs={"literal_binds": True},
+        )
+    )
+    alert_sql = str(
+        _alert_translation_backfill_statement(25).compile(
+            dialect=postgresql.dialect(),
+            compile_kwargs={"literal_binds": True},
+        )
+    )
+
+    assert "news_events.translation_glossary_version IS NULL" in news_sql
+    assert "news_events.translation_glossary_version != 'commodity-glossary-v4'" in news_sql
+    assert "ORDER BY news_events.published_at DESC, news_events.id DESC" in news_sql
+    assert "LIMIT 25" in news_sql
+    assert "alerts.translation_glossary_version IS NULL" in alert_sql
+    assert "alerts.translation_glossary_version != 'commodity-glossary-v4'" in alert_sql
+    assert "ORDER BY alerts.triggered_at DESC, alerts.id DESC" in alert_sql
+    assert "LIMIT 25" in alert_sql

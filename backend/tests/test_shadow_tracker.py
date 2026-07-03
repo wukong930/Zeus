@@ -1,9 +1,12 @@
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
+from sqlalchemy.dialects import postgresql
+
 from app.models.alert import Alert
 from app.models.signal import SignalTrack
 from app.services.calibration.shadow_tracker import (
+    _pending_signal_tracks_statement,
     alert_to_signal_payload,
     apply_outcome,
     evaluate_pending_signals,
@@ -86,6 +89,12 @@ def test_alert_to_signal_payload_uses_alert_and_track_metadata() -> None:
     assert primary_symbol(payload) == "RB"
 
 
+def test_primary_symbol_normalizes_related_assets_and_spread_leg() -> None:
+    assert primary_symbol({"related_assets": ["", " rb ", "RB"]}) == "RB"
+    assert primary_symbol({"related_assets": [], "spread_info": {"leg1": " hc "}}) == "HC"
+    assert primary_symbol({"related_assets": ["", " "], "spread_info": {"leg1": ""}}) is None
+
+
 def test_apply_outcome_updates_signal_track() -> None:
     track = SignalTrack(signal_type="momentum", category="ferrous", confidence=0.8)
     resolved_at = datetime(2026, 6, 1, tzinfo=timezone.utc)
@@ -106,6 +115,20 @@ def test_apply_outcome_updates_signal_track() -> None:
     assert track.outcome == "hit"
     assert track.forward_return_20d == 0.2
     assert track.resolved_at == resolved_at
+
+
+def test_pending_signal_tracks_statement_is_point_in_time_and_stable() -> None:
+    sql = _compile_postgres(
+        _pending_signal_tracks_statement(
+            as_of=datetime(2026, 6, 1, tzinfo=timezone.utc),
+            limit=100,
+        )
+    )
+
+    assert "signal_track.outcome =" in sql
+    assert "signal_track.created_at <=" in sql
+    assert "ORDER BY signal_track.created_at ASC, signal_track.id ASC" in sql
+    assert "LIMIT" in sql
 
 
 async def test_evaluate_pending_signals_marks_due_signal_hit(monkeypatch) -> None:
@@ -172,7 +195,7 @@ async def test_load_forward_market_data_uses_pit_as_of(monkeypatch) -> None:
 
     rows = await load_forward_market_data(
         object(),  # type: ignore[arg-type]
-        signal={"related_assets": ["RB"]},
+        signal={"related_assets": [" rb "]},
         start_at=start_at,
         end_at=end_at,
         as_of=as_of,
@@ -183,3 +206,7 @@ async def test_load_forward_market_data_uses_pit_as_of(monkeypatch) -> None:
     assert captured["end"] == end_at
     assert captured["as_of"] == as_of
     assert [row.close for row in rows] == [100, 120]
+
+
+def _compile_postgres(statement) -> str:
+    return str(statement.compile(dialect=postgresql.dialect()))

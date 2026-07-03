@@ -23,8 +23,8 @@ import { DataSourceBadge, type DataSourceState } from "@/components/DataSourceBa
 import { MetricTile } from "@/components/MetricTile";
 import {
   createEventIntelligenceFromNews,
-  fetchEventImpactLinks,
-  fetchEventIntelligenceItems,
+  fetchEventIntelligenceBySources,
+  fetchEventIntelligenceDetail,
   fetchNewsEventsFromApi,
   type EventImpactLink,
   type EventIntelligenceItem,
@@ -42,10 +42,24 @@ import {
 import { cn, formatPercent, timeAgo } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n";
 
+const NEWS_EVENT_TYPE_FILTERS = [
+  "all",
+  "policy",
+  "supply",
+  "demand",
+  "inventory",
+  "geopolitical",
+  "weather",
+  "breaking",
+];
+
+const NEWS_DIRECTION_FILTERS = ["all", "bullish", "bearish", "mixed", "unclear"];
+
 export default function NewsEventsPage() {
   const [events, setEvents] = useState<NewsEvent[]>([]);
   const [source, setSource] = useState<DataSourceState>("loading");
   const [query, setQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
   const [eventType, setEventType] = useState("all");
   const [direction, setDirection] = useState("all");
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -59,47 +73,94 @@ export default function NewsEventsPage() {
   const [intelligencePendingId, setIntelligencePendingId] = useState<string | null>(null);
   const [intelligenceError, setIntelligenceError] = useState<string | null>(null);
   const [navigationScope, setNavigationScope] = useState<WorldMapNavigationScope | null>(null);
+  const [initialEventId, setInitialEventId] = useState<string | null>(null);
+  const [filtersReady, setFiltersReady] = useState(false);
 
   useEffect(() => {
     const initialParams = new URLSearchParams(window.location.search);
     const initialScope = readWorldMapNavigationScope(initialParams);
     const initialSymbol = initialScope?.symbol ?? normalizeNavigationSymbol(initialParams.get("symbol"));
-    const initialEventId = initialScope?.event ?? initialParams.get("event")?.trim() ?? null;
+    const scopedEventId = initialScope?.event ?? initialParams.get("event")?.trim() ?? null;
     if (initialScope) {
       setNavigationScope(initialScope);
     }
     if (initialSymbol) {
       setQuery(initialSymbol);
     }
+    setInitialEventId(scopedEventId);
+    setFiltersReady(true);
+  }, []);
 
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setDebouncedQuery(query.trim());
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [query]);
+
+  useEffect(() => {
+    if (!filtersReady) return;
     let ignore = false;
-    fetchNewsEventsFromApi()
-      .then((rows) => {
+    setSource("loading");
+    setIntelligenceSource("loading");
+    fetchNewsEventsFromApi({
+      query: debouncedQuery || undefined,
+      eventType,
+      direction,
+      limit: 200,
+    })
+      .then(async (rows) => {
         if (ignore) return;
         setEvents(rows);
         setSource("api");
-        setSelectedId((current) => current ?? rows[0]?.id ?? null);
+        setSelectedId((current) =>
+          current && rows.some((row) => row.id === current) ? current : rows[0]?.id ?? null
+        );
+
+        try {
+          const bundle = await fetchEventIntelligenceBySources(
+            "news_event",
+            rows.map((row) => row.id)
+          );
+          let nextItems = bundle.items;
+          let nextLinks = bundle.impactLinks;
+          const hasInitialEvent = initialEventId
+            ? bundle.items.some((item) => item.id === initialEventId)
+            : false;
+          if (initialEventId && !hasInitialEvent) {
+            try {
+              const detail = await fetchEventIntelligenceDetail(initialEventId);
+              nextItems = [detail.event, ...bundle.items];
+              nextLinks = [
+                ...detail.impactLinks,
+                ...bundle.impactLinks.filter((link) => link.eventItemId !== detail.event.id),
+              ];
+            } catch {
+              // Keep the source-scoped lookup when the deep-linked event is no longer available.
+            }
+          }
+          if (ignore) return;
+          setIntelligenceByNewsId(groupEventIntelligenceByNewsId(nextItems));
+          setImpactLinksByEventId(groupImpactLinksByEventId(nextLinks));
+          const scopedEvent = initialEventId
+            ? nextItems.find((item) => item.id === initialEventId)
+            : null;
+          if (scopedEvent?.sourceType === "news_event" && scopedEvent.sourceId) {
+            setSelectedId(scopedEvent.sourceId);
+          }
+          setIntelligenceSource("api");
+        } catch {
+          if (ignore) return;
+          setIntelligenceByNewsId(new Map());
+          setImpactLinksByEventId(new Map());
+          setIntelligenceSource("fallback");
+        }
       })
       .catch(() => {
         if (ignore) return;
         setEvents([]);
         setSource("fallback");
         setSelectedId(null);
-      });
-
-    Promise.all([fetchEventIntelligenceItems(300), fetchEventImpactLinks({ limit: 500 })])
-      .then(([items, links]) => {
-        if (ignore) return;
-        setIntelligenceByNewsId(groupEventIntelligenceByNewsId(items));
-        setImpactLinksByEventId(groupImpactLinksByEventId(links));
-        const scopedEvent = initialEventId ? items.find((item) => item.id === initialEventId) : null;
-        if (scopedEvent?.sourceType === "news_event" && scopedEvent.sourceId) {
-          setSelectedId(scopedEvent.sourceId);
-        }
-        setIntelligenceSource("api");
-      })
-      .catch(() => {
-        if (ignore) return;
         setIntelligenceByNewsId(new Map());
         setImpactLinksByEventId(new Map());
         setIntelligenceSource("fallback");
@@ -107,24 +168,7 @@ export default function NewsEventsPage() {
     return () => {
       ignore = true;
     };
-  }, []);
-
-  const eventTypeOptions = useMemo(
-    () => buildFilterValues(events.map((event) => event.eventType)),
-    [events]
-  );
-  const directionOptions = useMemo(
-    () => buildFilterValues(events.map((event) => event.direction)),
-    [events]
-  );
-
-  useEffect(() => {
-    if (!eventTypeOptions.includes(eventType)) setEventType("all");
-  }, [eventType, eventTypeOptions]);
-
-  useEffect(() => {
-    if (!directionOptions.includes(direction)) setDirection("all");
-  }, [direction, directionOptions]);
+  }, [debouncedQuery, direction, eventType, filtersReady, initialEventId]);
 
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -238,8 +282,8 @@ export default function NewsEventsPage() {
           />
         </div>
 
-        <Segmented value={eventType} values={eventTypeOptions} onChange={setEventType} />
-        <Segmented value={direction} values={directionOptions} onChange={setDirection} />
+        <Segmented value={eventType} values={NEWS_EVENT_TYPE_FILTERS} onChange={setEventType} />
+        <Segmented value={direction} values={NEWS_DIRECTION_FILTERS} onChange={setDirection} />
         {navigationScope && (
           <WorldMapScopeBanner
             scope={navigationScope}
@@ -381,22 +425,6 @@ function emptyNewsMessage(
   if (totalEvents === 0) return "当前暂无新闻事件";
   if (query.trim() || eventType !== "all" || direction !== "all") return "没有匹配的新闻事件";
   return "当前暂无新闻事件";
-}
-
-function buildFilterValues(values: string[]): string[] {
-  const counts = new Map<string, number>();
-  for (const value of values) {
-    if (value.trim()) counts.set(value, (counts.get(value) ?? 0) + 1);
-  }
-  return [
-    "all",
-    ...Array.from(counts.entries())
-      .sort(([leftValue, leftCount], [rightValue, rightCount]) => {
-        if (leftCount !== rightCount) return rightCount - leftCount;
-        return leftValue.localeCompare(rightValue);
-      })
-      .map(([value]) => value),
-  ];
 }
 
 function groupEventIntelligenceByNewsId(items: EventIntelligenceItem[]) {

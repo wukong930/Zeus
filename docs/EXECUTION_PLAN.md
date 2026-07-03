@@ -1077,9 +1077,157 @@ Causa 的 `event_driven` 评估器实际上是纯技术面（gap + volume），*
 
 - [x] Phase 10.37 / Translation Layer P4.1：新闻事件和预警新增原文保留、中文展示字段、确定性术语表翻译、可选 LLM 翻译和历史回填调度任务。
 - [x] Phase 10.38 / Enum Localization P4.2：深度排查并修复信号类型、板块、机制、事件类型在前后端阅读层裸露内部枚举的问题。
-- [ ] 后端慢查询、索引、分页和缓存复查。
-- [ ] 调度任务真实 handler 覆盖率复查，避免 enabled 但实际 noop。
-- [ ] 全量回归测试、浏览器验证和部署 smoke 流程固化。
+- [x] Phase 10.39 / Directional Trade Plan Activation P4.3：交易计划链路新增高置信单品种方向计划 `open_directional`，仅对方向明确、对抗通过且价格可定位的信号生成 `pending_review`，并修复历史回填按 correlation 误关联多信号的问题。
+- [x] Phase 10.40 / Trade Plan Review Explainability P4.4：推荐层新增复核原因元数据，Trade Plans 卡片展示待确认原因，明确区分人工复核、LLM 仲裁、置信档、预警状态和历史校准缺失。
+- [x] Phase 10.41 / Trade Plan Governance Actions P4.5：新增交易计划复核 API 与前端动作，`pending_review` 可人工批准为可执行或驳回，`pending` 计划可从 Trade Plans 页面采纳并生成持仓。
+- [x] Phase 10.42 / List Query Hot Paths P4.6：交易计划按状态分页拉取，列表热路径补组合索引，调度任务未接 handler 的项保持 disabled / unconfigured。
+- [x] Phase 10.43 / Scheduler Health Semantics P4.7：调度器区分 `planned` 与 `unconfigured`，规划中停用任务不再触发 Heartbeat 调度降级，`startAll` 跳过未接 handler 的规划任务。
+- [x] Phase 10.44 / Causal Web Scoped Queries P4.8：Causal Web 按 `symbol` / 事件智能作用域把新闻、预警、行业、行情和信号查询下推到数据库，并补充对应索引。
+- [x] Phase 10.45 / Scheduler Handler Coverage P4.9：调度健康接口输出 handler 覆盖率和 job 级 handler 状态，Settings 展示覆盖计数，并用测试禁止默认任务回到 placeholder/noop。
+- [x] Phase 10.46 / World Risk Map Scoped Queries P4.10：世界风险地图按 source 跳过无关运行态查询，并把 symbol / mechanism 筛选下推到地图相关 DB 查询。
+- [x] Phase 10.47 / Event Intelligence Query Indexes P4.11：事件智能列表、质量门、影响链和审计日志查询 helper 化，并补充事件时间、状态、mechanism、link scope 和 audit timeline 索引。
+- [x] Phase 10.48 / Event Intelligence Snapshot P4.12：新增事件智能快照接口，事件列表、影响链和质量门用同一作用域一次返回，前端初载从三次请求收敛为一次。
+- [x] Phase 10.49 / News Events Source Lookup P4.13：新闻事件页按当前新闻 ID 批量查询事件智能和影响链，不再全量拉取事件智能池后前端过滤。
+- [x] Phase 10.50 / News Events Query Pushdown P4.14：新闻事件页把搜索、事件类型和方向筛选下推到 `/api/news-events`，减少无关新闻进入前端状态。
+- [x] Phase 10.51 / Alerts Query Pushdown P4.15：预警页搜索框接入真实筛选，并把严重度、品种、人工复核、对抗状态和文本搜索下推到 `/api/alerts`。
+- [x] Phase 10.52 / Portfolio Risk Snapshot P4.16：新增组合风险快照接口，持仓、VaR、压力测试、相关性和最新行情一次返回，Portfolio 首屏从多请求收敛为单请求。
+- [x] Phase 10.53 / Runtime Heartbeat Snapshot P4.17：新增轻量运行态心跳接口，顶栏 30 秒轮询从 Causal Web、Drift、Calibration、Scheduler 四接口收敛为单接口，并补信号时间索引。
+- [x] Phase 10.54 / Regression Smoke Contracts P4.18：`scripts/local_smoke.sh` 新增 `--regression` 模式，固化 Heartbeat、Causal Web、World Map、Alerts、Trade Plans 的关键 API 契约和高风险前端路由检查。
+- [x] Phase 10.55 / World Map Snapshot Cache P4.19：World Risk Map 主快照和瓦片快照新增短 TTL 缓存，自动轮询复用 12 秒内结果，手动刷新通过 `refresh=true` 绕过缓存。
+- [x] Phase 10.56 / Causal Web Snapshot Cache P4.20：Causal Web 主图新增短 TTL 缓存，首页预览、独立页面和 AI Companion 在 12 秒内复用同一作用域快照，`refresh=true` 可强制重算。
+- [x] Phase 10.57 / Settings Snapshot P4.21：设置页新增运行态聚合快照，首屏从 7 个接口收敛为 1 个接口，并保留前端分接口降级兜底。
+- [x] Phase 10.58 / Market Data Batch Cache P4.22：行情批量 latest/recent 接口新增短 TTL 缓存，首页报价条、板块页和板块快照在 12 秒内复用同组符号查询，写入行情时自动失效。
+- [x] Phase 10.59 / Command Center Runtime Summary P4.23：首页校准进度改用 Runtime Heartbeat 轻量摘要，Heartbeat 接口新增短 TTL 缓存，顶栏与首页同步加载时复用运行态快照。
+- [ ] Phase 10.60 / Review Load Reduction P4.24：复核负载压缩，把人工注意力从“信息级复核”收敛到“交易计划 / 生产变更 / 极端异常”。
+  - [x] Phase 10.60.1：保存复核负载压缩路线，明确事件、新闻、预警默认作为证据池，人工重点处理交易计划和生产变更。
+  - [x] Phase 10.60.2：新增 Review Triage / attention_score，事件智能入队前分为 `pending`、`shadow_review`、`evidence_only`。
+  - [x] Phase 10.60.3：事件智能低注意力候选只写审计和证据池，中注意力留在 shadow review，高注意力或人工修改才进入 pending 人工队列。
+  - [x] Phase 10.60.4：预警列表默认过滤过期预警，避免历史 `human_action_required` 噪声淹没当前人工视图。
+  - [x] Phase 10.60.5：交易计划卡片聚合上游事件、信号、反证和预警为“证据包摘要”，让人只读最终候选。
+  - [x] Phase 10.60.6：治理工作台增加 attention_score / 分流状态筛选与可视化，区分必须复核、影子观察和证据归档。
+  - [x] Phase 10.60.7：增加自动降级 / 过期归档调度任务，清理历史过期预警和低价值复核项。
+  - [x] Phase 10.60.8：Cleanup 调度同步归档过期 active/pending 预警和 pending/pending_review 交易计划，避免已失效机会继续污染 Alerts/Trade Plans 与生成率排查。
+  - [x] Phase 10.60.9：交易计划激活调度新增 `skip_reasons` 诊断，区分缺 alert、已有推荐、过期、对抗未过、分数不足、缺交易腿和缺入场价等生成阻断原因。
+  - [x] Phase 10.60.10：交易计划激活默认只扫描有效窗口内的 scored 事件，并识别 `alert.suppressed`，避免过期历史占满扫描额度或把去重抑制误判为缺 alert。
+  - [x] Phase 10.60.11：数据采集入口增加实时上下文新鲜度门，历史行情仍可入库，但过旧行情不再发布到 `market.update.contexts`，并在 ingest 调度结果中暴露 `stale_market_contexts`。
+  - [x] Phase 10.60.12：实时上下文新鲜度改为识别日线有效窗口；日线行情按本地下一日 00:00 作为 freshness timestamp，避免有效 EOD 行情在次日凌晨被误判为过期，并输出 stale 明细便于源级诊断。
+  - [x] Phase 10.60.13：`freshness_timestamp` 从 market context 透传到 scored signal 和 alert，alert 过期时间按有效数据窗口计算，避免日线信号刚生成就被 `stale_alert` 拦截。
+  - [x] Phase 10.60.14：方向交易候选从置信度门槛中拆出，先识别可交易方向，再由分数/置信度/对抗门决定是否生成交易计划；缺方向的库存/波动类信号返回 `missing_direction`，避免误报为 unsupported。
+  - [x] Phase 10.60.15：信号结果新增结构化 `direction` 字段，新闻、橡胶供应、动量、价差和成本模型信号直接输出 bullish / bearish，交易计划方向推断优先读取结构化字段，减少对英文标题/摘要的依赖。
+  - [x] Phase 10.60.16：`signal_track` 持久化结构化方向，事件智能 market ingress 读取该方向生成 `event_impact_links.direction`；旧行情异常没有方向时保持 `watch`，成本模型信号用稳定类型规则兜底。
+  - [x] Phase 10.60.17：交易计划激活任务按 scored event 的实际生效时间过滤未过期候选，避免最近处理的历史行情信号占用扫描额度并把诊断噪声集中到 `stale_alert`。
+  - [x] Phase 10.60.18：库存/波动冲击信号新增保守方向输出，只有库存方向或价格冲击方向清晰时才写入 `direction`，方向冲突时继续作为非方向证据。
+  - [x] Phase 10.60.19：对抗引擎 warmup 恢复为 observe-only，检查失败只写审计 payload，不再把信号标为生产未通过或降低置信度；交易计划激活可恢复历史 warmup 事件。
+  - [x] Phase 10.60.20：Alert 去重组合 hash 限定到同主合约、同方向、不同 evaluator，避免跨合约误抑制，也避免组合窗口延长同 evaluator 的重复窗口；同合约重复信号分数显著跃升时允许重新评估。
+  - [x] Phase 10.60.21：交易计划评估恢复历史 warmup payload 的有效置信度，避免旧的 0.7 审计惩罚继续造成 `score_below_gate`；恢复值写入风险项和 backtest summary。
+  - [x] Phase 10.60.22：交易计划按同 action、同品种、同方向复用未过期候选，把多 evaluator 共振合并成一个主计划；历史重复计划会被标为 `ignored` 并回链到主计划。
+  - [x] Phase 10.60.23：非方向上下文信号不再硬生成交易计划；`regime_shift`、缺方向 `inventory_shock` 等只会在同品种已有唯一开放计划时作为上下文证据挂载，写入 `linked_context_alerts` / `context_signal_types`，避免弱方向证据污染最终交易建议。
+  - [x] Phase 10.60.24：`score_below_gate` 的有方向近门槛信号不生成交易计划；仅在同品种同方向已有开放计划时作为弱上下文证据挂载，补足证据链但不放松下单门槛。
+  - [x] Phase 10.60.25：Event Intelligence Snapshot 增加 12 秒短 TTL 缓存，`refresh=true` 可强制重算，事件智能创建、语义增强、影响链编辑和人工决策后自动失效；回归 smoke 纳入 snapshot 契约。
+  - [x] Phase 10.60.26：交易计划列表新增 `before` 时间游标分页，并固定为 `created_at desc, id desc` 稳定排序，避免未来加载更多时依赖大 offset 或不稳定排序。
+  - [x] Phase 10.60.27：预警列表新增 `before` 时间游标分页，并复用 `triggered_at desc, id desc` 稳定排序与现有时间索引，支持 Alerts / Trade Plans 证据视图后续增量加载。
+  - [x] Phase 10.60.28：持仓列表新增 `before` 时间游标分页，并固定为 `opened_at desc, id desc` 稳定排序，支持 Portfolio / Risk / 持仓监控视图后续增量加载。
+  - [x] Phase 10.60.29：Event Intelligence 列表新增 `before` 时间游标，impact-links 新增 `before_impact_score / before_confidence` 分数游标；默认排序语义保持不变，支持事件智能页面后续增量加载。
+  - [x] Phase 10.60.30：News Events 列表新增 `before` 时间游标，并保持 `published_at desc, id desc` 稳定排序，支持新闻事件页、事件智能入口和因果 / 地图联动按时间增量读取。
+  - [x] Phase 10.60.31：Governance Reviews 列表新增 `before` 时间游标，并固定为 `created_at desc, id desc` 稳定排序；治理队列继续保留状态、来源、目标表、分流层级、attention score 和人工注意力筛选，支持人工复核 / shadow review 大队列增量读取。
+  - [x] Phase 10.60.32：User Feedback 列表新增 `before` 时间游标和 `recommendation_id` 筛选，并固定为 `recorded_at desc, id desc` 稳定排序，支持交易计划反馈、学习报告和反馈复盘按时间增量读取。
+  - [x] Phase 10.60.33：Learning Hypotheses 列表新增 `before` 时间游标，并固定为 `created_at desc, id desc` 稳定排序，支持反思 Agent、shadow testing 和 validated / applied 假设按时间增量读取。
+  - [x] Phase 10.60.34：Shadow Runs 列表新增 `before` 时间游标和 `status_filter` 筛选，并固定为 `started_at desc, id desc` 稳定排序；Shadow Run report 的 signal 行数改为数据库 `count(*)` 聚合，避免报告接口为计数加载全部 shadow signal 行。
+  - [x] Phase 10.60.35：Drift Metrics 列表新增 `before` 时间游标，并支持 `metric_type`、`category`、`drift_severity` 筛选；查询固定为 `computed_at desc, id desc` 稳定排序，支持 Drift 监控页和校准复盘增量读取。
+  - [x] Phase 10.60.36：Market Data recent batch 新增 `before` 时间游标，并把缓存键扩展到游标维度；每个 symbol 内按 `timestamp desc, id desc` 稳定排序，支持行情条、板块页和历史报价增量读取。
+  - [x] Phase 10.60.37：Industry Data PIT 列表新增 `before` 时间游标，并把排序固定为 `timestamp desc, id desc`，支持天气、运费、库存、现货和宏观产业指标按时间增量读取。
+  - [x] Phase 10.60.38：Arbitration Human Decisions 列表新增 `before` 时间游标，并支持 `alert_id`、`signal_track_id`、`decision` 筛选；查询固定为 `created_at desc, id desc` 稳定排序，支持人工决策审计和交易计划复盘增量读取。
+  - [x] Phase 10.60.39：Strategies 列表新增 `before` 时间游标，并保持 `status_filter` 筛选；查询固定为 `created_at desc, id desc` 稳定排序，支持策略实验、回测配置和策略治理记录增量读取。
+  - [x] Phase 10.60.40：Cost Models 历史快照新增 `before` 日期游标，单商品 `/api/cost-models/{symbol}/history` 与批量 `/api/cost-models/histories` 均按 `snapshot_date desc, created_at desc, id desc` 稳定排序，支持成本模型、历史图和成本信号上下文增量读取。
+  - [x] Phase 10.60.41：Notebook 快照新增 `before` 时间游标，研究报告、学习假设和研究假设分别按各自展示时间稳定排序，避免研究记录增长后过量拉取并支持研究笔记页增量读取。
+  - [x] Phase 10.60.42：Calibration Dashboard 底层查询抽出契约化 statement；active calibration 按 `sample_size desc, computed_at desc, id desc` 稳定排序，resolved tracks 增加 `created_at <= as_of` 点时过滤并按 `created_at desc, id desc` 稳定排序，避免未来样本污染 as-of 仪表盘。
+  - [x] Phase 10.60.43：Calibration active lookup 统一为可测试 statement；生产评分和治理应用复用同一 `effective_from <= as_of/effective_to` 点时过滤，并按 `effective_from desc, computed_at desc, id desc` 稳定排序，避免同一生效时间下校准权重选择不确定。
+  - [x] Phase 10.60.44：Calibration review 生成源样本查询补齐点时上界 `created_at <= as_of`，并按 `created_at asc, id asc` 稳定排序，避免历史回放/复核队列生成时把未来 signal outcome 纳入校准提案。
+  - [x] Phase 10.60.45：Threshold Calibration 源样本查询抽为可测试 statement，继续保留 `created_at <= as_of` 点时上界，并按 `created_at asc, id asc` 稳定排序，避免同一时间 resolved signal 顺序不确定影响可靠性曲线和阈值建议。
+  - [x] Phase 10.60.46：Shadow Tracker pending signal 扫描抽为可测试 statement，增加 `created_at <= as_of` 点时上界，并按 `created_at asc, id asc` 稳定排序，避免历史 outcome 评估扫描未来 pending 信号或同时间信号顺序不确定。
+  - [x] Phase 10.60.47：Shadow Comparison 的 shadow / production 信号读取抽为可测试 statement，并统一按 `created_at asc, id asc` 稳定排序，避免同时间样本导致 shadow-only / production-only 示例顺序漂移。
+  - [x] Phase 10.60.48：Vector Eval / Seed 查询抽为可测试 statement，并按 `created_at asc, id asc` 稳定排序；补充 `vector_eval_set(status, created_at, id)` 和 `vector_chunks(quality_status, created_at, id)` 复合索引，避免评估集与 seed 样本在数据量扩大后顺序漂移或扫描退化。
+  - [x] Phase 10.60.49：Hybrid Search SQL 生成抽为可测试 helper，内层候选截断和最终排序都增加 `id desc` 兜底，避免同分同时间向量检索结果顺序漂移影响新闻去重和 embedding shadow gate。
+  - [x] Phase 10.60.50：Causal Web / World Map 运行态查询统一补充 `id desc` 兜底排序，覆盖 news、signals、alerts、industry metrics、market latest、event intelligence items / links、positions，避免同时间数据刷新导致大画布节点、区域和证据链顺序漂移。
+  - [x] Phase 10.60.51：Runtime Heartbeat drift 读取按 `computed_at desc, id desc` 稳定排序，并补充 `drift_metrics(computed_at, id)` 复合索引，避免同时间 drift 指标导致运行态心跳状态和通知摘要顺序漂移。
+  - [x] Phase 10.60.52：Event Intelligence 的 source lookup、snapshot/detail 影响链、治理读取和 audit logs 统一补充 `id desc` 兜底排序，并补充事件项/影响链/审计日志稳定排序复合索引，避免事件智能页面和治理队列在同分同时间数据下展示漂移。
+  - [x] Phase 10.60.53：Trade Plan activation / context linking 查询统一补充 `id desc` 兜底排序，覆盖 actionable scored events、alert result event、alert recommendation 和 open trade plan 扫描，并补充 event_log / recommendations 复合索引，避免同时间交易计划候选和上下文联动顺序漂移。
+  - [x] Phase 10.60.54：Position risk / freshness / threshold cache 查询统一补充稳定排序，open position 读取按 `opened_at desc, id desc`，position-aware 阈值缓存按 `monitoring_priority asc, id asc`；补充 `positions(status, opened_at, id)` 与 `positions(status, data_mode, monitoring_priority, id)` 复合索引，避免同时间持仓导致风险快照、数据腐烂和阈值缓存顺序漂移。
+  - [x] Phase 10.60.55：Event Intelligence ingress 的新闻、天气产业数据和行情信号扫描抽为可测试 statement，并统一增加 `id desc` 兜底排序；补充新闻发布时间、天气数据类型/时间、信号创建时间复合索引，避免同步候选在同时间数据下顺序漂移或热路径退化。
+  - [x] Phase 10.60.56：Learning / Reflection 运行态查询统一补齐稳定排序，反思输入快照、推荐归因报告和 drift signal 窗口均按时间列 + `id` 读取；补充 recommendation / feedback 复合索引，避免同时间样本改变学习假设、归因切片和 drift 复盘顺序。
+  - [x] Phase 10.60.57：Notebook 报告关联预警和 Strategies 回测质量样本查询抽为可测试 statement，并统一追加 `id desc` 稳定排序；补充 alerts 触发时间与研究报告关联索引，避免研究笔记引用和回测质量摘要在同时间样本下顺序漂移。
+  - [x] Phase 10.60.58：Review Load Cleanup 调度查询抽为可测试 statement，过期预警 / 交易计划按 `expires_at asc, id asc`，事件智能待分流队列按 `created_at asc, id asc`，影响链按 `impact_score desc, confidence desc, id desc` 稳定排序；补充 cleanup 热路径复合索引，避免同批清理和分流结果顺序漂移。
+  - [x] Phase 10.60.59：Market / Industry PIT 查询稳定化，窗口函数选择最新 vintage 时追加 `id desc`，Market Data PIT 外层按 `timestamp desc, contract_month asc, id desc` 输出；补充 market / industry PIT 稳定排序复合索引，避免同一时间同一 vintage 行情影响回测、场景和风险复盘。
+  - [x] Phase 10.60.60：Risk Market Data 查询稳定化，风险市场数据 PIT 窗口和 symbol 限额窗口统一追加 `id desc`，最终输出按 `symbol asc, timestamp desc, contract_month asc, id desc`，避免风险矩阵 / 持仓风险在同时间行情下漂移。
+  - [x] Phase 10.60.61：Translation Backfill 查询稳定化，新闻和预警翻译回填按发布时间 / 触发时间后追加 `id desc`，并显式识别 glossary 版本为空的历史行，避免批量回填顺序漂移和旧中文字段漏升级。
+  - [x] Phase 10.60.62：World Risk Map 天气层查询稳定化，天气 / 产业行读取按 `timestamp desc, ingested_at desc, id desc` 输出，区域最新天气行选择也纳入 `id` 兜底，避免同一采集时间的热区和天气异常读数漂移。
+  - [x] Phase 10.60.63：Scenario 最新行情读取稳定化，场景推演 base price 查询抽为可测试 statement，并按 `timestamp desc, vintage_at desc, id desc` 选择最新行情；补充 `market_data(symbol, timestamp, vintage_at, id)` 复合索引，避免同时间行情导致推演起始价漂移。
+  - [x] Phase 10.60.64：LLM Active Config 查询稳定化，启用配置选择按 `updated_at desc, id desc` 兜底，并补充 `llm_config(enabled, updated_at, id)` 复合索引，避免多 provider 同时更新时任务选模漂移。
+  - [x] Phase 10.60.65：Null Hypothesis 查询稳定化，缓存读取按 `computed_for desc, id desc` 稳定选择，源信号扫描增加 `created_at <= as_of` 点时上界并按 `created_at asc, id asc` 输出；补充 null distribution 稳定查询索引，避免历史对抗分布混入未来样本或同时间顺序漂移。
+  - [x] Phase 10.60.66：Event Relay / Replay 查询稳定化，pending outbox 发布与 published 事件重放查询抽为可测试 statement，并按 `created_at asc, id asc` 输出；补充 `event_log(status, created_at, id)` 索引，避免同时间事件 relay / replay 顺序漂移。
+  - [x] Phase 10.60.67：Shadow Active Run 查询稳定化，active shadow run 扫描抽为可测试 statement，保留 `started_at <= as_of / ended_at > as_of` 点时窗口，并按 `started_at asc, id asc` 输出；补充 `shadow_runs(status, started_at, ended_at, id)` 索引，避免同时间 shadow 实验处理顺序漂移。
+  - [x] Phase 10.60.68：Position Propagation 图谱邻居查询稳定化，关系边查询抽为可测试 statement，并按 `strength desc, id asc` 输出；补充 relationship edge source / target 强度复合索引，避免同强度关系边导致持仓传播节点顺序漂移。
+  - [x] Phase 10.60.69：Watchlist 扫描顺序稳定化，监控列表查询按 `priority asc, symbol1 asc, symbol2 asc, id asc` 输出，并补充 enabled/category/order 复合索引，避免同优先级同主符号组合的实时扫描顺序漂移。
+  - [x] Phase 10.60.70：Backtest PIT Universe 查询稳定化，活跃商品 universe 查询抽为可测试 statement，并按 `symbol asc, id asc` 输出；补充 commodity history 活跃窗口 / symbol 复合索引，避免重复历史区间导致回测 universe 顺序漂移。
+  - [x] Phase 10.60.71：主力合约元数据查询稳定化，当前主力与目标合约查询抽为可测试 statement，并按最新 `main_from/updated_at/id` 或 `updated_at/id` 稳定取一；补充 current lookup 复合索引，避免异常重复 active row 导致主力切换处理漂移。
+  - [x] Phase 10.60.72：主力合约快照 tie-break 稳定化，同一合约月同一行情时间出现重复修订行时，按 `timestamp/vintage_at/ingested_at/id` 稳定选择最新快照，避免输入顺序影响合约元数据刷新。
+  - [x] Phase 10.60.73：主力合约日度 leader tie-break 稳定化，日内候选合约流动性分数打平时按 `liquidity_score/open_interest/volume/contract_month` 稳定选择，避免输入顺序改变主力切换判断。
+  - [x] Phase 10.60.74：Regime State upsert 查询稳定化，category/date 点时写入查询抽为可测试 statement，并按 `computed_at desc, id desc` 稳定取一，避免异常重复 regime row 导致校准状态刷新漂移。
+  - [x] Phase 10.60.75：Regime Switching Drift 窗口查询稳定化，按 category/date 分区只取最新 `computed_at/id` 的 regime row，再按日期输出，避免异常重复 regime row 放大切换次数。
+  - [x] Phase 10.60.76：持仓驱动 Watchlist upsert 查询稳定化，symbol pair/category 查找抽为可测试 statement，并按 `updated_at desc, id desc` 稳定取一；补充 symbol pair/category lookup 复合索引，避免异常重复 watchlist row 导致持仓监控阈值刷新漂移。
+  - [x] Phase 10.60.77：Causal Web 关联 Alert 查询稳定化，信号关联的 alert id 批量查询抽为可测试 statement，并按 `triggered_at desc, id desc` 输出，避免数据库 `IN` 返回顺序影响图谱补充预警节点顺序。
+  - [x] Phase 10.60.78：Alert Agent Config 查询稳定化，通知设置、阈值设置和 adversarial runtime 配置共用可测试 statement，并按 `updated_at desc, id desc` 稳定取一；补充 key/updated/id 复合索引，避免异常重复配置行导致运行态设置漂移。
+  - [x] Phase 10.60.79：Review Queue active lookup 稳定化，复核入队去重查询抽为可测试 statement，并按 `created_at asc, id asc` 稳定复用最早待处理项；补充 source/table/key/status/created/id 复合索引，避免异常重复复核项导致治理队列漂移。
+  - [x] Phase 10.60.80：LLM Budget active lookup 稳定化，预算检查和成本累加共用可测试 statement，并按 `updated_at desc, id desc` 稳定选择最新 active budget；补充 module/period/status/updated/id 复合索引，避免异常重复预算行导致成本控制漂移。
+  - [x] Phase 10.60.81：Alert Dedup 组合哈希查询稳定化，同 symbol/direction/evaluator 查找和跨 evaluator 组合哈希查找抽为可测试 statement；组合哈希按 `last_emitted_at desc, updated_at desc, id desc` 取最新记录，并补充 hash/symbol/direction/emitted/updated/id 复合索引，避免旧去重行导致近期重复预警漏抑制。
+  - [x] Phase 10.60.82：Event Intelligence 复核 lookup 统一化，事件智能 open review 查询复用治理队列 active lookup statement，并按 `created_at asc, id asc` 稳定复用最早待处理项，避免事件智能页面和治理队列对重复复核项使用不同口径。
+  - [x] Phase 10.60.83：Position Propagation 商品节点 lookup 稳定化，持仓传播按 symbol 查找商品图谱节点时抽为可测试 statement，并按 `id asc` 兜底排序，避免异常重复节点导致持仓联动监控入口漂移。
+  - [x] Phase 10.60.84：Alert Router 校准历史点时化，`lacks_history` 按当前路由时间过滤 `effective_from/computed_at <= as_of`，并按 `effective_from desc, computed_at desc, id desc` 稳定选择历史校准；补充 signal_type/category/regime/effective/computed/id 复合索引，避免未来校准记录提前影响人工/LLM 路由。
+  - [x] Phase 10.60.85：Trade Plan 开放计划复用口径统一化，开放交易计划扫描改为按 `created_at asc, id asc` 选择最早主计划，与重复计划合并保留主计划的口径一致，避免新增证据先挂到较新的重复计划后再被搬迁。
+  - [x] Phase 10.60.86：Event Intelligence Resolver source lookup 统一化，规则解析、草稿创建和 LLM 语义增强共用可测试 source item / impact link 查询；source item 按 `created_at asc, id asc` 稳定复用最早记录，impact links 统一按 `impact_score desc, confidence desc, id desc` 输出，避免重复维护导致事件作用域读取口径分叉。
+  - [x] Phase 10.60.87：Trade Plan 补偿任务 alert lookup 放宽相关商品匹配，按 JSONB `related_assets` 包含主商品查询，而不是只匹配数组第一项；避免多商品预警顺序变化导致 `missing_alert`，提升历史 signal.scored 补回交易计划的成功率。
+  - [x] Phase 10.60.88：Trade Plan 候选评估支持点时 `as_of` 过期判断，补偿任务按调度评估时间判断信号是否仍有效，避免历史回放 / 补偿时把指定时间点仍有效的 signal.scored 误判为 `stale_signal`。
+  - [x] Phase 10.60.89：Trade Plan 开放计划匹配下推 action / legs JSONB 过滤，候选复用和上下文证据挂载不再只扫描最早 100 条开放计划；补充 `recommendations.legs` GIN 索引，降低开放计划增长后重复生成或漏挂证据的风险。
+  - [x] Phase 10.60.90：Trade Plan 匹配键 legs 顺序无关化，按 `(asset, direction)` 排序后匹配，避免同一价差 / 组合计划仅因 legs 顺序不同而无法复用、合并或挂载证据。
+  - [x] Phase 10.60.91：新闻 dedup hash 的 affected symbols 统一去空格、转大写、去重和排序，避免不同采集器带空格或重复商品时把同一新闻写成多条事件。
+  - [x] Phase 10.60.92：校准 / 对抗组合 hash 统一归一化 signal type、category、regime 和相关商品，避免大小写、空格或重复商品把同一组合拆成不同历史桶。
+  - [x] Phase 10.60.93：结构反证图谱查询和匹配统一归一化商品 symbol，并对结构边读取增加稳定排序，避免空格 / 大小写差异导致反证边漏匹配。
+  - [x] Phase 10.60.94：Alert Router 统一归一化 signal type / category / regime，用于 fuzzy 多信号判断、校准历史 lookup 和反馈提示，避免大小写或空格触发错误 LLM 仲裁 / 无历史判断。
+  - [x] Phase 10.60.95：Alert Dedup key 统一归一化 primary symbol、evaluator 和 severity，避免空格 / 大小写或空 related asset 导致重复预警漏抑制。
+  - [x] Phase 10.60.96：Alert 分类和 one-liner 阅读文案统一复用 symbol / severity 清洗口径，避免空 related asset、重复 symbol 或大小写差异影响等级与展示。
+  - [x] Phase 10.60.97：Shadow Tracker outcome 归因的 primary symbol 统一跳过空值、去空格并转大写，避免脏 related_assets / spread leg 导致 PIT 行情查询漏命中。
+  - [x] Phase 10.60.98：Causal Web 新闻 / 预警节点、展示去重 key 和边匹配集合统一归一化 symbol，避免空格 / 大小写导致重复节点、错分板块或联动漏边。
+  - [x] Phase 10.60.99：World Risk Map 预警匹配、事件智能区域匹配、展示去重 key 和区域 symbol 交集统一归一化 base symbol；标题 token 提取改为独立商品码识别，避免合约月 / 空格 / 大小写导致地图区域漏命中或英文子串误命中商品。
+  - [x] Phase 10.60.100：Alerts / News Events / Event Intelligence 列表和快照 symbol 查询统一归一化 root symbol，避免深链、筛选器或合约输入 `RU2509` 查不到已归档到 `RU` 的运行态证据。
+  - [x] Phase 10.60.101：Market Data 最新 / 历史价格接口和 Causal Web symbol 作用域统一归一化 root symbol，避免 `SC2509` 这类合约输入导致当前价格、行情指标或因果网络深链漏命中。
+  - [x] Phase 10.60.102：Risk API 的持仓 symbol、相关性 symbol 和风险行情读取统一归一化 root symbol，避免持仓腿 `RB2506` 与行情表 `symbol=RB / contract_month=2506` 分列存储时 VaR、相关性和风险快照漏行情。
+  - [x] Phase 10.60.103：Risk Market Data 主序列选择按 `symbol + timestamp` 做 PIT 去重，并优先 `main` 合约最新修订行，避免同一日多个合约月混入 VaR / 相关性收益序列。
+  - [x] Phase 10.60.104：Position Risk 重算的集中度、行情读取和相关性矩阵统一归一化 root symbol，避免合约腿 symbol 与 root 行情 key 不一致导致持仓风险联动漏算。
+  - [x] Phase 10.60.105：Portfolio Fit 和持仓冲突提示统一按 root symbol 比较，避免交易计划腿 `RU2509` 与持仓 `RU` 被误判为无重叠而高估组合适配分。
+  - [x] Phase 10.60.106：Trade Plan 复用键、上下文挂载和重复计划合并统一按 root symbol 比较，并为历史合约腿计划增加开放计划兜底匹配。
+  - [x] Phase 10.60.107：Trade Plan 弱上下文证据挂载增加历史合约腿兜底扫描，并在无方向上下文信号下继续识别多方向开放计划冲突，避免证据漏挂或误挂。
+  - [x] Phase 10.60.108：Trade Plan 补偿任务回查 alert result 时统一 root 化合约 symbol，避免历史 `signal.scored` 使用 `RU2509` 但 `alert.created` 以 `RU` 入库时误判 `missing_alert`。
+  - [x] Phase 10.60.109：Event Intelligence impact link 列表分页补齐 `before_id` keyset 游标，并为 symbol / region / mechanism / status 过滤下的 score-confidence-id 排序补充复合索引。
+  - [x] Phase 10.60.110：Event Intelligence 主列表分页补齐 `before_impact_score` 和 `before_id` keyset 游标，避免同时间事件在分页边界重复或跳过。
+  - [x] Phase 10.60.111：Market Data 批量 latest / recent 窗口函数增加 `id desc` 兜底，避免同时间同 vintage 同 ingested 的重复修订行情导致最新价和近期价选择漂移。
+  - [x] Phase 10.60.112：Alerts 列表分页补齐 `before_id` keyset 游标，并为 status/category 过滤下的 triggered/id 排序补充复合索引，避免同触发时间告警分页重复或跳过。
+  - [x] Phase 10.60.113：News Events 列表分页补齐 `before_id` keyset 游标，并为 source/event_type/verification 过滤下的 published/id 排序补充复合索引。
+  - [x] Phase 10.60.114：Recommendations 列表分页补齐 `before_id` keyset 游标，并为 status 过滤下的 created/id 排序补充复合索引，避免同创建时间交易计划分页重复或跳过。
+  - [x] Phase 10.60.115：LLM Usage / Settings Snapshot 的 `module` 查询增加长度边界并统一去空格、小写归一化，避免大小写、空格或超长输入导致成本面板与设置页出现误导性零值或无效扫描。
+  - [x] Phase 10.60.116：LLM Budget 守卫统一复用 `module` 归一化口径，预算检查、扣费和 active budget lookup 与成本统计 / 设置页保持一致，避免大小写或空格导致预算误放行。
+  - [x] Phase 10.60.117：LLM Cache key 对 provider 和 model 做保守归一化，provider 去空格小写、model 去空格；缓存写入同步清洗 module/provider/model，避免配置空格或大小写变体造成重复模型调用。
+  - [x] Phase 10.60.118：LLM Usage Log 写入 provider/model 前统一复用缓存身份归一化口径，避免成本审计按 provider/model 聚合时被空格或大小写变体拆散。
+  - [x] Phase 10.60.119：LLM Registry 的数据库配置和环境配置读取复用 provider/model 归一化口径，DB provider 带空格不再被误判为未知 provider，env model 空格不再透传到实际请求。
+  - [x] Phase 10.60.120：Settings LLM Providers 视图复用环境配置清洗口径，模型名空格和空 base_url 不再污染设置页展示，空白 `llm_model` 会回落到 provider 默认模型。
+  - [x] Phase 10.60.121：免费数据源采集入口统一清洗 key / token / URL 后再判断可运行状态，避免空白配置被实际任务当成已配置并请求外部源，保持 Settings 状态和运行行为一致。
+  - [x] Phase 10.60.122：治理复核、用户反馈、持仓和策略列表补齐 `before_id` keyset 游标，和 `时间 desc, id desc` 排序完全对齐，避免同时间批量写入时分页跳过边界数据。
+  - [x] Phase 10.60.123：Drift、Arbitration、Learning 和 Shadow 列表补齐 `before_id` keyset 游标，避免同时间指标、人工决策、学习假设或 shadow run 在分页边界丢失。
+  - [x] Phase 10.60.124：Notebook 混合时间流新增 `before_id + before_kind` 游标，报告、学习假设和研究假设在同一时间戳下按 kind rank + id 稳定翻页，避免跨表合并列表边界丢项。
+  - [x] Phase 10.60.125：Cost Models 历史列表新增 `before_created_at + before_id` 复合游标，单品种和批量 histories 与 `snapshot_date desc, created_at desc, id desc` 排序完全对齐，避免同一天多版本成本快照翻页丢行。
+  - [x] Phase 10.60.126：Industry Data PIT 列表补齐 `before_id` 游标，和 `timestamp desc, id desc` 输出排序对齐，避免同一时间戳多 data_type 行在翻页边界被跳过。
+- [ ] 后端慢查询、索引、分页和缓存继续复查。
+- [x] 调度任务真实 handler 覆盖率继续复查，避免 enabled 但实际 noop。
+- [x] 全量回归测试、浏览器验证和部署 smoke 流程固化。
 
 ---
 

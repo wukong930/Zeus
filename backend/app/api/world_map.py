@@ -1,14 +1,15 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Literal
+from typing import Literal, TypeVar
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -24,6 +25,10 @@ from app.services.event_intelligence import evaluate_event_intelligence_quality
 from app.services.translation.market import signal_type_label
 
 router = APIRouter(prefix="/api/world-map", tags=["world-map"])
+WORLD_MAP_CACHE_TTL_SECONDS = 12
+WORLD_MAP_CACHE_MAX_ENTRIES = 128
+SYMBOL_TOKEN_PATTERN = re.compile(r"(?<![A-Z0-9])([A-Z]{1,3}\d{0,6})(?![A-Z0-9])")
+SnapshotT = TypeVar("SnapshotT", bound=BaseModel)
 
 RiskLevel = Literal["low", "watch", "elevated", "high", "critical"]
 DataQuality = Literal["runtime", "partial", "baseline"]
@@ -271,6 +276,16 @@ class WorldMapTileSnapshot(BaseModel):
     layer: TileLayerFilter
     summary: WorldMapTileSummary
     cells: list[WorldMapTileCell]
+
+
+_WORLD_MAP_SNAPSHOT_CACHE: dict[
+    tuple[object, ...],
+    tuple[datetime, WorldMapSnapshot],
+] = {}
+_WORLD_MAP_TILE_CACHE: dict[
+    tuple[object, ...],
+    tuple[datetime, WorldMapTileSnapshot],
+] = {}
 
 
 @dataclass(frozen=True)
@@ -673,6 +688,7 @@ async def get_world_map(
     symbol: str | None = Query(default=None, min_length=1, max_length=20),
     mechanism: RiskFactor | None = Query(default=None),
     source: WorldMapSourceFilter = Query(default="all"),
+    refresh: bool = Query(default=False),
     session: AsyncSession = Depends(get_db),
 ) -> WorldMapSnapshot:
     filters = WorldMapFilterScope(
@@ -680,8 +696,14 @@ async def get_world_map(
         mechanism=mechanism,
         source=source,
     )
+    cache_key = _world_map_snapshot_cache_key(limit=limit, filters=filters)
+    if not refresh:
+        cached = _world_map_cache_get(_WORLD_MAP_SNAPSHOT_CACHE, cache_key)
+        if cached is not None:
+            return cached
+
     regions = await _load_world_map_regions(session, limit=limit, filters=filters)
-    return WorldMapSnapshot(
+    snapshot = WorldMapSnapshot(
         generatedAt=datetime.now(timezone.utc),
         summary=WorldMapSummary(
             regions=len(regions),
@@ -695,6 +717,8 @@ async def get_world_map(
         ),
         regions=regions,
     )
+    _world_map_cache_set(_WORLD_MAP_SNAPSHOT_CACHE, cache_key, snapshot)
+    return snapshot
 
 
 @router.get("/tiles", response_model=WorldMapTileSnapshot)
@@ -709,6 +733,7 @@ async def get_world_map_tiles(
     max_lat: float | None = Query(default=None, ge=-85, le=85),
     min_lon: float | None = Query(default=None, ge=-180, le=180),
     max_lon: float | None = Query(default=None, ge=-180, le=180),
+    refresh: bool = Query(default=False),
     session: AsyncSession = Depends(get_db),
 ) -> WorldMapTileSnapshot:
     filters = WorldMapFilterScope(
@@ -722,13 +747,25 @@ async def get_world_map_tiles(
         min_lon=min_lon,
         max_lon=max_lon,
     )
+    cache_key = _world_map_tile_cache_key(
+        layer=layer,
+        resolution=resolution,
+        limit=limit,
+        filters=filters,
+        viewport=viewport,
+    )
+    if not refresh:
+        cached = _world_map_cache_get(_WORLD_MAP_TILE_CACHE, cache_key)
+        if cached is not None:
+            return cached
+
     regions = await _load_world_map_regions(session, limit=limit, filters=filters)
     cells = _filter_tile_cells_for_viewport(
         _build_world_map_tile_cells(regions, layer=layer, resolution=resolution),
         viewport,
     )
     data_sources = sorted({cell.source for cell in cells})
-    return WorldMapTileSnapshot(
+    snapshot = WorldMapTileSnapshot(
         generatedAt=datetime.now(timezone.utc),
         resolution=resolution,
         layer=layer,
@@ -740,6 +777,85 @@ async def get_world_map_tiles(
         ),
         cells=cells,
     )
+    _world_map_cache_set(_WORLD_MAP_TILE_CACHE, cache_key, snapshot)
+    return snapshot
+
+
+def _world_map_snapshot_cache_key(*, limit: int, filters: WorldMapFilterScope) -> tuple[object, ...]:
+    return (
+        "snapshot",
+        limit,
+        filters.symbol,
+        filters.mechanism,
+        filters.source,
+    )
+
+
+def _world_map_tile_cache_key(
+    *,
+    layer: TileLayerFilter,
+    resolution: TileResolution,
+    limit: int,
+    filters: WorldMapFilterScope,
+    viewport: WorldMapTileViewport | None,
+) -> tuple[object, ...]:
+    return (
+        "tiles",
+        layer,
+        resolution,
+        limit,
+        filters.symbol,
+        filters.mechanism,
+        filters.source,
+        *_world_map_viewport_cache_key(viewport),
+    )
+
+
+def _world_map_viewport_cache_key(viewport: WorldMapTileViewport | None) -> tuple[float | None, ...]:
+    if viewport is None:
+        return (None, None, None, None)
+    return (
+        round(viewport.min_lat, 4),
+        round(viewport.max_lat, 4),
+        round(viewport.min_lon, 4),
+        round(viewport.max_lon, 4),
+    )
+
+
+def _world_map_cache_get(
+    cache: dict[tuple[object, ...], tuple[datetime, SnapshotT]],
+    key: tuple[object, ...],
+    *,
+    now: datetime | None = None,
+) -> SnapshotT | None:
+    cached = cache.get(key)
+    if cached is None:
+        return None
+    cached_at, snapshot = cached
+    effective_now = now or datetime.now(timezone.utc)
+    if (effective_now - cached_at).total_seconds() > WORLD_MAP_CACHE_TTL_SECONDS:
+        cache.pop(key, None)
+        return None
+    return snapshot.model_copy(deep=True)
+
+
+def _world_map_cache_set(
+    cache: dict[tuple[object, ...], tuple[datetime, SnapshotT]],
+    key: tuple[object, ...],
+    snapshot: SnapshotT,
+    *,
+    now: datetime | None = None,
+) -> SnapshotT:
+    if len(cache) >= WORLD_MAP_CACHE_MAX_ENTRIES and key not in cache:
+        oldest_key = min(cache, key=lambda item: cache[item][0])
+        cache.pop(oldest_key, None)
+    cache[key] = (now or datetime.now(timezone.utc), snapshot.model_copy(deep=True))
+    return snapshot
+
+
+def _clear_world_map_caches() -> None:
+    _WORLD_MAP_SNAPSHOT_CACHE.clear()
+    _WORLD_MAP_TILE_CACHE.clear()
 
 
 async def _load_world_map_regions(
@@ -748,74 +864,66 @@ async def _load_world_map_regions(
     limit: int,
     filters: WorldMapFilterScope | None = None,
 ) -> list[WorldMapRegion]:
-    alerts = list(
-        (
-            await session.scalars(
-                select(Alert)
-                .where(Alert.status != "suppressed")
-                .order_by(Alert.triggered_at.desc())
-                .limit(limit)
-            )
-        ).all()
+    alerts = (
+        list((await session.scalars(_world_map_alerts_statement(limit=limit, filters=filters))).all())
+        if _world_map_should_load_source(filters, "alert") or _world_map_should_load_source(filters, "signal")
+        else []
     )
-    news = list(
-        (
-            await session.scalars(
-                select(NewsEvent).order_by(NewsEvent.published_at.desc()).limit(limit)
-            )
-        ).all()
+    news = (
+        list((await session.scalars(_world_map_news_statement(limit=limit, filters=filters))).all())
+        if _world_map_should_load_source(filters, "news")
+        else []
     )
-    signals = list(
-        (
-            await session.scalars(
-                select(SignalTrack).order_by(SignalTrack.created_at.desc()).limit(limit)
-            )
-        ).all()
+    linked_alert_ids = [row.id for row in alerts]
+    signals = (
+        list(
+            (
+                await session.scalars(
+                    _world_map_signals_statement(
+                        limit=limit,
+                        alert_ids=linked_alert_ids,
+                    )
+                )
+            ).all()
+        )
+        if linked_alert_ids and _world_map_should_load_source(filters, "signal")
+        else []
     )
-    positions = list(
-        (
-            await session.scalars(
-                select(Position)
-                .where(Position.status.in_(["open", "position_aware"]))
-                .order_by(Position.opened_at.desc())
-                .limit(limit)
-            )
-        ).all()
+    positions = (
+        list((await session.scalars(_world_map_positions_statement(limit=limit))).all())
+        if _world_map_should_load_source(filters, "position")
+        else []
     )
     weather_rows = list(
         (
             await session.scalars(
-                select(IndustryData)
-                .where(IndustryData.data_type.in_(WORLD_MAP_WEATHER_DATA_TYPES))
-                .order_by(IndustryData.timestamp.desc(), IndustryData.ingested_at.desc())
-                .limit(min(max(limit * 8, 200), 4000))
+                _world_map_weather_statement(limit=limit)
             )
         ).all()
     )
-    event_items = _unique_recent_event_intelligence(
-        list(
-            (
-                await session.scalars(
-                    select(EventIntelligenceItem)
-                    .where(EventIntelligenceItem.status != "rejected")
-                    .order_by(EventIntelligenceItem.event_timestamp.desc(), EventIntelligenceItem.created_at.desc())
-                    .limit(min(max(limit * 4, 100), 1000))
-                )
-            ).all()
-        ),
-        limit=limit,
+    event_items = (
+        _unique_recent_event_intelligence(
+            list(
+                (
+                    await session.scalars(
+                        _world_map_event_items_statement(limit=limit, filters=filters)
+                    )
+                ).all()
+            ),
+            limit=limit,
+        )
+        if _world_map_should_load_source(filters, "event_intelligence")
+        else []
     )
     event_links = (
         list(
             (
                 await session.scalars(
-                    select(EventImpactLink)
-                    .where(
-                        EventImpactLink.event_item_id.in_([row.id for row in event_items]),
-                        EventImpactLink.status != "rejected",
+                    _world_map_event_links_statement(
+                        event_item_ids=[row.id for row in event_items],
+                        limit=limit,
+                        filters=filters,
                     )
-                    .order_by(EventImpactLink.impact_score.desc(), EventImpactLink.confidence.desc())
-                    .limit(min(max(limit * 2, 100), 1000))
                 )
             ).all()
         )
@@ -844,6 +952,114 @@ async def _load_world_map_regions(
     regions = [region for region in regions if _region_matches_filter_scope(region, filters)]
     regions.sort(key=lambda region: region.riskScore, reverse=True)
     return regions
+
+
+def _world_map_should_load_source(
+    filters: WorldMapFilterScope | None,
+    source: EvidenceKind,
+) -> bool:
+    return filters is None or filters.source == "all" or filters.source == source
+
+
+def _world_map_alerts_statement(*, limit: int, filters: WorldMapFilterScope | None):
+    statement = (
+        select(Alert)
+        .where(Alert.status != "suppressed")
+        .order_by(Alert.triggered_at.desc(), Alert.id.desc())
+        .limit(limit)
+    )
+    if filters is not None and filters.symbol is not None:
+        statement = statement.where(
+            or_(
+                Alert.related_assets.contains([filters.symbol]),
+                Alert.title.ilike(f"%{filters.symbol}%"),
+                Alert.summary.ilike(f"%{filters.symbol}%"),
+                Alert.title_zh.ilike(f"%{filters.symbol}%"),
+                Alert.summary_zh.ilike(f"%{filters.symbol}%"),
+            )
+        )
+    return statement
+
+
+def _world_map_news_statement(*, limit: int, filters: WorldMapFilterScope | None):
+    statement = select(NewsEvent).order_by(NewsEvent.published_at.desc(), NewsEvent.id.desc()).limit(limit)
+    if filters is not None and filters.symbol is not None:
+        statement = statement.where(NewsEvent.affected_symbols.contains([filters.symbol]))
+    return statement
+
+
+def _world_map_signals_statement(*, limit: int, alert_ids: list[UUID]):
+    return (
+        select(SignalTrack)
+        .where(SignalTrack.alert_id.in_(alert_ids))
+        .order_by(SignalTrack.created_at.desc(), SignalTrack.id.desc())
+        .limit(limit)
+    )
+
+
+def _world_map_positions_statement(*, limit: int):
+    return (
+        select(Position)
+        .where(Position.status.in_(["open", "position_aware"]))
+        .order_by(Position.opened_at.desc(), Position.id.desc())
+        .limit(limit)
+    )
+
+
+def _world_map_weather_statement(*, limit: int):
+    return (
+        select(IndustryData)
+        .where(IndustryData.data_type.in_(WORLD_MAP_WEATHER_DATA_TYPES))
+        .order_by(
+            IndustryData.timestamp.desc(),
+            IndustryData.ingested_at.desc(),
+            IndustryData.id.desc(),
+        )
+        .limit(min(max(limit * 8, 200), 4000))
+    )
+
+
+def _world_map_event_items_statement(*, limit: int, filters: WorldMapFilterScope | None):
+    statement = (
+        select(EventIntelligenceItem)
+        .where(EventIntelligenceItem.status != "rejected")
+        .order_by(
+            EventIntelligenceItem.event_timestamp.desc(),
+            EventIntelligenceItem.created_at.desc(),
+            EventIntelligenceItem.id.desc(),
+        )
+        .limit(min(max(limit * 4, 100), 1000))
+    )
+    if filters is not None and filters.symbol is not None:
+        statement = statement.where(EventIntelligenceItem.symbols.contains([filters.symbol]))
+    return statement
+
+
+def _world_map_event_links_statement(
+    *,
+    event_item_ids: list[UUID],
+    limit: int,
+    filters: WorldMapFilterScope | None,
+):
+    statement = (
+        select(EventImpactLink)
+        .where(
+            EventImpactLink.event_item_id.in_(event_item_ids),
+            EventImpactLink.status != "rejected",
+        )
+        .order_by(
+            EventImpactLink.impact_score.desc(),
+            EventImpactLink.confidence.desc(),
+            EventImpactLink.id.desc(),
+        )
+        .limit(min(max(limit * 2, 100), 1000))
+    )
+    if filters is not None:
+        if filters.symbol is not None:
+            statement = statement.where(EventImpactLink.symbol == filters.symbol)
+        if filters.mechanism is not None:
+            statement = statement.where(EventImpactLink.mechanism == filters.mechanism)
+    return statement
 
 
 def _world_map_filter_options() -> WorldMapFilterOptions:
@@ -1562,6 +1778,7 @@ def _region_weather(
         )
 
     rainfall_7d_mm = _mean([row.value for row in recent_precip_rows])
+    rainfall_7d_mm = rainfall_7d_mm if rainfall_7d_mm is not None else seed.rainfall_7d_mm
     baseline_precip_rows = _rows_for_type(latest, "weather_baseline_precip_7d")
     baseline_precip = _mean([row.value for row in baseline_precip_rows])
     baseline_precip = baseline_precip if baseline_precip is not None and baseline_precip > 0 else seed.rainfall_7d_mm
@@ -1663,8 +1880,8 @@ def _weather_row_region(source: str) -> str | None:
     return WEATHER_REGION_BY_LOCATION_KEY.get(location_key)
 
 
-def _weather_row_key(row: IndustryData) -> tuple[datetime, datetime]:
-    return row.timestamp, row.ingested_at or row.timestamp
+def _weather_row_key(row: IndustryData) -> tuple[datetime, datetime, str]:
+    return row.timestamp, row.ingested_at or row.timestamp, str(row.id or "")
 
 
 def _rows_for_type(
@@ -2081,49 +2298,49 @@ def _factor_signals(
                 source=f"alert:{row.id}",
             )
         )
-    for row in matched_news[:8]:
-        title = row.title_zh or row.title
-        summary = row.summary_zh or row.summary
+    for news_row in matched_news[:8]:
+        title = news_row.title_zh or news_row.title
+        summary = news_row.summary_zh or news_row.summary
         factor = _factor_from_text(
-            " ".join([title, summary, row.event_type, row.direction])
+            " ".join([title, summary, news_row.event_type, news_row.direction])
         )
         signals.append(
             FactorSignal(
                 factor=factor,
-                weight=min(max(row.llm_confidence, row.severity / 5), 1.0),
+                weight=min(max(news_row.llm_confidence, news_row.severity / 5), 1.0),
                 evidence_kind="news",
                 label_zh=title[:40],
-                label_en=(row.title_original or row.title)[:80],
-                source=f"news:{row.id}",
+                label_en=(news_row.title_original or news_row.title)[:80],
+                source=f"news:{news_row.id}",
             )
         )
-    for row in matched_signals[:8]:
-        factor = _factor_from_text(row.signal_type)
-        signal_zh = signal_type_label(row.signal_type)
+    for signal_row in matched_signals[:8]:
+        factor = _factor_from_text(signal_row.signal_type)
+        signal_zh = signal_type_label(signal_row.signal_type)
         signals.append(
             FactorSignal(
                 factor=factor,
-                weight=min(max(row.confidence, 0.3), 1.0),
+                weight=min(max(signal_row.confidence, 0.3), 1.0),
                 evidence_kind="signal",
                 label_zh=f"{signal_zh}信号",
-                label_en=f"{str(row.signal_type).replace('_', ' ')} signal",
-                source=f"signal:{row.id}",
+                label_en=f"{str(signal_row.signal_type).replace('_', ' ')} signal",
+                source=f"signal:{signal_row.id}",
             )
         )
-    for row in matched_event_links[:8]:
-        link_quality = event_link_quality_by_id.get(row.id)
+    for link_row in matched_event_links[:8]:
+        link_quality = event_link_quality_by_id.get(link_row.id)
         link_weight = _link_quality_weight(link_quality)
         if link_weight <= 0:
             continue
-        factor = _factor_from_event_intelligence_link(row)
+        factor = _factor_from_event_intelligence_link(link_row)
         signals.append(
             FactorSignal(
                 factor=factor,
-                weight=min(max(row.confidence, row.impact_score / 100, 0.35) * link_weight, 1.0),
+                weight=min(max(link_row.confidence, link_row.impact_score / 100, 0.35) * link_weight, 1.0),
                 evidence_kind="event_intelligence",
-                label_zh=_event_intelligence_factor_label_zh(row, factor),
-                label_en=_event_intelligence_factor_label_en(row, factor),
-                source=f"event_intelligence:{row.event_item_id}:{row.id}",
+                label_zh=_event_intelligence_factor_label_zh(link_row, factor),
+                label_en=_event_intelligence_factor_label_en(link_row, factor),
+                source=f"event_intelligence:{link_row.event_item_id}:{link_row.id}",
             )
         )
     if matched_positions:
@@ -2418,7 +2635,7 @@ def _english_hint(signal_type: str, category: str) -> str:
 
 
 def _alert_symbols(alert: Alert) -> set[str]:
-    values = {str(value).upper() for value in (alert.related_assets or [])}
+    values = _symbol_value_set(alert.related_assets or [])
     values.update(_extract_symbol_tokens(alert.title))
     values.update(_extract_symbol_tokens(alert.summary))
     values.update(_extract_symbol_tokens(alert.title_zh or ""))
@@ -2445,7 +2662,7 @@ def _matched_event_intelligence_items(
     region_symbols = set(definition.symbols)
     matched: list[EventIntelligenceItem] = []
     for row in rows:
-        symbols = {str(symbol).upper() for symbol in row.symbols or []}
+        symbols = _symbol_value_set(row.symbols or [])
         regions = {str(region) for region in row.regions or []}
         if definition.id in regions or _symbols_intersect(symbols, region_symbols):
             matched.append(row)
@@ -2471,7 +2688,7 @@ def _unique_recent_event_intelligence(
 
 
 def _event_intelligence_display_key(row: EventIntelligenceItem) -> tuple[str, tuple[str, ...], str]:
-    symbols = tuple(sorted(str(symbol).upper() for symbol in (row.symbols or [])[:5]))
+    symbols = tuple(_symbol_value_list(row.symbols or [], limit=5))
     return (row.event_type.lower(), symbols, _normalize_event_title(row.title))
 
 
@@ -2509,16 +2726,17 @@ def _matched_event_intelligence_links(
 
 def _extract_symbol_tokens(text: str) -> set[str]:
     upper = text.upper()
+    valid_symbols = {symbol for definition in WORLD_RISK_REGIONS for symbol in definition.symbols}
     tokens: set[str] = set()
-    for definition in WORLD_RISK_REGIONS:
-        for symbol in definition.symbols:
-            if symbol in upper:
-                tokens.add(symbol)
+    for match in SYMBOL_TOKEN_PATTERN.finditer(upper):
+        symbol = _root_symbol(match.group(1))
+        if symbol in valid_symbols:
+            tokens.add(symbol)
     return tokens
 
 
 def _symbols_intersect(values: set[str], region_symbols: set[str]) -> bool:
-    return bool({_root_symbol(value) for value in values} & region_symbols)
+    return bool(_symbol_value_set(values) & region_symbols)
 
 
 def _root_symbol(value: str) -> str:
@@ -2527,6 +2745,27 @@ def _root_symbol(value: str) -> str:
         if char.isdigit():
             return upper[:index] or upper
     return upper
+
+
+def _symbol_value_set(values: Iterable[object]) -> set[str]:
+    return set(_symbol_value_list(values))
+
+
+def _symbol_value_list(values: Iterable[object], *, limit: int | None = None) -> list[str]:
+    normalized: set[str] = set()
+    for value in values:
+        if value is None:
+            continue
+        raw = str(value).strip()
+        if not raw:
+            continue
+        symbol = _root_symbol(raw)
+        if symbol:
+            normalized.add(symbol)
+    symbols = sorted(normalized)
+    if limit is None:
+        return symbols
+    return symbols[:limit]
 
 
 def _latest_event_at(

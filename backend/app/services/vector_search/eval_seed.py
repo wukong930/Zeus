@@ -40,10 +40,7 @@ async def seed_vector_eval_cases(
     chunks = list(
         (
             await session.scalars(
-                select(VectorChunk)
-                .where(VectorChunk.quality_status.in_(("human_reviewed", "validated", "unverified")))
-                .order_by(VectorChunk.created_at.asc())
-                .limit(max(target_cases, 1))
+                _seed_chunks_statement(target_cases=target_cases)
             )
         ).all()
     )
@@ -93,6 +90,15 @@ async def seed_vector_eval_cases(
         existing_cases=existing_cases,
         created=created,
         target_cases=target_cases,
+    )
+
+
+def _seed_chunks_statement(*, target_cases: int):
+    return (
+        select(VectorChunk)
+        .where(VectorChunk.quality_status.in_(("human_reviewed", "validated", "unverified")))
+        .order_by(VectorChunk.created_at.asc(), VectorChunk.id.asc())
+        .limit(max(target_cases, 1))
     )
 
 

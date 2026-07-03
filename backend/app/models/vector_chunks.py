@@ -48,6 +48,7 @@ class VectorChunk(Base):
         Index("ix_vector_chunks_source_id", "source_id"),
         Index("ix_vector_chunks_quality_status", "quality_status"),
         Index("ix_vector_chunks_created_at", "created_at"),
+        Index("ix_vector_chunks_quality_created_at_id", "quality_status", "created_at", "id"),
         Index("ix_vector_chunks_metadata", "metadata", postgresql_using="gin"),
     )
 

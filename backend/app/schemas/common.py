@@ -678,6 +678,13 @@ class RecommendationRead(RecommendationCreate, ORMModel):
     created_at: datetime
     updated_at: datetime
 
+    @field_validator("risk_items", mode="before")
+    @classmethod
+    def truncate_read_risk_items(cls, value: Any) -> list[str]:
+        if not isinstance(value, list):
+            return []
+        return [str(item) for item in value[:MAX_TRADE_RISK_ITEMS]]
+
 
 class PositionCreate(StrictInputModel):
     strategy_id: UUID | None = None
@@ -774,3 +781,26 @@ class RecommendationAdoptRequest(StrictInputModel):
     actual_entry: float | None = Field(default=None, gt=0, le=MAX_INGEST_ABS_VALUE)
     lots: float = Field(default=1, gt=0, le=MAX_POSITION_LOTS)
     total_margin_used: float | None = Field(default=None, ge=0, le=MAX_INGEST_ABS_VALUE)
+
+
+class RecommendationReviewRequest(StrictInputModel):
+    decision: str = Field(min_length=1, max_length=20)
+    reviewed_by: str | None = Field(default=None, max_length=80)
+    reason: str | None = Field(default=None, max_length=MAX_GOVERNANCE_TEXT_LENGTH)
+    confidence_override: float | None = Field(default=None, ge=0, le=1)
+
+    @field_validator("decision")
+    @classmethod
+    def validate_decision(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if normalized not in {"approve", "reject"}:
+            raise ValueError("decision must be approve or reject")
+        return normalized
+
+    @field_validator("reviewed_by", "reason")
+    @classmethod
+    def trim_optional_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        trimmed = value.strip()
+        return trimmed or None

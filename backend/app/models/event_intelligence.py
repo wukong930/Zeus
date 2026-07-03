@@ -19,8 +19,21 @@ class EventIntelligenceItem(Base):
         Index("ix_event_intelligence_items_event_type", "event_type"),
         Index("ix_event_intelligence_items_status", "status"),
         Index("ix_event_intelligence_items_event_timestamp", "event_timestamp"),
+        Index(
+            "ix_event_intelligence_items_event_timestamp_impact_score",
+            "event_timestamp",
+            "impact_score",
+        ),
+        Index(
+            "ix_event_intelligence_items_event_timestamp_impact_id",
+            "event_timestamp",
+            "impact_score",
+            "id",
+        ),
+        Index("ix_event_intelligence_items_status_event_timestamp", "status", "event_timestamp"),
         Index("ix_event_intelligence_items_symbols", "symbols", postgresql_using="gin"),
         Index("ix_event_intelligence_items_regions", "regions", postgresql_using="gin"),
+        Index("ix_event_intelligence_items_mechanisms", "mechanisms", postgresql_using="gin"),
     )
 
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
@@ -77,11 +90,26 @@ class EventImpactLink(Base):
             "mechanism",
             name="uq_event_impact_links_scope",
         ),
+        Index("ix_event_impact_links_event_item_score", "event_item_id", "impact_score", "confidence"),
+        Index(
+            "ix_event_impact_links_event_item_score_id",
+            "event_item_id",
+            "impact_score",
+            "confidence",
+            "id",
+        ),
         Index("ix_event_impact_links_symbol", "symbol"),
+        Index("ix_event_impact_links_symbol_score", "symbol", "impact_score", "confidence"),
+        Index("ix_event_impact_links_symbol_score_id", "symbol", "impact_score", "confidence", "id"),
         Index("ix_event_impact_links_region_id", "region_id"),
+        Index("ix_event_impact_links_region_score_id", "region_id", "impact_score", "confidence", "id"),
         Index("ix_event_impact_links_mechanism", "mechanism"),
+        Index("ix_event_impact_links_mechanism_score", "mechanism", "impact_score", "confidence"),
+        Index("ix_event_impact_links_mechanism_score_id", "mechanism", "impact_score", "confidence", "id"),
         Index("ix_event_impact_links_direction", "direction"),
         Index("ix_event_impact_links_status", "status"),
+        Index("ix_event_impact_links_status_score", "status", "impact_score", "confidence"),
+        Index("ix_event_impact_links_status_score_id", "status", "impact_score", "confidence", "id"),
         Index("ix_event_impact_links_confidence", "confidence"),
     )
 
@@ -121,9 +149,24 @@ class EventIntelligenceAuditLog(Base):
     __tablename__ = "event_intelligence_audit_logs"
     __table_args__ = (
         Index("ix_event_intelligence_audit_logs_event_item_id", "event_item_id"),
+        Index("ix_event_intelligence_audit_logs_event_item_created_at", "event_item_id", "created_at"),
+        Index(
+            "ix_event_intelligence_audit_logs_event_item_created_at_id",
+            "event_item_id",
+            "created_at",
+            "id",
+        ),
         Index("ix_event_intelligence_audit_logs_action", "action"),
+        Index("ix_event_intelligence_audit_logs_action_created_at", "action", "created_at"),
+        Index(
+            "ix_event_intelligence_audit_logs_action_created_at_id",
+            "action",
+            "created_at",
+            "id",
+        ),
         Index("ix_event_intelligence_audit_logs_actor", "actor"),
         Index("ix_event_intelligence_audit_logs_created_at", "created_at"),
+        Index("ix_event_intelligence_audit_logs_created_at_id", "created_at", "id"),
     )
 
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)

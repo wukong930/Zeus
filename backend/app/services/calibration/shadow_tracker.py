@@ -80,10 +80,10 @@ async def evaluate_pending_signals(
 
     rows = (
         await session.scalars(
-            select(SignalTrack)
-            .where(SignalTrack.outcome == "pending")
-            .order_by(SignalTrack.created_at.asc())
-            .limit(limit)
+            _pending_signal_tracks_statement(
+                as_of=effective_as_of,
+                limit=limit,
+            )
         )
     ).all()
 
@@ -128,6 +128,18 @@ async def evaluate_pending_signals(
 
     await session.flush()
     return OutcomeScanResult(scanned=scanned, resolved=resolved, pending=pending, skipped=skipped)
+
+
+def _pending_signal_tracks_statement(*, as_of: datetime, limit: int):
+    return (
+        select(SignalTrack)
+        .where(
+            SignalTrack.outcome == "pending",
+            SignalTrack.created_at <= as_of,
+        )
+        .order_by(SignalTrack.created_at.asc(), SignalTrack.id.asc())
+        .limit(limit)
+    )
 
 
 def alert_to_signal_payload(alert: Alert, signal_track: SignalTrack) -> dict[str, Any]:
@@ -180,13 +192,21 @@ async def load_forward_market_data(
 
 def primary_symbol(signal: dict[str, Any]) -> str | None:
     related_assets = signal.get("related_assets") or []
-    if related_assets:
-        return str(related_assets[0])
+    for asset in related_assets:
+        symbol = normalize_symbol(asset)
+        if symbol:
+            return symbol
 
     spread_info = signal.get("spread_info")
     if isinstance(spread_info, dict) and spread_info.get("leg1") is not None:
-        return str(spread_info["leg1"])
+        symbol = normalize_symbol(spread_info["leg1"])
+        if symbol:
+            return symbol
     return None
+
+
+def normalize_symbol(value: Any) -> str:
+    return str(value or "").strip().upper()
 
 
 def apply_outcome(

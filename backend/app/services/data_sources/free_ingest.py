@@ -3,8 +3,9 @@ from __future__ import annotations
 import re
 from collections import defaultdict
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, time, timedelta, timezone
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -68,20 +69,24 @@ class FreeDataIngestResult:
     source_counts: dict[str, int] = field(default_factory=dict)
     errors: list[dict[str, str]] = field(default_factory=list)
     contexts: list[dict[str, Any]] = field(default_factory=list)
+    stale_market_contexts: int = 0
+    stale_market_context_details: list[dict[str, Any]] = field(default_factory=list)
 
     @property
     def status(self) -> str:
-        return "degraded" if self.errors else "completed"
+        return "degraded" if self.errors or self.stale_market_contexts else "completed"
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "status": self.status,
-            "degraded": bool(self.errors),
+            "degraded": self.status == "degraded",
             "market_rows": self.market_rows,
             "industry_rows": self.industry_rows,
             "source_counts": self.source_counts,
             "errors": self.errors,
             "contexts": len(self.contexts),
+            "stale_market_contexts": self.stale_market_contexts,
+            "stale_market_context_details": self.stale_market_context_details,
         }
 
 
@@ -125,26 +130,28 @@ async def run_free_data_ingest(
             errors.append({"source": "nasa_power", "error": safe_error_message(exc)})
 
     if current.data_source_accuweather_enabled:
-        if current.accuweather_api_key:
+        accuweather_api_key = _clean_runtime_config(current.accuweather_api_key)
+        if accuweather_api_key:
             try:
                 accuweather_rows = await collect_accuweather_current_conditions(
-                    api_key=current.accuweather_api_key,
+                    api_key=accuweather_api_key,
                     base_url=current.accuweather_base_url,
                     max_locations=current.accuweather_max_locations_per_run,
                 )
                 industry_payloads.extend(accuweather_rows)
                 source_counts["accuweather"] = len(accuweather_rows)
             except Exception as exc:
-                errors.append({"source": "accuweather", "error": safe_error_message(exc, current.accuweather_api_key)})
+                errors.append({"source": "accuweather", "error": safe_error_message(exc, accuweather_api_key)})
         else:
             source_counts["accuweather"] = 0
             errors.append({"source": "accuweather", "error": "enabled source missing ACCUWEATHER_API_KEY"})
 
     if current.data_source_noaa_cdo_enabled:
-        if current.noaa_cdo_api_key:
+        noaa_cdo_api_key = _clean_runtime_config(current.noaa_cdo_api_key)
+        if noaa_cdo_api_key:
             try:
                 noaa_rows = await collect_noaa_cdo_daily_summaries(
-                    api_key=current.noaa_cdo_api_key,
+                    api_key=noaa_cdo_api_key,
                     base_url=current.noaa_cdo_base_url,
                     max_locations=current.noaa_cdo_max_locations_per_run,
                     station_radius_degrees=current.noaa_cdo_station_radius_degrees,
@@ -153,46 +160,49 @@ async def run_free_data_ingest(
                 industry_payloads.extend(noaa_rows)
                 source_counts["noaa_cdo"] = len(noaa_rows)
             except Exception as exc:
-                errors.append({"source": "noaa_cdo", "error": safe_error_message(exc, current.noaa_cdo_api_key)})
+                errors.append({"source": "noaa_cdo", "error": safe_error_message(exc, noaa_cdo_api_key)})
         else:
             source_counts["noaa_cdo"] = 0
             errors.append({"source": "noaa_cdo", "error": "enabled source missing NOAA_CDO_API_KEY"})
 
     if current.data_source_fred_enabled:
-        if current.fred_api_key:
+        fred_api_key = _clean_runtime_config(current.fred_api_key)
+        if fred_api_key:
             try:
                 fred_rows = await collect_fred_indicators(
-                    api_key=current.fred_api_key,
+                    api_key=fred_api_key,
                     base_url=current.fred_base_url,
                 )
                 industry_payloads.extend(fred_rows)
                 source_counts["fred"] = len(fred_rows)
             except Exception as exc:
-                errors.append({"source": "fred", "error": safe_error_message(exc, current.fred_api_key)})
+                errors.append({"source": "fred", "error": safe_error_message(exc, fred_api_key)})
         else:
             source_counts["fred"] = 0
             errors.append({"source": "fred", "error": "enabled source missing FRED_API_KEY"})
 
     if current.data_source_eia_enabled:
-        if current.eia_api_key:
+        eia_api_key = _clean_runtime_config(current.eia_api_key)
+        if eia_api_key:
             try:
                 eia_rows = await collect_eia_indicators(
-                    api_key=current.eia_api_key,
+                    api_key=eia_api_key,
                     base_url=current.eia_base_url,
                 )
                 industry_payloads.extend(eia_rows)
                 source_counts["eia"] = len(eia_rows)
             except Exception as exc:
-                errors.append({"source": "eia", "error": safe_error_message(exc, current.eia_api_key)})
+                errors.append({"source": "eia", "error": safe_error_message(exc, eia_api_key)})
         else:
             source_counts["eia"] = 0
             errors.append({"source": "eia", "error": "enabled source missing EIA_API_KEY"})
 
     if current.data_source_tushare_enabled:
-        if current.tushare_token:
+        tushare_token = _clean_runtime_config(current.tushare_token)
+        if tushare_token:
             try:
                 tushare_result = await collect_tushare_market_data(
-                    token=current.tushare_token,
+                    token=tushare_token,
                     base_url=current.tushare_base_url,
                     exchanges=parse_csv_tuple(
                         current.data_source_tushare_exchanges,
@@ -204,10 +214,10 @@ async def run_free_data_ingest(
                     ),
                 )
                 market_payloads.extend(tushare_result.rows)
-                errors.extend(sanitize_source_errors(tushare_result.errors, current.tushare_token))
+                errors.extend(sanitize_source_errors(tushare_result.errors, tushare_token))
                 source_counts["tushare"] = len(tushare_result.rows)
             except Exception as exc:
-                errors.append({"source": "tushare", "error": safe_error_message(exc, current.tushare_token)})
+                errors.append({"source": "tushare", "error": safe_error_message(exc, tushare_token)})
         else:
             source_counts["tushare"] = 0
             errors.append({"source": "tushare", "error": "enabled source missing TUSHARE_TOKEN"})
@@ -225,10 +235,11 @@ async def run_free_data_ingest(
             errors.append({"source": "rubber_spot", "error": safe_error_message(exc)})
 
     if current.data_source_shipping_index_enabled:
-        if current.shipping_index_url:
+        shipping_index_url = _clean_runtime_config(current.shipping_index_url)
+        if shipping_index_url:
             try:
                 shipping_index_rows = await collect_shipping_index_indicators(
-                    url=current.shipping_index_url,
+                    url=shipping_index_url,
                     symbols=parse_shipping_index_symbols(current.shipping_index_symbols),
                     timeout=current.shipping_index_timeout_seconds,
                 )
@@ -244,30 +255,84 @@ async def run_free_data_ingest(
         await append_market_data(session, market_payloads)
     if industry_payloads:
         await append_industry_data(session, industry_payloads)
+    context_result = build_market_context_payloads(
+        market_payloads,
+        as_of=datetime.now(timezone.utc),
+        max_age_hours=current.data_source_market_context_max_age_hours,
+    )
 
     return FreeDataIngestResult(
         market_rows=len(market_payloads),
         industry_rows=len(industry_payloads),
         source_counts=source_counts,
         errors=errors,
-        contexts=market_context_payloads(market_payloads),
+        contexts=context_result.contexts,
+        stale_market_contexts=context_result.stale_contexts,
+        stale_market_context_details=context_result.stale_context_details,
     )
 
 
-def market_context_payloads(rows: list[MarketDataCreate], *, per_symbol_limit: int = 80) -> list[dict[str, Any]]:
+@dataclass(frozen=True)
+class MarketContextBuildResult:
+    contexts: list[dict[str, Any]]
+    stale_contexts: int = 0
+    stale_context_details: list[dict[str, Any]] = field(default_factory=list)
+
+
+def market_context_payloads(
+    rows: list[MarketDataCreate],
+    *,
+    per_symbol_limit: int = 80,
+    as_of: datetime | None = None,
+    max_age_hours: int | None = None,
+) -> list[dict[str, Any]]:
+    return build_market_context_payloads(
+        rows,
+        per_symbol_limit=per_symbol_limit,
+        as_of=as_of,
+        max_age_hours=max_age_hours,
+    ).contexts
+
+
+def build_market_context_payloads(
+    rows: list[MarketDataCreate],
+    *,
+    per_symbol_limit: int = 80,
+    as_of: datetime | None = None,
+    max_age_hours: int | None = None,
+) -> MarketContextBuildResult:
     rows_by_symbol: dict[str, list[MarketDataCreate]] = defaultdict(list)
     for row in rows:
         rows_by_symbol[row.symbol].append(row)
 
     contexts = []
+    stale_contexts = 0
+    stale_context_details: list[dict[str, Any]] = []
+    max_age = timedelta(hours=max_age_hours) if max_age_hours is not None else None
+    effective_as_of = aware_utc(as_of or datetime.now(timezone.utc))
     for symbol, symbol_rows in rows_by_symbol.items():
         ordered = sorted(symbol_rows, key=lambda item: item.timestamp)[-per_symbol_limit:]
         latest = ordered[-1]
+        freshness_timestamp = market_data_freshness_timestamp(latest)
+        if max_age is not None and freshness_timestamp < effective_as_of - max_age:
+            stale_contexts += 1
+            stale_context_details.append(
+                {
+                    "symbol": symbol,
+                    "timestamp": latest.timestamp.isoformat(),
+                    "freshness_timestamp": freshness_timestamp.isoformat(),
+                    "age_hours": round((effective_as_of - freshness_timestamp).total_seconds() / 3600, 2),
+                    "max_age_hours": max_age_hours,
+                    "source": market_data_source(latest.source_key),
+                }
+            )
+            continue
         contexts.append(
             {
                 "symbol1": symbol,
                 "category": CATEGORY_BY_SYMBOL.get(symbol, "unknown"),
                 "timestamp": latest.timestamp.isoformat(),
+                "freshness_timestamp": freshness_timestamp.isoformat(),
                 "regime": "free_data_ingest",
                 "market_data": [
                     {
@@ -284,7 +349,49 @@ def market_context_payloads(rows: list[MarketDataCreate], *, per_symbol_limit: i
                 "source": "free_data_ingest",
             }
         )
-    return contexts
+    return MarketContextBuildResult(
+        contexts=contexts,
+        stale_contexts=stale_contexts,
+        stale_context_details=stale_context_details,
+    )
+
+
+def market_data_freshness_timestamp(row: MarketDataCreate) -> datetime:
+    timestamp = aware_utc(row.timestamp)
+    if is_daily_market_row(row):
+        local_tz = timezone_from_name(row.timezone)
+        local_timestamp = timestamp.astimezone(local_tz)
+        next_local_midnight = datetime.combine(
+            local_timestamp.date() + timedelta(days=1),
+            time.min,
+            tzinfo=local_tz,
+        )
+        return next_local_midnight.astimezone(timezone.utc)
+    return timestamp
+
+
+def is_daily_market_row(row: MarketDataCreate) -> bool:
+    source_key = row.source_key or ""
+    return source_key.startswith("akshare_sina:") or source_key.startswith("tushare:fut_daily:")
+
+
+def timezone_from_name(value: str) -> ZoneInfo:
+    try:
+        return ZoneInfo(value)
+    except ZoneInfoNotFoundError:
+        return ZoneInfo("UTC")
+
+
+def market_data_source(source_key: str | None) -> str:
+    if not source_key:
+        return "unknown"
+    return source_key.split(":", maxsplit=1)[0]
+
+
+def aware_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
 
 
 def now_utc_iso() -> str:
@@ -311,3 +418,7 @@ def safe_error_message(error: object, *secrets: str | None) -> str:
             message = message.replace(secret, "[redacted]")
     message = re.sub(r"([?&](?:api_key|token)=)[^&\s']+", r"\1[redacted]", message)
     return message
+
+
+def _clean_runtime_config(value: str | None) -> str:
+    return (value or "").strip()

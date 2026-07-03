@@ -599,3 +599,267 @@ threshold_modifier、propagation_activator、risk_recalc、数据腐烂防护
 - 补齐信号类型、板块、机制和事件类型标签映射，避免 `inventory_shock`、`marginal_capacity_squeeze` 等内部字段直接出现在阅读层。
 - Event Intelligence 的行情异常入口改为生成中文标题、摘要、证据和影响链理由；历史 market-ingress 候选会在低频同步时刷新展示标签。
 - Causal Web、World Risk Map、Alerts 和 Analytics 改为展示中文可读信号标签，同时保留原始枚举在 payload 中用于审计、过滤和幂等。
+
+# 2026-05-17 — Phase 10.39 交易计划方向信号激活
+
+- 保留 `open_spread` 的高门槛可执行计划，同时新增 `open_directional` 方向计划入口：只接收高置信、方向明确、对抗通过的单品种信号。
+- 方向计划默认遵守 Alert Agent 状态，缺少历史校准或需要复核时落为 `pending_review`，交易计划页可阅读但不能直接采纳。
+- `trade-plan-activation` 回填任务改为重新评估历史 `watchlist_only` 信号，并按 `signal_type + 主品种` 精确关联 alert，避免同一 correlation 下多信号串线。
+- 方向计划入场价优先使用事件 leg、market data 或 cost snapshot 的当前价；拿不到有效价格时不生成计划，避免价格带退化为 1.0。
+
+# 2026-05-17 — Phase 10.40 交易计划复核原因可解释化
+
+- `Recommendation.backtest_summary` 新增 `review_required`、`review_reasons`、`confidence_tier`、`alert_route` 和 `alert_route_reasons`，把 Alert Agent 的治理门槛带到推荐层。
+- 交易计划风险项同步追加中文“复核原因”，覆盖人工复核、LLM 仲裁、预警状态、置信档、方向冲突、历史校准缺失等来源。
+- Trade Plans 卡片新增“复核原因”区域，直接展示待确认的原因标签，避免用户只看到 `pending_review` 却不知道为什么不能采纳。
+
+# 2026-05-17 — Phase 10.41 交易计划复核 / 采纳闭环
+
+- 新增 `/api/recommendations/{recommendation_id}/review`，支持把 `pending_review` 计划人工批准为 `pending`，或驳回为 `ignored`，并同步记录 human decision 与 alert 状态。
+- Trade Plans 页面新增“确认可执行 / 驳回计划 / 采纳建议”动作：待确认计划先走复核，已通过计划再调用既有采纳接口生成持仓。
+- 前端采纳时会把当前价和手数传回后端，避免默认 1 手或陈旧入场价导致持仓初始化偏离用户看到的交易计划。
+
+# 2026-05-17 — Phase 10.42 列表热路径与调度覆盖审计
+
+- Trade Plans 页面不再一次性拉取最新 200 条全部推荐后前端过滤，而是分别请求 `pending` 与 `pending_review`，避免历史已完成 / 已忽略记录挤掉当前可执行计划。
+- 新增 Alembic 迁移 `20260503_0019_list_query_indexes.py`，为 alerts、recommendations、positions、change_review_queue 和 news_events 常用列表筛选 + 时间排序补组合索引。
+- 调度器覆盖审计确认未接 handler 的计划任务保持 disabled / unconfigured，Settings 与 Heartbeat 已显示 unconfigured，不再把空跑任务计入健康 enabled jobs。
+
+# 2026-05-17 — Phase 10.43 调度健康口径收紧
+
+- 调度器新增 `planned` 状态：默认停用且未接 handler 的规划中任务不再计入 `unconfigured_jobs`，避免 Settings / Heartbeat 长期显示“调度降级”。
+- `health_summary` 新增 `planned_unconfigured_jobs`，保留规划缺口的透明度；只有启用中或被手动启动后仍缺 handler 的任务才进入 `unconfigured_jobs`。
+- `startAll` 会跳过规划中未接 handler 的任务，避免一次全量启动把所有长期规划任务误标为运行异常。
+
+# 2026-05-17 — Phase 10.44 Causal Web 作用域查询下推
+
+- Causal Web 在带 `symbol` 或事件智能 `event` 作用域时，会把商品筛选下推到新闻、预警、行业数据和行情指标查询，把信号查询收敛到对应品类，避免先加载全量近期数据再前端式过滤。
+- 新增 Alembic 迁移 `20260503_0020_causal_web_scope_indexes.py`，为 `alerts.related_assets`、`market_data.symbol + ingested_at`、`industry_data.symbol + ingested_at` 和 `signal_track.category + created_at` 补索引。
+- 增加 SQL 编译级测试，确认 scoped Causal Web 查询携带数据库筛选条件；本地数据库已升级到 `20260503_0020` 并验证索引存在。
+
+# 2026-05-17 — Phase 10.45 调度 Handler 覆盖率可观测
+
+- Scheduler health 新增 `handler_coverage` 摘要和每个 job 的 `handler_registered` 字段，运行态接口可以直接区分“已接真实 handler”“规划中未接 handler”和“异常未配置”。
+- Settings 的调度运行态卡片新增 Handler 覆盖和规划中任务计数，未接 handler 的任务会显示为“未接 Handler”，不再只依赖 `ok/disabled/planned` 推断。
+- 调度测试增加默认 handler 映射审计：handler 必须属于已定义任务，且不能使用 `placeholder_job`、`noop_job` 或 `stub_job` 命名的空实现。
+
+# 2026-05-17 — Phase 10.46 World Risk Map 筛选态查询下推
+
+- World Risk Map 后端按 `source` 筛选只加载必要运行态数据；例如天气视图不再查询 alerts/news/signals/positions/event intelligence，signal 视图只通过已匹配 alert id 拉取关联信号。
+- 带 `symbol` / `mechanism` 的地图请求把 alerts、news、event intelligence items 和 impact links 的筛选下推到数据库，默认全局地图仍保持原先完整视角。
+- 增加 SQL 编译级测试，确认地图筛选态使用 `related_assets`、`affected_symbols`、`event_intelligence_items.symbols`、`event_impact_links.symbol/mechanism` 和 `signal_track.alert_id` 查询条件。
+
+# 2026-05-17 — Phase 10.47 Event Intelligence 查询索引收口
+
+- Event Intelligence API 的事件列表、影响链列表、质量门和审计日志查询抽成 statement helper，复用同一套 symbol / region / mechanism / status / action 筛选逻辑。
+- 新增 Alembic 迁移 `20260503_0021_event_intelligence_query_indexes.py`，为事件时间排序、状态筛选、mechanisms GIN、impact link scope 排序和 audit timeline 补组合索引。
+- 增加 SQL 编译级测试，确认事件智能列表、影响链、质量门 links 查询和审计日志查询携带数据库筛选条件；本地数据库已升级到 `20260503_0021` 并验证索引存在。
+
+# 2026-05-17 — Phase 10.48 Event Intelligence 快照接口
+
+- 新增 `/api/event-intelligence/snapshot`，按同一 symbol / region / mechanism / status 作用域一次返回事件列表、影响链和质量门摘要。
+- Event Intelligence 页面初载从事件列表、影响链、质量门三次并发请求收敛为一次快照请求，减少重复查询和初载期间的状态不一致。
+- 快照响应使用统一 helper 生成质量门报告，并补充单测覆盖 items、impact links 与 quality 的事件 ID 对齐关系。
+
+# 2026-05-17 — Phase 10.49 News Events 事件智能源作用域查询
+
+- 新增 `/api/event-intelligence/source-lookup`，按 `source_type + source_ids` 批量返回事件智能条目和对应影响链。
+- News Events 页面改为只查询当前新闻列表关联的事件智能结果，保留深链 event id 的详情兜底，避免历史事件智能增长后每次打开新闻页都拉全量数据。
+- 源作用域查询复用既有 `source_type/source_id` 唯一约束和事件时间排序，并补充 SQL 编译级测试确认过滤条件下推到数据库。
+
+# 2026-05-17 — Phase 10.50 News Events 查询下推
+
+- `/api/news-events` 新增 `direction` 和 `q` 筛选，`q` 同时匹配中英文标题、摘要和影响品种。
+- News Events 页面把搜索、事件类型和方向筛选传给后端，只保留本地即时过滤作为交互缓冲，减少无关新闻和无关事件智能链进入页面状态。
+- 新闻查询抽成 `_news_events_statement` 并补充 SQL 编译级测试，确认 source、symbol、event_type、direction、severity、verification_status 和 q 条件都在数据库侧执行。
+
+# 2026-05-17 — Phase 10.51 Alerts 查询下推
+
+- `/api/alerts` 新增 `severity`、`symbol`、`human_action_required`、`adversarial_passed` 和 `q` 筛选，默认仍排除 suppressed 预警。
+- Alerts 页面搜索框改为受控输入，并把文本搜索与严重度筛选传到后端；1-2 位英文/数字查询按品种精确匹配，避免 `I` 这类合约代码被当作普通字母模糊命中。
+- 预警查询抽成 `_alerts_statement`，补充 SQL 编译级测试和参数边界测试，确认状态、板块、严重度、品种、人工复核、对抗状态和文本搜索在数据库侧执行。
+
+# 2026-05-17 — Phase 10.52 Portfolio 风险快照接口
+
+- 新增 `/api/risk/portfolio-snapshot`，一次返回开放持仓、VaR、压力测试、相关性矩阵和最新行情行。
+- 后端复用同一批 open positions 和同一次 risk market data 查询，避免 Portfolio 首屏分别调用 `/api/positions`、`/api/risk/var`、`/api/risk/stress`、`/api/risk/correlation` 和 market latest。
+- Portfolio 前端改为读取组合快照，仍保留 degraded / unavailable_sections，用于区分行情不足、压力场景覆盖不足和相关性不可用。
+
+# 2026-05-18 — Phase 10.53 Runtime Heartbeat 快照
+
+- 新增 `/api/runtime/heartbeat`，专门服务顶部 HeartbeatBar 的高频轮询。
+- 前端顶栏从每 30 秒并发拉取 Causal Web、Drift、Threshold Calibration、Scheduler 四个接口，改为一次轻量摘要请求。
+- Heartbeat 摘要只查询活跃信号数量、最新运行态时间、Drift 状态、校准样本数和调度健康，避免为顶栏重复构造完整因果图和校准曲线。
+- 新增 `signal_track.created_at` 与 `(outcome, created_at)` 索引，支撑活跃信号计数和校准样本计数。
+
+# 2026-05-18 — Phase 10.54 Regression Smoke 契约
+
+- `scripts/local_smoke.sh` 新增 `--regression` 模式，在基础 compose / HTTP smoke 之后继续检查关键 API shape。
+- 回归模式覆盖 `/api/runtime/heartbeat`、`/api/causal-web?limit=8`、`/api/world-map`、`/api/alerts?limit=5` 和 `/api/recommendations?limit=5`。
+- 回归模式同步检查 `/causal-web`、`/event-intelligence`、`/trade-plans` 前端路由，避免页面路由或入口文案退化后只靠后端测试漏掉。
+- `docs/LOCAL_DEPLOYMENT.md` 和 `docs/CANVAS_BROWSER_VERIFICATION.md` 同步记录基础 smoke 与回归 smoke 的边界。
+
+# 2026-05-18 — Phase 10.55 World Map 短 TTL 缓存
+
+- `/api/world-map` 和 `/api/world-map/tiles` 新增 12 秒内存缓存，缓存键包含筛选条件、limit、瓦片层级、分辨率和视口。
+- 自动轮询默认复用短期缓存，降低 World Risk Map 重读接口对 Postgres 和 Python 构图逻辑的压力。
+- 前端手动刷新按钮传 `refresh=true`，后端绕过缓存并更新缓存；自动轮询和视口瓦片请求保持默认缓存语义。
+- 新增端点级回归测试，确认同一 key 命中缓存、`refresh=true` 触发重算，且缓存响应保持稳定的 `generatedAt`。
+
+# 2026-05-18 — Phase 10.56 Causal Web 短 TTL 缓存
+
+- `/api/causal-web` 新增 12 秒内存快照缓存，缓存键包含 limit、symbol、region 和事件智能 pinned event。
+- 首页预览、独立 Causal Web 页面和 AI Companion 在相同作用域下复用短期图谱结果，避免高频入口重复查询新闻、信号、预警、行情和事件智能链。
+- API 支持 `refresh=true` 绕过缓存并更新快照，保留后续手动刷新或诊断入口的强制重算能力。
+- 端点测试通过 monkeypatch builder 验证同 key 命中缓存、refresh 触发重算，并确认缓存响应的 `generated_at` 稳定。
+
+# 2026-05-18 — Phase 10.57 Settings 运行态快照
+
+- 新增 `/api/settings/snapshot`，一次返回数据源状态、调度健康、LLM 用量、LLM provider、预警去重、通知渠道和对抗运行态。
+- Settings 首屏默认只请求聚合快照，减少运维入口的并发请求数和初载期间多卡片状态不同步。
+- 前端保留旧分接口作为 snapshot 失败时的降级兜底，配置更新接口仍保持原路径，避免影响通知和对抗 warmup 的写入流程。
+- 回归 smoke 增加 Settings Snapshot 契约检查，确保关键运维字段不会因后续拆分而缺失。
+
+# 2026-05-18 — Phase 10.58 Market Data 批量查询缓存
+
+- `/api/market-data/latest` 和 `/api/market-data/recent` 新增 12 秒短 TTL 缓存，缓存键包含查询类型、标准化符号顺序和 recent limit。
+- 首页报价条、板块页报价条、板块快照和持仓映射在短时间重复访问同一批合约时复用缓存，减少行情窗口查询重复执行。
+- `refresh=true` 可绕过缓存强制读取，`POST /api/market-data` 写入新行情后会清空批量缓存，避免写入后继续读取旧快照。
+- 单测覆盖 latest 命中缓存、recent 按 limit 区分缓存，以及 refresh / 不同 limit 触发重算。
+
+# 2026-05-18 — Phase 10.59 Command Center 运行态摘要
+
+- Command Center 底部“校准进度”不再请求完整 `/api/shadow/calibration` 报告，改为读取 `/api/runtime/heartbeat` 中的轻量校准样本数。
+- `/api/runtime/heartbeat` 新增 10 秒短 TTL 缓存，缓存键包含 calibration lookback，顶栏和首页同时加载时会复用同一份运行态摘要。
+- Runtime Heartbeat 继续支持 `refresh=true` 强制重算，便于诊断时绕过缓存。
+- 新增端点测试覆盖 heartbeat 缓存命中和 refresh 重算，防止后续把顶栏/首页运行态摘要重新退化为多次重查询。
+
+# 2026-05-18 — Phase 10.60 复核负载压缩
+
+- 新增 Review Triage / attention score 设计，把人工注意力从事件级信息复核收敛到交易计划、生产变更和极端异常。
+- `event_intelligence` 入队前按影响分、置信度、来源可靠性、新鲜度、链路数量和复核原因分流为 `pending`、`shadow_review` 或 `evidence_only`。
+- 低注意力事件智能候选只写审计和证据池，不再占用 `change_review_queue` 的 pending 人工队列；中注意力候选保留为 shadow review，只有人工修改链路、高可信极端事件或生产 / 模型变更才进入人工复核。
+- `/api/alerts` 默认过滤过期预警，减少历史 `human_action_required` 噪声对当前人工视图和交易计划复核的干扰。
+- 新增每日 `cleanup` 调度 handler，过期且仍要求人工处理的预警会自动释放人工动作标记并标记为 `expired`。
+- Trade Plans 卡片新增“证据包摘要”，把支持要点、反证 / 待确认项和关键决策门槛压缩到最终交易候选上，减少人工横跳到新闻、预警和事件池逐条复核。
+- `/api/governance/reviews` 支持按 `triage_tier`、`min_attention_score` 和 `requires_human_attention` 筛选，并在响应里直接返回 attention score、分流层级和分流原因。
+- Governance 工作台新增分流统计、分流筛选和队列项 attention score 展示，明确区分“必须复核 / 影子观察 / 证据归档”。
+- Cleanup 调度从只释放过期人工预警，扩展为同时归档过期 active / pending 预警和 pending / pending_review 交易计划，避免 Trade Plans 与 Alerts 被陈旧机会污染。
+- `trade-plan-activation` 调度结果新增 `skip_reasons` 分项统计；交易计划候选生成器会返回 `unsupported_action`、`adversarial_failed`、`score_below_gate`、`missing_trade_legs`、`missing_entry_price` 等明确原因，用于继续提升真实交易计划生成率。
+- `trade-plan-activation` 默认只扫描交易计划有效窗口内的 `signal.scored`，避免每次调度被历史过期事件占满；alert 关联同时识别 `alert.created` 与 `alert.suppressed`，把去重抑制归因到 `alert_dedup_suppressed` 而不是误报为缺 alert。
+- 免费数据采集保留历史行情入库，但实时 `market.update.contexts` 默认只发布 24 小时内、或未超过 `DATA_SOURCE_MARKET_CONTEXT_MAX_AGE_HOURS` 的行情；过旧上下文会计入 `stale_market_contexts` 并让 ingest 结果降级，避免陈旧行情继续触发实时预警和交易计划。
+- 行情新鲜度对 AKShare/Tushare 日线采用本地交易日有效窗口：日期型日线先延展到本地下一日 00:00 再与实时闸门比较，避免 5 月 18 日线在 5 月 19 凌晨因原始 00:00 时间戳被误判为 stale；ingest 响应会返回 `stale_market_context_details`，包含品种、源、原始时间、freshness timestamp 和 age hours。
+- `freshness_timestamp` 会从 market context 透传到 `signal.scored` 和 alert，Alert / Trade Plan 的有效期按 freshness timestamp 计算；原始 `timestamp` 仍保留为行情数据日期，用于审计和图谱展示。
+- 方向交易候选现在先按信号语义和方向文本识别 `open_directional`，再用分数、置信度和对抗结果决定是否真正创建计划；低置信方向信号会归因到 `score_below_gate`，缺少明确方向的库存/波动信号会归因到 `missing_direction`，减少 `unsupported_action` 对生成率排查的噪声。
+- `TriggerResult` 新增结构化 `direction` 字段；NewsEvent、RubberSupplyShock、Momentum、PriceGap/EventDriven 和成本模型信号会直接输出 `bullish` / `bearish` / `mixed`。交易计划方向推断优先读取该字段，标题/摘要中的英文方向词只作为旧 payload 兜底。
+- `signal_track` 新增可空 `direction` 字段，实时信号入库时持久化结构化方向；事件智能 market ingress 会读取该方向并写入 `event_impact_links.direction`，旧数据没有方向时仍保持 `watch`。
+- 成本模型类信号在旧 `signal_track` 没有方向字段值时使用稳定类型规则兜底：`restart_expectation` 为偏多，`capacity_contraction`、`median_pressure`、`marginal_capacity_squeeze` 为偏空。所有市场入口候选仍只进入 shadow/review，不直接影响生产阈值。
+- `trade-plan-activation` 加载 `signal.scored` 时会按 payload 中的 `freshness_timestamp` / `timestamp` 过滤实际仍在交易计划有效窗口内的信号；最近才处理但底层行情已过期的历史信号不再占用扫描额度，也不再把 skip 统计淹没为 `stale_alert`。
+- `inventory_shock` 新增保守方向判定：库存显著增加视为偏空、库存显著下降视为偏多；无库存证据时，只有近 5 根价格冲击超过历史波动阈值才输出方向。库存与价格方向冲突时保持非方向证据，避免为了生成交易计划而硬凑方向。
+- 对抗引擎 warmup 语义收紧为真正的 observe-only：三项对抗检查继续完整记录，但 warmup 开启时不再把检查失败写成生产阻断，也不再对信号置信度施加 0.7 惩罚；交易计划激活同时兼容历史 warmup payload，避免旧事件因早期 `passed=false` 标记无法恢复。
+- Alert 去重粒度收紧：`signal_combination_hash` 去重必须同时匹配主合约和方向，且只用于不同 evaluator 的组合重复，避免同一板块/运行态组合把不同合约的预警全部压掉，也避免 24 小时组合窗口意外延长同 evaluator 的 12 小时重复窗口；同一合约重复预警如果分数较上次显著跃升，也允许重新进入后续交易计划评估。
+- 交易计划门槛使用 warmup 有效置信度：历史 `warmup_enabled=true` 且带有 `confidence_multiplier<1` 的 scored payload，会在交易计划评估时恢复到未惩罚前的有效置信度，并在风险项和 backtest summary 中记录恢复值；新 warmup 事件不再被惩罚，低置信新信号仍保持 `score_below_gate`。
+- 交易计划生成增加同品种/同方向聚合：实时 handler 和 `trade-plan-activation` 在创建前会复用未过期、同 action、同交易腿的计划，并把新增 alert 作为支持证据合并到主计划；补偿任务还会清理历史重复计划，将重复项标为 `ignored` 并回链到保留计划。
+- 非方向信号进入交易计划证据层而非下单层：`regime_shift`、缺方向 `inventory_shock` 这类上下文信号如果不能通过方向/分数门槛，不会创建交易建议；当同品种只有一个开放计划可承接时，会作为 `linked_context_alerts` 挂到主计划，保留运行态、波动和库存背景，但不提高计划分数。
+- 有方向但低于交易计划置信门槛的近门槛信号继续保持 `score_below_gate`，不会新建交易建议；如果同品种同方向已有开放计划，则作为弱上下文证据挂载，帮助最终计划解释“还有哪些边缘信号在同向共振”。
+- Event Intelligence Snapshot 复用短 TTL 缓存：同一筛选条件下 12 秒内复用 items、impact_links 和质量摘要，`refresh=true` 绕过缓存；影响链编辑、人工决策、新闻事件生成和语义增强成功后会清空缓存，避免治理页面频繁刷新重复打数据库。
+- 交易计划列表支持时间游标分页：`/api/recommendations` 新增可选 `before` 参数，查询固定按 `created_at desc, id desc` 排序，旧的 `limit/status_filter` 调用保持兼容，后续前端可安全实现“加载更多”而不引入大 offset。
+- 预警列表支持时间游标分页：`/api/alerts` 新增可选 `before` 参数，过滤条件继续全部下推到数据库，查询保持 `triggered_at desc, id desc` 稳定排序，便于后续预警页和交易计划证据链按时间增量加载。
+- 持仓列表支持时间游标分页：`/api/positions` 新增可选 `before` 参数，查询固定按 `opened_at desc, id desc` 排序，旧调用保持兼容，便于 Portfolio / Risk / 持仓监控视图增量读取历史持仓。
+- Event Intelligence 列表支持游标分页：`/api/event-intelligence` 新增 `before` 时间游标，`/api/event-intelligence/impact-links` 新增 `before_impact_score / before_confidence` 分数游标；事件列表仍按事件时间优先，影响链仍按影响分优先，避免为了分页改变阅读语义。
+- News Events 列表支持时间游标分页：`/api/news-events` 新增可选 `before` 参数，查询继续保留来源、品种、类型、方向、严重度、验证状态和文本筛选，并按 `published_at desc, id desc` 稳定排序，便于事件智能和新闻页按时间增量加载。
+- Governance Reviews 列表支持时间游标分页：`/api/governance/reviews` 新增可选 `before` 参数，查询继续下推状态、来源、目标表、分流层级、attention score 和人工注意力筛选，并按 `created_at desc, id desc` 稳定排序，便于治理工作台和影子复核队列增量加载。
+- User Feedback 列表支持时间游标分页：`/api/feedback` 新增可选 `before` 和 `recommendation_id` 参数，保留 `alert_id` 筛选，并按 `recorded_at desc, id desc` 稳定排序，便于交易计划反馈和学习报告增量读取。
+- Learning Hypotheses 列表支持时间游标分页：`/api/learning/hypotheses` 新增可选 `before` 参数，保留 `status_filter` 筛选，并按 `created_at desc, id desc` 稳定排序，便于反思假设、shadow testing 和 validated / applied 假设增量读取。
+- Shadow Runs 列表支持时间游标分页：`/api/shadow/runs` 新增可选 `before` 和 `status_filter` 参数，并按 `started_at desc, id desc` 稳定排序；Shadow Run report 的 `shadow_signal_rows` 改为数据库 `count(*)` 聚合，避免大规模 shadow 信号回放后为计数加载全部明细行。
+- Drift Metrics 列表支持时间游标分页：`/api/drift/metrics` 新增可选 `before`、`metric_type`、`category` 和 `drift_severity` 参数，并按 `computed_at desc, id desc` 稳定排序，便于 Drift 监控和校准复盘只读取目标窗口。
+- Market Data recent batch 支持时间游标分页：`/api/market-data/recent` 新增可选 `before` 参数，查询在每个 symbol 内按 `timestamp desc, id desc` 稳定排序，并把短 TTL 缓存键扩展到游标维度，避免不同历史页复用同一缓存结果。
+- Industry Data PIT 列表支持时间游标分页：`/api/industry-data` 新增可选 `before` 参数，PIT 查询保留 symbol / data_type / as_of / start / end 语义，并按 `timestamp desc, id desc` 稳定排序，便于天气、运费、库存、现货和宏观指标增量读取。
+- Arbitration Human Decisions 列表支持时间游标分页：`/api/arbitration/decisions` 新增可选 `before`、`signal_track_id` 和 `decision` 参数，保留 `alert_id` 筛选，并按 `created_at desc, id desc` 稳定排序，便于人工决策审计和交易计划复盘增量读取。
+- Strategies 列表支持时间游标分页：`/api/strategies` 新增可选 `before` 参数，保留 `status_filter` 筛选，并按 `created_at desc, id desc` 稳定排序，便于策略实验、回测配置和策略治理记录增量读取。
+- Cost Models 历史快照支持日期游标分页：`/api/cost-models/{symbol}/history` 与 `/api/cost-models/histories` 新增可选 `before` 参数，并按 `snapshot_date desc, created_at desc, id desc` 稳定排序，便于成本模型历史图、成本信号上下文和策略复盘增量读取。
+- Notebook 快照支持时间游标分页：`/api/notebook` 新增可选 `before` 参数，研究报告按 `published_at desc, id desc`、学习假设按 `updated_at desc, id desc`、研究假设按 `created_at desc, id desc` 拉取后合并，保持页面排序语义并支持研究笔记增量读取。
+- Calibration Dashboard 查询改为点时一致：active calibration 与 resolved tracks 的底层查询抽为可测试 statement；resolved tracks 增加 `created_at <= as_of` 过滤，避免未来样本进入历史仪表盘，并补 `id desc` 作为稳定排序兜底。
+- Calibration active lookup 统一查询口径：生产评分读取校准权重和治理应用校准变更共用 `_active_calibration_statement`，按 `effective_from <= as_of`、`effective_to is null/effective_to > as_of` 点时过滤，并以 `effective_from desc, computed_at desc, id desc` 稳定选择最新权重。
+- Calibration review 源样本保持点时一致：生成校准复核队列时，resolved signal 查询增加 `created_at <= as_of` 上界，并按 `created_at asc, id asc` 稳定排序，避免历史 as-of 复核引入未来样本。
+- Threshold Calibration 源样本查询稳定化：阈值校准报告复用可测试 `_threshold_source_tracks_statement`，保留 `created_at <= as_of` 点时上界，并按 `created_at asc, id asc` 稳定排序，保证可靠性曲线和阈值建议可复现。
+- Shadow Tracker pending signal 扫描保持点时一致：待评估 signal 查询增加 `created_at <= as_of` 上界，并按 `created_at asc, id asc` 稳定排序，避免历史 outcome 评估读取未来 pending 信号。
+- Shadow Comparison 样本顺序稳定化：shadow run 对比读取 shadow signals 和生产 signal tracks 时统一按 `created_at asc, id asc` 排序，保证 shadow-only / production-only 示例在同时间样本下可复现。
+- Vector Eval / Seed 查询稳定化：向量检索评估集和 seed chunk 查询抽为可测试 statement，统一按 `created_at asc, id asc` 排序，并补充对应复合索引，保证 embedding shadow gate 在同时间样本下可复现。
+- Hybrid Search 排序稳定化：raw SQL 生成抽为可测试 helper，内层 scored 候选和最终结果都在既有分数/时间排序后追加 `id desc`，避免同分同时间检索结果漂移。
+- Causal Web / World Map 查询稳定化：两个大画布运行态 API 的新闻、信号、预警、产业数据、最新行情、事件智能项/影响链和持仓查询都增加 `id desc` 兜底排序，减少同时间写入数据导致的节点、区域和证据链闪动。
+- Runtime Heartbeat drift 查询稳定化：运行态心跳的 drift 指标读取统一按 `computed_at desc, id desc` 排序，并补充 `drift_metrics(computed_at, id)` 复合索引，保证状态摘要和通知判断在同时间指标下可复现。
+- Event Intelligence 查询稳定化：source lookup、snapshot/detail 影响链、治理读取和 audit logs 统一追加 `id desc` 排序兜底，并补充事件项、影响链和审计日志的稳定排序复合索引，减少治理队列和事件智能页同分同时间数据的展示漂移。
+- Trade Plan 查询稳定化：交易计划激活和上下文联动查询统一追加 `id desc` 排序兜底，并补充 event_log 与 recommendations 的复合索引，减少同时间 signal.scored、alert result 和 open plan 扫描导致的交易计划候选顺序漂移。
+- Position 查询稳定化：风险快照、持仓数据新鲜度和持仓感知阈值缓存统一使用稳定排序，open position 按 `opened_at desc, id desc`，阈值缓存按 `monitoring_priority asc, id asc`，并补充对应复合索引。
+- Event Intelligence ingress 查询稳定化：同步入口的新闻、天气产业数据和行情信号扫描抽为可测试 statement，统一追加 `id desc` 兜底排序，并补充 `news_events(published_at, id)`、`industry_data(data_type, timestamp, ingested_at, id)`、`signal_track(created_at, id)` 复合索引，减少同时间数据导致的候选顺序漂移和同步排序开销。
+- Learning / Reflection 查询稳定化：反思 Agent 的信号、交易计划、用户反馈和 drift 输入快照，推荐归因报告，以及 drift signal 窗口读取都统一使用时间列 + `id` 排序；补充 `recommendations(created_at, id)` 与 `user_feedback(recorded_at, id)` 复合索引，保证学习假设和交易计划归因在同时间样本下可复现。
+- Notebook / Strategies 查询稳定化：研究笔记报告关联预警和回测质量运行态样本读取抽为可测试 statement，按 `triggered_at/created_at desc, id desc` 稳定排序；补充 `alerts(triggered_at, id)` 和 `alerts(related_research_id)` 索引，保证研究引用和回测质量摘要在同时间样本下可复现。
+- Review Load Cleanup 查询稳定化：过期预警、过期交易计划、事件智能待分流复核队列和影响链读取抽为可测试 statement，分别追加 `id` / `confidence` 兜底排序；补充 `alerts(status, expires_at, id)`、`recommendations(status, expires_at, id)` 和 `change_review_queue(source, target_table, status, created_at, id)` 索引，保证后台清理和分流顺序可复现。
+- PIT 数据查询稳定化：Market Data / Industry Data PIT 的窗口函数在 `vintage_at desc` 后追加 `id desc`，Market Data PIT 输出按 `timestamp desc, contract_month asc, id desc` 稳定排序；补充 `market_data(symbol, contract_month, timestamp, vintage_at, id)` 与 `industry_data(symbol, data_type, timestamp, vintage_at, id)` 索引，保证回测、场景和风险复盘读取同一 vintage 数据时可复现。
+- Risk Market Data 查询稳定化：风险市场数据读取复用 PIT 语义，并在 PIT 窗口、symbol 限额窗口和最终输出排序中追加 `id desc` 兜底，保证风险矩阵和持仓风险在同时间同 vintage 行情下可复现。
+- Translation Backfill 查询稳定化：新闻和预警翻译回填查询抽为可测试 statement，按业务时间后追加 `id desc` 兜底，并把 `translation_glossary_version is null` 纳入回填条件，保证旧数据 glossary 升级不会漏扫。
+- World Risk Map 天气层查询稳定化：天气 / 产业行读取抽为可测试 statement，按 `timestamp desc, ingested_at desc, id desc` 稳定排序；区域内最新天气行选择同步纳入 `id` 兜底，保证同一采集时间的地图热区和天气读数可复现。
+- Scenario 最新行情读取稳定化：场景推演 base price 查询抽为可测试 statement，按 `timestamp desc, vintage_at desc, id desc` 稳定选择最新行情，并补充 `market_data(symbol, timestamp, vintage_at, id)` 索引，避免同时间行情导致 Monte Carlo / What-if 起始价漂移。
+- LLM Active Config 查询稳定化：数据库启用 provider 选择抽为可测试 statement，按 `updated_at desc, id desc` 稳定选择最新配置，并补充 `llm_config(enabled, updated_at, id)` 索引，避免多个 provider 同时更新时选模结果漂移。
+- Null Hypothesis 查询稳定化：零假设缓存和源信号扫描抽为可测试 statement，缓存读取按 `computed_for desc, id desc` 稳定选择，源信号扫描增加 `created_at <= as_of` 点时上界并按 `created_at asc, id asc` 输出，保证历史对抗分布不会混入未来样本。
+- Event Relay / Replay 查询稳定化：事件 outbox pending 发布与 published 事件重放查询抽为可测试 statement，按 `created_at asc, id asc` 稳定输出，并补充 `event_log(status, created_at, id)` 索引，保证同时间事件 relay / replay 可复现。
+- Shadow Active Run 查询稳定化：active shadow run 扫描抽为可测试 statement，保留点时窗口过滤，并按 `started_at asc, id asc` 稳定输出；补充 `shadow_runs(status, started_at, ended_at, id)` 索引，保证同时间 shadow 实验处理顺序可复现。
+- Position Propagation 图谱邻居查询稳定化：持仓传播的关系边查询抽为可测试 statement，按 `strength desc, id asc` 稳定输出，并补充 source / target 方向的 strength 复合索引，保证同强度边不会改变传播节点顺序。
+- Watchlist 扫描顺序稳定化：实时监控列表查询按 `priority asc, symbol1 asc, symbol2 asc, id asc` 稳定输出，并补充 `watchlist(enabled, category, priority, symbol1, symbol2, id)` 索引，保证同优先级组合扫描可复现。
+- Backtest PIT Universe 查询稳定化：活跃商品 universe 查询抽为可测试 statement，按 `symbol asc, id asc` 稳定输出，并补充 commodity history 活跃窗口和 symbol 复合索引，保证重复历史区间不会改变回测 universe 顺序。
+- 主力合约元数据查询稳定化：当前主力与目标合约查询抽为可测试 statement，当前主力按 `main_from desc nulls last, updated_at desc, id desc` 稳定取一，目标合约按 `updated_at desc, id desc` 稳定取一，并补充 current lookup 复合索引，保证异常重复 active row 下主力切换处理可复现。
+- 主力合约快照 tie-break 稳定化：合约月快照选择从只按行情时间排序升级为按 `timestamp/vintage_at/ingested_at/id` 排序，保证同一合约月同一时间出现重复修订行时稳定选择最新快照。
+- 主力合约日度 leader tie-break 稳定化：日内候选合约流动性分数打平时，按 `liquidity_score/open_interest/volume/contract_month` 稳定选择 leader，避免输入顺序影响主力切换判断。
+- Regime State upsert 查询稳定化：category/date 写入查询抽为可测试 statement，按 `computed_at desc, id desc` 稳定取一，保证异常重复 regime row 下校准状态刷新可复现。
+- Regime Switching Drift 窗口查询稳定化：漂移监控的 regime 窗口按 category/date 分区只取最新 `computed_at/id` 的 regime row，再按日期输出，避免异常重复 regime row 被计入切换次数。
+- 持仓驱动 Watchlist upsert 查询稳定化：symbol pair/category 查找抽为可测试 statement，按 `updated_at desc, id desc` 稳定取一，并补充 symbol pair/category lookup 复合索引，保证异常重复 watchlist row 下持仓监控阈值刷新可复现。
+- Causal Web 关联 Alert 查询稳定化：信号关联的 alert id 批量查询抽为可测试 statement，并按 `triggered_at desc, id desc` 稳定输出，避免数据库 `IN` 返回顺序影响图谱补充预警节点顺序。
+- Alert Agent Config 查询稳定化：通知设置、阈值设置和 adversarial runtime 配置共用可测试 statement，按 `updated_at desc, id desc` 稳定取一，并补充 key/updated/id 复合索引，保证异常重复配置行下运行态设置读取可复现。
+- Review Queue active lookup 稳定化：复核入队去重查询抽为可测试 statement，按 `created_at asc, id asc` 稳定复用最早待处理项，并补充 source/table/key/status/created/id 复合索引，保证异常重复复核项下治理队列行为可复现。
+- LLM Budget active lookup 稳定化：预算检查和成本累加共用可测试 statement，按 `updated_at desc, id desc` 稳定选择最新 active budget，并补充 module/period/status/updated/id 复合索引，保证异常重复预算行下成本控制行为可复现。
+- Alert Dedup 组合哈希查询稳定化：同 symbol/direction/evaluator 查找和跨 evaluator 组合哈希查找抽为可测试 statement，组合哈希按 `last_emitted_at desc, updated_at desc, id desc` 取最新记录，并补充 hash/symbol/direction/emitted/updated/id 复合索引，保证重复预警抑制不会因旧缓存行漂移。
+- Event Intelligence 复核 lookup 统一化：事件智能 open review 查询复用治理队列 active lookup statement，按 `created_at asc, id asc` 稳定复用最早待处理项，保证事件智能页面、人工决策入口和治理队列使用同一重复复核项口径。
+- Position Propagation 商品节点 lookup 稳定化：持仓传播按 symbol 查找商品图谱节点时抽为可测试 statement，并按 `id asc` 兜底排序，保证异常重复节点下持仓联动监控入口可复现。
+- Alert Router 校准历史点时化：`lacks_history` 按当前路由时间过滤 `effective_from/computed_at <= as_of`，并按 `effective_from desc, computed_at desc, id desc` 稳定选择历史校准；补充 signal_type/category/regime/effective/computed/id 复合索引，保证未来校准记录不会提前影响人工/LLM 路由。
+- Trade Plan 开放计划复用口径统一化：开放交易计划扫描改为按 `created_at asc, id asc` 选择最早主计划，与重复计划合并保留主计划的口径一致，保证新增证据不会先挂到较新的重复计划后再被搬迁。
+- Event Intelligence Resolver source lookup 统一化：规则解析、草稿创建和 LLM 语义增强共用可测试 source item / impact link 查询，source item 按 `created_at asc, id asc` 稳定复用最早记录，impact links 统一按 `impact_score desc, confidence desc, id desc` 输出，保证事件作用域读取口径不分叉。
+- Trade Plan 补偿任务 alert lookup 放宽相关商品匹配：按 JSONB `related_assets` 包含主商品查询，而不是只匹配数组第一项，避免多商品预警顺序变化导致 `missing_alert`，提升历史 `signal.scored` 补回交易计划的成功率。
+- Trade Plan 候选评估支持点时 `as_of` 过期判断：补偿任务按调度评估时间判断信号是否仍有效，避免历史回放 / 补偿时把指定时间点仍有效的 `signal.scored` 误判为 `stale_signal`。
+- Trade Plan 开放计划匹配下推 action / legs JSONB 过滤：候选复用和上下文证据挂载不再只扫描最早 100 条开放计划，并补充 `recommendations.legs` GIN 索引，降低开放计划增长后重复生成或漏挂证据的风险。
+- Trade Plan 匹配键 legs 顺序无关化：`trade_plan_match_key` 按 `(asset, direction)` 排序后匹配，避免同一价差 / 组合计划仅因 legs 顺序不同而无法复用、合并或挂载证据。
+- 新闻 dedup hash 商品归一化：affected symbols 统一去空格、转大写、去重和排序，避免不同采集器带空格或重复商品时把同一新闻写成多条事件。
+- 校准 / 对抗组合 hash 归一化：signal type、category、regime 和相关商品统一清洗后参与 hash 与历史候选匹配，避免大小写、空格或重复商品把同一组合拆成不同历史桶。
+- 结构反证商品归一化：图谱节点查询和结构边匹配统一清洗 symbol，并对结构边读取增加 `strength desc, id asc` 稳定排序，避免空格 / 大小写差异导致反证边漏匹配。
+- Alert Router 信号作用域归一化：fuzzy 多信号判断、校准历史 lookup 和反馈提示统一清洗 signal type / category / regime，避免大小写或空格触发错误 LLM 仲裁 / 无历史判断。
+- Alert Dedup key 归一化：primary symbol、evaluator 和 severity 统一清洗，lookup statement 也防御式归一化，避免空格 / 大小写或空 related asset 导致重复预警漏抑制。
+- Alert 分类 / one-liner 归一化：分类等级和短文案统一复用 symbol / severity 清洗口径，避免空 related asset、重复 symbol 或大小写差异影响等级与展示。
+- Shadow Tracker 归因 symbol 归一化：outcome 评估读取 PIT 行情前跳过空 related asset，并对 related assets / spread leg 去空格、转大写，避免脏输入导致行情查询漏命中。
+- Causal Web symbol 归一化：新闻 / 预警节点、展示去重 key 和边匹配集合统一清洗 symbol，避免空格 / 大小写导致重复节点、错分板块或联动漏边。
+- World Risk Map symbol 归一化：预警匹配、事件智能区域匹配、展示去重 key 和区域交集统一清洗 base symbol；标题商品码提取改为 token 级识别，避免合约月、空格、大小写或英文子串导致地图区域漏命中 / 误命中。
+- 运行态列表筛选 symbol 归一化：Alerts、News Events 和 Event Intelligence 的列表 / 快照 symbol 查询统一清洗为 root symbol，避免 `RU2509`、空格或大小写导致深链和筛选器漏查运行态证据。
+- Market Data / Causal Web 深链 symbol 归一化：最新价格、历史价格、行情指标和因果网络作用域统一接受合约输入并折叠到 root symbol，避免 `SC2509` 查不到 `SC` 的当前价格或因果证据。
+- Risk API symbol 归一化：持仓腿、相关性查询和风险行情读取统一折叠到 root symbol，匹配 Zeus 行情表的 `symbol + contract_month` 分列存储，避免 `RB2506` 持仓查不到 `RB` 行情导致 VaR / 相关性 / 风险快照降级。
+- Risk API 主序列行情去重：风险行情读取按 `symbol + timestamp` 做 PIT 去重，并优先选择 `contract_month = main` 的最新修订行，避免同一品种同一天多个合约月混入 VaR / 相关性序列造成虚假收益。
+- Position Risk symbol 归一化：持仓风险重算的集中度、行情读取和相关性矩阵统一使用 root symbol，避免 `RU2509 / NR2510` 这类合约腿和 root 行情 key 不一致，导致相关性为空或同一商品风险被拆散。
+- Portfolio Fit symbol 归一化：交易计划组合适配分和持仓反向冲突提示统一按 root symbol 比较，避免 `RU2509` 计划腿与 `RU` 持仓被误判为不重叠，从而高估组合适配分。
+- Trade Plan 匹配键 root 化：交易计划生成、上下文挂载和重复计划合并的 legs match key 统一按 root symbol 比较，并在 root JSONB 预筛选未命中时兜底扫描开放计划，避免历史合约腿计划无法被新 root 计划复用。
+- Trade Plan 上下文挂载兜底：弱上下文信号查找开放计划时，root JSONB 预筛选未命中或无方向信号需要排除多方向冲突时，会兜底扫描开放计划并按 root symbol 比较，避免历史合约腿计划漏挂证据或误挂到多方向计划。
+- Trade Plan 补偿 alert lookup root 化：历史 `signal.scored` 回查 `alert.created/alert.suppressed` 时统一把合约符号折叠到 root symbol，避免 `RU2509` scored 事件查不到按 `RU` 存储的告警结果而误报 `missing_alert`。
+- Event Intelligence impact link 分页稳定化：impact link 列表游标补充 `before_id`，与 `impact_score desc, confidence desc, id desc` 排序完全对齐，并为 symbol / region / mechanism / status 过滤下的 keyset 查询补充复合索引，避免同分同置信度 link 在分页边界重复或跳过。
+- Event Intelligence item 分页稳定化：事件智能主列表游标补充 `before_impact_score` 和 `before_id`，与 `event_timestamp desc, impact_score desc, id desc` 排序完全对齐，避免同时间事件在分页边界被跳过。
+- Market Data 批量最新 / 近期窗口稳定化：`/api/market-data/latest` 和 `/api/market-data/recent` 的窗口函数在 `timestamp/vintage/main/ingested` 打平时追加 `id desc`，避免重复修订行情导致报价条、板块页和持仓快照读取结果漂移。
+- Alerts 列表分页稳定化：告警列表游标补充 `before_id`，与 `triggered_at desc, id desc` 排序完全对齐，并补充 status/category 过滤下的 triggered/id 复合索引，避免同一触发时间的告警分页跳过或重复。
+- News Events 列表分页稳定化：新闻事件列表游标补充 `before_id`，与 `published_at desc, id desc` 排序完全对齐，并补充 source/event_type/verification 过滤下的 published/id 复合索引，避免同发布时间新闻分页跳过或重复。
+- Recommendations 列表分页稳定化：交易计划列表游标补充 `before_id`，与 `created_at desc, id desc` 排序完全对齐，并补充 status 过滤下的 created/id 复合索引，避免同一创建时间的交易建议分页跳过或重复。
+- LLM Usage / Settings Snapshot module 归一化：成本统计与设置页入口统一清洗 `module`，并对查询参数增加长度边界，避免大小写、空格或超长输入导致成本视图读到错误空结果。
+- LLM Budget module 归一化：预算检查、扣费和 active budget lookup 复用同一 `module` 清洗口径，避免调用方传入大小写或空格变体时绕过预算控制。
+- LLM Cache provider/model 归一化：cache key 清洗 provider 与 model，缓存行写入同步清洗 module/provider/model，避免配置空格或大小写变体导致缓存命中率下降。
+- LLM Usage Log provider/model 归一化：使用日志写入时同步清洗 provider 与 model，避免成本审计或后续 provider/model 维度分析被配置变体拆散。
+- LLM Registry 配置读取归一化：数据库 provider 和环境 model 读取复用同一身份清洗口径，避免配置空格导致 provider 失效或模型名带空格透传到请求。
+- Settings LLM Providers 视图归一化：设置页环境 provider 读取复用模型名和 base_url 清洗口径，避免 UI 展示与实际 Registry 路由口径不一致。
+- Free Data Ingest 配置归一化：采集入口对 key / token / URL 去空白后再判断和传递，避免 Settings 已标记 missing 的空白配置在运行时仍触发外部请求。
+- 治理 / 反馈 / 持仓 / 策略列表分页稳定化：补齐 `before_id` 游标条件，同时间戳数据会按 `id desc` 继续翻页，避免 keyset 分页边界丢行。
+- Drift / Arbitration / Learning / Shadow 列表分页稳定化：补齐 `before_id` 游标条件，使运行态指标、人工决策、学习假设和 Shadow Run 的分页条件与 `时间 desc, id desc` 排序一致。
+- Notebook 混合流分页稳定化：新增 `before_id + before_kind` 游标，并把报告、学习假设、研究假设按 kind rank + id 明确排序，避免同时间跨表条目在翻页边界被跳过。
+- Cost Models 历史分页稳定化：单品种和批量 histories 新增 `before_created_at + before_id` 复合游标，保持日期游标兼容，同时支持同一 `snapshot_date` 下继续按创建时间和 id 翻页。

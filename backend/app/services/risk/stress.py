@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import re
 from statistics import mean
 
 from app.services.risk.types import (
@@ -10,6 +9,7 @@ from app.services.risk.types import (
     StressScenario,
     StressTestResult,
 )
+from app.services.symbols import normalize_root_symbol
 
 
 STRESS_SCENARIOS: tuple[StressScenario, ...] = (
@@ -185,7 +185,7 @@ def _returns_by_symbol(
 
 
 def symbol_prefix(symbol: str) -> str:
-    return re.sub(r"\d+", "", symbol).upper()
+    return normalize_root_symbol(symbol) or ""
 
 
 def _std_dev(values: list[float], avg: float) -> float:

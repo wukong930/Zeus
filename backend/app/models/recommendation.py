@@ -12,9 +12,23 @@ class Recommendation(Base):
     __tablename__ = "recommendations"
     __table_args__ = (
         Index("ix_recommendations_status", "status"),
+        Index("ix_recommendations_status_created_at", "status", "created_at"),
+        Index("ix_recommendations_status_created_id", "status", "created_at", "id"),
+        Index("ix_recommendations_status_expires_at", "status", "expires_at"),
+        Index("ix_recommendations_status_expires_id", "status", "expires_at", "id"),
+        Index(
+            "ix_recommendations_status_expires_created_id",
+            "status",
+            "expires_at",
+            "created_at",
+            "id",
+        ),
         Index("ix_recommendations_strategy_id", "strategy_id"),
         Index("ix_recommendations_alert_id", "alert_id"),
+        Index("ix_recommendations_alert_created_id", "alert_id", "created_at", "id"),
+        Index("ix_recommendations_legs", "legs", postgresql_using="gin"),
         Index("ix_recommendations_created_at", "created_at"),
+        Index("ix_recommendations_created_id", "created_at", "id"),
         Index("ix_recommendations_actual_exit_reason", "actual_exit_reason"),
     )
 

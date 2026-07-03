@@ -1,7 +1,8 @@
+from datetime import datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -17,13 +18,20 @@ router = APIRouter(prefix="/api/feedback", tags=["feedback"])
 @router.get("", response_model=list[UserFeedbackRead])
 async def list_feedback(
     alert_id: UUID | None = None,
+    recommendation_id: UUID | None = None,
+    before: datetime | None = Query(default=None),
+    before_id: UUID | None = Query(default=None),
     limit: int = Query(default=100, ge=1, le=500),
     session: AsyncSession = Depends(get_db),
 ) -> list[UserFeedback]:
-    statement = select(UserFeedback).order_by(UserFeedback.recorded_at.desc())
-    if alert_id is not None:
-        statement = statement.where(UserFeedback.alert_id == alert_id)
-    return list((await session.scalars(statement.limit(limit))).all())
+    statement = _feedback_statement(
+        alert_id=alert_id,
+        recommendation_id=recommendation_id,
+        before=before,
+        before_id=before_id,
+        limit=limit,
+    )
+    return list((await session.scalars(statement)).all())
 
 
 @router.post("", response_model=UserFeedbackRead)
@@ -59,3 +67,35 @@ async def require_feedback_targets(
         and await session.get(Recommendation, payload.recommendation_id) is None
     ):
         raise HTTPException(status_code=404, detail="Recommendation not found")
+
+
+def _feedback_statement(
+    *,
+    alert_id: UUID | None,
+    recommendation_id: UUID | None,
+    before: datetime | None,
+    limit: int,
+    before_id: UUID | None = None,
+):
+    statement = select(UserFeedback).order_by(
+        UserFeedback.recorded_at.desc(),
+        UserFeedback.id.desc(),
+    )
+    if alert_id is not None:
+        statement = statement.where(UserFeedback.alert_id == alert_id)
+    if recommendation_id is not None:
+        statement = statement.where(UserFeedback.recommendation_id == recommendation_id)
+    if before is not None:
+        if before_id is not None:
+            statement = statement.where(
+                or_(
+                    UserFeedback.recorded_at < before,
+                    and_(
+                        UserFeedback.recorded_at == before,
+                        UserFeedback.id < before_id,
+                    ),
+                )
+            )
+        else:
+            statement = statement.where(UserFeedback.recorded_at < before)
+    return statement.limit(limit)

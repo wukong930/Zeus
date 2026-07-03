@@ -45,6 +45,12 @@ class InventoryShockEvaluator:
                 earlier_avg = mean(point.value for point in earlier_inventory)
                 inventory_change_ratio = (recent_avg - earlier_avg) / earlier_avg if earlier_avg > 0 else 0.0
                 inventory_detected = abs(inventory_change_ratio) > 0.15
+        direction, direction_basis, price_impulse = inventory_shock_direction(
+            closes=closes,
+            historical_vol=historical_vol,
+            inventory_change_ratio=inventory_change_ratio,
+            inventory_detected=inventory_detected,
+        )
 
         range_triggered = range_ratio > 1.8
         vol_triggered = vol_ratio > 1.6
@@ -92,6 +98,21 @@ class InventoryShockEvaluator:
                 f"Range ratio expanded {range_ratio:.2f}x." if range_triggered else "",
                 f"Volatility rose {vol_ratio:.2f}x." if vol_triggered else "",
                 f"Inventory changed {inventory_change_ratio * 100:.1f}%." if inventory_detected else "",
+                (
+                    f"Price impulse {price_impulse * 100:.2f}% supports {direction} direction."
+                    if direction_basis == "price_impulse" and direction is not None
+                    else ""
+                ),
+                (
+                    f"Inventory signal supports {direction} direction."
+                    if direction_basis == "inventory_change" and direction is not None
+                    else ""
+                ),
+                (
+                    "Inventory and price impulse conflict; keep this as non-directional evidence."
+                    if direction_basis == "conflict"
+                    else ""
+                ),
                 "Verify latest inventory and operating-rate data.",
             ],
             manual_check_items=[
@@ -104,6 +125,7 @@ class InventoryShockEvaluator:
                 f"{context.symbol1} inventory shock signal: range {range_ratio:.2f}x, "
                 f"volatility {vol_ratio:.2f}x."
             ),
+            direction=direction,
         )
 
     def evaluate_outcome(
@@ -113,3 +135,41 @@ class InventoryShockEvaluator:
         horizon_days: int,
     ) -> OutcomeEvaluation:
         return range_expansion_outcome(market_data=market_data, horizon_days=horizon_days)
+
+
+def inventory_shock_direction(
+    *,
+    closes: list[float],
+    historical_vol: float,
+    inventory_change_ratio: float,
+    inventory_detected: bool,
+) -> tuple[str | None, str | None, float]:
+    inventory_direction = None
+    if inventory_detected:
+        inventory_direction = "bearish" if inventory_change_ratio > 0 else "bullish"
+
+    price_impulse = recent_price_impulse(closes)
+    price_direction = None
+    threshold = max(0.015, historical_vol * 2.5)
+    if abs(price_impulse) >= threshold:
+        price_direction = "bullish" if price_impulse > 0 else "bearish"
+
+    if inventory_direction is not None and price_direction is not None:
+        if inventory_direction != price_direction:
+            return None, "conflict", price_impulse
+        return inventory_direction, "inventory_change", price_impulse
+    if inventory_direction is not None:
+        return inventory_direction, "inventory_change", price_impulse
+    if price_direction is not None:
+        return price_direction, "price_impulse", price_impulse
+    return None, None, price_impulse
+
+
+def recent_price_impulse(closes: list[float]) -> float:
+    if len(closes) < 6:
+        return 0.0
+    previous = closes[-6]
+    current = closes[-1]
+    if previous <= 0 or current <= 0:
+        return 0.0
+    return (current - previous) / previous

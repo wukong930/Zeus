@@ -133,42 +133,18 @@ async def build_reflection_input_snapshot(
     period_end = as_of or datetime.now(timezone.utc)
     period_start = period_end - timedelta(days=lookback_days)
     signal_rows = (
-        await session.scalars(
-            select(SignalTrack)
-            .where(SignalTrack.created_at >= period_start, SignalTrack.created_at <= period_end)
-            .order_by(SignalTrack.created_at.desc())
-            .limit(max_rows)
-        )
+        await session.scalars(_reflection_signal_rows_statement(period_start, period_end, max_rows))
     ).all()
     recommendation_rows = (
         await session.scalars(
-            select(Recommendation)
-            .where(
-                Recommendation.created_at >= period_start,
-                Recommendation.created_at <= period_end,
-            )
-            .order_by(Recommendation.created_at.desc())
-            .limit(max_rows)
+            _reflection_recommendation_rows_statement(period_start, period_end, max_rows)
         )
     ).all()
     feedback_rows = (
-        await session.scalars(
-            select(UserFeedback)
-            .where(
-                UserFeedback.recorded_at >= period_start,
-                UserFeedback.recorded_at <= period_end,
-            )
-            .order_by(UserFeedback.recorded_at.desc())
-            .limit(max_rows)
-        )
+        await session.scalars(_reflection_feedback_rows_statement(period_start, period_end, max_rows))
     ).all()
     drift_rows = (
-        await session.scalars(
-            select(DriftMetric)
-            .where(DriftMetric.computed_at >= period_start, DriftMetric.computed_at <= period_end)
-            .order_by(DriftMetric.computed_at.desc())
-            .limit(max_rows)
-        )
+        await session.scalars(_reflection_drift_rows_statement(period_start, period_end, max_rows))
     ).all()
     return ReflectionInputSnapshot(
         period_start=period_start,
@@ -177,6 +153,64 @@ async def build_reflection_input_snapshot(
         recommendations=[_sanitize_recommendation(row) for row in recommendation_rows],
         feedback=[_sanitize_feedback(row) for row in feedback_rows],
         drift=[_sanitize_drift(row) for row in drift_rows],
+    )
+
+
+def _reflection_signal_rows_statement(
+    period_start: datetime,
+    period_end: datetime,
+    max_rows: int,
+):
+    return (
+        select(SignalTrack)
+        .where(SignalTrack.created_at >= period_start, SignalTrack.created_at <= period_end)
+        .order_by(SignalTrack.created_at.desc(), SignalTrack.id.desc())
+        .limit(max_rows)
+    )
+
+
+def _reflection_recommendation_rows_statement(
+    period_start: datetime,
+    period_end: datetime,
+    max_rows: int,
+):
+    return (
+        select(Recommendation)
+        .where(
+            Recommendation.created_at >= period_start,
+            Recommendation.created_at <= period_end,
+        )
+        .order_by(Recommendation.created_at.desc(), Recommendation.id.desc())
+        .limit(max_rows)
+    )
+
+
+def _reflection_feedback_rows_statement(
+    period_start: datetime,
+    period_end: datetime,
+    max_rows: int,
+):
+    return (
+        select(UserFeedback)
+        .where(
+            UserFeedback.recorded_at >= period_start,
+            UserFeedback.recorded_at <= period_end,
+        )
+        .order_by(UserFeedback.recorded_at.desc(), UserFeedback.id.desc())
+        .limit(max_rows)
+    )
+
+
+def _reflection_drift_rows_statement(
+    period_start: datetime,
+    period_end: datetime,
+    max_rows: int,
+):
+    return (
+        select(DriftMetric)
+        .where(DriftMetric.computed_at >= period_start, DriftMetric.computed_at <= period_end)
+        .order_by(DriftMetric.computed_at.desc(), DriftMetric.id.desc())
+        .limit(max_rows)
     )
 
 

@@ -1,12 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import {
-  fetchCausalWebGraph,
-  fetchDriftSnapshot,
-  fetchSchedulerSnapshot,
-  fetchThresholdCalibrationReport,
-} from "@/lib/api";
+import { fetchRuntimeHeartbeatSnapshot } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { useI18n, type Language } from "@/lib/i18n";
 
@@ -118,46 +113,23 @@ export function HeartbeatBar() {
 }
 
 async function fetchHeartbeatRuntimeState(): Promise<HeartbeatRuntimeState> {
-  const [graphResult, driftResult, calibrationResult, schedulerResult] = await Promise.allSettled([
-    fetchCausalWebGraph(),
-    fetchDriftSnapshot(),
-    fetchThresholdCalibrationReport(),
-    fetchSchedulerSnapshot(),
-  ]);
-
-  const graph = graphResult.status === "fulfilled" ? graphResult.value : null;
-  const drift = driftResult.status === "fulfilled" ? driftResult.value : null;
-  const calibration = calibrationResult.status === "fulfilled" ? calibrationResult.value : null;
-  const scheduler = schedulerResult.status === "fulfilled" ? schedulerResult.value : null;
-  const failedCount = [graphResult, driftResult, calibrationResult, schedulerResult].filter(
-    (result) => result.status === "rejected"
-  ).length;
-  const schedulerDegraded = Boolean(
-    scheduler?.health.degraded_jobs.length ||
-      scheduler?.health.warning_jobs.length ||
-      scheduler?.health.unconfigured_jobs.length
-  );
+  const snapshot = await fetchRuntimeHeartbeatSnapshot();
+  const schedulerDegraded = snapshot.status === "scheduler_degraded";
 
   return {
-    refreshedAt: latestIso([graph?.generated_at, drift?.generated_at, drift?.latest_at]),
-    activeSignals: graph
-      ? graph.nodes.filter((node) => node.type === "signal" && node.active).length
-      : null,
-    drift: drift?.notification?.should_notify
-      ? drift.notification.title
-      : driftLabel(drift?.status),
-    driftStatus: driftTone(drift?.status),
-    driftNotify: Boolean(drift?.notification?.should_notify),
-    calibrationSamples: calibration?.samples ?? null,
+    refreshedAt: latestIso([snapshot.latest_at, snapshot.generated_at]),
+    activeSignals: snapshot.active_signals,
+    drift: snapshot.drift.notification.should_notify
+      ? snapshot.drift.notification.title
+      : driftLabel(snapshot.drift.status),
+    driftStatus: driftTone(snapshot.drift.status),
+    driftNotify: snapshot.drift.notification.should_notify,
+    calibrationSamples: snapshot.calibration.samples,
     status:
-      failedCount === 4
-        ? "接口降级"
-        : failedCount > 0
-          ? "部分降级"
-          : schedulerDegraded
-            ? "调度降级"
-            : "运行态",
-    statusTone: failedCount === 4 ? "alert" : failedCount > 0 || schedulerDegraded ? "warning" : "healthy",
+      schedulerDegraded
+        ? "调度降级"
+        : "运行态",
+    statusTone: schedulerDegraded ? "warning" : "healthy",
   };
 }
 

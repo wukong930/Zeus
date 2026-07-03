@@ -3,8 +3,11 @@ from uuid import uuid4
 
 import pytest
 from fastapi import HTTPException
+from fastapi.testclient import TestClient
+from sqlalchemy.dialects import postgresql
 
-from app.api.feedback import require_feedback_targets
+from app.api.feedback import _feedback_statement, require_feedback_targets
+from app.main import create_app
 from app.models.alert import Alert
 from app.models.recommendation import Recommendation
 from app.models.user_feedback import UserFeedback
@@ -181,3 +184,30 @@ async def test_feedback_accepts_existing_recommendation_target() -> None:
         FakeSession(recommendation=recommendation),  # type: ignore[arg-type]
         _feedback_payload(recommendation_id=recommendation.id),
     )
+
+
+def test_feedback_list_rejects_invalid_cursor() -> None:
+    client = TestClient(create_app())
+
+    response = client.get("/api/feedback?before=not-a-date")
+
+    assert response.status_code == 422
+
+
+def test_feedback_statement_filters_recommendation_and_uses_stable_cursor() -> None:
+    sql = str(
+        _feedback_statement(
+            alert_id=uuid4(),
+            recommendation_id=uuid4(),
+            before=datetime(2026, 5, 18, 12, tzinfo=timezone.utc),
+            before_id=uuid4(),
+            limit=20,
+        ).compile(dialect=postgresql.dialect())
+    )
+
+    assert "user_feedback.alert_id =" in sql
+    assert "user_feedback.recommendation_id =" in sql
+    assert "user_feedback.recorded_at <" in sql
+    assert "user_feedback.id <" in sql
+    assert "ORDER BY user_feedback.recorded_at DESC, user_feedback.id DESC" in sql
+    assert "LIMIT" in sql

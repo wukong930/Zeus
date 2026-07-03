@@ -5,7 +5,7 @@ from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select
+from sqlalchemy import Float, and_, cast, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -14,12 +14,14 @@ from app.schemas.governance import (
     ChangeReviewDecisionCreate,
     ChangeReviewRead,
     GOVERNANCE_REVIEW_STATUS_PATTERN,
+    GOVERNANCE_REVIEW_TRIAGE_TIER_PATTERN,
 )
 from app.services.event_intelligence.governance import (
     EVENT_INTELLIGENCE_REVIEW_SOURCE,
     EVENT_INTELLIGENCE_REVIEW_TABLE,
     apply_event_intelligence_decision,
 )
+from app.services.governance.appliers import apply_approved_change
 
 router = APIRouter(prefix="/api/governance", tags=["governance"])
 
@@ -46,17 +48,85 @@ async def list_change_reviews(
     ),
     source: str | None = Query(default=None, min_length=1, max_length=40),
     target_table: str | None = Query(default=None, min_length=1, max_length=80),
+    triage_tier: str | None = Query(
+        default=None,
+        pattern=GOVERNANCE_REVIEW_TRIAGE_TIER_PATTERN,
+    ),
+    min_attention_score: float | None = Query(default=None, ge=0, le=100),
+    requires_human_attention: bool | None = None,
+    before: datetime | None = Query(default=None),
+    before_id: UUID | None = Query(default=None),
     limit: int = Query(default=100, ge=1, le=500),
     session: AsyncSession = Depends(get_db),
 ) -> list[ChangeReviewQueue]:
-    statement = select(ChangeReviewQueue).order_by(ChangeReviewQueue.created_at.desc())
+    statement = change_reviews_statement(
+        status_filter=status_filter,
+        source=source,
+        target_table=target_table,
+        triage_tier=triage_tier,
+        min_attention_score=min_attention_score,
+        requires_human_attention=requires_human_attention,
+        before=before,
+        before_id=before_id,
+        limit=limit,
+    )
+    return list((await session.scalars(statement)).all())
+
+
+def change_reviews_statement(
+    *,
+    status_filter: str | None,
+    source: str | None,
+    target_table: str | None,
+    triage_tier: str | None,
+    min_attention_score: float | None,
+    requires_human_attention: bool | None,
+    limit: int,
+    before: datetime | None = None,
+    before_id: UUID | None = None,
+):
+    statement = select(ChangeReviewQueue).order_by(
+        ChangeReviewQueue.created_at.desc(),
+        ChangeReviewQueue.id.desc(),
+    )
     if status_filter is not None:
         statement = statement.where(ChangeReviewQueue.status == status_filter)
     if source is not None:
         statement = statement.where(ChangeReviewQueue.source == source)
     if target_table is not None:
         statement = statement.where(ChangeReviewQueue.target_table == target_table)
-    return list((await session.scalars(statement.limit(limit))).all())
+    if triage_tier is not None:
+        statement = statement.where(
+            ChangeReviewQueue.proposed_change["review_triage"]["tier"].as_string()
+            == triage_tier
+        )
+    if min_attention_score is not None:
+        attention_score = cast(
+            ChangeReviewQueue.proposed_change["review_triage"]["attention_score"].as_string(),
+            Float,
+        )
+        statement = statement.where(attention_score >= min_attention_score)
+    if requires_human_attention is not None:
+        statement = statement.where(
+            ChangeReviewQueue.proposed_change["review_triage"][
+                "requires_human_attention"
+            ].as_boolean()
+            .is_(requires_human_attention)
+        )
+    if before is not None:
+        if before_id is not None:
+            statement = statement.where(
+                or_(
+                    ChangeReviewQueue.created_at < before,
+                    and_(
+                        ChangeReviewQueue.created_at == before,
+                        ChangeReviewQueue.id < before_id,
+                    ),
+                )
+            )
+        else:
+            statement = statement.where(ChangeReviewQueue.created_at < before)
+    return statement.limit(limit)
 
 
 @router.get("/reviews/{review_id}", response_model=ChangeReviewRead)
@@ -102,12 +172,16 @@ async def decide_change_review(
                     detail="Linked event intelligence item not found",
                 ) from exc
             raise HTTPException(status_code=400, detail=str(exc)) from exc
-    else:
+    applied: dict[str, Any] | None = None
+    if not _is_event_intelligence_review(row) or payload.decision not in EVENT_INTELLIGENCE_DECISION_MAP:
         row.status = DECISION_TO_STATUS[payload.decision]
         row.reviewed_by = payload.reviewed_by
         row.reviewed_at = now
+        # approval -> apply: dispatch the production write to the registered applier
+        if row.status == "approved":
+            applied = await apply_approved_change(session, row, decided_by=payload.reviewed_by)
 
-    _append_review_decision(row, payload, now)
+    _append_review_decision(row, payload, now, applied=applied)
     await session.commit()
     await session.refresh(row)
     return row
@@ -129,6 +203,8 @@ def _append_review_decision(
     row: ChangeReviewQueue,
     payload: ChangeReviewDecisionCreate,
     decided_at: datetime,
+    *,
+    applied: dict[str, Any] | None = None,
 ) -> None:
     proposed_change: dict[str, Any] = dict(row.proposed_change or {})
     proposed_change["review_decision"] = {
@@ -137,6 +213,7 @@ def _append_review_decision(
         "reviewed_by": payload.reviewed_by,
         "reviewed_at": (row.reviewed_at or decided_at).isoformat(),
         "note": payload.note,
-        "production_effect": "none",
+        "production_effect": (applied or {}).get("production_effect", "none"),
+        "applied": applied,
     }
     row.proposed_change = proposed_change

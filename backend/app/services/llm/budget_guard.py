@@ -6,6 +6,21 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import rollback_if_possible
 from app.models.llm_cache import LLMBudget
+from app.services.llm.cost_tracker import normalize_llm_module
+
+
+def active_llm_budget_statement(*, module: str, period_start: date):
+    normalized_module = normalize_llm_module(module)
+    return (
+        select(LLMBudget)
+        .where(
+            LLMBudget.module == normalized_module,
+            LLMBudget.period_start == period_start,
+            LLMBudget.status == "active",
+        )
+        .order_by(LLMBudget.updated_at.desc(), LLMBudget.id.desc())
+        .limit(1)
+    )
 
 
 @dataclass(frozen=True)
@@ -24,32 +39,27 @@ async def check_llm_budget(
     module: str,
     as_of: datetime | None = None,
 ) -> BudgetDecision:
+    normalized_module = normalize_llm_module(module)
     if session is None:
-        return BudgetDecision(True, False, module, 0.0, None, "no_session")
+        return BudgetDecision(True, False, normalized_module, 0.0, None, "no_session")
     effective_at = as_of or datetime.now(timezone.utc)
     start, _ = month_bounds(effective_at.date())
     try:
         row = (
             await session.scalars(
-                select(LLMBudget)
-                .where(
-                    LLMBudget.module == module,
-                    LLMBudget.period_start == start,
-                    LLMBudget.status == "active",
-                )
-                .limit(1)
+                active_llm_budget_statement(module=normalized_module, period_start=start)
             )
         ).first()
     except Exception:
         await rollback_if_possible(session)
-        return BudgetDecision(True, False, module, 0.0, None, "budget_lookup_failed")
+        return BudgetDecision(True, False, normalized_module, 0.0, None, "budget_lookup_failed")
     if row is None:
-        return BudgetDecision(True, False, module, 0.0, None, "no_budget")
+        return BudgetDecision(True, False, normalized_module, 0.0, None, "no_budget")
     if row.current_spend_usd >= row.monthly_budget_usd:
         return BudgetDecision(
             False,
             True,
-            module,
+            normalized_module,
             row.current_spend_usd,
             row.monthly_budget_usd,
             "budget_exhausted",
@@ -58,7 +68,7 @@ async def check_llm_budget(
     return BudgetDecision(
         True,
         near_limit,
-        module,
+        normalized_module,
         row.current_spend_usd,
         row.monthly_budget_usd,
         "near_limit" if near_limit else "ok",
@@ -74,18 +84,13 @@ async def add_budget_spend(
 ) -> None:
     if session is None or amount_usd <= 0:
         return
+    normalized_module = normalize_llm_module(module)
     effective_at = as_of or datetime.now(timezone.utc)
     start, _ = month_bounds(effective_at.date())
     try:
         row = (
             await session.scalars(
-                select(LLMBudget)
-                .where(
-                    LLMBudget.module == module,
-                    LLMBudget.period_start == start,
-                    LLMBudget.status == "active",
-                )
-                .limit(1)
+                active_llm_budget_statement(module=normalized_module, period_start=start)
             )
         ).first()
     except Exception:

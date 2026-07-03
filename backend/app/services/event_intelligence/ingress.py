@@ -20,7 +20,12 @@ from app.services.event_intelligence.resolver import (
     create_event_intelligence_from_draft,
     resolve_news_event_impacts,
 )
-from app.services.translation.market import category_label, mechanism_label, signal_type_label
+from app.services.translation.market import (
+    category_label,
+    direction_label,
+    mechanism_label,
+    signal_type_label,
+)
 
 WEATHER_DATA_TYPES = frozenset(
     {
@@ -308,11 +313,14 @@ def market_signal_event_candidate(
     mechanism_zh = mechanism_label(mechanism)
     signal_zh = signal_type_label(row.signal_type)
     category_zh = category_label(row.category)
+    direction, direction_source = _market_signal_direction(row)
+    direction_zh = direction_label(direction) if direction != "watch" else "待确认"
     confidence = round(min(max(row.confidence, 0.0), 1.0), 4)
     source_reliability = 0.74 if row.adversarial_passed is True else 0.62
     evidence = _compact(
         [
             f"{signal_zh} / {category_zh} 信号置信度 {confidence:.0%}。",
+            f"方向：{direction_zh}。" if direction != "watch" else "",
             f"z-score {row.z_score:.2f}。" if row.z_score is not None else "",
             f"regime: {row.regime_at_emission or row.regime}" if row.regime_at_emission or row.regime else "",
             f"outcome: {row.outcome}",
@@ -350,6 +358,9 @@ def market_signal_event_candidate(
             "signal_type_label": signal_zh,
             "category": row.category,
             "category_label": category_zh,
+            "direction": direction,
+            "direction_label": direction_zh,
+            "direction_source": direction_source,
             "mechanism_label": mechanism_zh,
             "z_score": row.z_score,
             "outcome": row.outcome,
@@ -362,11 +373,18 @@ def market_signal_event_candidate(
             symbol=symbol,
             region_id=_primary_region(symbol),
             mechanism=mechanism,
-            direction="watch",
+            direction=direction,
             confidence=confidence,
             impact_score=round(confidence * 100, 2),
             horizon="short",
-            rationale=f"{symbol} 所属{category_zh}板块出现{signal_zh}，当前先归入{mechanism_zh}机制，需结合外部事件确认方向。",
+            rationale=_market_signal_link_rationale(
+                symbol=symbol,
+                category_zh=category_zh,
+                signal_zh=signal_zh,
+                mechanism_zh=mechanism_zh,
+                direction=direction,
+                direction_zh=direction_zh,
+            ),
             evidence=tuple(evidence),
             counterevidence=tuple(counterevidence),
             status="shadow_review",
@@ -382,13 +400,7 @@ async def _sync_news_events(
     limit: int,
     errors: list[dict[str, str]],
 ) -> tuple[int, int]:
-    rows = list(
-        (
-            await session.scalars(
-                select(NewsEvent).order_by(NewsEvent.published_at.desc()).limit(limit)
-            )
-        ).all()
-    )
+    rows = list((await session.scalars(_recent_news_events_statement(limit=limit))).all())
     created = 0
     for row in rows:
         try:
@@ -397,6 +409,10 @@ async def _sync_news_events(
         except Exception as exc:
             errors.append({"source": f"news_event:{row.id}", "error": str(exc)})
     return len(rows), created
+
+
+def _recent_news_events_statement(*, limit: int):
+    return select(NewsEvent).order_by(NewsEvent.published_at.desc(), NewsEvent.id.desc()).limit(limit)
 
 
 async def _create_candidates(
@@ -499,7 +515,7 @@ async def _refresh_existing_ingress_candidate(
         draft = draft_by_scope.get((link.symbol, link.region_id, link.mechanism))
         if draft is None:
             continue
-        for field_name in ("rationale", "evidence", "counterevidence"):
+        for field_name in ("direction", "rationale", "evidence", "counterevidence"):
             next_value = getattr(draft, field_name)
             if isinstance(next_value, tuple):
                 next_value = list(next_value)
@@ -526,28 +542,32 @@ async def _refresh_existing_ingress_candidate(
 
 
 async def _load_weather_rows(session: AsyncSession, *, limit: int) -> list[IndustryData]:
-    return list(
-        (
-            await session.scalars(
-                select(IndustryData)
-                .where(IndustryData.data_type.in_(WEATHER_DATA_TYPES))
-                .order_by(IndustryData.timestamp.desc(), IndustryData.ingested_at.desc())
-                .limit(limit)
-            )
-        ).all()
+    return list((await session.scalars(_weather_rows_statement(limit=limit))).all())
+
+
+def _weather_rows_statement(*, limit: int):
+    return (
+        select(IndustryData)
+        .where(IndustryData.data_type.in_(WEATHER_DATA_TYPES))
+        .order_by(
+            IndustryData.timestamp.desc(),
+            IndustryData.ingested_at.desc(),
+            IndustryData.id.desc(),
+        )
+        .limit(limit)
     )
 
 
 async def _load_market_signal_rows(session: AsyncSession, *, limit: int) -> list[SignalTrack]:
-    return list(
-        (
-            await session.scalars(
-                select(SignalTrack)
-                .where(SignalTrack.confidence >= 0.65)
-                .order_by(SignalTrack.created_at.desc())
-                .limit(limit)
-            )
-        ).all()
+    return list((await session.scalars(_market_signal_rows_statement(limit=limit))).all())
+
+
+def _market_signal_rows_statement(*, limit: int, min_confidence: float = 0.65):
+    return (
+        select(SignalTrack)
+        .where(SignalTrack.confidence >= min_confidence)
+        .order_by(SignalTrack.created_at.desc(), SignalTrack.id.desc())
+        .limit(limit)
     )
 
 
@@ -645,6 +665,39 @@ def _mechanism_for_signal_type(signal_type: str) -> str:
     if any(token in text for token in ("news", "weather")):
         return "weather"
     return "risk_sentiment"
+
+
+def _market_signal_direction(row: SignalTrack) -> tuple[str, str]:
+    stored_direction = str(row.direction or "").strip().lower()
+    if stored_direction in {"bullish", "bearish", "mixed"}:
+        return stored_direction, "signal_track.direction"
+
+    signal_type = str(row.signal_type or "").strip().lower()
+    default_direction_by_type = {
+        "capacity_contraction": "bearish",
+        "marginal_capacity_squeeze": "bearish",
+        "median_pressure": "bearish",
+        "restart_expectation": "bullish",
+    }
+    if signal_type in default_direction_by_type:
+        return default_direction_by_type[signal_type], "signal_type_rule"
+
+    return "watch", "unresolved"
+
+
+def _market_signal_link_rationale(
+    *,
+    symbol: str,
+    category_zh: str,
+    signal_zh: str,
+    mechanism_zh: str,
+    direction: str,
+    direction_zh: str,
+) -> str:
+    prefix = f"{symbol} 所属{category_zh}板块出现{signal_zh}，当前归入{mechanism_zh}机制"
+    if direction == "watch":
+        return f"{prefix}，需结合外部事件确认方向。"
+    return f"{prefix}，由信号链路给出{direction_zh}候选方向，仍需在 shadow/review 中交叉验证。"
 
 
 def _symbols_for_signal_category(category: str) -> list[str]:

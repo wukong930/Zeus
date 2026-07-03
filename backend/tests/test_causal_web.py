@@ -1,22 +1,41 @@
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+from sqlalchemy.dialects import postgresql
+
 from app.api.causal_web import (
+    CausalWebGraph,
     CounterContext,
     EventIntelligenceLinkContext,
     GraphNodeSeed,
     MetricContext,
+    router as causal_web_router,
     _append_edge,
     _build_edges,
+    _causal_scope_symbols,
+    _clear_causal_web_cache,
     _counter_seeds_from_alert,
+    _event_intelligence_link_statement,
+    _event_intelligence_statement,
     _latest_market_metrics_statement,
     _layout_nodes,
+    _linked_alerts_statement,
+    _news_display_key,
     _merge_pinned_event_intelligence,
+    _recent_alerts_statement,
+    _recent_industry_metrics_statement,
+    _recent_news_statement,
+    _recent_signals_statement,
+    _seed_from_alert,
+    _seed_from_news,
     _seed_from_event_intelligence_item,
     _seed_from_event_intelligence_link,
     _unique_recent_event_intelligence,
     _unique_recent_news,
 )
+from app.core.database import get_db
 from app.models.alert import Alert
 from app.models.event_intelligence import EventImpactLink, EventIntelligenceItem
 from app.models.news_events import NewsEvent
@@ -46,6 +65,57 @@ def test_layout_nodes_includes_runtime_semantics() -> None:
     assert nodes[0].freshness > 0.9
     assert nodes[0].alertLinked is True
     assert nodes[0].labelZh is not None
+
+
+def test_causal_web_endpoint_uses_short_ttl_cache(monkeypatch) -> None:
+    _clear_causal_web_cache()
+    calls = {"count": 0}
+
+    async def fake_db():
+        yield object()
+
+    async def fake_build_graph(
+        session,
+        *,
+        limit: int,
+        symbol_filter: str | None,
+        region: str | None,
+        pinned_event_item: EventIntelligenceItem | None,
+    ) -> CausalWebGraph:
+        calls["count"] += 1
+        assert session is not None
+        assert limit == 8
+        assert symbol_filter == "SC"
+        assert region is None
+        assert pinned_event_item is None
+        return CausalWebGraph(
+            generated_at=datetime(2026, 5, 18, tzinfo=timezone.utc)
+            + timedelta(seconds=calls["count"]),
+            nodes=[],
+            edges=[],
+            source_counts={"signals": calls["count"]},
+        )
+
+    monkeypatch.setattr("app.api.causal_web.build_causal_web_graph", fake_build_graph)
+    app = FastAPI()
+    app.include_router(causal_web_router)
+    app.dependency_overrides[get_db] = fake_db
+
+    try:
+        client = TestClient(app)
+        first = client.get("/api/causal-web?limit=8&symbol=sc")
+        second = client.get("/api/causal-web?limit=8&symbol=sc")
+        refreshed = client.get("/api/causal-web?limit=8&symbol=sc&refresh=true")
+
+        assert first.status_code == 200
+        assert second.status_code == 200
+        assert refreshed.status_code == 200
+        assert calls["count"] == 2
+        assert first.json()["generated_at"] == second.json()["generated_at"]
+        assert first.json()["source_counts"]["signals"] == 1
+        assert refreshed.json()["source_counts"]["signals"] == 2
+    finally:
+        _clear_causal_web_cache()
 
 
 def test_append_edge_skips_missing_nodes_and_duplicates() -> None:
@@ -518,6 +588,67 @@ def test_unique_recent_news_collapses_syndicated_titles() -> None:
     assert [row.id for row in unique] == [first.id, unrelated.id]
 
 
+def test_news_and_alert_symbol_normalization_for_display_nodes() -> None:
+    now = datetime.now(timezone.utc)
+    news = NewsEvent(
+        id=uuid4(),
+        source="gdelt",
+        title="Rubber weather disruption",
+        summary="Rainfall disrupts logistics.",
+        published_at=now,
+        event_type="weather",
+        affected_symbols=[" ru ", "", "NR"],
+        direction="bullish",
+        severity=3,
+        time_horizon="short",
+        llm_confidence=0.73,
+        verification_status="single_source",
+        requires_manual_confirmation=False,
+        dedup_hash="news-normalized",
+    )
+    duplicate = NewsEvent(
+        id=uuid4(),
+        source="gdelt",
+        title="Rubber weather disruption",
+        summary="Rainfall disrupts logistics.",
+        published_at=now,
+        event_type="weather",
+        affected_symbols=["NR", "RU"],
+        direction="bullish",
+        severity=3,
+        time_horizon="short",
+        llm_confidence=0.73,
+        verification_status="single_source",
+        requires_manual_confirmation=False,
+        dedup_hash="news-normalized-2",
+    )
+    alert = Alert(
+        id=uuid4(),
+        title="SC bullish supply risk",
+        summary="Oil supply risk is rising.",
+        severity="high",
+        category="energy",
+        type="momentum",
+        status="active",
+        triggered_at=now,
+        confidence=0.8,
+        related_assets=["", " sc "],
+        trigger_chain=[],
+        risk_items=[],
+        manual_check_items=[],
+    )
+
+    news_seed = _seed_from_news(news)
+    alert_seed = _seed_from_alert(alert)
+
+    assert news_seed.category == "rubber"
+    assert "NR" in news_seed.tags
+    assert "RU" in news_seed.tags
+    assert _news_display_key(news) == _news_display_key(duplicate)
+    assert alert_seed.portfolio_linked is True
+    assert "SC" in alert_seed.tags
+
+
 def test_unique_recent_event_intelligence_collapses_syndicated_titles() -> None:
     now = datetime.now(timezone.utc)
 
@@ -622,3 +753,142 @@ def test_latest_market_metrics_statement_prefers_latest_row_per_symbol() -> None
     assert "market_data.timestamp DESC" in compiled
     assert "anon_1.rn = 1" in compiled
     assert "LIMIT 6" in compiled
+
+
+def test_causal_web_scoped_statements_push_symbol_filters_to_database() -> None:
+    news_sql = _compile_postgres(_recent_news_statement(limit=8, symbols=["SC"]))
+    signal_sql = _compile_postgres(_recent_signals_statement(limit=8, category="energy"))
+    alert_sql = _compile_postgres(_recent_alerts_statement(limit=8, symbols=["SC"]))
+    industry_sql = _compile_postgres(_recent_industry_metrics_statement(limit=8, symbols=["SC"]))
+    market_sql = _compile_postgres(_latest_market_metrics_statement(limit=8, symbols=["SC"]))
+    event_item_sql = _compile_postgres(
+        _event_intelligence_statement(limit=8, symbol="SC", region="middle_east_oil")
+    )
+    event_link_sql = _compile_postgres(
+        _event_intelligence_link_statement(
+            event_item_ids=[uuid4()],
+            limit=8,
+            symbol="SC",
+            region="middle_east_oil",
+        )
+    )
+
+    assert "news_events.affected_symbols" in news_sql
+    assert "signal_track.category" in signal_sql
+    assert "alerts.related_assets" in alert_sql
+    assert "industry_data.symbol IN" in industry_sql
+    assert "market_data.symbol IN" in market_sql
+    assert "event_intelligence_items.symbols" in event_item_sql
+    assert "event_impact_links.symbol =" in event_link_sql
+
+
+def test_causal_web_scoped_statements_normalize_contract_symbol_filters() -> None:
+    news_params = _compile_params(_recent_news_statement(limit=8, symbols=[" sc2509 "]))
+    alert_params = _compile_params(_recent_alerts_statement(limit=8, symbols=[" sc2509 "]))
+    industry_params = _compile_params(_recent_industry_metrics_statement(limit=8, symbols=[" sc2509 "]))
+    market_params = _compile_params(_latest_market_metrics_statement(limit=8, symbols=[" sc2509 "]))
+    event_item_params = _compile_params(
+        _event_intelligence_statement(limit=8, symbol=" sc2509 ", region=None)
+    )
+    event_link_params = _compile_params(
+        _event_intelligence_link_statement(
+            event_item_ids=[uuid4()],
+            limit=8,
+            symbol=" sc2509 ",
+            region=None,
+        )
+    )
+
+    assert ["SC"] in news_params.values()
+    assert ["SC"] in alert_params.values()
+    assert "SC" in _flatten_param_values(industry_params)
+    assert "SC" in _flatten_param_values(market_params)
+    assert ["SC"] in event_item_params.values()
+    assert "SC" in event_link_params.values()
+
+
+def test_causal_web_runtime_statements_use_stable_tie_breakers() -> None:
+    news_sql = _compile_postgres(_recent_news_statement(limit=8, symbols=[]))
+    signal_sql = _compile_postgres(_recent_signals_statement(limit=8, category=None))
+    alert_sql = _compile_postgres(_recent_alerts_statement(limit=8, symbols=[]))
+    linked_alert_sql = _compile_postgres(
+        _linked_alerts_statement(alert_ids=[uuid4(), uuid4()])
+    )
+    industry_sql = _compile_postgres(_recent_industry_metrics_statement(limit=8, symbols=[]))
+    market_sql = _compile_postgres(_latest_market_metrics_statement(limit=8, symbols=[]))
+    event_item_sql = _compile_postgres(
+        _event_intelligence_statement(limit=8, symbol=None, region=None)
+    )
+    event_link_sql = _compile_postgres(
+        _event_intelligence_link_statement(
+            event_item_ids=[uuid4()],
+            limit=8,
+            symbol=None,
+            region=None,
+        )
+    )
+
+    assert "ORDER BY news_events.published_at DESC, news_events.id DESC" in news_sql
+    assert "ORDER BY signal_track.created_at DESC, signal_track.id DESC" in signal_sql
+    assert "ORDER BY alerts.triggered_at DESC, alerts.id DESC" in alert_sql
+    assert "ORDER BY alerts.triggered_at DESC, alerts.id DESC" in linked_alert_sql
+    assert "ORDER BY industry_data.ingested_at DESC, industry_data.id DESC" in industry_sql
+    assert "market_data.id DESC" in market_sql
+    assert (
+        "ORDER BY event_intelligence_items.event_timestamp DESC, "
+        "event_intelligence_items.created_at DESC, event_intelligence_items.id DESC"
+    ) in event_item_sql
+    assert (
+        "ORDER BY event_impact_links.impact_score DESC, "
+        "event_impact_links.confidence DESC, event_impact_links.id DESC"
+    ) in event_link_sql
+
+
+def test_causal_scope_symbols_merges_query_and_pinned_event_symbols() -> None:
+    now = datetime.now(timezone.utc)
+    event_item = EventIntelligenceItem(
+        id=uuid4(),
+        source_type="news_event",
+        source_id="scope-1",
+        title="Scope event",
+        summary="Scope event",
+        event_type="weather",
+        event_timestamp=now,
+        entities=[],
+        symbols=["SC", "RU"],
+        regions=[],
+        mechanisms=[],
+        evidence=[],
+        counterevidence=[],
+        confidence=0.8,
+        impact_score=80,
+        status="shadow_review",
+        requires_manual_confirmation=False,
+        source_reliability=0.8,
+        freshness_score=0.9,
+        source_payload={},
+        created_at=now,
+        updated_at=now,
+    )
+
+    event_item.symbols = ["SC2509", " ru2509 "]
+
+    assert _causal_scope_symbols("sc2509", event_item) == ["SC", "RU"]
+
+
+def _compile_postgres(statement) -> str:
+    return str(statement.compile(dialect=postgresql.dialect()))
+
+
+def _compile_params(statement) -> dict:
+    return statement.compile(dialect=postgresql.dialect()).params
+
+
+def _flatten_param_values(params: dict) -> list[object]:
+    flattened: list[object] = []
+    for value in params.values():
+        if isinstance(value, list):
+            flattened.extend(value)
+        else:
+            flattened.append(value)
+    return flattened

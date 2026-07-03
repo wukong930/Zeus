@@ -1,13 +1,22 @@
 from datetime import datetime, timedelta, timezone
+from uuid import uuid4
 
 from fastapi.testclient import TestClient
+from sqlalchemy.dialects import postgresql
 
 from app.core.database import get_db
 from app.main import create_app
 from app.models.market_data import MarketData
+from app.models.position import Position
+from app.api.risk import _open_position_rows_statement
 from app.services.risk.correlation import build_correlation_matrix
 from app.services.risk.market_data import _risk_market_data_statement, load_risk_market_data
-from app.services.risk.stress import StressScenario, extract_historical_extremes, run_stress_test
+from app.services.risk.stress import (
+    STRESS_SCENARIOS,
+    StressScenario,
+    extract_historical_extremes,
+    run_stress_test,
+)
 from app.services.risk.types import RiskLeg, RiskMarketPoint, RiskPosition
 from app.services.risk.var import calculate_var
 
@@ -68,9 +77,9 @@ def test_calculate_var_returns_zero_for_empty_positions() -> None:
 
 async def test_load_risk_market_data_batches_symbols_and_preserves_empty_keys() -> None:
     rows = [
-        _market_row("RB2506", close=3500, days=2),
-        _market_row("RB2506", close=3490, days=1),
-        _market_row("HC2506", close=3410, days=2),
+        _market_row("RB", close=3500, days=2, contract_month="2506"),
+        _market_row("RB", close=3490, days=1, contract_month="2506"),
+        _market_row("HC", close=3410, days=2, contract_month="2506"),
     ]
     session = FakeSession(rows)
 
@@ -80,29 +89,36 @@ async def test_load_risk_market_data_batches_symbols_and_preserves_empty_keys() 
         limit=60,
     )
 
-    assert set(result) == {"RB2506", "HC2506", "MISSING"}
-    assert [point.close for point in result["RB2506"]] == [3500, 3490]
-    assert [point.close for point in result["HC2506"]] == [3410]
+    assert set(result) == {"RB", "HC", "MISSING"}
+    assert [point.close for point in result["RB"]] == [3500, 3490]
+    assert [point.close for point in result["HC"]] == [3410]
     assert result["MISSING"] == []
     assert session.scalars_count == 1
 
 
 def test_risk_market_data_statement_limits_rows_per_symbol() -> None:
     compiled = str(
-        _risk_market_data_statement(requested_symbols=("RB2506", "HC2506"), limit=60).compile(
-            compile_kwargs={"literal_binds": True}
+        _risk_market_data_statement(requested_symbols=("RB", "HC"), limit=60).compile(
+            dialect=postgresql.dialect(),
+            compile_kwargs={"literal_binds": True},
         )
     )
 
     assert "row_number() OVER" in compiled
-    assert "PARTITION BY market_data.symbol, market_data.contract_month, market_data.timestamp" in compiled
-    assert "PARTITION BY market_data.symbol ORDER BY market_data.timestamp DESC" in compiled
+    assert "PARTITION BY market_data.symbol, market_data.timestamp" in compiled
+    assert "ORDER BY market_data.vintage_at DESC" in compiled
+    assert "CASE WHEN (market_data.contract_month = 'main') THEN 0 ELSE 1 END" in compiled
+    assert "market_data.ingested_at DESC" in compiled
+    assert (
+        "PARTITION BY market_data.symbol ORDER BY market_data.timestamp DESC, market_data.id DESC"
+    ) in compiled
+    assert "ORDER BY market_data.symbol ASC, market_data.timestamp DESC, market_data.id DESC" in compiled
     assert "symbol_rn <= 60" in compiled
 
 
 def test_calculate_var_uses_loss_semantics_for_open_position() -> None:
     closes = [3500 + (-1) ** idx * idx * 4 for idx in range(60)]
-    result = calculate_var([_position()], {"RB2506": _market_data("RB2506", closes)})
+    result = calculate_var([_position()], {"RB": _market_data("RB", closes)})
 
     assert result.var95 < 0
     assert result.var99 <= result.var95
@@ -112,7 +128,7 @@ def test_calculate_var_uses_loss_semantics_for_open_position() -> None:
 def test_calculate_var_returns_zero_for_flat_prices() -> None:
     result = calculate_var(
         [_position()],
-        {"RB2506": _market_data("RB2506", [3500] * 50)},
+        {"RB": _market_data("RB", [3500] * 50)},
     )
 
     assert result.var95 == 0
@@ -180,7 +196,7 @@ def test_var_api_marks_insufficient_market_data_degraded(monkeypatch) -> None:
     client = _risk_api_client(
         monkeypatch,
         positions=[_position()],
-        market_data={"RB2506": _market_data("RB2506", [3500, 3510, 3495])},
+        market_data={"RB": _market_data("RB", [3500, 3510, 3495])},
     )
 
     response = client.get("/api/risk/var")
@@ -189,7 +205,7 @@ def test_var_api_marks_insufficient_market_data_degraded(monkeypatch) -> None:
     payload = response.json()
     assert payload["success"] is True
     assert payload["degraded"] is True
-    assert payload["unavailable_sections"] == ["market_data_insufficient:RB2506"]
+    assert payload["unavailable_sections"] == ["market_data_insufficient:RB"]
     assert payload["data"]["var95"] == 0
 
 
@@ -374,8 +390,8 @@ def test_correlation_api_marks_missing_series_degraded(monkeypatch) -> None:
         monkeypatch,
         positions=[],
         market_data={
-            "RB2506": _market_data("RB2506", [3500, 3510, 3490, 3520]),
-            "HC2506": [],
+            "RB": _market_data("RB", [3500, 3510, 3490, 3520]),
+            "HC": [],
         },
     )
 
@@ -385,7 +401,7 @@ def test_correlation_api_marks_missing_series_degraded(monkeypatch) -> None:
     payload = response.json()
     assert payload["success"] is True
     assert payload["degraded"] is True
-    assert payload["unavailable_sections"] == ["correlation_data_missing:HC2506"]
+    assert payload["unavailable_sections"] == ["correlation_data_missing:HC"]
 
 
 def test_correlation_api_normalizes_and_dedupes_symbols(monkeypatch) -> None:
@@ -394,8 +410,8 @@ def test_correlation_api_normalizes_and_dedupes_symbols(monkeypatch) -> None:
         monkeypatch,
         positions=[],
         market_data={
-            "RB2506": _market_data("RB2506", [3500, 3510, 3490, 3520]),
-            "HC2506": _market_data("HC2506", [3400, 3420, 3390, 3430]),
+            "RB": _market_data("RB", [3500, 3510, 3490, 3520]),
+            "HC": _market_data("HC", [3400, 3420, 3390, 3430]),
         },
         captured=captured,
     )
@@ -403,7 +419,7 @@ def test_correlation_api_normalizes_and_dedupes_symbols(monkeypatch) -> None:
     response = client.get("/api/risk/correlation?symbols=rb2506,HC2506,rb2506&window=5")
 
     assert response.status_code == 200
-    assert captured["symbols"] == ["RB2506", "HC2506"]
+    assert captured["symbols"] == ["RB", "HC"]
 
 
 def test_correlation_api_rejects_empty_symbol_query(monkeypatch) -> None:
@@ -417,7 +433,7 @@ def test_correlation_api_rejects_empty_symbol_query(monkeypatch) -> None:
 
 def test_correlation_api_rejects_too_many_symbols(monkeypatch) -> None:
     client = _risk_api_client(monkeypatch, positions=[], market_data={})
-    symbols = ",".join(f"S{i}" for i in range(41))
+    symbols = ",".join(f"S{chr(65 + index // 26)}{chr(65 + index % 26)}" for index in range(41))
 
     response = client.get(f"/api/risk/correlation?symbols={symbols}&window=5")
 
@@ -441,6 +457,55 @@ def test_correlation_api_rejects_oversized_symbol_query(monkeypatch) -> None:
     response = client.get(f"/api/risk/correlation?symbols={symbols}&window=5")
 
     assert response.status_code == 422
+
+
+def test_portfolio_snapshot_api_reuses_positions_and_market_data(monkeypatch) -> None:
+    calls: dict[str, object] = {"position_rows": 0, "market_data": 0}
+    row = _position_row()
+
+    async def fake_db():
+        yield object()
+
+    async def fake_open_position_rows(_session, *, limit=None):
+        calls["position_rows"] = int(calls["position_rows"]) + 1
+        calls["position_limit"] = limit
+        return [row]
+
+    async def fake_load_risk_market_data(_session, symbols, *, limit):
+        calls["market_data"] = int(calls["market_data"]) + 1
+        calls["symbols"] = symbols
+        calls["market_limit"] = limit
+        return {"RB": _market_data("RB", [3500 + idx for idx in range(20)])}
+
+    monkeypatch.setattr("app.api.risk._open_position_rows", fake_open_position_rows)
+    monkeypatch.setattr("app.api.risk.load_risk_market_data", fake_load_risk_market_data)
+
+    app = create_app()
+    app.dependency_overrides[get_db] = fake_db
+    client = TestClient(app)
+
+    response = client.get("/api/risk/portfolio-snapshot?correlation_window=5")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["success"] is True
+    assert calls["position_rows"] == 1
+    assert calls["position_limit"] == 500
+    assert calls["market_data"] == 1
+    assert calls["symbols"] == ["RB"]
+    assert calls["market_limit"] == 252
+    assert payload["data"]["positions"][0]["id"] == str(row.id)
+    assert payload["data"]["var"]["horizon"] == 1
+    assert len(payload["data"]["stress"]) == len(STRESS_SCENARIOS)
+    assert payload["data"]["latest_market_rows"][0]["symbol"] == "RB"
+
+
+def test_risk_open_position_rows_statement_uses_stable_tie_breakers() -> None:
+    sql = _compile_postgres(_open_position_rows_statement(limit=500))
+
+    assert "positions.status =" in sql
+    assert "ORDER BY positions.opened_at DESC, positions.id DESC" in sql
+    assert "LIMIT" in sql
 
 
 def _risk_api_client(
@@ -470,7 +535,45 @@ def _risk_api_client(
     return TestClient(app)
 
 
-def _market_row(symbol: str, *, close: float, days: int) -> MarketData:
+def _position_row() -> Position:
+    opened_at = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    return Position(
+        id=uuid4(),
+        strategy_name="test",
+        legs=[
+            {
+                "asset": "RB2506",
+                "direction": "long",
+                "lots": 10,
+                "entry_price": 3500,
+                "current_price": 3500,
+            }
+        ],
+        opened_at=opened_at,
+        entry_spread=3500,
+        current_spread=3500,
+        spread_unit="price",
+        unrealized_pnl=0,
+        total_margin_used=10000,
+        exit_condition="manual_close",
+        target_z_score=0,
+        current_z_score=0,
+        half_life_days=0,
+        days_held=0,
+        status="open",
+        manual_entry=True,
+        avg_entry_price=3500,
+        monitoring_priority=5,
+        data_mode="position_aware",
+        propagation_nodes=[],
+    )
+
+
+def _compile_postgres(statement) -> str:
+    return str(statement.compile(dialect=postgresql.dialect()))
+
+
+def _market_row(symbol: str, *, close: float, days: int, contract_month: str | None = None) -> MarketData:
     timestamp = datetime(2026, 1, 1, tzinfo=timezone.utc) + timedelta(days=days)
     return MarketData(
         source_key=None,
@@ -478,7 +581,7 @@ def _market_row(symbol: str, *, close: float, days: int) -> MarketData:
         exchange="SHFE",
         commodity=symbol,
         symbol=symbol,
-        contract_month=symbol[-4:],
+        contract_month=contract_month or ("main" if not any(char.isdigit() for char in symbol) else symbol[-4:]),
         timestamp=timestamp,
         open=close - 1,
         high=close + 2,

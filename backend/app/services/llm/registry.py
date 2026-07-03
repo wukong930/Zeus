@@ -23,7 +23,12 @@ from app.services.llm.types import (
 )
 from app.services.llm.budget_guard import add_budget_spend, check_llm_budget
 from app.services.llm.cache import get_cached_completion, llm_cache_key, messages_to_prompt_parts, store_cached_completion
-from app.services.llm.cost_tracker import estimate_cost_usd, record_llm_usage
+from app.services.llm.cost_tracker import (
+    estimate_cost_usd,
+    normalize_llm_model,
+    normalize_llm_provider,
+    record_llm_usage,
+)
 
 ProviderFactory = Callable[[LLMProviderConfig, httpx.AsyncClient | None], LLMProvider]
 
@@ -92,12 +97,7 @@ async def get_active_llm_config(
 
     try:
         row = (
-            await session.scalars(
-                select(LLMConfigModel)
-                .where(LLMConfigModel.enabled.is_(True))
-                .order_by(LLMConfigModel.updated_at.desc())
-                .limit(1)
-            )
+            await session.scalars(_active_llm_config_statement())
         ).first()
     except Exception:
         await rollback_if_possible(session)
@@ -106,7 +106,7 @@ async def get_active_llm_config(
     if row is None:
         return None
 
-    provider = str(row.provider).lower()
+    provider = normalize_llm_provider(row.provider)
     if provider not in PROVIDER_FACTORIES:
         return None
     api_key = _clean_secret(row.api_key)
@@ -114,7 +114,7 @@ async def get_active_llm_config(
         return None
 
     settings = get_settings()
-    model = str(row.model or "").strip() or DEFAULT_MODELS[provider][0]
+    model = normalize_llm_model(row.model) or DEFAULT_MODELS[provider][0]
     base_url = str(row.base_url).strip() if row.base_url else None
     return LLMProviderConfig(
         provider=provider,  # type: ignore[arg-type]
@@ -126,13 +126,22 @@ async def get_active_llm_config(
     )
 
 
+def _active_llm_config_statement():
+    return (
+        select(LLMConfigModel)
+        .where(LLMConfigModel.enabled.is_(True))
+        .order_by(LLMConfigModel.updated_at.desc(), LLMConfigModel.id.desc())
+        .limit(1)
+    )
+
+
 def get_env_llm_config(settings: Settings) -> LLMProviderConfig | None:
     if api_key := _clean_secret(settings.openai_api_key):
         return LLMProviderConfig(
             provider="openai",
             api_key=api_key,
-            model=settings.llm_model or DEFAULT_MODELS["openai"][0],
-            base_url=settings.openai_base_url,
+            model=normalize_llm_model(settings.llm_model) or DEFAULT_MODELS["openai"][0],
+            base_url=_clean_optional_url(settings.openai_base_url),
             timeout_seconds=settings.llm_timeout_seconds,
         )
 
@@ -140,8 +149,8 @@ def get_env_llm_config(settings: Settings) -> LLMProviderConfig | None:
         return LLMProviderConfig(
             provider="xai",
             api_key=api_key,
-            model=settings.llm_model or DEFAULT_MODELS["xai"][0],
-            base_url=settings.xai_base_url,
+            model=normalize_llm_model(settings.llm_model) or DEFAULT_MODELS["xai"][0],
+            base_url=_clean_optional_url(settings.xai_base_url),
             timeout_seconds=settings.llm_timeout_seconds,
         )
 
@@ -149,8 +158,8 @@ def get_env_llm_config(settings: Settings) -> LLMProviderConfig | None:
         return LLMProviderConfig(
             provider="anthropic",
             api_key=api_key,
-            model=settings.llm_model or DEFAULT_MODELS["anthropic"][0],
-            base_url=settings.anthropic_base_url,
+            model=normalize_llm_model(settings.llm_model) or DEFAULT_MODELS["anthropic"][0],
+            base_url=_clean_optional_url(settings.anthropic_base_url),
             timeout_seconds=settings.llm_timeout_seconds,
         )
 
@@ -158,8 +167,8 @@ def get_env_llm_config(settings: Settings) -> LLMProviderConfig | None:
         return LLMProviderConfig(
             provider="deepseek",
             api_key=api_key,
-            model=settings.llm_model or DEFAULT_MODELS["deepseek"][0],
-            base_url=settings.deepseek_base_url,
+            model=normalize_llm_model(settings.llm_model) or DEFAULT_MODELS["deepseek"][0],
+            base_url=_clean_optional_url(settings.deepseek_base_url),
             timeout_seconds=settings.llm_timeout_seconds,
         )
 
@@ -167,6 +176,13 @@ def get_env_llm_config(settings: Settings) -> LLMProviderConfig | None:
 
 
 def _clean_secret(value: str | None) -> str | None:
+    if value is None:
+        return None
+    value = value.strip()
+    return value or None
+
+
+def _clean_optional_url(value: str | None) -> str | None:
     if value is None:
         return None
     value = value.strip()

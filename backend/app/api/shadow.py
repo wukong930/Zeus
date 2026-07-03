@@ -6,7 +6,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import Field, field_validator
-from sqlalchemy import select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -37,6 +37,7 @@ MAX_SHADOW_CONFIG_STRING_LENGTH = 500
 MAX_SHADOW_ACTOR_LENGTH = 80
 MAX_SHADOW_SIGNAL_TYPE_LENGTH = 30
 MAX_SHADOW_CATEGORY_LENGTH = 30
+MAX_SHADOW_STATUS_LENGTH = 20
 
 
 class ShadowRunCreate(StrictInputModel):
@@ -133,12 +134,20 @@ async def create_initial_shadow_applications_endpoint(
 
 @router.get("/runs")
 async def list_shadow_runs(
+    status_filter: str | None = Query(default=None, max_length=MAX_SHADOW_STATUS_LENGTH),
+    before: datetime | None = Query(default=None),
+    before_id: UUID | None = Query(default=None),
     limit: int = Query(default=50, ge=1, le=200),
     session: AsyncSession = Depends(get_db),
 ) -> list[dict[str, Any]]:
     rows = (
         await session.scalars(
-            select(ShadowRun).order_by(ShadowRun.started_at.desc()).limit(limit)
+            _shadow_runs_statement(
+                status_filter=status_filter,
+                before=before,
+                before_id=before_id,
+                limit=limit,
+            )
         )
     ).all()
     return [shadow_run_to_dict(row) for row in rows]
@@ -243,12 +252,41 @@ async def enqueue_threshold_calibration_review(
 
 
 async def _shadow_signal_count(session: AsyncSession, run_id: UUID) -> int:
-    rows = (
-        await session.scalars(
-            select(ShadowSignal).where(ShadowSignal.shadow_run_id == run_id)
-        )
-    ).all()
-    return len(rows)
+    count = await session.scalar(_shadow_signal_count_statement(run_id))
+    return int(count or 0)
+
+
+def _shadow_runs_statement(
+    *,
+    status_filter: str | None,
+    before: datetime | None,
+    limit: int,
+    before_id: UUID | None = None,
+):
+    statement = select(ShadowRun).order_by(
+        ShadowRun.started_at.desc(),
+        ShadowRun.id.desc(),
+    )
+    if status_filter is not None:
+        statement = statement.where(ShadowRun.status == status_filter)
+    if before is not None:
+        if before_id is not None:
+            statement = statement.where(
+                or_(
+                    ShadowRun.started_at < before,
+                    and_(
+                        ShadowRun.started_at == before,
+                        ShadowRun.id < before_id,
+                    ),
+                )
+            )
+        else:
+            statement = statement.where(ShadowRun.started_at < before)
+    return statement.limit(limit)
+
+
+def _shadow_signal_count_statement(run_id: UUID):
+    return select(func.count()).select_from(ShadowSignal).where(ShadowSignal.shadow_run_id == run_id)
 
 
 def shadow_run_to_dict(row: ShadowRun) -> dict[str, Any]:

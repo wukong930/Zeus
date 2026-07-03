@@ -44,6 +44,8 @@ import { Badge } from "@/components/Badge";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
 import type { DataSourceState } from "@/components/DataSourceBadge";
+import { MarketQuoteStrip } from "@/components/MarketQuoteStrip";
+import { SECTORS } from "@/data/sectorUniverse";
 import {
   fetchWorldMapTiles,
   fetchWorldMapSnapshot,
@@ -212,6 +214,10 @@ const MAP_RENDERER_OPTIONS: Array<{
   { id: "svg", label: "轻量", detail: "SVG 主渲染" },
   { id: "webgl-ready", label: "增强", detail: "WebGL 预备" },
 ];
+const DEFAULT_WORLD_MAP_QUOTE_SYMBOLS = ["RU", "NR", "SC", "RB", "I", "M"];
+const WORLD_MAP_SYMBOL_UNIVERSE = new Set(
+  SECTORS.flatMap((sector) => sector.symbols.map((symbol) => symbol.code))
+);
 
 type WorldAtlasTopology = Topology<{
   countries: GeometryObject;
@@ -329,7 +335,7 @@ export default function WorldMapPage() {
       const nextTileSnapshot = await fetchWorldMapTiles(
         "all",
         resolution,
-        worldMapFilterParams(scopeFilters, viewport)
+        { ...worldMapFilterParams(scopeFilters, viewport), refresh: force }
       );
       rememberWorldMapTileSnapshot(tileCacheRef.current, cacheKey, nextTileSnapshot);
       setTileRuntime(
@@ -345,18 +351,18 @@ export default function WorldMapPage() {
     [scopeFilters]
   );
 
-  const loadSnapshot = useCallback(async () => {
+  const loadSnapshot = useCallback(async (force = false) => {
     if (refreshInFlightRef.current) return;
     refreshInFlightRef.current = true;
     setIsRefreshing(true);
     const tileRequestId = ++tileRequestSeqRef.current;
     try {
-      const filterParams = worldMapFilterParams(scopeFilters);
+      const filterParams = { ...worldMapFilterParams(scopeFilters), refresh: force };
       const next = await fetchWorldMapSnapshot(filterParams);
       const nextTileSnapshot = await fetchTiles({
         resolution: "coarse",
         viewport: tileViewportRef.current,
-        force: true,
+        force,
       }).catch(() => tileSnapshotRef.current);
       if (!mountedRef.current) return;
 
@@ -458,6 +464,10 @@ export default function WorldMapPage() {
 
   const regions = snapshot?.regions ?? [];
   const filteredRegions = regions;
+  const quoteSymbols = useMemo(
+    () => worldMapQuoteSymbols(scopeFilters.symbol, filteredRegions, snapshot?.filters.symbols ?? []),
+    [filteredRegions, scopeFilters.symbol, snapshot?.filters.symbols]
+  );
   const filteredRegionIds = useMemo(
     () => new Set(filteredRegions.map((region) => region.id)),
     [filteredRegions]
@@ -507,6 +517,12 @@ export default function WorldMapPage() {
               </div>
             </div>
             <StatusStrip snapshot={snapshot} lastUpdatedAt={lastUpdatedAt} />
+            <MarketQuoteStrip
+              symbols={quoteSymbols}
+              compact
+              maxItems={scopeFilters.symbol === "all" ? 3 : 1}
+              className="mt-2"
+            />
           </div>
 
           <div className="grid min-w-0 gap-2 xl:justify-items-end">
@@ -552,7 +568,7 @@ export default function WorldMapPage() {
                 <Activity className="h-4 w-4" />
                 {autoRefresh ? text("自动") : text("手动")}
               </Button>
-              <Button variant="secondary" size="sm" onClick={() => void loadSnapshot()} disabled={isRefreshing}>
+              <Button variant="secondary" size="sm" onClick={() => void loadSnapshot(true)} disabled={isRefreshing}>
                 <RefreshCw className={cn("h-4 w-4", isRefreshing && "animate-spin")} />
                 {text("刷新")}
               </Button>
@@ -1053,6 +1069,24 @@ function TileRuntimeBadge({ runtime }: { runtime: TileRuntimeMetrics | null }) {
       )}
     </span>
   );
+}
+
+function worldMapQuoteSymbols(
+  scopedSymbol: ScopeFilterValue,
+  regions: WorldMapRegion[],
+  filterSymbols: readonly string[]
+): string[] {
+  if (scopedSymbol !== "all") {
+    return [scopedSymbol.toUpperCase()];
+  }
+  const regionSymbols = regions.flatMap((region) => region.symbols);
+  return Array.from(
+    new Set(
+      [...regionSymbols, ...filterSymbols, ...DEFAULT_WORLD_MAP_QUOTE_SYMBOLS]
+        .map((symbol) => symbol.trim().toUpperCase())
+        .filter((symbol) => WORLD_MAP_SYMBOL_UNIVERSE.has(symbol))
+    )
+  ).slice(0, 6);
 }
 
 function StatusStrip({

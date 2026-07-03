@@ -26,11 +26,10 @@ import { Card, CardHeader, CardSubtitle, CardTitle } from "@/components/Card";
 import { DataSourceBadge, type DataSourceState } from "@/components/DataSourceBadge";
 import {
   decideEventIntelligence,
-  fetchEventImpactLinks,
   fetchEventIntelligenceAuditLogs,
   fetchEventIntelligenceDetail,
-  fetchEventIntelligenceItems,
   fetchEventIntelligenceQualitySummary,
+  fetchEventIntelligenceSnapshot,
   updateEventImpactLink,
   type EventIntelligenceDecision,
   type EventImpactDirection,
@@ -89,6 +88,7 @@ export default function EventIntelligencePage() {
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [decisionPending, setDecisionPending] = useState<EventIntelligenceDecision | null>(null);
+  const [decisionError, setDecisionError] = useState<string | null>(null);
   const [linkEditPendingId, setLinkEditPendingId] = useState<string | null>(null);
   const [linkEditError, setLinkEditError] = useState<string | null>(null);
   const [auditLogs, setAuditLogs] = useState<EventIntelligenceAuditLog[]>([]);
@@ -104,36 +104,32 @@ export default function EventIntelligencePage() {
       setNavigationScope(initialScope);
       if (initialScope.symbol) setQuery(initialScope.symbol);
     }
-    Promise.all([
-      fetchEventIntelligenceItems(200),
-      fetchEventImpactLinks({ limit: 300 }),
-      fetchEventIntelligenceQualitySummary(200),
-    ])
-      .then(async ([eventRows, linkRows, qualitySummary]) => {
+    fetchEventIntelligenceSnapshot({ limit: 200 })
+      .then(async (snapshot) => {
         if (!mounted) return;
-        let nextItems = eventRows;
-        let nextLinks = linkRows;
+        let nextItems = snapshot.items;
+        let nextLinks = snapshot.impactLinks;
         let nextSelectedId =
-          initialEventId && eventRows.some((item) => item.id === initialEventId)
+          initialEventId && snapshot.items.some((item) => item.id === initialEventId)
             ? initialEventId
-            : eventRows[0]?.id ?? null;
-        if (initialEventId && !eventRows.some((item) => item.id === initialEventId)) {
+            : snapshot.items[0]?.id ?? null;
+        if (initialEventId && !snapshot.items.some((item) => item.id === initialEventId)) {
           try {
             const detail = await fetchEventIntelligenceDetail(initialEventId);
-            nextItems = [detail.event, ...eventRows];
+            nextItems = [detail.event, ...snapshot.items];
             nextLinks = [
               ...detail.impactLinks,
-              ...linkRows.filter((link) => link.eventItemId !== detail.event.id),
+              ...snapshot.impactLinks.filter((link) => link.eventItemId !== detail.event.id),
             ];
             nextSelectedId = detail.event.id;
           } catch {
-            nextSelectedId = eventRows[0]?.id ?? null;
+            nextSelectedId = snapshot.items[0]?.id ?? null;
           }
         }
         if (!mounted) return;
         setItems(nextItems);
         setLinks(nextLinks);
-        setQualityReports(qualitySummary.reports);
+        setQualityReports(snapshot.quality.reports);
         setSource("api");
         setSelectedId(nextSelectedId);
       })
@@ -220,6 +216,7 @@ export default function EventIntelligencePage() {
   const handleDecision = async (decision: EventIntelligenceDecision) => {
     if (!selected) return;
     setDecisionPending(decision);
+    setDecisionError(null);
     try {
       const result = await decideEventIntelligence(selected.id, decision, decisionNote(decision));
       setItems((current) =>
@@ -234,6 +231,8 @@ export default function EventIntelligencePage() {
       );
       setAuditLogs((current) => mergeAuditLogs([result.auditLog, ...current]));
       setAuditSource("api");
+    } catch (error) {
+      setDecisionError(error instanceof Error ? error.message : "决策提交失败");
     } finally {
       setDecisionPending(null);
     }
@@ -354,6 +353,7 @@ export default function EventIntelligencePage() {
               quality={selectedQuality}
               onDecision={handleDecision}
               decisionPending={decisionPending}
+              decisionError={decisionError}
               onUpdateImpactLink={handleUpdateImpactLink}
               linkEditPendingId={linkEditPendingId}
               linkEditError={linkEditError}
@@ -465,6 +465,7 @@ function EventDetail({
   quality,
   onDecision,
   decisionPending,
+  decisionError,
   onUpdateImpactLink,
   linkEditPendingId,
   linkEditError,
@@ -477,6 +478,7 @@ function EventDetail({
   quality: EventIntelligenceQualityReport | null;
   onDecision: (decision: EventIntelligenceDecision) => void;
   decisionPending: EventIntelligenceDecision | null;
+  decisionError: string | null;
   onUpdateImpactLink: (linkId: string, payload: EventImpactLinkUpdateInput) => Promise<boolean>;
   linkEditPendingId: string | null;
   linkEditError: string | null;
@@ -551,6 +553,11 @@ function EventDetail({
             onDecision={onDecision}
           />
         </div>
+        {decisionError && (
+          <div className="mb-4 rounded-sm border border-data-down/25 bg-data-down/10 p-2 text-caption text-data-down">
+            {decisionError}
+          </div>
+        )}
         <div className="grid gap-3 md:grid-cols-3">
           <TokenGroup title="品种" values={item.symbols} />
           <TokenGroup title="机制" values={item.mechanisms.map(mechanismLabel)} tone="orange" />

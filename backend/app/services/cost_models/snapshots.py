@@ -1,7 +1,8 @@
 from datetime import date, datetime, timezone
 from typing import Any
+from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.commodity_config import CommodityConfig
@@ -114,6 +115,7 @@ async def calculate_cost_snapshot(
         normalized,
         inputs_by_symbol=inputs_by_symbol,
         current_prices=current_prices,
+        as_of=datetime.now(timezone.utc).date(),
     )
 
 
@@ -215,15 +217,17 @@ async def snapshot_costs(
     await ensure_commodity_configs(session, symbols=symbols)
     if current_prices is None:
         current_prices = await current_prices_for_symbols(session, symbols)
+    effective_date = snapshot_date or datetime.now(timezone.utc).date()
     chain = calculate_cost_chain(
         symbols=symbols,
         inputs_by_symbol=inputs_by_symbol,
         current_prices=current_prices,
+        as_of=effective_date,
     )
     return await write_cost_snapshots(
         session,
         [chain.results[symbol] for symbol in symbols],
-        snapshot_date=snapshot_date,
+        snapshot_date=effective_date,
     )
 
 
@@ -297,6 +301,9 @@ async def cost_histories_for_symbols(
     *,
     symbols: tuple[str, ...],
     limit_per_symbol: int,
+    before: date | None = None,
+    before_created_at: datetime | None = None,
+    before_id: UUID | None = None,
 ) -> dict[str, list[CostSnapshot]]:
     if not symbols:
         return {}
@@ -305,7 +312,12 @@ async def cost_histories_for_symbols(
     if not normalized_symbols:
         return {}
 
-    ranked_ids = _cost_history_ranked_ids(normalized_symbols)
+    ranked_ids = _cost_history_ranked_ids(
+        normalized_symbols,
+        before=before,
+        before_created_at=before_created_at,
+        before_id=before_id,
+    )
     rows = list(
         (
             await session.scalars(
@@ -316,6 +328,7 @@ async def cost_histories_for_symbols(
                     CostSnapshot.symbol.asc(),
                     CostSnapshot.snapshot_date.desc(),
                     CostSnapshot.created_at.desc(),
+                    CostSnapshot.id.desc(),
                 )
             )
         ).all()
@@ -326,19 +339,68 @@ async def cost_histories_for_symbols(
     return rows_by_symbol
 
 
-def _cost_history_ranked_ids(symbols: tuple[str, ...]):
-    return (
+def _cost_history_ranked_ids(
+    symbols: tuple[str, ...],
+    *,
+    before: date | None = None,
+    before_created_at: datetime | None = None,
+    before_id: UUID | None = None,
+):
+    statement = (
         select(
             CostSnapshot.id.label("id"),
             func.row_number()
             .over(
                 partition_by=CostSnapshot.symbol,
-                order_by=(CostSnapshot.snapshot_date.desc(), CostSnapshot.created_at.desc()),
+                order_by=(
+                    CostSnapshot.snapshot_date.desc(),
+                    CostSnapshot.created_at.desc(),
+                    CostSnapshot.id.desc(),
+                ),
             )
             .label("rn"),
         )
         .where(CostSnapshot.symbol.in_(symbols))
-        .subquery()
+    )
+    cursor_clause = cost_snapshot_cursor_clause(
+        before=before,
+        before_created_at=before_created_at,
+        before_id=before_id,
+    )
+    if cursor_clause is not None:
+        statement = statement.where(cursor_clause)
+    return statement.subquery()
+
+
+def cost_snapshot_cursor_clause(
+    *,
+    before: date | None,
+    before_created_at: datetime | None = None,
+    before_id: UUID | None = None,
+):
+    if before is None:
+        return None
+    if before_created_at is None:
+        return CostSnapshot.snapshot_date < before
+    if before_id is None:
+        return or_(
+            CostSnapshot.snapshot_date < before,
+            and_(
+                CostSnapshot.snapshot_date == before,
+                CostSnapshot.created_at < before_created_at,
+            ),
+        )
+    return or_(
+        CostSnapshot.snapshot_date < before,
+        and_(
+            CostSnapshot.snapshot_date == before,
+            CostSnapshot.created_at < before_created_at,
+        ),
+        and_(
+            CostSnapshot.snapshot_date == before,
+            CostSnapshot.created_at == before_created_at,
+            CostSnapshot.id < before_id,
+        ),
     )
 
 

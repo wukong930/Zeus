@@ -1,14 +1,28 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
+from sqlalchemy.dialects import postgresql
 
+from app.api.event_intelligence import (
+    _clear_event_intelligence_snapshot_cache,
+    _event_intelligence_snapshot_response,
+    _event_intelligence_source_lookup_response,
+    _event_intelligence_source_lookup_statement,
+    _event_impact_links_for_items_statement,
+    _event_impact_links_statement,
+    _event_intelligence_audit_logs_statement,
+    _event_intelligence_items_statement,
+    _event_intelligence_snapshot_cache_key,
+)
+from app.core.database import get_db
 from app.models.change_review_queue import ChangeReviewQueue
 from app.main import create_app
 from app.models.event_intelligence import EventImpactLink, EventIntelligenceAuditLog, EventIntelligenceItem
 from app.models.industry_data import IndustryData
 from app.models.news_events import NewsEvent
 from app.models.signal import SignalTrack
+from app.schemas.event_intelligence import EventIntelligenceQualitySummary, EventIntelligenceSnapshot
 from app.models.vector_chunks import VectorChunk
 from app.services.event_intelligence import (
     apply_event_intelligence_decision,
@@ -21,9 +35,17 @@ from app.services.event_intelligence import (
     update_event_impact_link,
 )
 from app.services.event_intelligence.eval_cases import EVENT_INTELLIGENCE_EVAL_CASES
+from app.services.event_intelligence.governance import _event_intelligence_review_lookup_statement
 from app.services.event_intelligence.ingress import (
+    _market_signal_rows_statement,
+    _recent_news_events_statement,
+    _weather_rows_statement,
     market_signal_event_candidate,
     weather_event_candidates_from_industry_rows,
+)
+from app.services.event_intelligence.resolver import (
+    _event_intelligence_item_links_statement,
+    _event_intelligence_source_item_statement,
 )
 
 
@@ -195,6 +217,54 @@ def test_market_signal_ingress_maps_high_confidence_signal_to_event_scope() -> N
     assert all(link.direction == "watch" for link in links)
 
 
+def test_market_signal_ingress_uses_persisted_direction_for_impact_links() -> None:
+    now = datetime(2026, 5, 14, tzinfo=UTC)
+    row = SignalTrack(
+        id=uuid4(),
+        signal_type="momentum",
+        category="ferrous",
+        confidence=0.86,
+        direction="bearish",
+        regime="downtrend",
+        regime_at_emission="downtrend",
+        adversarial_passed=True,
+        outcome="pending",
+        created_at=now,
+    )
+
+    candidate = market_signal_event_candidate(row, now=now)
+
+    assert candidate is not None
+    event, links = candidate
+    assert event.source_payload["direction"] == "bearish"
+    assert event.source_payload["direction_source"] == "signal_track.direction"
+    assert "方向：偏空。" in event.evidence
+    assert {link.symbol for link in links} == {"RB", "HC", "I", "J", "JM"}
+    assert all(link.direction == "bearish" for link in links)
+    assert all("偏空候选方向" in link.rationale for link in links)
+
+
+def test_market_signal_ingress_uses_cost_signal_direction_rule() -> None:
+    now = datetime(2026, 5, 14, tzinfo=UTC)
+    row = SignalTrack(
+        id=uuid4(),
+        signal_type="restart_expectation",
+        category="chemical",
+        confidence=0.84,
+        outcome="pending",
+        created_at=now,
+    )
+
+    candidate = market_signal_event_candidate(row, now=now)
+
+    assert candidate is not None
+    event, links = candidate
+    assert event.source_payload["direction"] == "bullish"
+    assert event.source_payload["direction_source"] == "signal_type_rule"
+    assert {link.symbol for link in links} == {"TA", "MA", "PP"}
+    assert all(link.direction == "bullish" for link in links)
+
+
 def test_market_signal_ingress_uses_translated_signal_labels() -> None:
     now = datetime(2026, 5, 14, tzinfo=UTC)
     row = SignalTrack(
@@ -239,6 +309,21 @@ def test_market_signal_ingress_skips_low_confidence_or_unmapped_category() -> No
 
     assert market_signal_event_candidate(low_confidence, now=now) is None
     assert market_signal_event_candidate(unmapped, now=now) is None
+
+
+def test_event_intelligence_ingress_statements_use_stable_ordering() -> None:
+    news_sql = _compile_postgres(_recent_news_events_statement(limit=50))
+    weather_sql = _compile_postgres(_weather_rows_statement(limit=500))
+    signal_sql = _compile_postgres(_market_signal_rows_statement(limit=100))
+
+    assert "ORDER BY news_events.published_at DESC, news_events.id DESC" in news_sql
+    assert "industry_data.data_type IN" in weather_sql
+    assert (
+        "ORDER BY industry_data.timestamp DESC, industry_data.ingested_at DESC, "
+        "industry_data.id DESC"
+    ) in weather_sql
+    assert "signal_track.confidence >=" in signal_sql
+    assert "ORDER BY signal_track.created_at DESC, signal_track.id DESC" in signal_sql
 
 
 async def test_event_intelligence_review_queue_records_high_impact_uncertainty() -> None:
@@ -303,12 +388,495 @@ async def test_event_intelligence_review_queue_records_high_impact_uncertainty()
     assert audits[0].payload["production_effect"] == "none"
 
 
+async def test_event_intelligence_low_attention_review_becomes_evidence_only() -> None:
+    event_id = uuid4()
+    event_item = EventIntelligenceItem(
+        id=event_id,
+        source_type="news_event",
+        source_id=str(uuid4()),
+        title="Single source rubber background note",
+        summary="Low-impact background note should enrich evidence without asking a human.",
+        event_type="breaking",
+        event_timestamp=datetime(2026, 5, 10, tzinfo=UTC),
+        entities=[],
+        symbols=["RU"],
+        regions=["southeast_asia_rubber"],
+        mechanisms=["supply"],
+        evidence=["Single source headline"],
+        counterevidence=["No secondary confirmation"],
+        confidence=0.42,
+        impact_score=30,
+        status="human_review",
+        requires_manual_confirmation=True,
+        source_reliability=0.35,
+        freshness_score=0.8,
+        source_payload={"source_count": 1, "verification_status": "single_source"},
+    )
+    link = EventImpactLink(
+        id=uuid4(),
+        event_item_id=event_id,
+        symbol="RU",
+        region_id="southeast_asia_rubber",
+        mechanism="supply",
+        direction="watch",
+        confidence=0.4,
+        impact_score=30,
+        horizon="short",
+        rationale="Weak single-source background material.",
+        evidence=["Single source headline"],
+        counterevidence=["No secondary confirmation"],
+        status="human_review",
+    )
+    session = FakeReviewSession()
+
+    review = await enqueue_event_intelligence_review(
+        session,  # type: ignore[arg-type]
+        event_item,
+        [link],
+        actor="rules",
+    )
+
+    assert review is None
+    assert not any(isinstance(row, ChangeReviewQueue) for row in session.rows)
+    audits = [row for row in session.rows if isinstance(row, EventIntelligenceAuditLog)]
+    assert audits[0].action == "review.triaged_evidence_only"
+    assert audits[0].payload["review_triage"]["tier"] == "evidence_only"
+    assert audits[0].payload["production_effect"] == "none"
+
+
+async def test_event_intelligence_high_impact_single_source_defers_without_trade_context() -> None:
+    event_id = uuid4()
+    event_item = EventIntelligenceItem(
+        id=event_id,
+        source_type="news_event",
+        source_id=str(uuid4()),
+        title="Single source crude shipping rumor",
+        summary="High impact but low-trust source should not page a human by itself.",
+        event_type="geopolitical",
+        event_timestamp=datetime(2026, 5, 10, tzinfo=UTC),
+        entities=["Iran"],
+        symbols=["SC"],
+        regions=["middle_east_crude"],
+        mechanisms=["geopolitical"],
+        evidence=["Single source headline"],
+        counterevidence=["No secondary confirmation"],
+        confidence=0.58,
+        impact_score=82,
+        status="human_review",
+        requires_manual_confirmation=True,
+        source_reliability=0.42,
+        freshness_score=1,
+        source_payload={"source_count": 1, "verification_status": "single_source"},
+    )
+    link = EventImpactLink(
+        id=uuid4(),
+        event_item_id=event_id,
+        symbol="SC",
+        region_id="middle_east_crude",
+        mechanism="geopolitical",
+        direction="watch",
+        confidence=0.58,
+        impact_score=82,
+        horizon="immediate",
+        rationale="Needs confirmation before decision-grade use.",
+        evidence=["Single source headline"],
+        counterevidence=["No secondary confirmation"],
+        status="human_review",
+    )
+    session = FakeReviewSession()
+
+    review = await enqueue_event_intelligence_review(
+        session,  # type: ignore[arg-type]
+        event_item,
+        [link],
+        actor="rules",
+    )
+
+    assert review is not None
+    assert review.status == "shadow_review"
+    assert review.proposed_change["review_triage"]["requires_human_attention"] is False
+    audits = [row for row in session.rows if isinstance(row, EventIntelligenceAuditLog)]
+    assert audits[0].action == "review.deferred_to_shadow"
+
+
+async def test_event_intelligence_market_anomaly_defers_to_trade_plan_flow() -> None:
+    event_id = uuid4()
+    event_item = EventIntelligenceItem(
+        id=event_id,
+        source_type="market",
+        source_id="signal:capacity",
+        title="行情异常：产能收缩",
+        summary="High-confidence market anomaly should be handled by alert/trade plan flow.",
+        event_type="market",
+        event_timestamp=datetime(2026, 5, 10, tzinfo=UTC),
+        entities=[],
+        symbols=["I"],
+        regions=["china"],
+        mechanisms=["supply"],
+        evidence=["Signal scored"],
+        counterevidence=[],
+        confidence=0.95,
+        impact_score=95,
+        status="human_review",
+        requires_manual_confirmation=True,
+        source_reliability=0.9,
+        freshness_score=1,
+        source_payload={"source_count": 1, "verification_status": "single_source"},
+    )
+    link = EventImpactLink(
+        id=uuid4(),
+        event_item_id=event_id,
+        symbol="I",
+        region_id="china",
+        mechanism="supply",
+        direction="bearish",
+        confidence=0.95,
+        impact_score=95,
+        horizon="short",
+        rationale="Market signal candidate.",
+        evidence=["Signal scored"],
+        counterevidence=[],
+        status="human_review",
+    )
+    session = FakeReviewSession()
+
+    review = await enqueue_event_intelligence_review(
+        session,  # type: ignore[arg-type]
+        event_item,
+        [link],
+        actor="rules",
+    )
+
+    assert review is not None
+    assert review.status == "shadow_review"
+    assert review.proposed_change["review_triage"]["tier"] == "shadow_review"
+    assert review.proposed_change["review_triage"]["attention_score"] < 70
+
+
 def test_event_intelligence_api_rejects_invalid_filters() -> None:
     client = TestClient(create_app())
 
     response = client.get("/api/event-intelligence?status=published")
 
     assert response.status_code == 422
+
+    response = client.get("/api/event-intelligence?before=not-a-date")
+    assert response.status_code == 422
+
+    response = client.get("/api/event-intelligence/impact-links?before_impact_score=101")
+    assert response.status_code == 422
+
+
+def test_event_intelligence_snapshot_endpoint_uses_short_ttl_cache(monkeypatch) -> None:
+    _clear_event_intelligence_snapshot_cache()
+    calls = {"count": 0}
+
+    async def fake_db():
+        yield object()
+
+    async def fake_load_snapshot(
+        session,
+        *,
+        symbol,
+        region_id,
+        mechanism,
+        status_filter,
+        limit,
+    ) -> EventIntelligenceSnapshot:
+        calls["count"] += 1
+        assert session is not None
+        assert symbol == "sc"
+        assert region_id is None
+        assert mechanism is None
+        assert status_filter is None
+        assert limit == 10
+        return EventIntelligenceSnapshot(
+            items=[],
+            impact_links=[],
+            quality=EventIntelligenceQualitySummary(
+                generated_at=datetime(2026, 5, 18, tzinfo=UTC)
+                + timedelta(seconds=calls["count"]),
+                total=0,
+                average_score=0,
+                blocked=0,
+                review=0,
+                shadow_ready=0,
+                decision_grade=0,
+                reports=[],
+            ),
+        )
+
+    monkeypatch.setattr(
+        "app.api.event_intelligence._load_event_intelligence_snapshot",
+        fake_load_snapshot,
+    )
+    app = create_app()
+    app.dependency_overrides[get_db] = fake_db
+    client = TestClient(app)
+
+    try:
+        first = client.get("/api/event-intelligence/snapshot?symbol=sc&limit=10")
+        second = client.get("/api/event-intelligence/snapshot?symbol=sc&limit=10")
+        refreshed = client.get("/api/event-intelligence/snapshot?symbol=sc&limit=10&refresh=true")
+
+        assert first.status_code == 200
+        assert second.status_code == 200
+        assert refreshed.status_code == 200
+        assert calls["count"] == 2
+        assert first.json()["quality"]["generated_at"] == second.json()["quality"]["generated_at"]
+        assert refreshed.json()["quality"]["generated_at"] != first.json()["quality"]["generated_at"]
+    finally:
+        _clear_event_intelligence_snapshot_cache()
+
+
+def test_event_intelligence_scoped_statements_push_filters_to_database() -> None:
+    event_id = uuid4()
+    news_id = uuid4()
+    items_sql = _compile_postgres(
+        _event_intelligence_items_statement(
+            symbol="sc",
+            region_id="middle_east_crude",
+            mechanism="energy_cost",
+            status_filter="shadow_review",
+            before=datetime(2026, 5, 18, 12, tzinfo=UTC),
+            before_impact_score=75,
+            before_id=event_id,
+            limit=20,
+        )
+    )
+    links_sql = _compile_postgres(
+        _event_impact_links_statement(
+            symbol="sc",
+            region_id="middle_east_crude",
+            mechanism="energy_cost",
+            direction="bullish",
+            status_filter="shadow_review",
+            before_impact_score=75,
+            before_confidence=0.8,
+            before_id=event_id,
+            limit=20,
+        )
+    )
+    quality_links_sql = _compile_postgres(_event_impact_links_for_items_statement(item_ids=[event_id]))
+    source_lookup_sql = _compile_postgres(
+        _event_intelligence_source_lookup_statement(
+            source_type="news_event",
+            source_ids=[str(news_id)],
+        )
+    )
+    audit_sql = _compile_postgres(
+        _event_intelligence_audit_logs_statement(
+            event_item_id=event_id,
+            action="decision.applied",
+            limit=20,
+        )
+    )
+    review_sql = _compile_postgres(
+        _event_intelligence_review_lookup_statement(
+            event_item_id=event_id,
+            statuses=("pending", "shadow_review", "pending"),
+        )
+    )
+    resolver_source_sql = _compile_postgres(
+        _event_intelligence_source_item_statement(source_type="news_event", source_id=str(news_id))
+    )
+    resolver_links_sql = _compile_postgres(_event_intelligence_item_links_statement(event_item_id=event_id))
+
+    assert "event_intelligence_items.symbols" in items_sql
+    assert "event_intelligence_items.regions" in items_sql
+    assert "event_intelligence_items.mechanisms" in items_sql
+    assert "event_intelligence_items.status" in items_sql
+    assert "event_intelligence_items.event_timestamp <" in items_sql
+    assert "event_intelligence_items.impact_score <" in items_sql
+    assert "event_intelligence_items.id <" in items_sql
+    assert (
+        "ORDER BY event_intelligence_items.event_timestamp DESC, "
+        "event_intelligence_items.impact_score DESC, event_intelligence_items.id DESC"
+    ) in items_sql
+    assert "event_impact_links.symbol =" in links_sql
+    assert "event_impact_links.region_id =" in links_sql
+    assert "event_impact_links.mechanism =" in links_sql
+    assert "event_impact_links.direction =" in links_sql
+    assert "event_impact_links.status =" in links_sql
+    assert "event_impact_links.impact_score <" in links_sql
+    assert "event_impact_links.confidence <" in links_sql
+    assert "event_impact_links.id <" in links_sql
+    assert (
+        "ORDER BY event_impact_links.impact_score DESC, "
+        "event_impact_links.confidence DESC, event_impact_links.id DESC"
+    ) in links_sql
+    assert "event_impact_links.event_item_id IN" in quality_links_sql
+    assert (
+        "ORDER BY event_impact_links.impact_score DESC, "
+        "event_impact_links.confidence DESC, event_impact_links.id DESC"
+    ) in quality_links_sql
+    assert "event_intelligence_items.source_type =" in source_lookup_sql
+    assert "event_intelligence_items.source_id IN" in source_lookup_sql
+    assert (
+        "ORDER BY event_intelligence_items.event_timestamp DESC, "
+        "event_intelligence_items.impact_score DESC, event_intelligence_items.id DESC"
+    ) in source_lookup_sql
+    assert "event_intelligence_audit_logs.event_item_id =" in audit_sql
+    assert "event_intelligence_audit_logs.action =" in audit_sql
+    assert (
+        "ORDER BY event_intelligence_audit_logs.created_at DESC, "
+        "event_intelligence_audit_logs.id DESC"
+    ) in audit_sql
+    assert "change_review_queue.source =" in review_sql
+    assert "change_review_queue.target_table =" in review_sql
+    assert "change_review_queue.target_key =" in review_sql
+    assert "change_review_queue.status IN" in review_sql
+    assert (
+        "ORDER BY change_review_queue.created_at ASC, change_review_queue.id ASC"
+    ) in review_sql
+    assert "event_intelligence_items.source_type =" in resolver_source_sql
+    assert "event_intelligence_items.source_id =" in resolver_source_sql
+    assert (
+        "ORDER BY event_intelligence_items.created_at ASC, event_intelligence_items.id ASC"
+    ) in resolver_source_sql
+    assert "LIMIT" in resolver_source_sql
+    assert "event_impact_links.event_item_id =" in resolver_links_sql
+    assert (
+        "ORDER BY event_impact_links.impact_score DESC, "
+        "event_impact_links.confidence DESC, event_impact_links.id DESC"
+    ) in resolver_links_sql
+
+
+def test_event_intelligence_symbol_filters_normalize_contract_values() -> None:
+    item_params = _compile_params(
+        _event_intelligence_items_statement(
+            symbol=" ru2509 ",
+            region_id=None,
+            mechanism=None,
+            status_filter=None,
+            limit=20,
+        )
+    )
+    link_params = _compile_params(
+        _event_impact_links_statement(
+            symbol=" ru2509 ",
+            region_id=None,
+            mechanism=None,
+            direction=None,
+            status_filter=None,
+            limit=20,
+        )
+    )
+
+    assert item_params["symbols_1"] == ["RU"]
+    assert link_params["symbol_1"] == "RU"
+    assert _event_intelligence_snapshot_cache_key(
+        symbol=" ru2509 ",
+        region_id=None,
+        mechanism=None,
+        status_filter=None,
+        limit=20,
+    ) == ("snapshot", 20, "RU", None, None, None)
+
+
+def test_event_intelligence_snapshot_response_keeps_items_links_and_quality_together() -> None:
+    now = datetime(2026, 5, 10, tzinfo=UTC)
+    event_id = uuid4()
+    event_item = EventIntelligenceItem(
+        id=event_id,
+        source_type="news_event",
+        source_id=str(uuid4()),
+        title="Rubber rainfall anomaly",
+        summary="Rainfall may disrupt rubber tapping.",
+        event_type="weather",
+        event_timestamp=now,
+        entities=["Thailand"],
+        symbols=["RU"],
+        regions=["southeast_asia_rubber"],
+        mechanisms=["weather"],
+        evidence=["Rainfall percentile above normal"],
+        counterevidence=["Forecast may ease"],
+        confidence=0.84,
+        impact_score=82,
+        status="confirmed",
+        requires_manual_confirmation=False,
+        source_reliability=0.82,
+        freshness_score=0.94,
+        source_payload={},
+        created_at=now,
+        updated_at=now,
+    )
+    impact_link = EventImpactLink(
+        id=uuid4(),
+        event_item_id=event_id,
+        symbol="RU",
+        region_id="southeast_asia_rubber",
+        mechanism="weather",
+        direction="bullish",
+        confidence=0.8,
+        impact_score=80,
+        horizon="short",
+        rationale="Heavy rainfall can reduce tapping days.",
+        evidence=["Rainfall percentile above normal"],
+        counterevidence=["Forecast may ease"],
+        status="confirmed",
+        created_at=now,
+        updated_at=now,
+    )
+
+    snapshot = _event_intelligence_snapshot_response([event_item], [impact_link])
+
+    assert snapshot.items[0].id == event_id
+    assert snapshot.impact_links[0].event_item_id == event_id
+    assert snapshot.quality.total == 1
+    assert snapshot.quality.reports[0].link_reports[0].id == impact_link.id
+
+
+def test_event_intelligence_source_lookup_response_keeps_links_scoped_to_items() -> None:
+    now = datetime(2026, 5, 10, tzinfo=UTC)
+    news_id = uuid4()
+    event_id = uuid4()
+    event_item = EventIntelligenceItem(
+        id=event_id,
+        source_type="news_event",
+        source_id=str(news_id),
+        title="Rubber rainfall anomaly",
+        summary="Rainfall may disrupt rubber tapping.",
+        event_type="weather",
+        event_timestamp=now,
+        entities=["Thailand"],
+        symbols=["RU"],
+        regions=["southeast_asia_rubber"],
+        mechanisms=["weather"],
+        evidence=["Rainfall percentile above normal"],
+        counterevidence=["Forecast may ease"],
+        confidence=0.84,
+        impact_score=82,
+        status="confirmed",
+        requires_manual_confirmation=False,
+        source_reliability=0.82,
+        freshness_score=0.94,
+        source_payload={},
+        created_at=now,
+        updated_at=now,
+    )
+    impact_link = EventImpactLink(
+        id=uuid4(),
+        event_item_id=event_id,
+        symbol="RU",
+        region_id="southeast_asia_rubber",
+        mechanism="weather",
+        direction="bullish",
+        confidence=0.8,
+        impact_score=80,
+        horizon="short",
+        rationale="Heavy rainfall can reduce tapping days.",
+        evidence=["Rainfall percentile above normal"],
+        counterevidence=["Forecast may ease"],
+        status="confirmed",
+        created_at=now,
+        updated_at=now,
+    )
+
+    lookup = _event_intelligence_source_lookup_response([event_item], [impact_link])
+
+    assert lookup.items[0].source_id == str(news_id)
+    assert lookup.impact_links[0].event_item_id == event_id
 
 
 def test_event_intelligence_decision_api_rejects_invalid_decision() -> None:
@@ -808,3 +1376,11 @@ class FakeScalars:
 
     def all(self):
         return self._rows
+
+
+def _compile_postgres(statement) -> str:
+    return str(statement.compile(dialect=postgresql.dialect()))
+
+
+def _compile_params(statement) -> dict:
+    return statement.compile(dialect=postgresql.dialect()).params

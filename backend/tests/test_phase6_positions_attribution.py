@@ -4,6 +4,7 @@ from uuid import uuid4
 import pytest
 from fastapi import HTTPException
 from pydantic import ValidationError
+from sqlalchemy.dialects import postgresql
 
 from app.api.positions import require_open_position
 from app.models.position import Position
@@ -19,14 +20,25 @@ from app.services.learning.recommendation_attribution import (
     update_recommendation_from_position,
 )
 from app.services.pipeline.handlers import position_conflict_warnings
-from app.services.positions.data_freshness import check_position_freshness
-from app.services.positions.propagation_activator import infer_category_from_symbol
+from app.services.positions.data_freshness import _position_freshness_statement, check_position_freshness
+from app.services.positions.propagation_activator import (
+    _commodity_node_lookup_statement,
+    _graph_neighbors_statement,
+    infer_category_from_symbol,
+)
+from app.services.positions.risk_recalc import (
+    _position_risk_rows_statement,
+    position_symbols,
+    recalculate_position_risk,
+)
 from app.services.positions.threshold_modifier import (
+    _position_threshold_cache_statement,
     get_position_aware_thresholds,
     get_position_threshold_multiplier,
     refresh_position_threshold_cache,
     update_position_threshold_cache,
 )
+from app.services.risk.types import RiskMarketPoint
 from app.services.scoring.portfolio_fit import PositionGroup, RecommendationLeg
 
 
@@ -99,6 +111,18 @@ def _recommendation(recommendation_id) -> Recommendation:
     )
 
 
+def _risk_points(symbol: str, start_price: float) -> list[RiskMarketPoint]:
+    start = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    return [
+        RiskMarketPoint(
+            symbol=symbol,
+            timestamp=start + timedelta(days=index),
+            close=start_price + index * 3,
+        )
+        for index in range(20)
+    ]
+
+
 def test_position_threshold_cache_lowers_held_symbol_thresholds() -> None:
     position = _position()
 
@@ -126,6 +150,15 @@ async def test_refresh_position_threshold_cache_hydrates_existing_open_positions
 def test_position_conflict_warning_marks_reverse_signal() -> None:
     warnings = position_conflict_warnings(
         [RecommendationLeg(asset="RU", direction="short")],
+        [PositionGroup(legs=[RecommendationLeg(asset="RU", direction="long")])],
+    )
+
+    assert warnings == ["Position conflict: RU signal is short, open position is long."]
+
+
+def test_position_conflict_warning_normalizes_contract_symbols() -> None:
+    warnings = position_conflict_warnings(
+        [RecommendationLeg(asset=" ru2509 ", direction="short")],
         [PositionGroup(legs=[RecommendationLeg(asset="RU", direction="long")])],
     )
 
@@ -170,6 +203,55 @@ async def test_position_freshness_marks_stale_and_degrades_old_positions() -> No
     assert result.degraded == 1
     assert position.data_mode == "stale_no_position"
     assert get_position_threshold_multiplier(("RU",)) == 1.0
+
+
+async def test_position_risk_recalc_normalizes_contract_symbols(monkeypatch) -> None:
+    position = _position(
+        legs=[
+            {"asset": " ru2509 ", "direction": "long", "lots": 2, "current_price": 12_000},
+            {"asset": "NR2510", "direction": "short", "lots": 1, "current_price": 11_000},
+        ],
+        total_margin_used=20_000,
+    )
+    captured: dict[str, object] = {}
+
+    async def fake_load_risk_market_data(_session, symbols, *, limit):
+        captured["symbols"] = symbols
+        captured["limit"] = limit
+        return {
+            "NR": _risk_points("NR", 11_000),
+            "RU": _risk_points("RU", 12_000),
+        }
+
+    monkeypatch.setattr(
+        "app.services.positions.risk_recalc.load_risk_market_data",
+        fake_load_risk_market_data,
+    )
+
+    snapshot = await recalculate_position_risk(FakeSession(rows=[position]))  # type: ignore[arg-type]
+
+    assert captured["symbols"] == ["NR", "RU"]
+    assert captured["limit"] == 252
+    assert snapshot.correlation_symbols == ["NR", "RU"]
+    assert position_symbols(position) == {"NR", "RU"}
+
+
+def test_position_service_statements_use_stable_tie_breakers() -> None:
+    freshness_sql = _compile_postgres(_position_freshness_statement())
+    risk_sql = _compile_postgres(_position_risk_rows_statement())
+    threshold_sql = _compile_postgres(_position_threshold_cache_statement())
+    node_sql = _compile_postgres(_commodity_node_lookup_statement(symbol="RU"))
+    graph_sql = _compile_postgres(_graph_neighbors_statement(source_id=uuid4(), limit=8))
+
+    assert "ORDER BY positions.opened_at DESC, positions.id DESC" in freshness_sql
+    assert "ORDER BY positions.opened_at DESC, positions.id DESC" in risk_sql
+    assert "positions.data_mode =" in threshold_sql
+    assert "ORDER BY positions.monitoring_priority ASC, positions.id ASC" in threshold_sql
+    assert "commodity_nodes.symbol =" in node_sql
+    assert "ORDER BY commodity_nodes.id ASC" in node_sql
+    assert "relationship_edges.source =" in graph_sql
+    assert "relationship_edges.target =" in graph_sql
+    assert "ORDER BY relationship_edges.strength DESC, relationship_edges.id ASC" in graph_sql
 
 
 def test_phase6_symbol_category_fallback_covers_rubber() -> None:
@@ -275,3 +357,7 @@ async def test_closed_positions_cannot_be_resized_or_closed_again() -> None:
         await require_open_position(session, closed_position.id)  # type: ignore[arg-type]
 
     assert exc_info.value.status_code == 409
+
+
+def _compile_postgres(statement) -> str:
+    return str(statement.compile(dialect=postgresql.dialect()))

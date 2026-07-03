@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import math
-from typing import Any
+from typing import Any, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import Field, StrictBool, field_validator
@@ -10,12 +10,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.models.position import Position
-from app.schemas.common import MAX_INGEST_SYMBOL_LENGTH, StrictInputModel
+from app.schemas.common import MAX_INGEST_SYMBOL_LENGTH, PositionRead, StrictInputModel
 from app.services.risk.correlation import build_correlation_matrix
 from app.services.risk.market_data import load_risk_market_data
 from app.services.risk.stress import STRESS_SCENARIOS, run_stress_test, symbol_prefix
-from app.services.risk.types import RiskLeg, RiskPosition, StressScenario
+from app.services.risk.types import Direction, RiskLeg, RiskPosition, StressScenario
 from app.services.risk.var import calculate_var
+from app.services.symbols import normalize_root_symbol
 
 router = APIRouter(prefix="/api/risk", tags=["risk"])
 
@@ -122,6 +123,53 @@ async def run_custom_stress_tests(
     )
 
 
+@router.get("/portfolio-snapshot")
+async def get_portfolio_risk_snapshot(
+    horizon: int = Query(default=1, ge=1, le=20),
+    correlation_window: int = Query(default=60, ge=5, le=252),
+    position_limit: int = Query(default=500, ge=1, le=500),
+    session: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    position_rows = await _open_position_rows(session, limit=position_limit)
+    positions = [_position_to_risk_position(row) for row in position_rows]
+    symbols = _position_symbols(positions)
+    market_data = await load_risk_market_data(
+        session,
+        symbols,
+        limit=max(252, correlation_window + 10),
+    )
+    unavailable_sections = (
+        _var_unavailable_sections(positions, symbols, market_data)
+        + _stress_unavailable_sections(positions, list(STRESS_SCENARIOS))
+    )
+
+    correlation = None
+    if symbols:
+        if len(symbols) > MAX_CORRELATION_SYMBOLS:
+            unavailable_sections.append("correlation_too_many_symbols")
+        else:
+            correlation = build_correlation_matrix(
+                market_data,
+                symbols,
+                window=correlation_window,
+            ).to_dict()
+            unavailable_sections += _correlation_unavailable_sections(symbols, market_data)
+
+    return _risk_envelope(
+        {
+            "positions": [
+                PositionRead.model_validate(row).model_dump(mode="json")
+                for row in position_rows
+            ],
+            "var": calculate_var(positions, market_data, horizon=horizon).to_dict(),
+            "stress": [result.to_dict() for result in run_stress_test(positions, STRESS_SCENARIOS)],
+            "correlation": correlation,
+            "latest_market_rows": _latest_market_rows(market_data),
+        },
+        unavailable_sections=unavailable_sections,
+    )
+
+
 @router.get("/correlation")
 async def get_correlation_matrix(
     symbols: str | None = Query(default=None, max_length=MAX_CORRELATION_SYMBOL_QUERY_LENGTH),
@@ -152,14 +200,28 @@ def _risk_envelope(data: Any, *, unavailable_sections: list[str] | None = None) 
 
 
 async def _open_positions(session: AsyncSession) -> list[RiskPosition]:
+    return [_position_to_risk_position(row) for row in await _open_position_rows(session)]
+
+
+async def _open_position_rows(session: AsyncSession, *, limit: int | None = None) -> list[Position]:
+    statement = _open_position_rows_statement(limit=limit)
     rows = list(
         (
-            await session.scalars(
-                select(Position).where(Position.status == "open").order_by(Position.opened_at.desc())
-            )
+            await session.scalars(statement)
         ).all()
     )
-    return [_position_to_risk_position(row) for row in rows]
+    return rows
+
+
+def _open_position_rows_statement(*, limit: int | None = None):
+    statement = (
+        select(Position)
+        .where(Position.status == "open")
+        .order_by(Position.opened_at.desc(), Position.id.desc())
+    )
+    if limit is not None:
+        statement = statement.limit(limit)
+    return statement
 
 
 def _position_to_risk_position(position: Position) -> RiskPosition:
@@ -176,7 +238,7 @@ def _leg_from_payload(payload: dict[str, Any]) -> RiskLeg:
     direction = "short" if str(payload.get("direction", "long")).lower() == "short" else "long"
     return RiskLeg(
         asset=asset,
-        direction=direction,
+        direction=cast("Direction", direction),
         size=_float_from_payload(payload, "size", "quantity", "lots", default=0.0),
         current_price=_float_from_payload(payload, "currentPrice", "current_price", "price", default=0.0),
         entry_price=_optional_float_from_payload(payload, "entryPrice", "entry_price"),
@@ -187,7 +249,32 @@ def _leg_from_payload(payload: dict[str, Any]) -> RiskLeg:
 
 
 def _position_symbols(positions: list[RiskPosition]) -> list[str]:
-    return sorted({leg.asset for position in positions for leg in position.legs if leg.asset})
+    return sorted(
+        {
+            symbol
+            for position in positions
+            for leg in position.legs
+            if (symbol := normalize_root_symbol(leg.asset)) is not None
+        }
+    )
+
+
+def _latest_market_rows(market_data: dict[str, list[Any]]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for symbol in sorted(market_data):
+        latest = market_data[symbol][0] if market_data.get(symbol) else None
+        if latest is None:
+            continue
+        rows.append(
+            {
+                "symbol": latest.symbol,
+                "timestamp": latest.timestamp.isoformat(),
+                "close": latest.close,
+                "vintage_at": None,
+                "ingested_at": None,
+            }
+        )
+    return rows
 
 
 def _parse_risk_symbols(value: str, *, allow_empty: bool) -> list[str]:
@@ -211,7 +298,13 @@ def _parse_risk_symbols(value: str, *, allow_empty: bool) -> list[str]:
 
 
 def _normalize_risk_symbols(symbols: list[str] | tuple[str, ...] | set[str]) -> list[str]:
-    return list(dict.fromkeys(symbol.strip().upper() for symbol in symbols if symbol.strip()))
+    return list(
+        dict.fromkeys(
+            normalized
+            for symbol in symbols
+            if (normalized := normalize_root_symbol(symbol)) is not None
+        )
+    )
 
 
 def _var_unavailable_sections(

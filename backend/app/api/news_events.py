@@ -1,9 +1,11 @@
 import json
+from datetime import datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
-from sqlalchemy import select
+from sqlalchemy import and_, false, or_, select
+from sqlalchemy.sql.elements import ColumnElement
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -11,10 +13,12 @@ from app.core.events import ZeusEvent, iter_events
 from app.models.news_events import NewsEvent
 from app.schemas.common import MAX_INGEST_SYMBOL_LENGTH, NewsEventCreate, NewsEventRead
 from app.services.news.event_publisher import record_and_publish_news_event
+from app.services.symbols import normalize_root_symbol
 from app.services.vector_search.embedder import DeterministicHashEmbedder
 
 router = APIRouter(prefix="/api/news-events", tags=["news-events"])
 NEWS_EVENT_TYPE_PATTERN = "^(policy|supply|demand|inventory|geopolitical|weather|breaking)$"
+NEWS_DIRECTION_PATTERN = "^(bullish|bearish|mixed|unclear)$"
 
 
 @router.get("", response_model=list[NewsEventRead])
@@ -22,23 +26,28 @@ async def list_news_events(
     source: str | None = Query(default=None, min_length=1, max_length=50),
     symbol: str | None = Query(default=None, min_length=1, max_length=MAX_INGEST_SYMBOL_LENGTH),
     event_type: str | None = Query(default=None, pattern=NEWS_EVENT_TYPE_PATTERN),
+    direction: str | None = Query(default=None, pattern=NEWS_DIRECTION_PATTERN),
     min_severity: int | None = Query(default=None, ge=1, le=5),
     verification_status: str | None = Query(default=None, min_length=1, max_length=30),
+    q: str | None = Query(default=None, min_length=1, max_length=120),
+    before: datetime | None = Query(default=None),
+    before_id: UUID | None = Query(default=None),
     limit: int = Query(default=100, ge=1, le=500),
     session: AsyncSession = Depends(get_db),
 ) -> list[NewsEvent]:
-    statement = select(NewsEvent).order_by(NewsEvent.published_at.desc())
-    if source is not None:
-        statement = statement.where(NewsEvent.source == source)
-    if symbol is not None:
-        statement = statement.where(NewsEvent.affected_symbols.contains([symbol.upper()]))
-    if event_type is not None:
-        statement = statement.where(NewsEvent.event_type == event_type)
-    if min_severity is not None:
-        statement = statement.where(NewsEvent.severity >= min_severity)
-    if verification_status is not None:
-        statement = statement.where(NewsEvent.verification_status == verification_status)
-    return list((await session.scalars(statement.limit(limit))).all())
+    statement = _news_events_statement(
+        source=source,
+        symbol=symbol,
+        event_type=event_type,
+        direction=direction,
+        min_severity=min_severity,
+        verification_status=verification_status,
+        q=q,
+        before=before,
+        before_id=before_id,
+        limit=limit,
+    )
+    return list((await session.scalars(statement)).all())
 
 
 @router.post("", response_model=NewsEventRead, status_code=status.HTTP_201_CREATED)
@@ -90,3 +99,60 @@ async def _news_event_stream():
 def format_news_sse_event(event: ZeusEvent) -> str:
     payload = json.dumps(event.to_dict(), ensure_ascii=False, default=str)
     return f"id: {event.id}\nevent: {event.channel}\ndata: {payload}\n\n"
+
+
+def _news_events_statement(
+    *,
+    source: str | None,
+    symbol: str | None,
+    event_type: str | None,
+    direction: str | None,
+    min_severity: int | None,
+    verification_status: str | None,
+    q: str | None,
+    limit: int,
+    before: datetime | None = None,
+    before_id: UUID | None = None,
+):
+    statement = select(NewsEvent).order_by(NewsEvent.published_at.desc(), NewsEvent.id.desc())
+    if source is not None:
+        statement = statement.where(NewsEvent.source == source)
+    if symbol is not None:
+        normalized_symbol = normalize_root_symbol(symbol)
+        statement = (
+            statement.where(NewsEvent.affected_symbols.contains([normalized_symbol]))
+            if normalized_symbol is not None
+            else statement.where(false())
+        )
+    if event_type is not None:
+        statement = statement.where(NewsEvent.event_type == event_type)
+    if direction is not None:
+        statement = statement.where(NewsEvent.direction == direction)
+    if min_severity is not None:
+        statement = statement.where(NewsEvent.severity >= min_severity)
+    if verification_status is not None:
+        statement = statement.where(NewsEvent.verification_status == verification_status)
+    if before is not None:
+        if before_id is not None:
+            statement = statement.where(
+                or_(
+                    NewsEvent.published_at < before,
+                    and_(NewsEvent.published_at == before, NewsEvent.id < before_id),
+                )
+            )
+        else:
+            statement = statement.where(NewsEvent.published_at < before)
+    if q is not None:
+        query_text = q.strip()
+        if query_text:
+            like_pattern = f"%{query_text}%"
+            conditions: list[ColumnElement[bool]] = [
+                NewsEvent.title.ilike(like_pattern),
+                NewsEvent.summary.ilike(like_pattern),
+                NewsEvent.title_zh.ilike(like_pattern),
+                NewsEvent.summary_zh.ilike(like_pattern),
+            ]
+            if query_symbol := normalize_root_symbol(query_text):
+                conditions.append(NewsEvent.affected_symbols.contains([query_symbol]))
+            statement = statement.where(or_(*conditions))
+    return statement.limit(limit)

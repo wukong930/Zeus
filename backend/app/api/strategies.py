@@ -1,9 +1,9 @@
-from datetime import date
+from datetime import date, datetime
 from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import or_, select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -25,13 +25,47 @@ router = APIRouter(prefix="/api/strategies", tags=["strategies"])
 @router.get("", response_model=list[StrategyRead])
 async def list_strategies(
     status_filter: str | None = Query(default=None, max_length=20),
+    before: datetime | None = Query(default=None),
+    before_id: UUID | None = Query(default=None),
     limit: int = Query(default=100, ge=1, le=500),
     session: AsyncSession = Depends(get_db),
 ) -> list[Strategy]:
-    statement = select(Strategy).order_by(Strategy.created_at.desc())
+    statement = _strategies_statement(
+        status_filter=status_filter,
+        before=before,
+        before_id=before_id,
+        limit=limit,
+    )
+    return list((await session.scalars(statement)).all())
+
+
+def _strategies_statement(
+    *,
+    status_filter: str | None,
+    before: datetime | None,
+    limit: int,
+    before_id: UUID | None = None,
+):
+    statement = select(Strategy).order_by(
+        Strategy.created_at.desc(),
+        Strategy.id.desc(),
+    )
     if status_filter is not None:
         statement = statement.where(Strategy.status == status_filter)
-    return list((await session.scalars(statement.limit(limit))).all())
+    if before is not None:
+        if before_id is not None:
+            statement = statement.where(
+                or_(
+                    Strategy.created_at < before,
+                    and_(
+                        Strategy.created_at == before,
+                        Strategy.id < before_id,
+                    ),
+                )
+            )
+        else:
+            statement = statement.where(Strategy.created_at < before)
+    return statement.limit(limit)
 
 
 @router.post("", response_model=StrategyRead, status_code=status.HTTP_201_CREATED)
@@ -105,21 +139,25 @@ async def load_runtime_recommendation_outcomes(
     limit: int = 500,
 ) -> list[dict[str, Any]]:
     rows = (
-        await session.scalars(
-            select(Recommendation)
-            .where(
-                or_(
-                    Recommendation.status == "completed",
-                    Recommendation.pnl_realized.is_not(None),
-                    Recommendation.actual_exit.is_not(None),
-                )
-            )
-            .order_by(Recommendation.created_at.desc())
-            .limit(limit)
-        )
+        await session.scalars(_runtime_recommendation_outcomes_statement(limit=limit))
     ).all()
     outcomes = [recommendation_outcome(row) for row in rows]
     return [item for item in outcomes if item is not None]
+
+
+def _runtime_recommendation_outcomes_statement(*, limit: int):
+    return (
+        select(Recommendation)
+        .where(
+            or_(
+                Recommendation.status == "completed",
+                Recommendation.pnl_realized.is_not(None),
+                Recommendation.actual_exit.is_not(None),
+            )
+        )
+        .order_by(Recommendation.created_at.desc(), Recommendation.id.desc())
+        .limit(limit)
+    )
 
 
 def recommendation_outcome(row: Recommendation) -> dict[str, Any] | None:

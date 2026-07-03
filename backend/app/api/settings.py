@@ -1,13 +1,15 @@
+from datetime import date, datetime, timezone
 from typing import Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, StrictBool
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.models.alert_agent import AlertAgentConfig
-from app.schemas.common import StrictInputModel
+from app.schemas.common import LLMUsageSummaryRead, StrictInputModel
+from app.scheduler.manager import get_scheduler
+from app.services.data_sources.registry import data_source_statuses
 from app.services.llm.registry import get_active_llm_config, get_env_llm_config
 from app.services.llm.types import DEFAULT_MODELS, LLMProviderConfig, LLMProviderName
 from app.services.alert_agent.dedup import (
@@ -15,10 +17,18 @@ from app.services.alert_agent.dedup import (
     DEFAULT_DAILY_ALERT_LIMIT,
     DEFAULT_REPEAT_WINDOW_HOURS,
 )
+from app.services.alert_agent.config import alert_agent_config_row_statement
 from app.services.adversarial.runtime import (
     AdversarialRuntimeConfig,
     load_adversarial_runtime_config,
     save_adversarial_runtime_config,
+)
+from app.services.llm.budget_guard import month_bounds
+from app.services.llm.cost_tracker import (
+    MAX_LLM_MODULE_LENGTH,
+    monthly_usage_summary,
+    normalize_llm_model,
+    normalize_llm_module,
 )
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
@@ -85,6 +95,30 @@ class LLMProviderSettingsRead(BaseModel):
     reason: str | None = None
 
 
+class SettingsSnapshotRead(BaseModel):
+    generated_at: datetime
+    data_sources: list[dict[str, Any]]
+    scheduler: dict[str, Any]
+    llm_usage: LLMUsageSummaryRead
+    llm_providers: list[LLMProviderSettingsRead]
+    alert_dedup: AlertDedupSettingsRead
+    notifications: NotificationSettingsRead
+    adversarial_runtime: AdversarialRuntimeSettingsRead
+
+
+@router.get("/snapshot", response_model=SettingsSnapshotRead)
+async def get_settings_snapshot(
+    module: str = Query(
+        default="alert_agent",
+        min_length=1,
+        max_length=MAX_LLM_MODULE_LENGTH,
+    ),
+    month: date | None = None,
+    session: AsyncSession = Depends(get_db),
+) -> SettingsSnapshotRead:
+    return await build_settings_snapshot(session, module=normalize_llm_module(module), month=month)
+
+
 @router.get("/alert-dedup", response_model=AlertDedupSettingsRead)
 async def get_alert_dedup_settings() -> AlertDedupSettingsRead:
     return AlertDedupSettingsRead(
@@ -135,6 +169,38 @@ async def get_llm_provider_settings(
     session: AsyncSession = Depends(get_db),
 ) -> list[LLMProviderSettingsRead]:
     return await load_llm_provider_settings(session)
+
+
+async def build_settings_snapshot(
+    session: AsyncSession,
+    *,
+    module: str,
+    month: date | None,
+) -> SettingsSnapshotRead:
+    normalized_module = normalize_llm_module(module)
+    period_start, period_end = month_bounds(month or date.today())
+    llm_usage = await monthly_usage_summary(
+        session,
+        module=normalized_module,
+        period_start=period_start,
+        period_end=period_end,
+    )
+    scheduler = get_scheduler()
+    return SettingsSnapshotRead(
+        generated_at=datetime.now(timezone.utc),
+        data_sources=[status.to_dict() for status in data_source_statuses()],
+        scheduler={
+            "jobs": scheduler.list_jobs(),
+            "health": scheduler.health_summary(),
+        },
+        llm_usage=LLMUsageSummaryRead(**llm_usage.__dict__),
+        llm_providers=await load_llm_provider_settings(session),
+        alert_dedup=await get_alert_dedup_settings(),
+        notifications=await load_notification_settings(session),
+        adversarial_runtime=_adversarial_runtime_read(
+            await load_adversarial_runtime_config(session)
+        ),
+    )
 
 
 async def load_llm_provider_settings(session: AsyncSession) -> list[LLMProviderSettingsRead]:
@@ -194,9 +260,7 @@ async def save_notification_settings(
 async def _notification_config_row(session: AsyncSession) -> AlertAgentConfig | None:
     return (
         await session.scalars(
-            select(AlertAgentConfig)
-            .where(AlertAgentConfig.key == NOTIFICATION_SETTINGS_KEY)
-            .limit(1)
+            alert_agent_config_row_statement(key=NOTIFICATION_SETTINGS_KEY)
         )
     ).first()
 
@@ -240,7 +304,7 @@ def _llm_provider_read(
     is_active = active is not None and active.provider == provider
     configured = is_active or env_config is not None
     source = active_source if is_active and active_source else "environment" if env_config else "not_configured"
-    model = active.model if is_active and active is not None else env_config.model if env_config else None
+    model = _llm_provider_model(active=active, env_config=env_config, is_active=is_active)
     status = "active" if is_active else "configured" if configured else "unconfigured"
     reason = None if configured else _missing_key_reason(provider)
     return LLMProviderSettingsRead(
@@ -253,6 +317,19 @@ def _llm_provider_read(
         status=status,
         reason=reason,
     )
+
+
+def _llm_provider_model(
+    *,
+    active: LLMProviderConfig | None,
+    env_config: LLMProviderConfig | None,
+    is_active: bool,
+) -> str | None:
+    if is_active and active is not None:
+        return normalize_llm_model(active.model)
+    if env_config is not None:
+        return env_config.model
+    return None
 
 
 def _env_provider_config(
@@ -270,12 +347,12 @@ def _env_provider_config(
     return LLMProviderConfig(
         provider=provider,
         api_key=str(api_key),
-        model=settings.llm_model or DEFAULT_MODELS[provider][0],
+        model=normalize_llm_model(settings.llm_model) or DEFAULT_MODELS[provider][0],
         base_url={
-            "openai": settings.openai_base_url,
-            "xai": settings.xai_base_url,
-            "anthropic": settings.anthropic_base_url,
-            "deepseek": settings.deepseek_base_url,
+            "openai": _clean_optional_url(settings.openai_base_url),
+            "xai": _clean_optional_url(settings.xai_base_url),
+            "anthropic": _clean_optional_url(settings.anthropic_base_url),
+            "deepseek": _clean_optional_url(settings.deepseek_base_url),
         }[provider],
         timeout_seconds=settings.llm_timeout_seconds,
     )
@@ -283,6 +360,13 @@ def _env_provider_config(
 
 def _has_secret(value: str | None) -> bool:
     return bool(value and value.strip())
+
+
+def _clean_optional_url(value: str | None) -> str | None:
+    if value is None:
+        return None
+    value = value.strip()
+    return value or None
 
 
 def _missing_key_reason(provider: LLMProviderName) -> str:

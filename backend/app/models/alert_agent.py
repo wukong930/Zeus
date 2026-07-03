@@ -19,6 +19,15 @@ class AlertDedupCache(Base):
         ),
         Index("ix_alert_dedup_lookup", "symbol", "direction", "evaluator"),
         Index("ix_alert_dedup_signal_hash", "signal_combination_hash"),
+        Index(
+            "ix_alert_dedup_combination_lookup",
+            "signal_combination_hash",
+            "symbol",
+            "direction",
+            "last_emitted_at",
+            "updated_at",
+            "id",
+        ),
         Index("ix_alert_dedup_last_emitted_at", "last_emitted_at"),
     )
 
@@ -45,6 +54,7 @@ class AlertAgentConfig(Base):
     __table_args__ = (
         UniqueConstraint("key", name="uq_alert_agent_config_key"),
         Index("ix_alert_agent_config_key", "key"),
+        Index("ix_alert_agent_config_key_updated", "key", "updated_at", "id"),
     )
 
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)

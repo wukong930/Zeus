@@ -5,7 +5,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import or_, select
+from sqlalchemy import and_, false, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -20,6 +20,11 @@ MAX_NOTEBOOK_TAGS = 20
 MAX_NOTEBOOK_LIST_ITEMS = 20
 MAX_NOTEBOOK_LIST_ITEM_LENGTH = 300
 MAX_NOTEBOOK_UUID_REFERENCES = 100
+NOTEBOOK_KIND_ORDER: dict[str, int] = {
+    "report": 2,
+    "learning_hypothesis": 1,
+    "research_hypothesis": 0,
+}
 
 
 class NotebookReference(BaseModel):
@@ -62,39 +67,70 @@ class NotebookSnapshot(BaseModel):
 
 @router.get("", response_model=NotebookSnapshot)
 async def get_notebook_snapshot(
+    before: datetime | None = Query(default=None),
+    before_id: UUID | None = Query(default=None),
+    before_kind: Literal["report", "learning_hypothesis", "research_hypothesis"] | None = Query(default=None),
     limit: int = Query(default=100, ge=1, le=500),
     session: AsyncSession = Depends(get_db),
 ) -> NotebookSnapshot:
-    return await load_notebook_snapshot(session, limit=limit)
+    return await load_notebook_snapshot(
+        session,
+        limit=limit,
+        before=before,
+        before_id=before_id,
+        before_kind=before_kind,
+    )
 
 
-async def load_notebook_snapshot(session: AsyncSession, *, limit: int = 100) -> NotebookSnapshot:
+async def load_notebook_snapshot(
+    session: AsyncSession,
+    *,
+    limit: int = 100,
+    before: datetime | None = None,
+    before_id: UUID | None = None,
+    before_kind: Literal["report", "learning_hypothesis", "research_hypothesis"] | None = None,
+) -> NotebookSnapshot:
     report_rows = (
         await session.scalars(
-            select(ResearchReport).order_by(ResearchReport.published_at.desc()).limit(limit)
+            _research_reports_statement(
+                before=before,
+                before_id=before_id,
+                before_kind=before_kind,
+                limit=limit,
+            )
         )
     ).all()
     learning_rows = (
         await session.scalars(
-            select(LearningHypothesis).order_by(LearningHypothesis.created_at.desc()).limit(limit)
+            _learning_hypotheses_statement(
+                before=before,
+                before_id=before_id,
+                before_kind=before_kind,
+                limit=limit,
+            )
         )
     ).all()
     research_rows = (
         await session.scalars(
-            select(ResearchHypothesis).order_by(ResearchHypothesis.created_at.desc()).limit(limit)
+            _research_hypotheses_statement(
+                before=before,
+                before_id=before_id,
+                before_kind=before_kind,
+                limit=limit,
+            )
         )
     ).all()
-    report_alerts = await load_report_alerts(session, report_rows)
+    report_alerts = await load_report_alerts(session, list(report_rows))
 
     entries = [
         *(entry_from_report(row, report_alerts) for row in report_rows),
         *(entry_from_learning_hypothesis(row) for row in learning_rows),
         *(entry_from_research_hypothesis(row) for row in research_rows),
     ]
-    entries.sort(key=entry_sort_timestamp, reverse=True)
+    entries.sort(key=entry_sort_key, reverse=True)
     entries = entries[:limit]
 
-    folder_counts = defaultdict(int)
+    folder_counts: defaultdict[str, int] = defaultdict(int)
     reference_counts = {"alerts": 0, "hypotheses": 0, "reports": 0}
     for entry in entries:
         folder_counts[entry.folder] += 1
@@ -118,6 +154,104 @@ async def load_notebook_snapshot(session: AsyncSession, *, limit: int = 100) -> 
     )
 
 
+def _research_reports_statement(
+    *,
+    before: datetime | None,
+    limit: int,
+    before_id: UUID | None = None,
+    before_kind: Literal["report", "learning_hypothesis", "research_hypothesis"] | None = None,
+):
+    statement = select(ResearchReport)
+    cursor_clause = _notebook_cursor_clause(
+        timestamp_column=ResearchReport.published_at,
+        id_column=ResearchReport.id,
+        entry_kind="report",
+        before=before,
+        before_id=before_id,
+        before_kind=before_kind,
+    )
+    if cursor_clause is not None:
+        statement = statement.where(cursor_clause)
+    return statement.order_by(
+        ResearchReport.published_at.desc(),
+        ResearchReport.id.desc(),
+    ).limit(limit)
+
+
+def _learning_hypotheses_statement(
+    *,
+    before: datetime | None,
+    limit: int,
+    before_id: UUID | None = None,
+    before_kind: Literal["report", "learning_hypothesis", "research_hypothesis"] | None = None,
+):
+    statement = select(LearningHypothesis)
+    cursor_clause = _notebook_cursor_clause(
+        timestamp_column=LearningHypothesis.updated_at,
+        id_column=LearningHypothesis.id,
+        entry_kind="learning_hypothesis",
+        before=before,
+        before_id=before_id,
+        before_kind=before_kind,
+    )
+    if cursor_clause is not None:
+        statement = statement.where(cursor_clause)
+    return statement.order_by(
+        LearningHypothesis.updated_at.desc(),
+        LearningHypothesis.id.desc(),
+    ).limit(limit)
+
+
+def _research_hypotheses_statement(
+    *,
+    before: datetime | None,
+    limit: int,
+    before_id: UUID | None = None,
+    before_kind: Literal["report", "learning_hypothesis", "research_hypothesis"] | None = None,
+):
+    statement = select(ResearchHypothesis)
+    cursor_clause = _notebook_cursor_clause(
+        timestamp_column=ResearchHypothesis.created_at,
+        id_column=ResearchHypothesis.id,
+        entry_kind="research_hypothesis",
+        before=before,
+        before_id=before_id,
+        before_kind=before_kind,
+    )
+    if cursor_clause is not None:
+        statement = statement.where(cursor_clause)
+    return statement.order_by(
+        ResearchHypothesis.created_at.desc(),
+        ResearchHypothesis.id.desc(),
+    ).limit(limit)
+
+
+def _notebook_cursor_clause(
+    *,
+    timestamp_column,
+    id_column,
+    entry_kind: Literal["report", "learning_hypothesis", "research_hypothesis"],
+    before: datetime | None,
+    before_id: UUID | None,
+    before_kind: Literal["report", "learning_hypothesis", "research_hypothesis"] | None,
+):
+    if before is None:
+        return None
+    if before_id is None or before_kind is None:
+        return timestamp_column < before
+
+    entry_rank = NOTEBOOK_KIND_ORDER[entry_kind]
+    cursor_rank = NOTEBOOK_KIND_ORDER[before_kind]
+    if entry_rank < cursor_rank:
+        return timestamp_column <= before
+    if entry_rank > cursor_rank:
+        return timestamp_column < before
+    return or_(
+        timestamp_column < before,
+        and_(timestamp_column == before, id_column < before_id),
+    )
+
+
 async def load_report_alerts(
     session: AsyncSession,
     reports: list[ResearchReport],
@@ -131,14 +265,15 @@ async def load_report_alerts(
     if not report_ids and not related_alert_ids:
         return {}
 
-    statement = select(Alert).order_by(Alert.triggered_at.desc()).limit(500)
-    conditions = []
-    if related_alert_ids:
-        conditions.append(Alert.id.in_(related_alert_ids))
-    if report_ids:
-        conditions.append(Alert.related_research_id.in_(report_ids))
-    statement = statement.where(or_(*conditions))
-    alerts = (await session.scalars(statement)).all()
+    alerts = (
+        await session.scalars(
+            _report_alerts_statement(
+                report_ids=report_ids,
+                related_alert_ids=related_alert_ids,
+                limit=500,
+            )
+        )
+    ).all()
 
     grouped: dict[UUID, list[Alert]] = {report_id: [] for report_id in report_ids}
     report_by_alert_id = {
@@ -151,6 +286,25 @@ async def load_report_alerts(
         if attached_report_id is not None:
             grouped.setdefault(attached_report_id, []).append(alert)
     return grouped
+
+
+def _report_alerts_statement(
+    *,
+    report_ids: set[UUID],
+    related_alert_ids: set[UUID],
+    limit: int,
+):
+    statement = select(Alert)
+    conditions = []
+    if related_alert_ids:
+        conditions.append(Alert.id.in_(related_alert_ids))
+    if report_ids:
+        conditions.append(Alert.related_research_id.in_(report_ids))
+    if conditions:
+        statement = statement.where(or_(*conditions))
+    else:
+        statement = statement.where(false())
+    return statement.order_by(Alert.triggered_at.desc(), Alert.id.desc()).limit(limit)
 
 
 def entry_from_report(
@@ -231,7 +385,7 @@ def parse_uuid_list(
     *,
     max_items: int = MAX_NOTEBOOK_UUID_REFERENCES,
 ) -> list[UUID]:
-    parsed = []
+    parsed: list[UUID] = []
     for value in values or []:
         if len(parsed) >= max_items:
             break
@@ -288,5 +442,9 @@ def dedupe_alerts(alerts: list[Alert]) -> list[Alert]:
     return rows
 
 
-def entry_sort_timestamp(entry: NotebookEntry) -> datetime:
-    return entry.updated_at or entry.created_at
+def entry_sort_key(entry: NotebookEntry) -> tuple[datetime, int, int]:
+    return (
+        entry.updated_at or entry.created_at,
+        NOTEBOOK_KIND_ORDER[entry.kind],
+        entry.id.int,
+    )

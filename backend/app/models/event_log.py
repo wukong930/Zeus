@@ -15,6 +15,8 @@ class EventLog(Base):
         Index("ix_event_log_status", "status"),
         Index("ix_event_log_correlation_id", "correlation_id"),
         Index("ix_event_log_created_at", "created_at"),
+        Index("ix_event_log_status_created_id", "status", "created_at", "id"),
+        Index("ix_event_log_channel_status_created_id", "channel", "status", "created_at", "id"),
         UniqueConstraint(
             "event_id",
             "channel",

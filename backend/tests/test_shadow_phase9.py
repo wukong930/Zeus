@@ -1,6 +1,8 @@
 from datetime import datetime, timezone
 from uuid import uuid4
 
+from sqlalchemy.dialects import postgresql
+
 from app.core.events import ZeusEvent
 from app.models.change_review_queue import ChangeReviewQueue
 from app.models.shadow_runs import ShadowRun
@@ -9,12 +11,18 @@ from app.models.signal import SignalTrack
 from app.services.shadow import runner as shadow_runner
 from app.services.alert_agent.config import ConfidenceThresholds
 from app.services.calibration.threshold_calibrator import (
+    _threshold_source_tracks_statement,
     build_threshold_calibration_report,
     enqueue_threshold_review,
 )
 from app.services.shadow.applications import initial_shadow_application_specs
-from app.services.shadow.comparator import build_shadow_comparison_report
+from app.services.shadow.comparator import (
+    _production_signals_statement,
+    _shadow_signals_statement,
+    build_shadow_comparison_report,
+)
 from app.services.shadow.runner import (
+    _active_shadow_runs_statement,
     record_shadow_signal,
     run_shadow_for_event,
     shadow_context_payload,
@@ -206,6 +214,7 @@ async def test_shadow_score_loads_live_positions_by_default(monkeypatch) -> None
             "related_assets": ["RB"],
         },
         context={"category": "ferrous", "regime": "range_low_vol"},
+        as_of=datetime(2026, 5, 18, tzinfo=timezone.utc),
     )
 
     assert captured_payloads == [{}]
@@ -231,6 +240,7 @@ async def test_shadow_score_allows_explicit_position_override(monkeypatch) -> No
             "related_assets": ["RB"],
         },
         context={"category": "ferrous", "regime": "range_low_vol"},
+        as_of=datetime(2026, 5, 18, tzinfo=timezone.utc),
     )
 
     assert captured_payloads == [{"open_positions": configured_positions}]
@@ -289,6 +299,25 @@ def test_threshold_calibrator_builds_reliability_curve_and_suggestions() -> None
     assert report.isotonic_curve[-1].calibrated_probability == 1.0
 
 
+def test_threshold_source_tracks_statement_is_point_in_time_and_stable() -> None:
+    now = datetime(2026, 5, 4, tzinfo=timezone.utc)
+    sql = _compile_postgres(
+        _threshold_source_tracks_statement(
+            since=datetime(2026, 1, 1, tzinfo=timezone.utc),
+            as_of=now,
+            signal_type="momentum",
+            category="ferrous",
+        )
+    )
+
+    assert "signal_track.created_at >=" in sql
+    assert "signal_track.created_at <=" in sql
+    assert "signal_track.outcome IN" in sql
+    assert "signal_track.signal_type =" in sql
+    assert "signal_track.category =" in sql
+    assert "ORDER BY signal_track.created_at ASC, signal_track.id ASC" in sql
+
+
 async def test_threshold_review_is_queued_without_config_write() -> None:
     session = FakeSession()
     report = build_threshold_calibration_report(
@@ -344,3 +373,36 @@ def test_shadow_comparator_reports_shadow_only_delta() -> None:
     assert report.shadow_only == 1
     assert report.production_only == 0
     assert report.sample_cases[0].kind == "shadow_only"
+
+
+def test_shadow_comparator_statements_use_stable_order() -> None:
+    run_id = uuid4()
+    started_at = datetime(2026, 5, 1, tzinfo=timezone.utc)
+    ended_at = datetime(2026, 5, 4, tzinfo=timezone.utc)
+
+    shadow_sql = _compile_postgres(_shadow_signals_statement(run_id=run_id))
+    production_sql = _compile_postgres(
+        _production_signals_statement(started_at=started_at, ended_at=ended_at)
+    )
+
+    assert "shadow_signals.shadow_run_id =" in shadow_sql
+    assert "ORDER BY shadow_signals.created_at ASC, shadow_signals.id ASC" in shadow_sql
+    assert "signal_track.created_at >=" in production_sql
+    assert "signal_track.created_at <=" in production_sql
+    assert "ORDER BY signal_track.created_at ASC, signal_track.id ASC" in production_sql
+
+
+def test_active_shadow_runs_statement_uses_point_in_time_window_and_stable_order() -> None:
+    compiled = _compile_postgres(
+        _active_shadow_runs_statement(as_of=datetime(2026, 5, 4, tzinfo=timezone.utc))
+    )
+
+    assert "shadow_runs.status = " in compiled
+    assert "shadow_runs.started_at <=" in compiled
+    assert "shadow_runs.ended_at IS NULL" in compiled
+    assert "shadow_runs.ended_at >" in compiled
+    assert "ORDER BY shadow_runs.started_at ASC, shadow_runs.id ASC" in compiled
+
+
+def _compile_postgres(statement) -> str:
+    return str(statement.compile(dialect=postgresql.dialect()))
