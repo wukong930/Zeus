@@ -86,10 +86,10 @@
 
 ### P2（质量加固）
 
-- CI 加 `ruff` + `mypy`；前端加 ESLint。
-- 针对真实 Postgres 的 PIT 语句集成测试（现全为 FakeSession + SQL 编译断言）。
-- 进程内模块级缓存（`_MARKET_DATA_CACHE` 等 6 处）多副本前迁 Redis。
-- CORS 加"禁止 `*` + credentials 共存"护栏；生产关闭 `/docs`、`/openapi.json`；接入限流。
+- ✅ CI 加 `ruff` + `mypy`（后端，在 dev 容器内跑）；前端加 ESLint（`next/core-web-vitals` flat config，CI 跑 typecheck + lint + build）。
+- ✅ 针对真实 Postgres 的 PIT 语句集成测试（`tests/test_pit_integration.py`，`@pytest.mark.integration`，事务回滚隔离，无库时自动 skip）。
+- ⏸️ 进程内模块级缓存（`_MARKET_DATA_CACHE` 等 6 处）多副本前迁 Redis —— **评估后决定不迁**。这些是 12s TTL 的只读快照缓存，per-replica 短 TTL 缓存是标准可接受模式，多副本收益边际；而迁移会破坏快速缓存行为测试（async Redis 客户端绑定 event loop，`TestClient` 多 loop 下缓存静默失效，`count==2` 类断言失败，需把 6 处测试改写成 `AsyncClient` 的 Redis 集成测试）并给热路径加复杂度。留作真正需要跨副本共享状态时再做。
+- ✅ CORS 加"禁止 `*` + credentials 共存"护栏（通配符自动关 credentials）；生产关闭 `/docs`、`/openapi.json`（auth 开启时）；接入限流（`RateLimitMiddleware`，`RATE_LIMIT_PER_MINUTE`）。
 
 ---
 
